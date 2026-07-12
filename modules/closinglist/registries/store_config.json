@@ -1,0 +1,54 @@
+{
+  "$schema_version": "1.0.0",
+  "last_updated": "2026-05-22",
+  "notes": "User-facing configuration defaults. Persisted at runtime in chrome.storage.sync; this file is the seed.",
+  "defaults": {
+    "storeNumber": {
+      "value": null,
+      "purpose": "Default store the user works at. Null so packaged builds ship without a specific store baked in; user enters in popup and it persists to chrome.storage.sync after first use.",
+      "status": "VERIFIED",
+      "source": "user prompt 2026-05-22",
+      "userOverridable": true
+    },
+    "date": {
+      "value": "today",
+      "purpose": "Default date for the search. Computed at popup-open time, local timezone.",
+      "status": "VERIFIED",
+      "source": "user prompt 2026-05-22",
+      "userOverridable": true,
+      "notes": "Compute via new Date() in popup, format to match what CaseVisibility's date input accepts (UNKNOWN until recon)."
+    },
+    "recipientEmail": {
+      "value": null,
+      "purpose": "Default recipient address for the closing email draft.",
+      "status": "UNKNOWN",
+      "source": null,
+      "userOverridable": true,
+      "notes": "User enters in popup; saved to chrome.storage.sync after first use."
+    },
+    "afternoonCutoff": {
+      "shiftStartAtOrAfter": "13:00",
+      "shiftEndAtOrAfter": "17:00",
+      "purpose": "Rule for including an associate in the closing list.",
+      "status": "ASSUMED",
+      "source": "default heuristic",
+      "userOverridable": true,
+      "notes": "User can adjust both thresholds in popup settings."
+    },
+    "emailSubjectTemplate": {
+      "value": "Closing List — Store {store} — {date}",
+      "purpose": "Subject line for the closing email draft.",
+      "status": "ASSUMED",
+      "source": "default heuristic",
+      "userOverridable": true
+    },
+    "emailBodyHeader": {
+      "value": "Closing List for Store {store} on {date}\n\nFormat: Name: schedule: notes\n\n",
+      "purpose": "Header inserted at the top of the editable email body before associate lines.",
+      "status": "ASSUMED",
+      "source": "default heuristic",
+      "userOverridable": true
+    }
+  },
+  "stores": {}
+}

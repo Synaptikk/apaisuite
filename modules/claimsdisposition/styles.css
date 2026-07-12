@@ -1,0 +1,849 @@
+/* modules/claimsdisposition/styles.css
+   ─────────────────────────────────────────────────────────────────────
+   Module-scoped — the shell wraps the viewport in `.module-claimsdisposition`,
+   so every selector below implicitly lives under that class. All custom
+   identifiers use the `cd-` prefix so they don't collide with other modules
+   or the shell.
+
+   The Walmart palette (blue #0071CE / yellow #FFC220) is identical to the
+   suite's default `--apai-blue` / `--apai-yellow` tokens, so no per-module
+   accent override is needed in styles/tokens.css. Risk-level colors are
+   module-specific and live in `--cd-risk-*` below.
+   ─────────────────────────────────────────────────────────────────────*/
+
+.module-claimsdisposition {
+  /* Module-local color tokens — only the ones the donor uses that aren't
+     already in the suite design system. */
+  --cd-risk-normal:   #16A34A;
+  --cd-risk-watch:    #F59E0B;
+  --cd-risk-high:     #F97316;
+  --cd-risk-critical: #DC2626;
+
+  --cd-pill-bg-active:   var(--apai-blue);
+  --cd-pill-bg-inactive: #F3F4F6;
+
+  --cd-shadow-card:  0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+  --cd-shadow-hover: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.05);
+}
+
+/* ── Root layout ──────────────────────────────────────────────── */
+
+.cd-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  font-family: var(--font-sans);
+  color: var(--apai-ink);
+  background: var(--apai-bg);
+}
+
+.cd-main {
+  flex: 1;
+  padding: var(--sp-6) var(--sp-6) var(--sp-12);
+}
+
+.cd-hidden { display: none !important; }
+
+/* ── Header ───────────────────────────────────────────────────── */
+/* Plain flex header matching the suite pattern (cf. .ab-header, .sf-header).
+   The donor ornate W-logo + yellow stripe were dropped 2026-05-31 to keep
+   modules visually consistent. h1 inherits font-size from base.css. */
+.cd-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  flex-wrap: wrap;
+}
+.cd-header h1 { margin: 0; }
+.cd-header-subtitle {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: 0;
+}
+.cd-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ── Filter bar ───────────────────────────────────────────────── */
+
+.cd-filters {
+  background: var(--apai-bg-elev);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.cd-filters-bar {
+  padding: var(--sp-3) var(--sp-6);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-4);
+}
+
+.cd-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.cd-field-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--apai-muted);
+}
+
+.cd-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+}
+
+.cd-field-spacer { flex: 1; min-width: 0; }
+
+.cd-summary-meta {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+}
+
+/* ── Form controls ────────────────────────────────────────────── */
+
+.cd-input,
+.cd-select {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: 6px 10px;
+  font-size: var(--fs-md);
+  font-family: inherit;
+  color: var(--apai-ink);
+  min-width: 0;
+}
+
+.cd-input:focus,
+.cd-select:focus {
+  outline: none;
+  border-color: var(--apai-blue);
+  box-shadow: 0 0 0 2px rgba(0, 113, 206, 0.2);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+
+.cd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 12px;
+  border-radius: var(--rad-md);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--apai-border);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.cd-btn:hover { background: var(--apai-bg-soft); }
+.cd-btn:focus { outline: 2px solid var(--apai-blue); outline-offset: 1px; }
+
+.cd-btn-primary {
+  background: var(--apai-blue);
+  border-color: var(--apai-blue);
+  color: #FFFFFF;
+  box-shadow: var(--shadow-1);
+}
+.cd-btn-primary:hover { background: var(--apai-blue-dark); border-color: var(--apai-blue-dark); }
+.cd-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cd-btn-xs {
+  padding: 4px 8px;
+  font-size: var(--fs-xs);
+}
+
+/* ── Pills (multi-select chips + risk badges) ─────────────────── */
+
+.cd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 3px 10px;
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  background: var(--cd-pill-bg-inactive);
+  color: var(--apai-ink);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cd-pill:hover { filter: brightness(0.96); }
+
+.cd-pill.is-active {
+  background: var(--cd-pill-bg-active);
+  color: #FFFFFF;
+}
+
+.cd-pill.is-active-yellow {
+  background: var(--apai-yellow);
+  color: var(--apai-ink);
+}
+
+/* Risk-flag pills (read-only — used in the store table + outlier panel) */
+.cd-pill-static {
+  cursor: default;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+
+.cd-pill-normal   { color: var(--cd-risk-normal);   background: #E8F7EC; border-color: #BBE5C7; }
+.cd-pill-watch    { color: #92500E;                 background: #FEF3C7; border-color: #FCD34D; }
+.cd-pill-high     { color: #9A3412;                 background: #FFEDD5; border-color: #FED7AA; }
+.cd-pill-critical { color: #7F1D1D;                 background: #FEE2E2; border-color: #FECACA; }
+
+/* ── Cards ────────────────────────────────────────────────────── */
+
+.cd-card {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-5);
+  box-shadow: var(--cd-shadow-card);
+  position: relative;
+  overflow: hidden;
+}
+
+.cd-card-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+}
+
+.cd-card-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cd-stat {
+  font-size: 24px;
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin-top: 4px;
+  line-height: var(--lh-tight);
+}
+
+.cd-stat-sub {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin-top: 4px;
+}
+
+/* ── Sections & headings ──────────────────────────────────────── */
+
+.cd-section { margin-top: var(--sp-6); }
+.cd-section:first-child { margin-top: 0; }
+
+.cd-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+
+.cd-section-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+
+.cd-section-sub {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: 0;
+}
+
+/* ── Grids ────────────────────────────────────────────────────── */
+
+.cd-grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.cd-grid-summary {
+  /* Auto-fit cards: 1 col mobile, up to 9 wide on big screens. Mirrors the
+     donor's "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9". */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.cd-grid-charts {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+/* ── Tables ───────────────────────────────────────────────────── */
+
+.cd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+  color: var(--apai-ink);
+  background: var(--apai-bg-elev);
+}
+
+.cd-table th,
+.cd-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.cd-table th {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.cd-table th.is-sorted { color: var(--apai-ink); }
+.cd-table th.is-sorted::after {
+  content: " ▾";
+  color: var(--apai-blue);
+}
+.cd-table th.is-sorted.is-asc::after { content: " ▴"; }
+
+.cd-table tbody tr { cursor: pointer; transition: background var(--duration-fast) var(--ease-out); }
+.cd-table tbody tr:hover { background: var(--apai-bg-soft); }
+
+/* ── Drill-down affordance for the Store Comparison table ──────────
+   Rows are clickable but the donor UI didn't make that obvious. Three
+   reinforcing signals:
+     1. cd-drill-hint banner — colored sub-headline with a finger icon
+        instead of plain muted text, so the "click a row" instruction
+        is hard to miss.
+     2. Stronger hover state on .cd-table:not(.cd-table-users) tbody tr
+        — accent-tinted background + a subtle left border so the row
+        you're about to click is clearly active.
+     3. ::after chevron on the last cell of each row that appears on
+        hover — a one-time visual cue of "this goes somewhere". */
+.cd-drill-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 10px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-info-bg);
+  color: var(--apai-blue-dark);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.01em;
+  /* Subtle attention-pull: gentle pulse on first paint so first-time
+     users notice it. Fades away after a few cycles. */
+  animation: cdDrillHintPulse 2s ease-out 3;
+}
+.cd-drill-hint-icon {
+  display: inline-flex;
+  align-items: center;
+  filter: grayscale(0);
+}
+@keyframes cdDrillHintPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 113, 206, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(0, 113, 206, 0.18); }
+}
+
+/* Beef up the store-table row hover (not the inert user-table). */
+.cd-table:not(.cd-table-users) tbody tr {
+  position: relative;
+}
+.cd-table:not(.cd-table-users) tbody tr:hover {
+  background: var(--apai-info-bg);
+  box-shadow: inset 3px 0 0 0 var(--apai-blue);
+}
+.cd-table:not(.cd-table-users) tbody tr td:last-child {
+  position: relative;
+  padding-right: 28px;   /* room for the hover chevron */
+}
+.cd-table:not(.cd-table-users) tbody tr td:last-child::after {
+  content: "›";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  color: var(--apai-blue);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.cd-table:not(.cd-table-users) tbody tr:hover td:last-child::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(2px);
+}
+
+/* Per-user breakdown table (in detailDrawer). Rows are non-interactive
+   for now — drilldown into a specific user isn't wired. Override the
+   pointer cursor so the affordance matches behaviour. */
+.cd-table-users tbody tr { cursor: default; }
+
+.cd-table-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── States ───────────────────────────────────────────────────── */
+
+.cd-center { text-align: center; padding: 48px 16px; }
+.cd-muted  { color: var(--apai-muted); }
+.cd-error  { color: var(--apai-error); background: var(--apai-error-bg); border-color: #FECACA; }
+
+/* ── Heat strip (24h donut-row in TimeOfDay) ──────────────────── */
+
+.cd-heat-row {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+}
+
+.cd-heat-cell {
+  height: 26px;
+  border-radius: 3px;
+  background: var(--apai-bg-soft);
+  position: relative;
+}
+
+.cd-heat-cell-label {
+  font-size: 9px;
+  color: var(--apai-muted);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -16px;
+}
+
+.cd-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+}
+
+.cd-heat-legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ── Chart container (lib/chart.js renders SVG into this) ─────── */
+
+.cd-chart {
+  width: 100%;
+  position: relative;
+  user-select: none;
+}
+
+.cd-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  padding: 6px 10px;
+  background: rgba(31, 41, 55, 0.95);
+  color: #FFFFFF;
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.cd-chart-tooltip.is-visible { opacity: 1; }
+
+.cd-chart-legend {
+  display: flex;
+  gap: var(--sp-4);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  flex-wrap: wrap;
+}
+
+.cd-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cd-chart-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* SVG primitives — keep stroke widths thin enough that the charts feel
+   like the recharts originals. */
+.cd-chart-axis-line   { stroke: var(--apai-border); stroke-width: 1; fill: none; }
+.cd-chart-grid-line   { stroke: var(--apai-border-soft); stroke-width: 1; fill: none; stroke-dasharray: 2 3; }
+.cd-chart-axis-label  { font-size: 10px; fill: var(--apai-muted); }
+.cd-chart-axis-title  { font-size: 11px; fill: var(--apai-muted); font-weight: var(--fw-medium); }
+.cd-chart-ref-line    { stroke: var(--apai-muted); stroke-width: 1; stroke-dasharray: 4 3; fill: none; }
+
+/* ── Drawer (slide-in side panel) ─────────────────────────────── */
+
+.cd-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 80;
+  opacity: 0;
+  /* CRITICAL: the backdrop element is always mounted (drawer toggles in/out
+     via the `.is-open` class). Without `pointer-events: none` here, the
+     transparent backdrop swallows every click that lands on the dashboard
+     behind it — which looks exactly like a frozen page from the user's
+     side (everything visible, nothing responds). Toggled back to `auto`
+     under `.is-open` so the open drawer's backdrop still dismisses on
+     click. Same fix applied to the modal backdrop below. */
+  pointer-events: none;
+  transition: opacity var(--duration-med) var(--ease-out);
+}
+
+.cd-drawer-backdrop.is-open { opacity: 1; pointer-events: auto; }
+
+.cd-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--apai-bg-elev);
+  border-left: 1px solid var(--apai-border);
+  box-shadow: var(--shadow-3);
+  z-index: 90;
+  transform: translateX(100%);
+  transition: transform var(--duration-med) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+}
+
+.cd-drawer.is-open { transform: translateX(0); }
+
+.cd-drawer-header {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cd-drawer-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-tight);
+}
+.cd-drawer-subtitle {
+  margin: 2px 0 0;
+  font-size: var(--fs-md);
+}
+
+.cd-drawer-body {
+  flex: 1;
+  padding: var(--sp-5);
+  overflow-y: auto;
+}
+
+.cd-drawer-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--apai-muted);
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--rad-sm);
+}
+.cd-drawer-close:hover { color: var(--apai-ink); background: var(--apai-bg-soft); }
+
+/* ── Modal (rules help) ───────────────────────────────────────── */
+
+.cd-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6);
+}
+
+.cd-modal {
+  background: var(--apai-bg-elev);
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-3);
+  max-width: 640px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cd-modal-header {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cd-modal-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  margin: 0;
+}
+
+.cd-modal-body {
+  padding: var(--sp-5);
+  overflow-y: auto;
+}
+
+/* ── Outlier list rows ────────────────────────────────────────── */
+
+.cd-outlier-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cd-outlier-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.cd-outlier-row:hover { background: var(--apai-bg-soft); }
+
+.cd-outlier-rule {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  padding: 1px 6px;
+  border-radius: var(--rad-sm);
+}
+
+.cd-outlier-text {
+  font-size: var(--fs-md);
+  color: var(--apai-ink);
+  line-height: var(--lh-base);
+}
+
+.cd-outlier-meta {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin-top: 2px;
+}
+
+.cd-outlier-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-md);
+}
+
+/* ── Data-source picker (above the filter bar) ──────────────────────
+   The pull-history dropdown, days selector, Pull button, and Download
+   CSVs button. Reuses .cd-select / .cd-btn / .cd-btn-primary from the
+   existing component library. Inline-aligned with no wrapping by default,
+   wraps to a second row on narrow viewports. */
+
+.cd-data-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--apai-bg-elev);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.cd-data-source .cd-field { gap: var(--sp-1); }
+.cd-data-source .cd-field.cd-inline { flex-direction: column; }
+
+/* ── Stores editor row (persisted to chrome.storage.sync) ──────────
+   Lives at the bottom of the data-source toolbar. Each store is a
+   removable chip; "+ Add" adds a store number; "Reset to default"
+   restores the built-in market roster; "Clear all" empties. */
+.cd-stores-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+  margin-top: var(--sp-2);
+  border-top: 1px dashed var(--apai-border);
+}
+.cd-stores-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.cd-store-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  background: var(--apai-info-bg);
+  color: var(--apai-blue-dark);
+  border: 1px solid #BFD8EE;
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+.cd-store-chip-x {
+  background: transparent;
+  border: none;
+  color: var(--apai-blue-dark);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: var(--rad-pill);
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.cd-store-chip-x:hover {
+  opacity: 1;
+  background: rgba(0, 91, 168, 0.15);
+}
+.cd-store-add-input {
+  width: 110px;
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.cd-btn-link {
+  background: transparent;
+  border: none;
+  color: var(--apai-blue-dark);
+  padding: 4px 6px;
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cd-btn-link:hover { background: var(--apai-bg-soft); }
+
+/* ── Pull progress bar (between data-source and filters) ────────────
+   Single horizontal bar, percent + count + current-store label, with a
+   collapsible "details" panel that shows the per-store status grid. */
+
+.cd-progress {
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--apai-bg-elev);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.cd-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.cd-progress-label { font-size: var(--fs-sm); color: var(--apai-ink); }
+.cd-progress-label strong { color: var(--apai-blue); font-weight: var(--fw-semi); }
+
+.cd-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #E5E7EB;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cd-progress-fill {
+  height: 100%;
+  background: var(--apai-blue);
+  border-radius: 4px;
+  transition: width 200ms ease-out;
+}
+
+.cd-progress-current {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  min-height: 1em;
+}
+
+.cd-progress-detailsbox {
+  margin-top: var(--sp-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-1);
+}
+.cd-progress-detail-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 10px;
+  background: var(--apai-bg);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-xs);
+}
+.cd-progress-detail-store {
+  font-family: var(--font-mono, monospace);
+  font-weight: var(--fw-semi);
+}
+.cd-progress-detail-meta { color: var(--apai-muted); }
+.cd-progress-detail-status {
+  padding: 1px 8px;
+  border-radius: var(--rad-pill);
+  font-weight: var(--fw-medium);
+}
+.cd-progress-detail-pending  { background: #F3F4F6; color: var(--apai-muted); }
+.cd-progress-detail-fetching { background: #DBEAFE; color: #1E3A8A; }
+.cd-progress-detail-done     { background: #DCFCE7; color: #14532D; }
+.cd-progress-detail-error    { background: #FEE2E2; color: #7F1D1D; }
+
+/* ── Print stylesheet removed in v0.7.0 ────────────────────────────
+   PDF export now goes through pdfmake (see lib/pdf.js) which produces a
+   designed multi-page report independent of the screen layout. The
+   browser-print path (window.print() + @media print rules) was abandoned
+   because Chrome/Edge appends URL/timestamp headers to "Save as PDF"
+   output and there's no programmatic way to suppress them.
+
+   .cd-no-print is kept as a class hook for any future selective hiding
+   needs but currently has no associated rule — it's a no-op marker. */
+

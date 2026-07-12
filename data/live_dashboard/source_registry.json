@@ -1,0 +1,139 @@
+{
+  "$schema": "./schemas.json#/definitions/SourceRegistry",
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "description": "Per-source manifest for the Live Dashboard module. The module reads this at register() time to know which sources exist, where their handlers live, and what their UI surfaces are. Schema is in schemas.json#/definitions/SourceRegistry.",
+  "sources": [
+    {
+      "id": "absences",
+      "label": "Callouts Today",
+      "primaryUrl": "https://ivrattcloud-prod.wal-mart.com/",
+      "method": "cs-capture",
+      "status": "shipped-subscribe",
+      "reuses": {
+        "module": "closinglist",
+        "contentScript": "modules/closinglist/content/ivr.js",
+        "messageContract": "ivr-absences-collected"
+      },
+      "handlerHints": {
+        "pullHandlerName": "pull_absences",
+        "broadcastsOnComplete": "source_complete"
+      },
+      "widget": {
+        "primaryMetric": "callouts_today",
+        "secondaryMetric": "tardies_today",
+        "drillDownView": "DrillCallouts"
+      },
+      "permissions": {
+        "hosts": ["https://ivrattcloud-prod.wal-mart.com/*"],
+        "needsContentScript": true,
+        "alreadyDeclared": true
+      },
+      "openQuestions": ["A-Q1", "A-Q2", "A-Q3"]
+    },
+    {
+      "id": "compliance",
+      "label": "Compliance Due Soon",
+      "primaryUrl": "https://go.enviance.com/CustomApp/ddde6520-3955-4d83-b0ab-78f6e5cbaf10/index.html",
+      "method": "bg-fetch-probe-required",
+      "status": "probe-required",
+      "panelId": "cd2f57ae-5625-4762-8f88-1d47d915cc54",
+      "systemId": "774d2e17-a8fc-409f-9480-e3fa9310c1c5",
+      "handlerHints": {
+        "pullHandlerName": "pull_compliance",
+        "broadcastsOnComplete": "source_complete"
+      },
+      "widget": {
+        "primaryMetric": "overdue_count",
+        "secondaryMetric": "due_within_7_count",
+        "drillDownView": "DrillCompliance"
+      },
+      "permissions": {
+        "hosts": ["https://go.enviance.com/*"],
+        "needsContentScript": false,
+        "alreadyDeclared": false,
+        "addToManifest": ["host_permissions:https://go.enviance.com/*"]
+      },
+      "openQuestions": ["B-Q1", "B-Q2", "B-Q3", "B-Q4", "B-Q5"]
+    },
+    {
+      "id": "accident",
+      "label": "Accident Evidence Gaps",
+      "primaryUrl": "https://one.walmart.com/content/uswire/en_us/work1/operations/enterprise-safety-hub/accident-prevention/administrative-safety-management-standards/accident-charge-summary.html",
+      "method": "bg-fetch-probe-required",
+      "status": "probe-required",
+      "handlerHints": {
+        "pullHandlerName": "pull_accident",
+        "broadcastsOnComplete": "source_complete",
+        "needsStoreParam": true
+      },
+      "widget": {
+        "primaryMetric": "claims_with_missing_evidence",
+        "secondaryMetric": "high_priority_evidence_gaps",
+        "drillDownView": "DrillEvidence"
+      },
+      "permissions": {
+        "hosts": ["https://one.walmart.com/*"],
+        "needsContentScript": false,
+        "alreadyDeclared": true
+      },
+      "openQuestions": ["C-Q1", "C-Q2", "C-Q3", "C-Q4", "C-Q5"]
+    },
+    {
+      "id": "cvp",
+      "label": "CVP Snapshot",
+      "primaryUrl": "https://hoops.wal-mart.com/ops-portal/metrics/cvp",
+      "backendUrl": "https://api.hoops.wal-mart.com/report-hub/v1/graphql",
+      "method": "bg-fetch-or-tab-script",
+      "status": "pattern-proven",
+      "verifiedBy": "dev/HOOPS_FINDINGS.md",
+      "handlerHints": {
+        "pullHandlerName": "pull_cvp",
+        "broadcastsOnComplete": "source_complete",
+        "needsStoreParam": true,
+        "needsWalmartFiscalWeek": true
+      },
+      "widget": {
+        "primaryMetric": "sellThroughPct",
+        "secondaryMetric": "cvpTotalQty",
+        "drillDownView": "DrillCvp"
+      },
+      "permissions": {
+        "hosts": ["https://*.wal-mart.com/*"],
+        "needsContentScript": false,
+        "alreadyDeclared": true
+      },
+      "openQuestions": ["D-Q1", "D-Q2", "D-Q3", "D-Q4"]
+    },
+    {
+      "id": "register",
+      "label": "Register Exceptions",
+      "primaryUrl": "https://app.powerbi.com/groups/me/reports/65c97d6a-7ad8-498d-b752-69028d408993/ReportSection",
+      "reportId": "65c97d6a-7ad8-498d-b752-69028d408993",
+      "tenantId": "3cbcc3d3-094d-4006-9849-0d11d61f484d",
+      "method": "manual-import-v1-then-cs-capture-v1.5",
+      "status": "pattern-proven",
+      "reuses": {
+        "module": "digitallocks",
+        "contentScript": "modules/digitallocks/content/capture.js",
+        "captureKey": "__APAISUITE_DIGITALLOCKS_CAP"
+      },
+      "handlerHints": {
+        "pullHandlerName": ["pull_register_import", "pull_register_auto"],
+        "broadcastsOnComplete": "source_complete",
+        "analyzeAfterPull": "analyze_register"
+      },
+      "widget": {
+        "primaryMetric": "r1_unmatched_count",
+        "secondaryMetric": "r2_offset_hidden_count",
+        "drillDownView": "DrillRegister"
+      },
+      "permissions": {
+        "hosts": ["https://app.powerbi.com/*", "https://*.pbidedicated.windows.net/*"],
+        "needsContentScript": true,
+        "alreadyDeclared": true
+      },
+      "openQuestions": ["E-Q1", "E-Q2", "E-Q3", "E-Q4", "E-Q5"]
+    }
+  ]
+}

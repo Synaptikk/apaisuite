@@ -1,0 +1,45 @@
+<!-- modules/orcmonitor/view.html -->
+
+<div class="om-header">
+  <div class="om-title-row">
+    <h1>ORC Corridor Monitor</h1>
+    <span id="om-token-badge" class="om-badge om-badge-warn">⏳ Open Auror in Edge to connect</span>
+  </div>
+  <p class="muted">Identifies ORC actors moving toward your store along SE interstate corridors. Scans all 8 SE Business Unit regions.</p>
+</div>
+
+<div class="om-controls card">
+  <label class="field">
+    <span class="field-label">Target Store #</span>
+    <input id="om-store" class="input" type="text" value="1458" maxlength="6" placeholder="e.g. 1458"/>
+  </label>
+  <label class="field">
+    <span class="field-label">Lookback</span>
+    <span class="btn-group">
+      <button class="btn-group-item om-days-btn is-active" data-days="30">30d</button>
+      <button class="btn-group-item om-days-btn" data-days="60">60d</button>
+      <button class="btn-group-item om-days-btn" data-days="90">90d</button>
+    </span>
+  </label>
+  <button id="om-btn-analyze" class="btn btn-primary btn-pill" disabled>Analyze</button>
+  <button id="om-btn-export"  class="btn btn-secondary-sm" disabled>Export PDF</button>
+</div>
+
+<div id="om-progress-bar" class="om-progress-wrap hidden">
+  <div class="om-progress-track">
+    <div id="om-progress-fill" class="om-progress-fill" style="width:0%"></div>
+  </div>
+  <span id="om-progress-label" class="muted" style="font-size:12px"></span>
+</div>
+
+<div id="om-summary-pills" class="cluster" style="margin:6px 0"></div>
+
+<div class="om-main-layout">
+  <div id="om-map" class="om-map-panel"></div>
+  <div class="om-cards-panel">
+    <div id="om-cards-container">
+      <p class="muted" style="padding:24px">Enter a store number and click Analyze.<br><br>
+      <strong>First time?</strong> Make sure Auror is open in Edge — the extension captures your session automatically.</p>
+    </div>
+  </div>
+</div>

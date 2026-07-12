@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "purpose": "Per-store configuration: timezone, label, default roles. Seed file ships empty; entries populate at runtime from the user's gscope/swift recon.",
+    "seeded_from": [
+      "gscope SMC promise API (per endpoints.json#gateway_smc_promise)",
+      "user input in sparkfraud popup (storeId field)"
+    ],
+    "seeded_on": null,
+    "regenerable_via": "POST gscope /api/gateway/smc/promise (per endpoints.json#gateway_smc_promise) returns store record.",
+    "default_store_id": null
+  },
+
+  "stores": {}
+}

@@ -1,0 +1,132 @@
+/* APAISuite design tokens — the only file that defines color, spacing,
+   typography, and motion values. All other CSS uses these custom properties.
+   See docs/DESIGN_SYSTEM.md for the rationale behind each token. */
+
+:root {
+  /* ── Color: brand ───────────────────────────────────────────── */
+  --apai-blue:         #0071CE;
+  --apai-blue-dark:    #005AA8;
+  --apai-blue-darker:  #003E7A;
+  --apai-yellow:       #FFC220;
+  --apai-yellow-dark:  #F5B800;
+
+  /* ── Color: semantic ────────────────────────────────────────── */
+  --apai-success:      #1A7F37;
+  --apai-success-bg:   #E3F5E8;
+  --apai-warn:         #D97706;
+  --apai-warn-bg:      #FEF3C7;
+  --apai-error:        #B91C1C;
+  --apai-error-bg:     #FCEAEA;
+  --apai-info:         #0071CE;
+  --apai-info-bg:      #E8EEF9;
+
+  /* ── Color: neutral ─────────────────────────────────────────── */
+  --apai-ink:          #1A1A1A;
+  --apai-ink-soft:     #374151;
+  --apai-muted:        #6B7280;
+  --apai-border:       #E5E7EB;
+  --apai-border-soft:  #F0F1F4;
+  --apai-bg:           #F6F7F9;
+  --apai-bg-elev:      #FFFFFF;
+  --apai-bg-soft:      #F9FAFB;
+
+  /* ── Color: module accent (default; overridden per-module) ──── */
+  --module-accent:         var(--apai-blue);
+  --module-accent-dark:    var(--apai-blue-dark);
+  --module-accent-darker:  var(--apai-blue-darker);
+  --module-accent-bg:      var(--apai-info-bg);
+
+  /* ── Spacing: 4px scale ─────────────────────────────────────── */
+  --sp-0:  0;
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ── Radius ─────────────────────────────────────────────────── */
+  --rad-sm:   4px;
+  --rad-md:   8px;
+  --rad-lg:   12px;
+  --rad-pill: 999px;
+
+  /* ── Shadow ─────────────────────────────────────────────────── */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.08);
+
+  /* ── Typography ─────────────────────────────────────────────── */
+  --font-sans: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-md:   13px;
+  --fs-base: 14px;
+  --fs-lg:   16px;
+  --fs-xl:   18px;
+  --fs-2xl:  22px;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semi:    600;
+  --fw-bold:    700;
+
+  --lh-tight: 1.25;
+  --lh-base:  1.45;
+  --lh-loose: 1.6;
+
+  /* ── Layout ─────────────────────────────────────────────────── */
+  --shell-header-h:   56px;
+  --shell-sidebar-w:  220px;
+  --shell-sidebar-collapsed-w: 56px;
+
+  /* ── Motion ─────────────────────────────────────────────────── */
+  --duration-fast: 120ms;
+  --duration-med:  200ms;
+  --duration-slow: 300ms;
+  --ease-out:      cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+/* Per-module accent overrides. Add a block here when importing a new module
+   that wants its own accent. See docs/DESIGN_SYSTEM.md::Tokens. */
+.module-aurorbuddy {
+  --module-accent:        #FFC220;
+  --module-accent-dark:   #F5B800;
+  --module-accent-darker: #B7860E;
+  --module-accent-bg:     #FFF8E1;
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────
+   Applied by setting `data-theme="dark"` on <html> (the shell does this
+   on boot based on chrome.storage.sync["shell.theme"]; Settings page
+   toggles it). Only the neutrals + semantic-bg pairs swap — brand blue
+   and yellow are already legible on both light and dark surfaces.
+
+   Component CSS that uses var(--apai-*) automatically inherits the
+   right palette. Any place that uses a hex literal (rgba(0,113,206,…)
+   etc.) needs to be reviewed for dark legibility — search the codebase
+   on theme bring-up and migrate as you find issues. */
+[data-theme="dark"] {
+  --apai-ink:          #F1F5F9;
+  --apai-ink-soft:     #CBD5E1;
+  --apai-muted:        #94A3B8;
+  --apai-border:       #334155;
+  --apai-border-soft:  #1E293B;
+  --apai-bg:           #0F172A;
+  --apai-bg-elev:      #1E293B;
+  --apai-bg-soft:      #172033;
+
+  /* Semantic backgrounds — darker tint, lighter text */
+  --apai-success:      #4ADE80;
+  --apai-success-bg:   #14532D;
+  --apai-warn:         #FBBF24;
+  --apai-warn-bg:      #78350F;
+  --apai-error:        #F87171;
+  --apai-error-bg:     #7F1D1D;
+  --apai-info-bg:      #1E3A5F;
+}

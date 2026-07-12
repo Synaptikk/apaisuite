@@ -1,0 +1,509 @@
+/* modules/sparkfraud/styles.css
+   Adapted from donor extension/app.css.
+   - Selectors scoped under .module-sparkfraud
+   - Color literals swapped to --apai-* tokens (Walmart blue = #0071CE = --apai-blue)
+   - Body/header/main rules dropped (shell owns layout)
+   - Module IDs are sf-* (matches view.html) */
+
+.module-sparkfraud {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.module-sparkfraud .sf-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.module-sparkfraud .sf-header h1 { margin: 0; }
+.module-sparkfraud .sf-header .badge {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+}
+.module-sparkfraud .sf-header .badge.ok  { background: var(--apai-success); color: white; }
+.module-sparkfraud .sf-header .badge.err { background: var(--apai-error);   color: white; }
+
+/* How-to-use modal body — keep readable + scrollable */
+.module-sparkfraud .sf-help-body {
+  max-width: 640px;
+  max-height: 70vh;
+  overflow-y: auto;
+  line-height: var(--lh-base);
+}
+.module-sparkfraud .sf-help-body h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-base);
+  color: var(--apai-blue-dark);
+}
+.module-sparkfraud .sf-help-body h3:first-child { margin-top: 0; }
+.module-sparkfraud .sf-help-body p,
+.module-sparkfraud .sf-help-body ol,
+.module-sparkfraud .sf-help-body ul {
+  font-size: var(--fs-md);
+  margin: 0 0 var(--sp-2);
+}
+.module-sparkfraud .sf-help-body ol,
+.module-sparkfraud .sf-help-body ul {
+  padding-left: var(--sp-5);
+}
+.module-sparkfraud .sf-help-body li { margin-bottom: var(--sp-1); }
+.module-sparkfraud .sf-help-body code {
+  background: var(--apai-bg-soft);
+  padding: 1px 5px;
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-xs);
+}
+
+/* Modal width override — make the help dialog wider than the shared default */
+#sf-help-modal.modal { max-width: 720px; }
+
+/* ── Filter bars (lookup, main, secondary) ─────────────────────── */
+.module-sparkfraud section.sf-filters {
+  background: var(--apai-bg-elev);
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  margin-bottom: var(--sp-3);
+}
+.module-sparkfraud section.sf-filters.sf-lookup {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  background: var(--apai-bg-soft);
+}
+.module-sparkfraud section.sf-filters.sf-secondary {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: center;
+}
+.module-sparkfraud .sf-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
+}
+.module-sparkfraud .sf-row:last-child { margin-bottom: 0; }
+.module-sparkfraud .sf-field-grow { flex: 1; }
+.module-sparkfraud .sf-field-grow .input { width: 100%; }
+
+.module-sparkfraud .sf-viable-toggle {
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+
+/* ── Trip cards (results) ──────────────────────────────────────── */
+.module-sparkfraud .sf-results { padding: 0; }
+.module-sparkfraud .sf-results .hint { color: var(--apai-muted); font-size: var(--fs-md); }
+
+.module-sparkfraud .trip {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+}
+.module-sparkfraud .trip.hidden { display: none; }
+
+.module-sparkfraud .trip-head {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  border-bottom: 1px solid var(--apai-border-soft);
+  align-items: center;
+}
+.module-sparkfraud .trip-head:hover { background: var(--apai-bg-soft); }
+
+.module-sparkfraud .trip-status {
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  background: #E8EEF9;
+  color: var(--apai-blue);
+}
+.module-sparkfraud .trip-status.delayed {
+  background: #FCEAEA;
+  color: var(--apai-error);
+}
+.module-sparkfraud .delayed-flag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 4px;
+  background: #FCEAEA;
+  color: var(--apai-error);
+  border-radius: var(--rad-sm);
+  font-size: 10px;
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.module-sparkfraud .in-store-window {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  margin-left: var(--sp-2);
+  background: #E3F5E8;
+  color: #1D7A3A;
+  border: 1px solid #B8E0C4;
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.module-sparkfraud .in-store-window.missing {
+  background: #F5F5F5;
+  color: #999;
+  border-color: #DDD;
+}
+.module-sparkfraud .in-store-window.in-progress-window {
+  background: #FFF7E6;
+  color: #864E00;
+  border-color: #F0C070;
+}
+
+.module-sparkfraud .trip-driver { font-weight: var(--fw-semi); }
+.module-sparkfraud .trip-driver-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--apai-ink);
+  font-weight: var(--fw-semi);
+  cursor: pointer;
+  text-align: left;
+}
+.module-sparkfraud .trip-driver-btn:hover {
+  color: var(--apai-blue);
+  text-decoration: underline;
+}
+
+/* "+ Watch" button on each trip card — adds driver to watchlist */
+.module-sparkfraud .trip-watch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border);
+  color: var(--apai-blue);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  padding: 3px 8px;
+  border-radius: var(--rad-pill);
+  cursor: pointer;
+}
+.module-sparkfraud .trip-watch:hover {
+  background: var(--apai-info-bg);
+  border-color: var(--apai-blue);
+}
+.module-sparkfraud .trip-watch:disabled {
+  opacity: 0.6;
+  cursor: default;
+  color: var(--apai-success);
+  border-color: var(--apai-success);
+  background: var(--apai-success-bg);
+}
+.module-sparkfraud .trip-driver-oms {
+  font-weight: var(--fw-semi);
+  color: var(--apai-muted);
+  font-style: italic;
+}
+.module-sparkfraud .sf-wl-oms-warn {
+  font-size: var(--fs-xs);
+  color: var(--apai-warn, #b45309);
+  font-weight: var(--fw-semi);
+}
+.module-sparkfraud .sf-wl-oms-row td { opacity: 0.75; }
+
+/* ── Watchlist panel ─────────────────────────────────────────────── */
+.module-sparkfraud .sf-watchlist {
+  padding: 0;
+  margin-bottom: var(--sp-3);
+}
+.module-sparkfraud .sf-watchlist > summary {
+  cursor: pointer;
+  padding: var(--sp-3) var(--sp-4);
+  font-weight: var(--fw-semi);
+  color: var(--apai-blue-dark);
+  list-style: none;
+  user-select: none;
+}
+.module-sparkfraud .sf-watchlist > summary::-webkit-details-marker { display: none; }
+.module-sparkfraud .sf-watchlist > summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: var(--sp-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.module-sparkfraud .sf-watchlist[open] > summary::before { transform: rotate(90deg); }
+
+.module-sparkfraud .sf-watchlist-body {
+  padding: 0 var(--sp-4) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.module-sparkfraud .sf-wl-section-head {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--apai-muted);
+  margin-bottom: var(--sp-1);
+}
+.module-sparkfraud .sf-wl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+}
+.module-sparkfraud .sf-wl-table th {
+  text-align: left;
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  color: var(--apai-muted);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--apai-border);
+}
+.module-sparkfraud .sf-wl-table td {
+  padding: 6px;
+  border-bottom: 1px solid var(--apai-border-soft);
+  vertical-align: middle;
+}
+.module-sparkfraud .sf-wl-table tr:hover td { background: var(--apai-bg-soft); }
+.module-sparkfraud .sf-wl-remove {
+  background: transparent;
+  border: 0;
+  color: var(--apai-error);
+  font-size: var(--fs-lg);
+  cursor: pointer;
+  padding: 0 6px;
+  line-height: 1;
+}
+.module-sparkfraud .sf-wl-remove:hover { background: var(--apai-error-bg); }
+
+.module-sparkfraud .sf-wl-name-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--apai-ink);
+  font-weight: var(--fw-semi);
+  cursor: pointer;
+  text-align: left;
+}
+.module-sparkfraud .sf-wl-name-btn:hover {
+  color: var(--apai-blue);
+  text-decoration: underline;
+}
+
+/* Status pills inside the watchlist tables — color-coded for at-a-glance */
+.module-sparkfraud .sf-wl-status {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #E5E7EB;
+  color: #374151;
+}
+.module-sparkfraud .sf-wl-status-enrouteToPickup,
+.module-sparkfraud .sf-wl-status-atPickup,
+.module-sparkfraud .sf-wl-status-tripInProgress {
+  background: #FCEAEA;
+  color: var(--apai-error);
+}
+.module-sparkfraud .sf-wl-status-completed {
+  background: var(--apai-success-bg);
+  color: var(--apai-success);
+}
+.module-sparkfraud .sf-wl-status-unAssigned,
+.module-sparkfraud .sf-wl-status-courierRequested {
+  background: var(--apai-warn-bg);
+  color: var(--apai-warn);
+}
+
+.module-sparkfraud .sf-wl-actions {
+  margin-top: var(--sp-2);
+}
+.module-sparkfraud .trip-meta   { color: var(--apai-muted); font-size: var(--fs-md); }
+.module-sparkfraud .trip-orders {
+  padding: 4px var(--sp-4) var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--apai-border-soft);
+}
+.module-sparkfraud .trip-orders a.order-link {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  background: #EAF2FB;
+  color: var(--apai-blue);
+  border: 1px solid #C8DCF2;
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+}
+.module-sparkfraud .trip-orders a.order-link:hover { background: #D4E5F7; }
+.module-sparkfraud .order-item-count {
+  font-size: var(--fs-xs);
+  color: #555;
+  font-weight: var(--fw-regular);
+}
+.module-sparkfraud .trip-orders a.order-link.loading { opacity: 0.6; pointer-events: none; }
+.module-sparkfraud .trip-orders a.order-link.loading::after {
+  content: " ⟳";
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+.module-sparkfraud .trip-toggle { margin-left: auto; color: var(--apai-muted); font-size: var(--fs-base); }
+.module-sparkfraud .trip-print {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  padding: 4px 10px;
+  color: var(--apai-muted);
+  border-radius: var(--rad-sm);
+}
+.module-sparkfraud .trip-print:hover { background: #EAF2FB; color: var(--apai-blue); }
+.module-sparkfraud .trip-print-icon { font-size: var(--fs-xl); line-height: 1; }
+.module-sparkfraud .trip:not([data-items-ready]) .trip-print::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.5;
+  animation: sf-pulse 1.4s ease-in-out infinite;
+}
+.module-sparkfraud .trip-print:disabled::after { display: none; }
+@keyframes sf-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50%       { opacity: 0.8; transform: scale(1.1); }
+}
+
+/* ── Items table inside an expanded trip ───────────────────────── */
+.module-sparkfraud .items { padding: var(--sp-2) var(--sp-4) var(--sp-3); display: none; }
+.module-sparkfraud .trip.open .items { display: block; }
+.module-sparkfraud .items table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+.module-sparkfraud .items th,
+.module-sparkfraud .items td {
+  text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--apai-border-soft);
+}
+.module-sparkfraud .items th {
+  color: var(--apai-muted);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+}
+.module-sparkfraud .items img.thumb {
+  width: 50px; height: 50px;
+  object-fit: contain;
+  background: #F0F0F0;
+  border-radius: var(--rad-sm);
+}
+.module-sparkfraud .items div.thumb.placeholder {
+  width: 50px; height: 50px;
+  background: #F0F0F0;
+  border-radius: var(--rad-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #999;
+}
+.module-sparkfraud .items tr.cancelled td {
+  color: #999;
+  text-decoration: line-through;
+}
+.module-sparkfraud .items td.price { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Per-order collapsible block — rendered when a trip has 2+ orders so each
+   customer's items can be expanded independently. First order is open by
+   default; subsequent orders collapsed for scannability. */
+.module-sparkfraud .items details.order-block {
+  border: 1px solid var(--apai-border);
+  border-radius: 4px;
+  margin-bottom: var(--sp-2);
+}
+.module-sparkfraud .items details.order-block:last-child { margin-bottom: 0; }
+.module-sparkfraud .items details.order-block > summary.order-summary {
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-md);
+  background: var(--apai-bg-soft);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.module-sparkfraud .items details.order-block > summary.order-summary::-webkit-details-marker { display: none; }
+.module-sparkfraud .items details.order-block > summary.order-summary::before {
+  content: "▸";
+  color: var(--apai-muted);
+  font-size: 11px;
+  display: inline-block;
+  width: 12px;
+}
+.module-sparkfraud .items details.order-block[open] > summary.order-summary::before { content: "▾"; }
+.module-sparkfraud .items details.order-block > summary.order-summary:hover { background: var(--apai-bg); }
+.module-sparkfraud .items details.order-block[open] > summary.order-summary { border-bottom: 1px solid var(--apai-border); }
+.module-sparkfraud .items details.order-block > table { margin: 0; }
+.module-sparkfraud .items a.item-link {
+  color: var(--apai-blue);
+  text-decoration: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid #C8DCF2;
+  border-radius: var(--rad-sm);
+  background: #EAF2FB;
+}
+.module-sparkfraud .items a.item-link:hover {
+  background: #D4E5F7;
+  text-decoration: underline;
+}
+
+/* ── Errors ────────────────────────────────────────────────────── */
+.module-sparkfraud .error {
+  background: #FCEAEA;
+  color: var(--apai-error);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--rad-sm);
+  margin: var(--sp-3) 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Confidence badges (CANDIDATE-01) ──────────────────────────── */
+.module-sparkfraud .confidence-badge {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: var(--sp-2);
+  vertical-align: middle;
+  cursor: help;
+  color: white;
+}
+.module-sparkfraud .confidence-VERIFIED    { background: #1A7F37; }
+.module-sparkfraud .confidence-LIKELY      { background: #D97706; }
+.module-sparkfraud .confidence-POSSIBLE    { background: #6B7280; }
+.module-sparkfraud .confidence-UNKNOWN     { background: #9CA3AF; }
+.module-sparkfraud .confidence-CONFLICTING { background: #B91C1C; }

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ORC Intelligence Brief — Loading…</title>
+<style>
+  body { margin:0; background:#fff; font-family:'Segoe UI',Arial,sans-serif; }
+  #loading { display:flex;align-items:center;justify-content:center;height:100vh;
+             flex-direction:column;gap:12px;font-size:14px;color:#374151; }
+  .spinner { width:32px;height:32px;border:3px solid #E5E7EB;
+             border-top-color:#003087;border-radius:50%;animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div><div>Building report…</div></div>
+<script src="report.js"></script>
+</body>
+</html>

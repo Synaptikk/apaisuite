@@ -1,0 +1,276 @@
+{
+  "href": "https://app.powerbi.com/groups/me/reports/a118e7e7-9431-4240-b630-04575d36cc37/217785fb10b56ddae020?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi",
+  "iframes": [],
+  "slicerFound": true,
+  "searchInputs": [
+    {
+      "idx": 0,
+      "placeholder": "Search",
+      "ariaLabel": "Global search",
+      "type": "text",
+      "visible": true,
+      "rect": {
+        "x": 756,
+        "y": 14,
+        "w": 400,
+        "h": 20
+      },
+      "outerHtmlSnip": "<input _ngcontent-ng-c4254074700=\"\" data-testid=\"tri-search-box\" type=\"text\" autocomplete=\"off\" placeholder=\"Search\" aria-autocomplete=\"list\" aria-label=\"Global search\" aria-invalid=\"false\" aria-descr"
+    },
+    {
+      "idx": 1,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 2,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 3,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 4,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 5,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 6,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 7,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": true,
+      "rect": {
+        "x": 278.061767578125,
+        "y": 287.80694580078125,
+        "w": 201.6136474609375,
+        "h": 23.391632080078125
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\" style=\"background: rgb(255, 255, 255); color: rgb(37, 36, 35); font-size:"
+    },
+    {
+      "idx": 8,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    },
+    {
+      "idx": 9,
+      "placeholder": "Search",
+      "ariaLabel": "Search",
+      "type": "text",
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "outerHtmlSnip": "<input type=\"text\" aria-label=\"Search\" placeholder=\"Search\" spellcheck=\"false\" class=\"searchInput\" drag-resize-disabled=\"true\">"
+    }
+  ],
+  "optionsBeforeType": [
+    {
+      "idx": 0,
+      "role": "option",
+      "text": "0001",
+      "rawText": "0001"
+    },
+    {
+      "idx": 1,
+      "role": "option",
+      "text": "0002",
+      "rawText": "0002"
+    },
+    {
+      "idx": 2,
+      "role": "option",
+      "text": "0004",
+      "rawText": "0004"
+    },
+    {
+      "idx": 3,
+      "role": "option",
+      "text": "0005",
+      "rawText": "0005"
+    },
+    {
+      "idx": 4,
+      "role": "option",
+      "text": "0008",
+      "rawText": "0008"
+    },
+    {
+      "idx": 5,
+      "role": "option",
+      "text": "0010",
+      "rawText": "0010"
+    },
+    {
+      "idx": 6,
+      "role": "option",
+      "text": "0011",
+      "rawText": "0011"
+    },
+    {
+      "idx": 7,
+      "role": "option",
+      "text": "0012",
+      "rawText": "0012"
+    }
+  ],
+  "optionsAfterType": [
+    {
+      "idx": 0,
+      "role": "option",
+      "text": "0001",
+      "rawText": "0001",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 1,
+      "role": "option",
+      "text": "0002",
+      "rawText": "0002",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 2,
+      "role": "option",
+      "text": "0004",
+      "rawText": "0004",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 3,
+      "role": "option",
+      "text": "0005",
+      "rawText": "0005",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 4,
+      "role": "option",
+      "text": "0008",
+      "rawText": "0008",
+      "ariaSelected": "true",
+      "ariaLabel": null
+    },
+    {
+      "idx": 5,
+      "role": "option",
+      "text": "0010",
+      "rawText": "0010",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 6,
+      "role": "option",
+      "text": "0011",
+      "rawText": "0011",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    },
+    {
+      "idx": 7,
+      "role": "option",
+      "text": "0012",
+      "rawText": "0012",
+      "ariaSelected": "false",
+      "ariaLabel": null
+    }
+  ],
+  "sampleOptionDom": "<div class=\"slicerItemContainer\" tabindex=\"0\" role=\"option\" aria-selected=\"false\" aria-setsize=\"100\" title=\"0001\" aria-posinset=\"1\" data-row-index=\"1\" data-row-id=\"0:1\" style=\"margin-left: 0px; padding-top: 4px; padding-bottom: 4px;\"><div class=\"slicerCheckbox\" aria-hidden=\"true\"><span class=\"glyphicon radiobutton checkboxOutlineContrast\" style=\"font-size: 16px;\"></span></div><span class=\"slicerText\" style=\"color: rgb(37, 36, 35); border-style: solid; border-color: rgb(96, 94, 92); border-width: 0px; font-size: 16px; font-family: &quot;Segoe UI&quot;, wf_segoe-ui_normal, helvetica, arial, sans",
+  "typedInto": {
+    "idx": 0,
+    "placeholder": "Search",
+    "ariaLabel": "Global search"
+  },
+  "error": null,
+  "log": [
+    "iframes on page: 0",
+    "unfiltered visible options: 8",
+    "typed \"1458\" into search input #0",
+    "filtered visible options: 8"
+  ]
+}

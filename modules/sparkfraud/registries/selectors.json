@@ -1,0 +1,95 @@
+{
+  "_meta": {
+    "purpose": "Fragile DOM selectors that drive the gscope/swift SPA from inside extension content scripts. Registered here so selector drift surfaces in one place instead of as silent runtime failures.",
+    "seeded_from": [
+      "extension/background.js:146,155-161,174,190,236,247,324,334",
+      "notes/puppeteering_playbook.md (Material-UI selector survival kit)"
+    ],
+    "seeded_on": "2026-05-22",
+    "policy": "When a selector changes, update this file FIRST, then the consumer. Each entry should carry primary + fallback + last_verified."
+  },
+
+  "dispatcher_global_search": {
+    "purpose": "The Global Search affordance on the Dispatcher Trip Dashboard.",
+    "icon_trigger": {
+      "primary": "[title=\"Global Search\"]",
+      "fallback": [],
+      "confidence": "LIKELY",
+      "drift_risk": "MEDIUM — title attribute is locale-dependent and may change with i18n.",
+      "owner_file": "extension/background.js:146",
+      "last_verified": "pre-2026-05-22"
+    },
+    "search_input": {
+      "_strategy": "First try the 'only visible input' heuristic; if multiple, fall back to TextField-module class-substring match.",
+      "primary": "input[type=\"text\"] (filtered by offsetParent !== null, must be the only one visible)",
+      "fallback": "input[class*=\"TextField-module_input\"]",
+      "confidence": "LIKELY",
+      "drift_risk": "HIGH — TextField-module is a Material UI build-hash class. Walmart frontend rebuilds may invalidate the substring.",
+      "owner_file": "extension/background.js:155-161",
+      "last_verified": "pre-2026-05-22"
+    },
+    "search_submit": {
+      "primary": "button with textContent matching /^search$/i",
+      "fallback": "Enter keypress on the search input",
+      "confidence": "LIKELY",
+      "drift_risk": "MEDIUM — label-text dependent.",
+      "owner_file": "extension/background.js:174-182"
+    },
+    "in_orders_disambiguation": {
+      "_purpose": "After a Global Search matches both phone numbers and order numbers, Walmart shows a disambiguation modal with 'In phone | In orders'. We always want In orders.",
+      "primary": "button with textContent matching /^in\\s*orders?$/i",
+      "fallback": [],
+      "confidence": "LIKELY",
+      "drift_risk": "MEDIUM — label-text dependent.",
+      "owner_file": "extension/background.js:190-196",
+      "modal_timeout_ms": 7000
+    }
+  },
+
+  "order_resolution": {
+    "purpose": "Order Resolution 2.0 page at /mfe/ordermanagement/orderresolution.",
+    "orderno_input": {
+      "primary": "input[name=\"orderNo\"]",
+      "fallback": [],
+      "confidence": "VERIFIED",
+      "drift_risk": "LOW — name attribute is one of the few stable identifiers in the gscope SPA.",
+      "owner_files": ["extension/background.js:236", "extension/background.js:324"]
+    },
+    "view_details_button": {
+      "primary": "button with textContent matching /view\\s*details/i",
+      "fallback": [],
+      "confidence": "LIKELY",
+      "drift_risk": "MEDIUM — label-text dependent.",
+      "owner_files": ["extension/background.js:247", "extension/background.js:334"]
+    }
+  },
+
+  "spa_environment": {
+    "_purpose": "Environmental selectors / known third-party extension footprints that affect SparkFraud automation. Not DOM selectors but stable identifiers we need to recognise.",
+    "postman_interceptor_extension_id": {
+      "id": "ehghoapnlpepjmfbgaomdiilchcjemak",
+      "purpose": "When this extension is installed, it intercepts fetch from injected scripts and fails them if Postman desktop isn't running. Detected via 'ajaxRequestInterceptor.ps.js' in stack traces.",
+      "mitigation": "Launch Edge with --disable-extensions for automation; for production extension use Playwright context.request or in-tab fetch via executeScript.",
+      "owner_doc": "notes/puppeteering_playbook.md (Postman Interceptor blocks injected XHR/fetch)"
+    },
+    "edge_extensions_page": {
+      "url": "edge://extensions/",
+      "behavior": "Privileged page — Playwright evaluate() and shadow-DOM walks return nothing. Do NOT try to drive it.",
+      "mitigation": "Build chrome.runtime.reload() into the extension UI (#dev-reload in app.html). Playwright clicks #dev-reload to reload the whole extension.",
+      "owner_doc": "notes/puppeteering_playbook.md (edge://extensions/ is locked down)"
+    }
+  },
+
+  "react_controlled_input_pattern": {
+    "_purpose": "Not a selector but a write-pattern. Setting input.value directly does not fire React's onChange. Documented here so it's not re-discovered.",
+    "pattern": [
+      "const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;",
+      "setter.call(input, value);",
+      "input.dispatchEvent(new Event('input',  {bubbles: true}));",
+      "input.dispatchEvent(new Event('change', {bubbles: true}));"
+    ],
+    "confidence": "VERIFIED",
+    "applies_to": "All in-tab executeScript-driven form fills. Playwright fill() handles this automatically.",
+    "owner_files": ["extension/background.js:166-170", "extension/background.js:240-243", "extension/background.js:327-330"]
+  }
+}

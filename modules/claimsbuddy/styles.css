@@ -1,0 +1,212 @@
+/* modules/claimsbuddy/styles.css
+   Adapted from donor extension/app.css.
+   - All selectors scoped under .module-claimsbuddy (shell wraps the
+     container in that class, so the module's CSS can no longer reach
+     the shell's <body>, <header>, <main>, .pill, .badge, etc.)
+   - Donor :root palette moved INSIDE .module-claimsbuddy so the --wm-*
+     custom properties don't pollute the global namespace
+   - * box-sizing / html, body / body / bare <header> / bare <main>
+     unscoped rules removed (shell owns those)
+   - Color literals kept as-is for now — token swap to --apai-* is a
+     separate Stage 2 pass (see aurorbuddy/styles.css for the target) */
+
+.module-claimsbuddy {
+  --wm-yellow:     #ffc220;
+  --wm-yellow-ink: #1a1a1a;
+  --wm-blue:       #0053e2;
+  --wm-blue-h:     #003fb1;
+  --green:         #2a8703;
+  --red:           #ea1100;
+  --amber:         #b88300;
+  --muted:         #6b7280;
+  --border:        #e5e7eb;
+  --bg:            #f3f4f6;
+  --card:          #ffffff;
+  --ink:           #1a1a1a;
+}
+
+.module-claimsbuddy header {
+  padding: 14px 28px;
+  background: var(--wm-yellow);
+  color: var(--wm-yellow-ink);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.module-claimsbuddy header h1 {
+  margin: 0; font-size: 18px; font-weight: 700;
+  letter-spacing: -0.01em; color: var(--wm-yellow-ink);
+}
+.module-claimsbuddy .subtitle { font-size: 13px; opacity: 0.72; }
+
+.module-claimsbuddy main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 28px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.module-claimsbuddy .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.module-claimsbuddy .card h2 {
+  margin: 0 0 12px;
+  font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.module-claimsbuddy .card h2 .step {
+  display: inline-block;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--wm-blue); color: white;
+  text-align: center; line-height: 22px; font-size: 12px; font-weight: 700;
+}
+.module-claimsbuddy .hidden { display: none !important; }
+
+.module-claimsbuddy .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.module-claimsbuddy .row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.module-claimsbuddy .row input[type="text"] {
+  font: inherit; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px; background: white;
+  min-width: 140px;
+}
+.module-claimsbuddy .row input[type="text"]:focus {
+  outline: 2px solid var(--wm-blue);
+  outline-offset: -1px;
+  border-color: var(--wm-blue);
+}
+
+.module-claimsbuddy button.primary {
+  background: var(--wm-blue); color: white;
+  border: none; padding: 9px 16px; border-radius: 6px;
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.module-claimsbuddy button.primary:hover  { background: var(--wm-blue-h); }
+.module-claimsbuddy button.primary:disabled { opacity: 0.5; cursor: wait; }
+
+.module-claimsbuddy .muted { color: var(--muted); font-size: 12px; }
+.module-claimsbuddy .muted.error { color: var(--red); }
+
+.module-claimsbuddy .source-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.module-claimsbuddy .pill {
+  display: inline-block;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 500;
+  background: #eef0f3; color: var(--muted); border: 1px solid var(--border);
+}
+.module-claimsbuddy .pill.ok    { background: #e7f7e1; color: var(--green); border-color: #cfeec4; }
+.module-claimsbuddy .pill.warn  { background: #fff5cc; color: var(--amber); border-color: #ffe999; }
+.module-claimsbuddy .pill.error { background: #fde6e3; color: var(--red);   border-color: #f7c6c0; }
+.module-claimsbuddy .pill.busy  { background: #e3edff; color: var(--wm-blue); border-color: #c8dbff; }
+
+.module-claimsbuddy .section-title {
+  font-size: 13px; font-weight: 600;
+  margin: 18px 0 6px; color: var(--ink);
+}
+
+
+.module-claimsbuddy table.claims { width: 100%; border-collapse: collapse; font-size: 13px; }
+.module-claimsbuddy table.claims th,
+.module-claimsbuddy table.claims td {
+  text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); vertical-align: top;
+}
+.module-claimsbuddy table.claims th { font-weight: 600; color: var(--muted); background: #fafafa; }
+
+.module-claimsbuddy .missing { color: var(--red); font-weight: 600; }
+.module-claimsbuddy .present { color: var(--green); }
+
+.module-claimsbuddy .deadline-warn { color: var(--amber); font-weight: 600; }
+.module-claimsbuddy .deadline-late { color: var(--red);   font-weight: 700; }
+
+.module-claimsbuddy .ext-footer {
+  text-align: center; color: var(--muted); font-size: 12px;
+  padding: 14px; border-top: 1px solid var(--border);
+}
+.module-claimsbuddy .ext-footer a { color: var(--wm-blue); text-decoration: none; }
+
+/* ─── Tabs ─────────────────────────────────────────────────────────────── */
+
+.module-claimsbuddy .tab-nav {
+  display: flex; gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: -2px;
+}
+.module-claimsbuddy .tab-btn {
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 18px; margin-bottom: -2px;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--muted); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.module-claimsbuddy .tab-btn:hover  { color: var(--ink); }
+.module-claimsbuddy .tab-btn.active {
+  color: var(--wm-blue);
+  border-bottom-color: var(--wm-blue);
+}
+
+/* ─── Sync bar ──────────────────────────────────────────────────────────── */
+
+.module-claimsbuddy .sync-bar {
+  display: flex; align-items: center; gap: 10px; margin-left: auto;
+}
+.module-claimsbuddy button.secondary {
+  background: white; color: var(--ink);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 12px; font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.module-claimsbuddy button.secondary:hover    { border-color: var(--wm-blue); color: var(--wm-blue); }
+.module-claimsbuddy button.secondary:disabled { opacity: 0.5; cursor: wait; }
+
+/* ─── Status badges ─────────────────────────────────────────────────────── */
+
+.module-claimsbuddy .badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+}
+.module-claimsbuddy .badge-ok   { background: #e7f7e1; color: var(--green);   border: 1px solid #cfeec4; }
+.module-claimsbuddy .badge-warn { background: #fff5cc; color: var(--amber);   border: 1px solid #ffe999; }
+.module-claimsbuddy .badge-late { background: #fde6e3; color: var(--red);     border: 1px solid #f7c6c0; }
+
+/* ─── Adjuster cell ─────────────────────────────────────────────────────── */
+
+.module-claimsbuddy .adj-cell { display: flex; flex-direction: column; gap: 2px; min-width: 180px; }
+.module-claimsbuddy .adj-name  { font-weight: 600; font-size: 12px; }
+.module-claimsbuddy .adj-email { font-size: 11px; color: var(--wm-blue); text-decoration: none; }
+.module-claimsbuddy .adj-email:hover { text-decoration: underline; }
+.module-claimsbuddy .adj-phone { font-size: 11px; color: var(--muted); }
+
+/* ─── Section divider ───────────────────────────────────────────────────── */
+
+.module-claimsbuddy .section-divider {
+  height: 2px;
+  background: var(--border);
+  margin: 18px 0;
+  border-radius: 1px;
+}
+.module-claimsbuddy .section-title--warn { color: var(--amber); }
+
+/* ─── Claimant copy-to-clipboard ────────────────────────────────────────── */
+
+.module-claimsbuddy .claim-copy {
+  color: var(--wm-blue);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--wm-blue);
+}
+.module-claimsbuddy .claim-copy:hover { text-decoration: none; border-bottom-style: solid; }
+.module-claimsbuddy .claim-copy-flash {
+  background: #fff5cc;
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+  border-radius: 3px;
+  padding: 1px 4px;
+}

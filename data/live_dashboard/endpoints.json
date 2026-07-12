@@ -1,0 +1,159 @@
+{
+  "$schema": "./schemas.json#/definitions/EndpointMap",
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "description": "Per-source endpoint contracts. 'verification' is V (verified by live probe), I (inferred from analog), or U (unknown — probe required). See docs/live_dashboard_backend/ENDPOINTS.md for prose.",
+  "endpoints": {
+    "absences": {
+      "verification": "V",
+      "interaction": "Multi-page WebForms flow, scraped by existing content script. No single endpoint — the data is in the DOM after the flow completes.",
+      "rootUrl": "https://ivrattcloud-prod.wal-mart.com/",
+      "pageStates": ["menu", "criteria", "absence-table"],
+      "scrapeTarget": "#ailTable_1",
+      "messageContract": {
+        "outbound": {
+          "module": "closinglist",
+          "type": "ivr-absences-collected",
+          "schema": "DATA_CONTRACTS.md#absences"
+        },
+        "inbound": ["ivr-ping", "ivr-progress-now", "ivr-scrape-now"]
+      },
+      "auth": {
+        "mode": "browser-managed",
+        "scope": "ivrattcloud-prod.wal-mart.com",
+        "notes": "User signs into IVR via normal browser. Extension uses content script in logged-in tab. No headers/cookies handled by extension code."
+      },
+      "knownIssues": [
+        "Web farm rejects ~50% of POSTs with ViewState MAC error. Retry up to 5 times built into existing content script."
+      ]
+    },
+    "compliance": {
+      "verification": "U",
+      "url": "https://go.enviance.com/Service/<TBD>/<TBD>",
+      "method": "POST (inferred)",
+      "contentType": "application/json (inferred)",
+      "auth": {
+        "mode": "browser-managed",
+        "scope": ".enviance.com",
+        "notes": "Probe needed to confirm whether SameSite allows cross-origin cookie carry from chrome-extension://"
+      },
+      "requestShape": {
+        "panelId": "<panel UUID from URL fragment>",
+        "facility": "<storeNbr left-padded e.g. 01458>",
+        "filters": {}
+      },
+      "responseShape": {
+        "rows": [
+          {
+            "facility": "string",
+            "dueDate": "ISO date",
+            "taskName": "string",
+            "assignedGroups": ["string"]
+          }
+        ]
+      },
+      "probeChecklist": [
+        "Open URL in remote-debug Edge",
+        "DevTools Network preserve log",
+        "Reload, wait for task list to render",
+        "Identify JSON XHR containing 'Weekly Eyewash Inspection' (or any taskName visible)",
+        "Capture URL, method, body, required header names",
+        "Save to dev/probe-enviance.mjs + dev/ENVIANCE_FINDINGS.md"
+      ]
+    },
+    "accident": {
+      "verification": "U",
+      "url": "https://one.walmart.com/content/uswire/en_us/work1/operations/enterprise-safety-hub/accident-prevention/administrative-safety-management-standards/accident-charge-summary.html",
+      "method": "POST or GET (probe to confirm)",
+      "auth": {
+        "mode": "browser-managed",
+        "scope": ".walmart.com",
+        "notes": "Same SAML SSO as other one.walmart.com pages"
+      },
+      "requestShape": {
+        "storeNbr": "1458"
+      },
+      "responseShape": {
+        "type": "HTML or JSON — probe to determine",
+        "tables": [
+          {
+            "name": "Bodily Injury Evidence Report",
+            "columns": ["Reference Nbr", "Claimant", "Tracking #", "Days since claim Open", "Customer Statement", "Witness Statement", "Video", "Photos", "Evidence Collection Sheet", "Evidence Status", "Enhanced Export?"]
+          },
+          {
+            "name": "Garage Keeper - Property Damage Evidence Report",
+            "columns": ["Reference Nbr", "Claimant", "Tracking #", "Days since claim Open", "Customer Statement", "Witness Statement", "Video", "Photos", "Evidence Collection Sheet", "Evidence Status", "Enhanced Export?"]
+          }
+        ]
+      },
+      "probeChecklist": [
+        "Load page in remote-debug Edge",
+        "Enter store 1458, click Go",
+        "Capture network — identify whether response is full HTML or JSON XHR",
+        "If JSON, capture endpoint + request body shape",
+        "If HTML, plan CSS-selector path for table rows",
+        "Save to dev/probe-accident-evidence.mjs + dev/ACCIDENT_EVIDENCE_FINDINGS.md"
+      ]
+    },
+    "cvp": {
+      "verification": "V-market-I-store",
+      "url": "https://api.hoops.wal-mart.com/report-hub/v1/graphql",
+      "method": "POST",
+      "contentType": "application/json",
+      "auth": {
+        "mode": "browser-managed",
+        "scope": ".wal-mart.com",
+        "notes": "Cross-origin cookie behavior from chrome-extension:// unverified — see dev/HOOPS_FINDINGS.md open Q1"
+      },
+      "queryPerStore": "query { result: cvpBuTypeBuIdWeekDeptGroupGet(where: { and: [{storeNbr: {eq: <storeNbr-int>}}, {wmWeekNbr: {eq: <wmWeek>}}, {buType: {eq: 6}}, {deptGroupNbr: {eq: 2}}] }) { storeNbr wmWeekNbr deptGroupNbr firstCvpQty_Ty454 cvpToCvpQty_Ty454 cvpTotalQty_Ty454 cvpSalesQty_Ty454 cvpSalesRetailAmt_Ty454 } }",
+      "queryPerMarket": "see dev/HOOPS_FINDINGS.md",
+      "responseShape": {
+        "data": {
+          "result": [
+            {
+              "storeNbr": "number",
+              "wmWeekNbr": "number",
+              "deptGroupNbr": "number",
+              "firstCvpQty_Ty454": "number",
+              "cvpToCvpQty_Ty454": "number",
+              "cvpTotalQty_Ty454": "number",
+              "cvpSalesQty_Ty454": "number",
+              "cvpSalesRetailAmt_Ty454": "string (numeric)"
+            }
+          ]
+        }
+      },
+      "derivations": {
+        "sellThroughPct": "(cvpSalesQty_Ty454 / cvpTotalQty_Ty454) * 100"
+      }
+    },
+    "register": {
+      "verification": "I",
+      "interaction": "Two paths: V1 manual XLSX import, V1.5 automated capture (mirror of digitallocks pattern).",
+      "v1": {
+        "method": "manual-import",
+        "userAction": "Click Export → Excel in Power BI, drag .xlsx into dashboard",
+        "parserPlan": {
+          "detectDateColumns": "Row 1 cells matching date regex",
+          "detectRegisterRows": "First column cells parseable as register numbers",
+          "parseCells": "Signed dollar amount (negative = short, positive = over). Blank = no transaction.",
+          "preserveTotals": "Totals row stored separately, NOT included in normalized rows",
+          "leadingZeros": "Register numbers stored as strings"
+        }
+      },
+      "v1_5": {
+        "method": "cs-capture",
+        "captureScript": "modules/digitallocks/content/capture.js (extend with second matcher)",
+        "endpointPattern": "POST https://<tenantUuid>.pbidedicated.windows.net/<...>/QES/QueryExecutionService/<...>/query",
+        "signatureToProbe": "Body contains a Property name matching the register column (e.g. 'Register', 'Register Number') AND a date property",
+        "drillThroughQuery": "Separate DAX query fired on cell click, captures operator detail",
+        "openQuestion": "Exact property names — see OPEN_QUESTIONS.md#E-Q1"
+      },
+      "auth": {
+        "mode": "browser-managed-plus-bearer",
+        "scope": "Power BI tenant scope (capture-and-replay only; bearer never decoded or stored)",
+        "notes": "See SECURITY_NOTES.md#Power BI for bearer-token handling rules"
+      }
+    }
+  }
+}

@@ -1,0 +1,244 @@
+/* modules/assocpurchases/styles.css
+   All selectors scoped under .module-assocpurchases (applied by shell). */
+
+.module-assocpurchases {
+  --ap-accent: var(--module-accent, #e07b00);
+}
+
+.module-assocpurchases .ap-workflow-note {
+  background: #e8f4fd;
+  border: 1px solid #b3d7f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: #1a4a6e;
+}
+
+.module-assocpurchases .ap-workflow-note ol {
+  margin: 6px 0 0 16px;
+  padding: 0;
+}
+
+.module-assocpurchases .ap-workflow-note li { margin: 2px 0; }
+
+.module-assocpurchases .ap-btn-secondary {
+  background: #fff;
+  color: var(--ap-accent);
+  border: 1.5px solid var(--ap-accent);
+}
+
+.module-assocpurchases .ap-btn-secondary:hover:not(:disabled) { background: #fff8f0; }
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-root {
+  padding: 16px 20px;
+  max-width: 1200px;
+  font-family: var(--apai-font, system-ui, sans-serif);
+}
+
+.module-assocpurchases .ap-header { margin-bottom: 16px; }
+
+.module-assocpurchases .ap-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--ap-accent);
+}
+
+.module-assocpurchases .ap-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--apai-muted, #666);
+}
+
+/* ── Controls bar ─────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--apai-surface, #f8f8f8);
+  border-radius: 8px;
+  border: 1px solid var(--apai-border, #ddd);
+}
+
+.module-assocpurchases .ap-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--apai-label, #555);
+  gap: 4px;
+}
+
+.module-assocpurchases .ap-input {
+  padding: 6px 8px;
+  border: 1px solid var(--apai-border, #ccc);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-width: 120px;
+  background: #fff;
+}
+
+.module-assocpurchases .ap-input:focus {
+  outline: 2px solid var(--ap-accent);
+  outline-offset: 1px;
+}
+
+.module-assocpurchases input[type="number"].ap-input { width: 80px; }
+.module-assocpurchases input[type="date"].ap-input   { width: 140px; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-btn {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+
+.module-assocpurchases .ap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.module-assocpurchases .ap-btn-primary {
+  background: var(--ap-accent);
+  color: #fff;
+}
+
+.module-assocpurchases .ap-btn-primary:hover:not(:disabled) { opacity: 0.85; }
+
+/* ── Status / progress ────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-status {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  margin-bottom: 14px;
+  background: #fff8e1;
+  border: 1px solid #f0c060;
+  color: #5a3e00;
+}
+
+/* ── Error ────────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-error {
+  padding: 12px 16px;
+  background: #fff0f0;
+  border: 1px solid #f5a0a0;
+  border-radius: 6px;
+  color: #8b0000;
+  font-size: 0.88rem;
+  margin-top: 14px;
+  white-space: pre-wrap;
+}
+
+/* ── Summary chips ────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.module-assocpurchases .ap-chip {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--apai-surface, #eee);
+  color: var(--apai-text, #333);
+}
+
+.module-assocpurchases .ap-chip-alert { background: #ffe0e0; color: #8b0000; }
+.module-assocpurchases .ap-chip-ok    { background: #e0ffe0; color: #005a00; }
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-section {
+  margin-bottom: 28px;
+}
+
+.module-assocpurchases .ap-section-minor { opacity: 0.75; }
+
+.module-assocpurchases .ap-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.module-assocpurchases .ap-section-desc {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--apai-muted, #666);
+}
+
+/* ── Badges ───────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--ap-accent);
+  color: #fff;
+  min-width: 22px;
+  text-align: center;
+}
+
+.module-assocpurchases .ap-badge-pending { background: #aaa; }
+.module-assocpurchases .ap-badge-neutral { background: #5a7fa0; }
+.module-assocpurchases .ap-badge-zero    { background: #4caf50; }
+
+/* ── Table ────────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-table-wrap {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid var(--apai-border, #ddd);
+}
+
+.module-assocpurchases .ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.module-assocpurchases .ap-table th {
+  background: var(--apai-surface, #f4f4f4);
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--apai-border, #ddd);
+  white-space: nowrap;
+}
+
+.module-assocpurchases .ap-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--apai-border-light, #eee);
+  vertical-align: top;
+}
+
+.module-assocpurchases .ap-table tr:last-child td { border-bottom: none; }
+
+.module-assocpurchases .ap-table tr:hover td { background: #fafafa; }
+
+.module-assocpurchases .ap-row-alert td { background: #fff5f5; }
+
+.module-assocpurchases .ap-name    { font-weight: 600; }
+.module-assocpurchases .ap-win     { color: var(--apai-muted, #888); font-size: 0.82rem; }
+.module-assocpurchases .ap-amount  { text-align: right; font-variant-numeric: tabular-nums; }
+.module-assocpurchases .ap-count   { text-align: center; }
+
+/* ── Misc ─────────────────────────────────────────────────────────────────── */
+.module-assocpurchases .ap-hidden  { display: none !important; }
+.module-assocpurchases .ap-empty   { padding: 12px 14px; color: var(--apai-muted, #888); margin: 0; }
+.module-assocpurchases .ap-muted   { color: var(--apai-muted, #999); }
+
+.module-assocpurchases .ap-unmatched-list {
+  font-size: 0.82rem;
+  color: var(--apai-muted, #888);
+  padding: 6px 0;
+}

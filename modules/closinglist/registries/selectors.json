@@ -1,0 +1,97 @@
+{
+  "$schema_version": "1.0.0",
+  "last_updated": "2026-05-22",
+  "reconArtifact": "casevisibility-recon-2026-05-22T19-42-08-399Z.json",
+  "notes": "Selectors registry. Populated from recon artifact 2026-05-22. Most associate-data selectors are intentionally not listed because the API (endpoints.json::main_init) returns the data directly and is preferred over DOM scraping.",
+  "selectors": {
+    "search.storeNumberInput": {
+      "purpose": "Store number entry.",
+      "primarySelector": "#inpStoreNbr",
+      "fallbackSelector": "input[type=number]:near(label:contains('Store'))",
+      "elementType": "input[type=number]",
+      "valueProperty": "value",
+      "changeEvent": "input",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22 + click events 8089ms/9010ms",
+      "lastVerified": "2026-05-22",
+      "notes": "Stable ID. Value can be set with .value = and a dispatched 'input' event."
+    },
+    "search.dateInput": {
+      "purpose": "Business date entry (default today).",
+      "primarySelector": "#inpDate",
+      "fallbackSelector": "input[type=date]",
+      "elementType": "input[type=date]",
+      "format": "YYYY-MM-DD",
+      "changeEvent": "change",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22",
+      "lastVerified": "2026-05-22",
+      "notes": "Native HTML5 date input. valueLength=10 confirms ISO YYYY-MM-DD."
+    },
+    "search.submitButton": {
+      "purpose": "Triggers the search.",
+      "primarySelector": "#btnGo",
+      "fallbackSelector": "button.btn-outline-dark.btn-sm.fw-bold:contains('Search')",
+      "triggerStrategy": "element.click()",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon click at 10039ms",
+      "lastVerified": "2026-05-22"
+    },
+    "results.associateScheduleToggle": {
+      "purpose": "Show/hide button for the Associate Schedule region.",
+      "primarySelector": "#btnAssocSchedShowOrHide",
+      "fallbackSelector": null,
+      "confidence": 0.9,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22",
+      "lastVerified": "2026-05-22",
+      "notes": "May need to be clicked once if the section is hidden; check display state first."
+    },
+    "section.repeatingBlock": {
+      "purpose": "Per-task-area container holding section header, counts, and 'Assign Tasks...' link.",
+      "primarySelector": "div[id^='divAssocSched']",
+      "fallbackSelector": null,
+      "indexingPattern": "divAssocSched{row}{col} where row=0..3, col=0..3",
+      "confidence": 0.9,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22",
+      "lastVerified": "2026-05-22",
+      "notes": "15 task areas observed in the test run; layout is a 4x4 grid (Fitting Room TA at 32; not all 16 cells populated)."
+    },
+    "section.assignTasksLink": {
+      "purpose": "Opens the Assign Tasks panel for a section.",
+      "primarySelector": "div[id^='divAssocSched'] a.fw-bold.pl3",
+      "fallbackSelector": "a:contains('Assign Tasks...')",
+      "confidence": 0.85,
+      "status": "VERIFIED",
+      "source": "recon click events at 21310ms and 26538ms (divAssocSched10, divAssocSched21)",
+      "lastVerified": "2026-05-22",
+      "notes": "NOT REQUIRED for extraction. The associate data is available from the Main.ashx API. This selector is recorded for completeness only."
+    },
+    "section.writeInCountInput": {
+      "purpose": "User-editable write-in count for a task area.",
+      "primarySelector": "input[id$='_write_in_assoc']",
+      "fallbackSelector": null,
+      "idPattern": "{TAName}_write_in_assoc",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22",
+      "lastVerified": "2026-05-22",
+      "notes": "TAName values: Stocking2TA, OvernightTA, OvernightMaintenance, Stocking1TA, FashionTA, FashionStockingTA, Meat-ProduceTA, Deli-BakeryTA, FoodTA, SeasonalTA, EntertainmentTA, Health&BeautyTA, HardlinesTA, HomelinesTA, FittingRoomTA. Note unescaped & in 'Health&BeautyTA' — use attribute selector form '[id=\"Health&BeautyTA_write_in_assoc\"]'."
+    },
+    "section.callOffCountInput": {
+      "purpose": "User-editable call-off count for a task area.",
+      "primarySelector": "input[id$='_call_off_assoc']",
+      "fallbackSelector": null,
+      "idPattern": "{TAName}_call_off_assoc",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon snapshot 2026-05-22",
+      "lastVerified": "2026-05-22",
+      "notes": "These are NUMERIC AGGREGATE inputs the user fills in on the page, not per-associate flags. Per-associate call-off detection should rely on schedule_changes / scheduled_associates row fields from the API instead."
+    }
+  }
+}

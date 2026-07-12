@@ -1,0 +1,92 @@
+<!-- modules/closinglist/view.html
+     Markup template loaded into the shell viewport when the user navigates
+     to #/closinglist. view.js fetches this file at mount time.
+     All selectors are descendants of .module-closinglist (the wrapping
+     <div> the shell adds), so styles in styles.css stay scoped. -->
+
+<div class="cl-header">
+  <h1>ClosingList</h1>
+  <p class="muted">Closing-shift email draft from CaseVisibility schedule + IVR call-offs.</p>
+</div>
+
+<section class="card cl-config">
+  <div class="cl-grid">
+    <label class="field">
+      <span class="field-label">Store</span>
+      <input id="cl-storeNbr" class="input" type="number" min="1">
+    </label>
+    <label class="field">
+      <span class="field-label">Date</span>
+      <input id="cl-businessDate" class="input" type="date">
+    </label>
+    <label class="field cl-field-grow">
+      <span class="field-label">Email to</span>
+      <input id="cl-recipient" class="input" type="email" placeholder="name@walmart.com">
+    </label>
+  </div>
+</section>
+
+<details class="card cl-filters">
+  <summary>Filters</summary>
+  <div class="cl-filter-body">
+    <div class="cl-grid">
+      <label class="field">
+        <span class="field-label">Start hour ≥</span>
+        <input id="cl-startHour" class="input" type="number" min="0" max="23">
+      </label>
+      <label class="field">
+        <span class="field-label">End hour ≥</span>
+        <input id="cl-endHour" class="input" type="number" min="0" max="23">
+      </label>
+    </div>
+    <label class="check">
+      <input id="cl-excludeOvernight" type="checkbox">
+      <span>Exclude overnight shifts (cross midnight)</span>
+    </label>
+    <label class="field cl-field-full">
+      <span class="field-label cl-label-with-reset">
+        <span>Exclude jobs</span>
+        <button type="button" id="cl-resetExcludeJobs" class="cl-linkbtn" title="Replace with the latest default exclusion list">reset to default</button>
+      </span>
+      <input id="cl-excludeJobs" class="input" type="text" placeholder="comma-separated">
+    </label>
+    <label class="check">
+      <input id="cl-includeIvr" type="checkbox">
+      <span>Cross-reference IVR call-offs</span>
+    </label>
+    <label class="check">
+      <input id="cl-showJobTitles" type="checkbox">
+      <span>Append job titles list to email</span>
+    </label>
+  </div>
+</details>
+
+<div class="cl-action">
+  <button id="cl-collect" class="btn btn-primary btn-pill btn-lg">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <path fill="currentColor" d="M5 12l5 5 9-11"/>
+    </svg>
+    Collect Schedule
+  </button>
+  <div id="cl-status" class="status-strip">Ready. Click Collect — the extension will open the tabs it needs.</div>
+</div>
+
+<label class="cl-email-label" for="cl-email">Email draft</label>
+<textarea id="cl-email" class="textarea cl-email" rows="20" spellcheck="false"
+          placeholder="Draft will appear here after Collect."></textarea>
+
+<div class="cluster cl-button-row">
+  <button id="cl-copy" class="btn btn-secondary">
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
+    </svg>
+    Copy
+  </button>
+  <button id="cl-openOutlook" class="btn btn-secondary">
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+    </svg>
+    Open in Outlook
+  </button>
+  <span class="muted tiny cl-footer-note">No data leaves your machine until you Copy or Open.</span>
+</div>

@@ -1,0 +1,102 @@
+/* modules/orcmonitor/styles.css
+   Matches APAISuite light theme (tokens.css). */
+
+/* ── Layout ── */
+.om-header       { margin-bottom:10px; }
+.om-title-row    { display:flex; align-items:center; gap:12px; margin-bottom:4px; }
+.om-header h1    { font-size:var(--fs-xl,18px); font-weight:var(--fw-bold,700); color:var(--apai-ink,#1A1A1A); }
+.om-controls     { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px; }
+
+.om-main-layout  { display:flex; overflow:hidden; gap:0; }
+.om-map-panel    { width:36%; min-width:260px; height:480px; flex-shrink:0; border-right:1px solid var(--apai-border,#E5E7EB); }
+.om-cards-panel  { flex:1; height:480px; overflow-y:auto; padding:0 14px 14px; }
+
+/* ── Progress ── */
+.om-progress-wrap  { margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+.om-progress-track { flex:1; background:var(--apai-border,#E5E7EB); border-radius:4px; height:5px; overflow:hidden; }
+.om-progress-fill  { height:100%; background:var(--apai-blue,#0071CE); border-radius:4px; transition:width .5s; }
+
+/* ── Token badge ── */
+.om-badge      { font-size:11px; padding:3px 10px; border-radius:999px; font-weight:600; }
+.om-badge-ok   { background:var(--apai-success-bg,#E3F5E8); color:var(--apai-success,#1A7F37); border:1px solid var(--apai-success,#1A7F37); }
+.om-badge-warn { background:var(--apai-warn-bg,#FEF3C7);    color:var(--apai-warn,#D97706);    border:1px solid var(--apai-warn,#D97706); }
+
+/* ── Summary pills ── */
+.pill-error { background:var(--apai-error-bg,#FCEAEA);  color:var(--apai-error,#B91C1C);  border:1px solid var(--apai-error,#B91C1C); }
+.pill-warn  { background:var(--apai-warn-bg,#FEF3C7);   color:var(--apai-warn,#D97706);   border:1px solid var(--apai-warn,#D97706); }
+.pill-info  { background:var(--apai-info-bg,#E8EEF9);   color:var(--apai-info,#0071CE);   border:1px solid var(--apai-info,#0071CE); }
+
+/* ── Cards ── */
+.om-card {
+  background: var(--apai-bg-elev,#FFFFFF);
+  border: 1px solid var(--apai-border,#E5E7EB);
+  border-radius: var(--rad-md,8px);
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: box-shadow .15s, opacity .15s;
+  box-shadow: var(--shadow-1);
+}
+.om-card:hover { box-shadow: var(--shadow-2); }
+.om-card-high   { border-left: 4px solid var(--apai-error,#B91C1C); }
+.om-card-medium { border-left: 4px solid var(--apai-warn,#D97706); }
+.om-card-low    { border-left: 4px solid #CA8A04; }
+
+.om-card-top    { display:flex; align-items:stretch; }
+.om-card-photo  {
+  width:72px; flex-shrink:0;
+  background:var(--apai-bg-soft,#F9FAFB);
+  display:flex; align-items:center; justify-content:center; font-size:26px;
+  border-right:1px solid var(--apai-border-soft,#F0F1F4);
+}
+.om-card-photo img { width:72px; height:72px; object-fit:cover; }
+
+.om-card-main  { flex:1; padding:9px 12px; }
+.om-card-name  { font-size:var(--fs-md,13px); font-weight:var(--fw-bold,700); color:var(--apai-ink,#1A1A1A); }
+.om-card-name a { color:inherit; text-decoration:none; }
+.om-card-name a:hover { color:var(--apai-blue,#0071CE); text-decoration:underline; }
+.om-card-sub   { font-size:11px; color:var(--apai-muted,#6B7280); margin-top:2px; }
+.om-card-lastseen { font-size:12px; color:var(--apai-ink-soft,#374151); margin-top:5px; }
+
+.om-card-meta  { display:flex; gap:14px; margin-top:7px; flex-wrap:wrap; }
+.om-meta-item  { display:flex; flex-direction:column; }
+.om-meta-item strong { font-size:var(--fs-md,13px); color:var(--apai-ink,#1A1A1A); }
+.om-meta-item span   { font-size:10px; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.3px; }
+
+.om-card-right {
+  padding:9px 12px; display:flex; flex-direction:column;
+  align-items:flex-end; gap:5px; min-width:108px;
+  background:var(--apai-bg-soft,#F9FAFB);
+  border-left:1px solid var(--apai-border-soft,#F0F1F4);
+}
+.om-risk-score { font-size:26px; font-weight:var(--fw-bold,700); line-height:1; }
+
+.om-eta-badge  { font-size:10px; font-weight:var(--fw-semi,600); padding:3px 8px; border-radius:999px; text-align:center; }
+.om-eta-high   { background:var(--apai-error-bg,#FCEAEA);  color:var(--apai-error,#B91C1C);  border:1px solid var(--apai-error,#B91C1C); }
+.om-eta-medium { background:var(--apai-warn-bg,#FEF3C7);   color:var(--apai-warn,#D97706);   border:1px solid var(--apai-warn,#D97706); }
+.om-eta-low    { background:#FEF9C3; color:#854D0E; border:1px solid #CA8A04; }
+
+.om-corridor-pill { font-size:10px; background:var(--apai-info-bg,#E8EEF9); color:var(--apai-blue,#0071CE); border:1px solid var(--apai-blue,#0071CE); padding:1px 7px; border-radius:999px; }
+.om-auror-link    { font-size:10px; color:var(--apai-blue,#0071CE); text-decoration:none; }
+.om-auror-link:hover { text-decoration:underline; }
+.om-threat-flag   { font-size:10px; color:var(--apai-error,#B91C1C); font-weight:var(--fw-semi,600); margin-top:3px; }
+
+/* ── Card bottom ── */
+.om-card-bottom { display:flex; gap:10px; padding:7px 12px; border-top:1px solid var(--apai-border-soft,#F0F1F4); background:var(--apai-bg,#F6F7F9); }
+.om-ev-list     { flex:1; }
+.om-ev-header   { font-size:9px; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+.om-ev-header   { font-size:9px; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; display:grid; grid-template-columns:1fr 80px 56px; gap:4px; }
+.om-ev-row      { display:grid; grid-template-columns:1fr 80px 56px; gap:4px; font-size:11px; padding:2px 0; border-bottom:1px solid var(--apai-border-soft,#F0F1F4); color:var(--apai-ink-soft,#374151); align-items:center; }
+.om-ev-row:last-child { border-bottom:none; }
+.om-ev-row span:nth-child(2) { color:#0071CE; white-space:nowrap; }   /* date column */
+.om-ev-row span:nth-child(3) { text-align:right; white-space:nowrap; color:var(--apai-muted,#6B7280); }  /* dist column */
+.om-ev-target   { background:var(--apai-success-bg,#E3F5E8); border-radius:3px; padding:1px 4px; color:var(--apai-success,#1A7F37) !important; font-weight:var(--fw-semi,600); }
+
+/* ── Time-of-day chart ── */
+.om-tod        { width:96px; flex-shrink:0; }
+.om-tod-label  { font-size:9px; color:var(--apai-muted,#6B7280); margin-bottom:3px; text-transform:uppercase; letter-spacing:.3px; }
+.om-tod-bars   { display:flex; align-items:flex-end; height:26px; gap:1px; }
+.om-tod-bar    { flex:1; border-radius:1px; min-height:2px; }
+
+/* ── Pills / tags ── */
+.om-mo-pill      { font-size:10px; background:var(--apai-bg-soft,#F9FAFB); border:1px solid var(--apai-border,#E5E7EB); border-radius:var(--rad-sm,4px); padding:1px 6px; color:var(--apai-ink-soft,#374151); }
+.om-corridor-tag { font-size:9px; background:var(--apai-info-bg,#E8EEF9); border:1px solid var(--apai-blue,#0071CE); color:var(--apai-blue,#0071CE); padding:1px 5px; border-radius:var(--rad-sm,4px); }

@@ -1,0 +1,478 @@
+/* modules/digitallocks/styles.css
+   Module-scoped — the shell wraps the viewport in `.module-digitallocks`,
+   so every selector below implicitly lives under that class. Custom IDs
+   and classes use the `dl-` prefix.
+
+   Reuses suite design tokens (--apai-*, --sp-*, --rad-*, --fs-*). Risk-
+   level color tokens are module-local because no other module currently
+   needs them. */
+
+.module-digitallocks {
+  --dl-risk-normal:   #16A34A;
+  --dl-risk-watch:    #F59E0B;
+  --dl-risk-high:     #F97316;
+  --dl-risk-critical: #DC2626;
+
+  --dl-risk-normal-bg:   #E8F7EC;
+  --dl-risk-watch-bg:    #FEF3C7;
+  --dl-risk-high-bg:     #FFEDD5;
+  --dl-risk-critical-bg: #FEE2E2;
+}
+
+.dl-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--sp-6);
+  gap: var(--sp-5);
+  font-family: var(--font-sans);
+  color: var(--apai-ink);
+}
+
+.dl-hidden { display: none !important; }
+
+/* ── Header ───────────────────────────────────────────────────── */
+.dl-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: var(--sp-3) var(--sp-4);
+}
+.dl-header h1 {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+}
+.dl-header-subtitle {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  color: var(--apai-muted);
+  font-size: var(--fs-md);
+  max-width: 70ch;
+}
+.dl-header-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* ── Import banner / warnings ─────────────────────────────────── */
+.dl-import-banner {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--rad-md);
+  background: var(--apai-info-bg);
+  color: var(--apai-blue-darker);
+  font-size: var(--fs-md);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.dl-import-banner strong { color: var(--apai-ink); }
+.dl-import-banner .dl-banner-meta { color: var(--apai-muted); font-size: var(--fs-sm); }
+
+.dl-warnings {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--rad-md);
+  border-left: 3px solid var(--apai-warn);
+  background: var(--apai-warn-bg);
+  color: #92400E;
+  font-size: var(--fs-md);
+}
+.dl-warnings ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); }
+
+/* ── Summary cards ────────────────────────────────────────────── */
+.dl-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+}
+.dl-card {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.dl-card-label {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: var(--fw-semi);
+}
+.dl-card-value {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--apai-ink);
+  line-height: 1.1;
+}
+.dl-card-sub {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+.dl-card.dl-card-critical { border-color: var(--dl-risk-critical); }
+.dl-card.dl-card-critical .dl-card-value { color: var(--dl-risk-critical); }
+.dl-card.dl-card-high     { border-color: var(--dl-risk-high); }
+.dl-card.dl-card-high     .dl-card-value { color: var(--dl-risk-high); }
+
+/* ── Filters ──────────────────────────────────────────────────── */
+.dl-filters {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+.dl-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.dl-field-label {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  font-weight: var(--fw-medium);
+}
+.dl-input, .dl-select {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+  font-size: var(--fs-md);
+  min-width: 140px;
+}
+.dl-input:focus, .dl-select:focus {
+  outline: 2px solid var(--module-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.dl-filters-clear { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.dl-filters-clear .btn.is-active { background: var(--apai-accent); color: #fff; border-color: var(--apai-accent); }
+
+/* The date-range field packs two date inputs + four preset buttons; the
+   default .dl-input min-width of 140px is overkill for native date inputs
+   and pushes the row to wrap unnecessarily. */
+.dl-field-daterange .dl-input { min-width: 0; width: 140px; }
+
+/* ── Tabs ─────────────────────────────────────────────────────── */
+.dl-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--apai-border);
+}
+.dl-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--apai-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.dl-tab:hover { color: var(--apai-ink); }
+.dl-tab.is-active {
+  color: var(--module-accent);
+  border-bottom-color: var(--module-accent);
+}
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.dl-empty {
+  padding: var(--sp-10) var(--sp-6);
+  text-align: center;
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  border: 1px dashed var(--apai-border);
+  border-radius: var(--rad-md);
+}
+.dl-empty strong { color: var(--apai-ink); }
+.dl-empty .dl-empty-actions { margin-top: var(--sp-4); display: flex; justify-content: center; gap: var(--sp-2); }
+
+/* ── Tables ───────────────────────────────────────────────────── */
+.dl-table-wrap {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  overflow-x: auto;
+}
+.dl-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-md);
+}
+.dl-table thead tr {
+  background: var(--apai-bg-soft);
+}
+.dl-table th {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--apai-muted);
+  border-bottom: 1px solid var(--apai-border);
+  white-space: nowrap;
+}
+.dl-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--apai-border-soft);
+  vertical-align: top;
+}
+.dl-table tbody tr:hover td { background: var(--apai-bg-soft); }
+/* Needs-follow-up rows get an amber left border so they stand out in the queue */
+.dl-table tbody tr.dl-row-needs-followup td { border-left: 3px solid #F59E0B; background: #FFFBEB; }
+.dl-table tbody tr.dl-row-needs-followup:hover td { background: #FEF3C7; }
+/* Non-malicious rows shown via "Show hidden" toggle — visually de-emphasised */
+.dl-table tbody tr.dl-row-hidden td { opacity: 0.6; font-style: italic; }
+.dl-table .dl-cell-user { font-weight: var(--fw-medium); }
+.dl-table .dl-cell-id   { font-family: var(--font-mono); color: var(--apai-muted); font-size: var(--fs-sm); }
+.dl-table .dl-cell-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  max-width: 320px;
+}
+.dl-table .dl-cell-actions {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+/* ── Risk badges ──────────────────────────────────────────────── */
+.dl-risk-badge {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dl-risk-badge.dl-risk-normal   { background: var(--dl-risk-normal-bg);   color: #166534; }
+.dl-risk-badge.dl-risk-watch    { background: var(--dl-risk-watch-bg);    color: #92400E; }
+.dl-risk-badge.dl-risk-high     { background: var(--dl-risk-high-bg);     color: #9A3412; }
+.dl-risk-badge.dl-risk-critical { background: var(--dl-risk-critical-bg); color: #7F1D1D; }
+
+/* Reason chips */
+.dl-chip {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border);
+  color: var(--apai-ink-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Status pills */
+.dl-status {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: 11px;
+  font-weight: var(--fw-semi);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border);
+  color: var(--apai-muted);
+}
+.dl-status-active                  { background: var(--apai-info-bg);   color: var(--apai-blue-darker); border-color: transparent; }
+.dl-status-needs_follow_up         { background: var(--apai-warn-bg);   color: #92400E; border-color: transparent; }
+.dl-status-confirmed_theft_review  { background: var(--apai-error-bg);  color: var(--apai-error); border-color: transparent; }
+.dl-status-non_malicious           { background: var(--apai-success-bg);color: #166534; border-color: transparent; }
+.dl-status-dismissed               { background: #F3F4F6;               color: var(--apai-muted); border-color: transparent; }
+
+/* ── Drawer (event details) ───────────────────────────────────── */
+.dl-drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 900;
+}
+.dl-drawer {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 480px;
+  max-width: 90vw;
+  background: var(--apai-bg-elev);
+  box-shadow: var(--shadow-3);
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-md);
+}
+.dl-drawer-head {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.dl-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+}
+.dl-drawer-foot {
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--apai-border);
+  background: var(--apai-bg-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+}
+.dl-drawer dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+}
+.dl-drawer dt {
+  color: var(--apai-muted);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+}
+.dl-drawer dd { margin: 0; }
+.dl-drawer .dl-reason-list {
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+.dl-drawer .dl-reason-list li { margin-bottom: 2px; }
+.dl-drawer textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  font-family: inherit;
+  font-size: var(--fs-md);
+}
+
+/* ── Daily checklist view ─────────────────────────────────────── */
+.dl-episode {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-2);
+}
+.dl-episode-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.dl-episode-head h3 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semi); }
+.dl-episode-meta {
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+.dl-episode-reasons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.dl-episode-actions {
+  grid-column: 1 / -1;
+  color: var(--apai-ink-soft);
+  font-size: var(--fs-sm);
+}
+.dl-episode-actions strong { color: var(--apai-ink); font-weight: var(--fw-semi); }
+.dl-episode-score {
+  align-self: start;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+}
+
+/* ── Sortable headers ──────────────────────────────────────────── */
+.dl-table th.dl-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.dl-table th.dl-sortable:hover { color: var(--apai-ink); }
+.dl-table th .dl-sort-arrow { margin-left: var(--sp-1); opacity: 0.6; }
+
+/* ── Small misc ───────────────────────────────────────────────── */
+.dl-muted { color: var(--apai-muted); }
+.dl-mono  { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.dl-import-input { display: none; }
+
+/* ── Drawer sections (case items, order context, tenure) ─────── */
+.dl-drawer-section {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--apai-border);
+}
+.dl-drawer-section h4 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--apai-muted);
+}
+.dl-drawer-hint { font-size: var(--fs-sm); margin: var(--sp-1) 0 0; }
+
+.dl-table-compact td, .dl-table-compact th { padding: 4px 8px; font-size: var(--fs-sm); }
+
+/* Order context */
+.dl-order-result {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--rad-md);
+  margin-bottom: var(--sp-2);
+}
+.dl-order-matched  { background: var(--dl-risk-normal-bg); }
+.dl-order-nomatch  { background: var(--dl-risk-watch-bg); }
+.dl-order-error    { background: var(--dl-risk-high-bg); }
+.dl-order-detail   { font-size: var(--fs-sm); color: var(--apai-muted); margin: var(--sp-1) 0; }
+
+.dl-chip-success { background: var(--dl-risk-normal); color: #fff; }
+.dl-chip-warn    { background: var(--dl-risk-watch);  color: #000; }
+
+/* Case-map active summary */
+.dl-case-map-active {
+  background: var(--apai-surface);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+/* New-hire badge */
+.dl-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+}
+.dl-badge-warn { background: var(--dl-risk-watch-bg); color: #92400E; border: 1px solid var(--dl-risk-watch); }

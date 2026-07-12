@@ -1,0 +1,62 @@
+<!-- modules/claimsbuddy/view.html
+     Adapted from donor extension/app.html. Standalone <html>/<head>/<body>
+     wrappers removed (shell owns them). IDs prefixed `cb-` to scope away
+     from other modules' DOM. -->
+
+<header>
+  <h1>ClaimsBuddy</h1>
+  <span class="subtitle">CAS × VEE × ClearSight × DataFile</span>
+</header>
+
+<main>
+
+  <!-- Store picker (shared across both tabs) -->
+  <section id="cb-step-input" class="card">
+    <h2><span class="step">1</span> Pick a store</h2>
+    <div class="row">
+      <label>
+        <span>Store #</span>
+        <input id="cb-store" type="text" maxlength="6" placeholder="store #" inputmode="numeric" autocomplete="off">
+      </label>
+      <button id="cb-btn-load" class="primary">Load</button>
+    </div>
+    <div id="cb-store-summary" class="muted hidden"></div>
+    <div id="cb-status-line" class="muted"></div>
+  </section>
+
+  <!-- Tab navigation -->
+  <div class="tab-nav" id="cb-tab-nav" aria-label="View tabs">
+    <button class="tab-btn active" data-tab="evidence"  aria-selected="true"  role="tab">Evidence</button>
+    <button class="tab-btn"        data-tab="claims"    aria-selected="false" role="tab">Claims Dashboard</button>
+  </div>
+
+  <!-- ── Evidence tab ──────────────────────────────────────────────────── -->
+  <section id="cb-tab-evidence" class="tab-panel card" role="tabpanel">
+    <h2><span class="step">2</span> Inefficient / missing evidence</h2>
+
+    <div class="source-pills">
+      <span id="cb-pill-cas"        class="pill">CAS: idle</span>
+      <span id="cb-pill-vee"        class="pill">VEE: idle</span>
+      <span id="cb-pill-clearsight" class="pill">ClearSight: idle</span>
+    </div>
+
+    <div id="cb-results"></div>
+  </section>
+
+  <!-- ── Claims Dashboard tab ─────────────────────────────────────────── -->
+  <section id="cb-tab-claims" class="tab-panel card hidden" role="tabpanel">
+    <h2><span class="step">2</span> All claims + adjuster info</h2>
+
+    <div class="source-pills">
+      <span id="cb-pill-cas-db"  class="pill">CAS: idle</span>
+      <span id="cb-pill-datafile" class="pill">DataFile: idle</span>
+      <div class="sync-bar">
+        <span id="cb-db-last-sync" class="muted">Not synced yet</span>
+        <button id="cb-btn-sync-users" class="secondary">Sync adjuster data</button>
+      </div>
+    </div>
+
+    <div id="cb-claims-results"></div>
+  </section>
+
+</main>

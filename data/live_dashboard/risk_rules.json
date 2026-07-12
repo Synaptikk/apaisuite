@@ -1,0 +1,132 @@
+{
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "description": "Risk-rule thresholds and parameters. User-tunable via dashboard settings (V2). See docs/live_dashboard_backend/RISK_RULES.md for prose and matching algorithm.",
+  "absences": {
+    "A1": {
+      "name":     "Callout volume threshold",
+      "when":     "count(today, non-tardy) >= threshold",
+      "threshold":  5,
+      "severity":   "medium"
+    },
+    "A2": {
+      "name":     "Department concentration",
+      "when":     "any single dept has >= threshold callouts today",
+      "threshold":  3,
+      "severity":   "high"
+    }
+  },
+  "compliance": {
+    "C1": {
+      "name":     "Any overdue",
+      "when":     "isOverdue == true",
+      "highIfDaysOverdueAtLeast": 7,
+      "elseSeverity":              "medium"
+    },
+    "C2": {
+      "name":     "Due within 24 hours",
+      "when":     "0 <= daysUntilDue <= 1",
+      "severity":   "medium"
+    },
+    "C3": {
+      "name":     "Due within 7 days",
+      "when":     "0 <= daysUntilDue <= 7",
+      "severity":   "low",
+      "informational": true
+    }
+  },
+  "accidentEvidence": {
+    "AE1": { "name": "Missing video on bodily injury", "scoreAdd": 5, "minSeverity": "high" },
+    "AE2": { "name": "Missing customer statement",       "scoreAdd": 2, "minSeverity": "medium" },
+    "AE3": { "name": "Missing witness statement (>=3d open)", "scoreAdd": 1, "minSeverity": "low", "minDaysOpen": 3 },
+    "AE4": { "name": "Aging open claim", "scoreAdd": 2, "minSeverity": "medium", "minDaysOpen": 14 },
+    "AE5": { "name": "Multiple missing items", "scoreAdd": 3, "minSeverity": "high", "minMissingCount": 3 },
+    "severityFromScore": {
+      "high":   { "minScore": 7 },
+      "medium": { "minScore": 4, "maxScore": 6 },
+      "low":    { "minScore": 1, "maxScore": 3 },
+      "none":   { "maxScore": 0 }
+    }
+  },
+  "cvp": {
+    "CVP1": {
+      "name":                     "Low sell-through with non-trivial CVP volume",
+      "sellThroughPctRedBelow":   15,
+      "sellThroughPctAmberBelow": 25,
+      "cvpTotalQtyMin":           100,
+      "highIfSellThroughPctBelow": 10,
+      "elseSeverity":              "medium"
+    },
+    "CVP2": {
+      "name":           "Sell-through trend declining",
+      "weeksRequired":  3,
+      "thresholdPct":   25,
+      "severity":       "medium"
+    },
+    "displayThresholds": {
+      "greenAtLeastPct":  25,
+      "amberMinPct":      15,
+      "amberMaxPct":      25,
+      "redBelowPct":      15
+    }
+  },
+  "register": {
+    "matching": {
+      "toleranceSmallCents":      500,
+      "toleranceSmallMaxAmtCents": 10000,
+      "tolerancePctOfPrimary":    0.05,
+      "timeWindowDays":           3,
+      "nearbyRegisterRangeDelta": 3
+    },
+    "R1": {
+      "name":                "Unmatched shortage",
+      "highIfAmountAbsCentsAtLeast":   10000,
+      "mediumIfAmountAbsCentsAtLeast": 2500
+    },
+    "R2": {
+      "name":             "Nearby-register offset (likely flip)",
+      "severity":         "low",
+      "hiddenByDefault":  true
+    },
+    "R3": {
+      "name":             "Same-register bounceback",
+      "severity":         "low",
+      "hiddenByDefault":  true
+    },
+    "R4": {
+      "name":                          "High-dollar repeated shortage on same register",
+      "minCount":                      2,
+      "lookbackDays":                  14,
+      "minTotalCents":                 20000,
+      "severity":                      "high"
+    },
+    "R5": {
+      "name":              "Operator exposure",
+      "minCount":          2,
+      "lookbackDays":      30,
+      "firstHitSeverity":  "medium",
+      "subsequentSeverity": "high",
+      "phase":             "v1.5",
+      "requires":          "operator detail captured"
+    },
+    "R6": {
+      "name":              "Repeated involvement pattern",
+      "minDistinctFindings": 3,
+      "minDistinctRegisters": 2,
+      "lookbackDays":      30,
+      "severity":          "high",
+      "phase":             "v1.5"
+    },
+    "R7": {
+      "name":              "Suspicious timing",
+      "phase":             "v2",
+      "deferred":          true,
+      "reason":            "Requires shift/timestamp data not present in V1 register-grid import"
+    }
+  },
+  "personalDataDefaults": {
+    "showOperatorNamesByDefault": false,
+    "bulkExportConfirmRequired":  true,
+    "logRedactionEnabled":        true
+  }
+}

@@ -1,0 +1,102 @@
+<!-- modules/aurorbuddy/view.html
+     Adapted from donor extension/app.html. Removed standalone <html>/<head>/<body>
+     wrappers; module mounts into the shell viewport. IDs prefixed with ab- to
+     avoid collisions with other modules' DOM. -->
+
+<div class="ab-header">
+  <h1>AurorBuddy</h1>
+  <p class="muted">Auror × Secure · POS/SCO fraud cross-reference</p>
+</div>
+
+<section id="ab-step-1" class="card">
+  <h2 class="card-title">
+    <span class="card-step">1</span> Configure Search Radius
+  </h2>
+  <div class="ab-row">
+    <label class="field">
+      <span class="field-label">Home store #</span>
+      <input id="ab-store" class="input" type="text" maxlength="6" placeholder="store #">
+    </label>
+    <label class="field">
+      <span class="field-label">Radius: <b id="ab-miles-label">20</b> miles</span>
+      <input id="ab-miles" type="range" min="10" max="45" step="5" value="20">
+    </label>
+    <label class="field">
+      <span class="field-label">Date range</span>
+      <span class="btn-group">
+        <button class="btn-group-item ab-days-btn is-active" data-days="Last30days">30 days</button>
+        <button class="btn-group-item ab-days-btn"           data-days="Last60days">60 days</button>
+        <button class="btn-group-item ab-days-btn"           data-days="Last90days">90 days</button>
+      </span>
+    </label>
+    <button id="ab-btn-search" class="btn btn-primary btn-pill btn-lg">Search</button>
+    <label class="check ab-inline-toggle">
+      <input id="ab-show-all-stores" type="checkbox">
+      <span>Show all stores (default = home only)</span>
+    </label>
+  </div>
+  <!-- Auror SSO auto-fill: the username your Auror Auth0 login expects.
+       Stored in chrome.storage.sync (per-user). When set, the slow-path
+       SSO flow auto-fills + submits the Auror identifier page so you don't
+       have to click into the background tab. Leave blank to disable. -->
+  <details class="ab-settings" style="margin-top:8px">
+    <summary class="muted" style="cursor:pointer;font-size:12px">Auror auto-login settings</summary>
+    <label class="field" style="margin-top:6px">
+      <span class="field-label">Auror email (for auto-login on the identifier page)</span>
+      <input id="ab-auror-username" class="input" type="email" autocomplete="email" placeholder="you@company.com">
+    </label>
+  </details>
+  <div id="ab-stores-result" class="muted"></div>
+</section>
+
+<section id="ab-step-2" class="card hidden">
+  <h2 class="card-title">
+    <span class="card-step">2</span> Auror Feed — Suspects
+  </h2>
+  <div id="ab-auth-pills" class="cluster">
+    <span id="ab-pill-auror"   class="pill pill-checking">Auror: checking…</span>
+    <span id="ab-pill-appriss" class="pill pill-checking">Secure: checking…</span>
+  </div>
+  <!-- Narrative status lines populated by view.js as the scan unfolds. -->
+  <div id="ab-scan-context" class="hidden">
+    <div id="ab-ctx-stores"      class="ab-ctx-line"></div>
+    <div id="ab-ctx-individuals" class="ab-ctx-line"></div>
+    <div id="ab-ctx-reviewing"   class="ab-ctx-line"></div>
+  </div>
+  <div id="ab-progress" class="muted"></div>
+  <div id="ab-warning" class="hidden" style="margin-top:6px;padding:6px 10px;border-radius:4px;background:#FFF7E6;border:1px solid #FFD591;color:#A8540C;font-size:13px"></div>
+  <div id="ab-scan-progressbar" class="progress-bar hidden" style="--pct:0%">
+    <div class="progress-fill"></div>
+    <span class="progress-text progress-text-empty"></span>
+    <span class="progress-text progress-text-filled"></span>
+  </div>
+  <div id="ab-suspects"></div>
+
+  <!-- ⏱ Per-stage timings — mirrors donor's templates/index.html panel.
+       Populated by view.js once the scan completes. Sorted by total_s
+       descending so the biggest pain is at the top. Hidden during the
+       scan; only appears when there's something to show. -->
+  <details id="ab-timings-card" class="hidden ab-timings-card">
+    <summary>⏱ Scan timings</summary>
+    <div id="ab-timings-body" class="ab-timings-body"></div>
+  </details>
+</section>
+
+<!-- Awaiting final value — V1 Mark Submitted UX per
+     docs/FINAL_VALUE_CAPTURE_PLAN.md §6. Lists this analyst's submitted
+     Auror events that still need a confirmed final value. Hidden when the
+     list is empty. -->
+<section id="ab-awaiting" class="card hidden">
+  <h2 class="card-title">
+    <span class="card-step">★</span> Awaiting final value
+    <button id="ab-awaiting-refresh" class="btn btn-secondary-sm" style="margin-left:auto">Refresh</button>
+  </h2>
+  <p class="muted" style="font-size:13px">
+    Auror events you submitted via AurorBuddy that still need a confirmed
+    final value. Enter the value the team will be credited with and click
+    Mark Submitted, or Skip if you can't confirm right now. Skip records
+    the value as "unknown" — better than a wrong number. You can confirm
+    later.
+  </p>
+  <div id="ab-awaiting-body"></div>
+</section>

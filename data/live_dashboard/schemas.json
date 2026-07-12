@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Live Dashboard schemas (V1)",
+  "description": "Runtime schemas for source data and dashboard state. Hand-rolled JSON-Schema-style (not a full Zod/Joi spec — illustrative reference). See docs/live_dashboard_backend/DATA_CONTRACTS.md for prose.",
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "definitions": {
+    "AbsenceRecord": {
+      "type": "object",
+      "required": ["storeNbr", "associate", "absenceDate", "dept", "job", "absenceType", "absenceReason", "_source"],
+      "properties": {
+        "storeNbr":      { "type": "string" },
+        "associate":     { "type": "string" },
+        "win":           { "type": ["string", "null"] },
+        "absenceDate":   { "type": "string", "format": "date" },
+        "callDateTime":  { "type": ["string", "null"] },
+        "dept":          { "type": "string" },
+        "job":           { "type": "string" },
+        "absenceType":   { "type": "string" },
+        "absenceReason": { "type": "string" },
+        "confirmation":  { "type": ["string", "null"] },
+        "source":        { "type": ["string", "null"] },
+        "_source":       { "$ref": "#/definitions/Provenance" }
+      }
+    },
+    "ComplianceTask": {
+      "type": "object",
+      "required": ["facility", "taskName", "dueDate", "_source"],
+      "properties": {
+        "facility":       { "type": "string", "description": "leading zeros preserved" },
+        "taskName":       { "type": "string" },
+        "assignedGroups": { "type": "array", "items": { "type": "string" } },
+        "dueDate":        { "type": "string", "format": "date" },
+        "dueAt":          { "type": ["string", "null"], "format": "date-time" },
+        "daysUntilDue":   { "type": "number" },
+        "isOverdue":      { "type": "boolean" },
+        "isDueSoon":      { "type": "boolean" },
+        "category":       { "type": "string", "enum": ["weekly", "monthly", "annual", "ad-hoc", "unknown"] },
+        "_source":        { "$ref": "#/definitions/Provenance" }
+      }
+    },
+    "AccidentEvidenceRecord": {
+      "type": "object",
+      "required": ["storeNbr", "reportType", "referenceNbr", "claimant", "daysOpen", "_source"],
+      "properties": {
+        "storeNbr":                { "type": "string" },
+        "reportType":              { "type": "string", "enum": ["BodilyInjury", "GarageKeeperPropertyDamage"] },
+        "referenceNbr":            { "type": "string" },
+        "trackingNbr":             { "type": ["string", "null"] },
+        "claimant":                { "type": "string" },
+        "daysOpen":                { "type": "integer" },
+        "customerStatement":       { "$ref": "#/definitions/EvidenceStatus" },
+        "witnessStatement":        { "$ref": "#/definitions/EvidenceStatus" },
+        "video":                   { "$ref": "#/definitions/EvidenceStatus" },
+        "photos":                  { "$ref": "#/definitions/EvidenceStatus" },
+        "evidenceCollectionSheet": { "$ref": "#/definitions/EvidenceStatus" },
+        "evidenceStatus":          { "$ref": "#/definitions/EvidenceStatus" },
+        "enhancedExport":          { "type": "string", "enum": ["yes", "no", "unknown"] },
+        "missingItems":            { "type": "array", "items": { "type": "string" } },
+        "missingCount":            { "type": "integer" },
+        "priorityScore":           { "type": "number" },
+        "_source":                 { "$ref": "#/definitions/Provenance" }
+      }
+    },
+    "EvidenceStatus": {
+      "type": "string",
+      "enum": ["complete", "missing", "partial", "unknown"]
+    },
+    "CvpMetric": {
+      "type": "object",
+      "required": ["storeNbr", "wmWeekNbr", "deptGroupNbr", "_source"],
+      "properties": {
+        "storeNbr":            { "type": "string" },
+        "wmWeekNbr":           { "type": "integer" },
+        "deptGroupNbr":        { "type": "integer" },
+        "firstCvpQty":         { "type": "integer" },
+        "cvpToCvpQty":         { "type": "integer" },
+        "cvpTotalQty":         { "type": "integer" },
+        "cvpSalesQty":         { "type": "integer" },
+        "cvpSalesRetailCents": { "type": "integer" },
+        "sellThroughPct":      { "type": "number" },
+        "_source":             { "$ref": "#/definitions/Provenance" }
+      }
+    },
+    "RegisterDiscrepancy": {
+      "type": "object",
+      "required": ["storeNbr", "date", "registerNbr", "amountCents", "type", "_source"],
+      "properties": {
+        "storeNbr":       { "type": "string" },
+        "date":           { "type": "string", "format": "date" },
+        "registerNbr":    { "type": "string" },
+        "amountCents":    { "type": "integer", "description": "signed; negative = short, positive = over" },
+        "type":           { "type": "string", "enum": ["short", "over"] },
+        "amountAbsCents": { "type": "integer" },
+        "operators":      {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["operatorId"],
+            "properties": {
+              "operatorId":   { "type": "string" },
+              "operatorName": { "type": ["string", "null"] },
+              "sourceVisual": { "type": "string" }
+            }
+          }
+        },
+        "_source": {
+          "type": "object",
+          "required": ["module", "capturedAt", "sourceMethod"],
+          "properties": {
+            "module":       { "type": "string", "const": "livedashboard" },
+            "capturedAt":   { "type": "string", "format": "date-time" },
+            "sourceMethod": { "type": "string", "enum": ["powerbi-capture", "xlsx-import"] },
+            "reportId":     { "type": "string" }
+          }
+        }
+      }
+    },
+    "RegisterFinding": {
+      "type": "object",
+      "required": ["id", "storeNbr", "primaryDate", "primaryRegister", "primaryAmountCents", "matchType", "severity", "reason"],
+      "properties": {
+        "id":                 { "type": "string" },
+        "storeNbr":           { "type": "string" },
+        "primaryDate":        { "type": "string", "format": "date" },
+        "primaryRegister":    { "type": "string" },
+        "primaryAmountCents": { "type": "integer" },
+        "matchType":          { "type": "string", "enum": ["none", "nearby-register-offset", "same-register-bounceback", "ambiguous"] },
+        "matchedAgainst": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["date", "registerNbr", "amountCents", "deltaCents", "daysApart"],
+            "properties": {
+              "date":         { "type": "string", "format": "date" },
+              "registerNbr":  { "type": "string" },
+              "amountCents":  { "type": "integer" },
+              "deltaCents":   { "type": "integer" },
+              "daysApart":    { "type": "integer" }
+            }
+          }
+        },
+        "severity":     { "type": "string", "enum": ["low", "medium", "high"] },
+        "reason":       { "type": "string" },
+        "dismissed":    { "type": "boolean" },
+        "dismissedAt":  { "type": ["string", "null"], "format": "date-time" },
+        "dismissedBy":  { "type": ["string", "null"] },
+        "note":         { "type": ["string", "null"] }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "required": ["module", "capturedAt"],
+      "properties": {
+        "module":     { "type": "string" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "sourceUrl":  { "type": "string" }
+      }
+    },
+    "SourceFreshness": {
+      "type": "object",
+      "required": ["sourceId", "lastSuccess", "lastAttempt", "lastError", "staleAfterMs", "isStale"],
+      "properties": {
+        "sourceId":     { "type": "string", "enum": ["absences", "compliance", "accident", "cvp", "register"] },
+        "lastSuccess":  { "type": ["string", "null"], "format": "date-time" },
+        "lastAttempt":  { "type": ["string", "null"], "format": "date-time" },
+        "lastError":    { "type": ["string", "null"] },
+        "staleAfterMs": { "type": "integer" },
+        "isStale":      { "type": "boolean" }
+      }
+    },
+    "LiveDashboardSettings": {
+      "type": "object",
+      "required": ["storeNbr", "refreshIntervals", "showOnlyExceptions", "dismissedFindings"],
+      "properties": {
+        "storeNbr": { "type": "string" },
+        "refreshIntervals": {
+          "type": "object",
+          "required": ["absences", "compliance", "accident", "cvp", "register"],
+          "properties": {
+            "absences":   { "type": "integer", "description": "ms" },
+            "compliance": { "type": "integer" },
+            "accident":   { "type": "integer" },
+            "cvp":        { "type": "integer" },
+            "register":   { "type": "integer" }
+          }
+        },
+        "showOnlyExceptions": { "type": "boolean" },
+        "dismissedFindings":  { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "SourceRegistry": { "type": "object", "additionalProperties": true },
+    "EndpointMap":    { "type": "object", "additionalProperties": true }
+  }
+}

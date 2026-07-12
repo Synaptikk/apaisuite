@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>APAISuite v{{VERSION}} — Download</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #0F172A; --fg: #F8FAFC; --muted: #94A3B8;
+      --accent: #FFC220; --card: #1E293B; --border: #334155; --code: #0B1220;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #F8FAFC; --fg: #0F172A; --muted: #475569;
+        --card: #FFFFFF; --border: #E2E8F0; --code: #F1F5F9;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+    h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    h2 { font-size: 18px; margin: 32px 0 12px; letter-spacing: -0.01em; }
+    .muted { color: var(--muted); }
+    .sub { color: var(--muted); margin: 0 0 32px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 12px 0; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 0; }
+    a.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--border); color: var(--fg); background: var(--card); }
+    a.btn-primary { background: var(--accent); color: #0F172A; border-color: var(--accent); }
+    a.btn:hover { filter: brightness(1.05); }
+    code, pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; font: 13px/1.5 "JetBrains Mono", Menlo, Consolas, monospace; }
+    pre { padding: 12px 14px; overflow-x: auto; }
+    ol { padding-left: 22px; }
+    ol li { margin: 6px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .brand svg { width: 26px; height: 26px; }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <svg viewBox="-16 -16 32 32" aria-hidden="true">
+      <path d="M0,-12 L10,-8 L10,4 C10,9 5,13 0,14 C-5,13 -10,9 -10,4 L-10,-8 Z"
+            fill="none" stroke="#0071CE" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M0,-3.5 L0.79,-1.08 L3.33,-1.08 L1.27,0.41 L2.06,2.83 L0,1.34 L-2.06,2.83 L-1.27,0.41 L-3.33,-1.08 L-0.79,-1.08 Z"
+            fill="#0071CE"/>
+    </svg>
+    <h1>APAISuite</h1>
+  </div>
+  <p class="sub">
+    <span class="pill">v{{VERSION}}</span>
+    <span class="muted"> · published {{PUBLISHED_AT}}</span>
+  </p>
+
+  <div class="card">
+    <h2 style="margin-top:0">Install or update</h2>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="{{ZIP_URL}}">Download source ZIP</a>
+    </div>
+    <p class="muted" style="margin: 12px 0 0; font-size: 13px;">
+      APAISuite is distributed as an unpacked extension — download the source
+      ZIP and load it via <code>edge://extensions</code> → <strong>Load
+      unpacked</strong>. Updates have to be installed manually; the
+      in-extension nag pill alerts you when a new version is available.
+    </p>
+  </div>
+
+  <h2>Update an existing "Load unpacked" install</h2>
+  <ol>
+    <li>Download the <strong>source ZIP</strong> above.</li>
+    <li>Extract it, replacing your existing <code>unified-extension-suite/</code> folder.</li>
+    <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong>, click the circular <strong>Reload</strong> button.</li>
+    <li>Confirm the version pill in the shell header reads <code>v{{VERSION}}</code>.</li>
+  </ol>
+
+  <h2>First-time install (Load unpacked)</h2>
+  <ol>
+    <li>Download and extract the source ZIP.</li>
+    <li>Open <code>chrome://extensions</code>.</li>
+    <li>Toggle <strong>Developer mode</strong> on (top right).</li>
+    <li>Click <strong>Load unpacked</strong> and pick the extracted folder.</li>
+    <li>Click the APAISuite icon in the toolbar to open the shell.</li>
+  </ol>
+
+  <h2 id="release-notes" style="margin-top:48px">Release notes</h2>
+  <div id="releases-list" class="muted" style="font-size: 14px;">Loading release history…</div>
+  <script>
+    (async function () {
+      try {
+        const r = await fetch("releases.json", { cache: "no-cache" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const releases = await r.json();
+        const root = document.getElementById("releases-list");
+        if (!Array.isArray(releases) || releases.length === 0) {
+          root.textContent = "No releases listed yet.";
+          return;
+        }
+        root.innerHTML = "";
+        for (const rel of releases) {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.style.marginBottom = "12px";
+          const date = rel.publishedAt ? new Date(rel.publishedAt).toISOString().slice(0, 10) : "";
+          const titleHtml = rel.title ? " — " + escapeHtml(rel.title) : "";
+          const notesHtml = rel.notes ? "<p style=\"margin:8px 0 0\">" + escapeHtml(rel.notes) + "</p>" : "";
+          card.innerHTML =
+            "<div style=\"display:flex;align-items:baseline;gap:10px\">" +
+              "<span class=\"pill\">v" + escapeHtml(rel.version) + "</span>" +
+              "<span style=\"font-weight:600\">" + titleHtml.slice(3) + "</span>" +
+              "<span class=\"muted\" style=\"margin-left:auto;font-size:12px\">" + date + "</span>" +
+            "</div>" +
+            notesHtml;
+          root.appendChild(card);
+        }
+      } catch (e) {
+        document.getElementById("releases-list").textContent =
+          "Couldn't load release history: " + (e && e.message ? e.message : e);
+      }
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+        });
+      }
+    })();
+  </script>
+</main>
+</body>
+</html>

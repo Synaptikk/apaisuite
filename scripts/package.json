@@ -1,0 +1,10 @@
+{
+  "name": "apaisuite-release-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Release tooling for the APAISuite extension. Kept in scripts/ so the extension root stays node_modules-free.",
+  "devDependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}

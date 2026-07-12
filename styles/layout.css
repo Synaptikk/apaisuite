@@ -1,0 +1,256 @@
+/* Layout — shell-level grid: header + (sidebar | viewport).
+   Modules render into .shell-viewport > main with class .module-<id>. */
+
+.shell {
+  display: grid;
+  grid-template-rows: var(--shell-header-h) auto 1fr auto;
+  grid-template-columns: var(--shell-sidebar-w) 1fr;
+  grid-template-areas:
+    "header  header"
+    "banner  banner"
+    "sidebar viewport"
+    "footer  footer";
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.shell-header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-6);
+  background: var(--apai-bg-elev);
+  border-bottom: 1px solid var(--apai-border);
+  z-index: 10;
+}
+.shell-header-brand {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-lg);
+  letter-spacing: -0.01em;
+  color: var(--apai-ink);
+  text-decoration: none;
+}
+.shell-header-brand:hover { color: var(--apai-blue-dark); text-decoration: none; }
+.shell-header-brand svg { width: 24px; height: 24px; flex: 0 0 24px; }
+
+.shell-header-spacer { flex: 1; }
+
+.shell-header-actions {
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+
+/* ── Update banner ──────────────────────────────────────────── */
+/* Spans full grid width below the header. Hidden via the `hidden` attribute
+   until shared/updater_ui.js populates it; CSS Grid auto row collapses to 0
+   height when content is display:none / [hidden]. */
+.shell-update-banner {
+  grid-area: banner;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--apai-warn-bg);
+  color:      var(--apai-warn);
+  border-bottom: 1px solid var(--apai-warn);
+  font-size: 0.9rem;
+  z-index: 9;
+  flex-wrap: wrap;
+}
+.shell-update-banner[hidden] { display: none; }
+.shell-update-banner .wv-banner-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shell-update-banner .wv-banner-notes {
+  flex: 1 1 auto;
+  min-width: 0;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-update-banner.is-expanded .wv-banner-notes {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.shell-update-banner .wv-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+.shell-update-banner button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--apai-warn);
+  background: transparent;
+  color: inherit;
+}
+.shell-update-banner button.is-primary {
+  background: var(--apai-warn);
+  color: #fff;
+  border-color: var(--apai-warn);
+}
+.shell-update-banner button:hover { filter: brightness(0.95); }
+.shell-update-banner button:disabled { cursor: default; opacity: 0.7; }
+.shell-update-banner .wv-banner-help {
+  flex: 1 0 100%;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--apai-warn);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--apai-ink, #222);
+  background: transparent;
+}
+.shell-update-banner .wv-banner-help ol {
+  margin: var(--sp-1) 0 0 1.25rem;
+  padding: 0;
+}
+.shell-update-banner .wv-banner-help code {
+  background: rgba(0,0,0,0.07);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.shell-sidebar {
+  grid-area: sidebar;
+  background: var(--apai-bg-elev);
+  border-right: 1px solid var(--apai-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-nav {
+  padding: var(--sp-3) var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--rad-md);
+  color: var(--apai-ink-soft);
+  text-decoration: none;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+.shell-nav-item:hover {
+  background: var(--apai-bg);
+  color: var(--apai-ink);
+  text-decoration: none;
+}
+.shell-nav-item.is-active {
+  background: var(--apai-info-bg);
+  color: var(--apai-blue-dark);
+}
+.shell-nav-item svg {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  opacity: 0.85;
+}
+.shell-nav-item.is-active svg { opacity: 1; }
+.shell-nav-item .shell-nav-status {
+  margin-left: auto;
+  width: 6px; height: 6px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-success);
+}
+.shell-nav-item .shell-nav-status.deprecated { background: var(--apai-muted); }
+.shell-nav-item .shell-nav-status.beta       { background: var(--apai-warn); }
+
+.shell-nav-section {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--apai-muted);
+}
+
+.shell-sidebar-footer {
+  border-top: 1px solid var(--apai-border);
+  padding: var(--sp-2);
+}
+
+/* ── Viewport ───────────────────────────────────────────────── */
+.shell-viewport {
+  grid-area: viewport;
+  overflow-y: auto;
+  background: var(--apai-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-viewport > main {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sp-6);
+}
+
+.shell-footer {
+  grid-area: footer;
+  padding: var(--sp-3) var(--sp-6);
+  border-top: 1px solid var(--apai-border);
+  background: var(--apai-bg-elev);
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+  letter-spacing: 0.02em;
+  /* Lives in its own grid row outside .shell-viewport — no sticky needed.
+     Always pinned to the bottom of the shell; module content scrolls
+     independently inside .shell-viewport above it. */
+}
+
+/* Module root — receives .module-<id> class for accent scoping */
+.shell-viewport > main > [class*="module-"] {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ── Layout primitives modules can use ──────────────────────── */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.stack-sm { gap: var(--sp-2); }
+.stack-lg { gap: var(--sp-6); }
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: center;
+}
+.cluster-end   { justify-content: flex-end; }
+.cluster-apart { justify-content: space-between; }
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+.grid-cards {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}

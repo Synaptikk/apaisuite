@@ -1,0 +1,13 @@
+{
+  "name": "apaisuite-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Developer/lead tooling for APAISuite. Not shipped with the extension.",
+  "scripts": {
+    "export-usage": "node export_usage_metrics_report.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

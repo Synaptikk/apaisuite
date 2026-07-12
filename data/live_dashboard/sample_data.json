@@ -1,0 +1,251 @@
+{
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "description": "Mock/sample data for each source. Used for: (1) unit tests of the matching/rules engine before real data exists; (2) UI development against representative shapes; (3) examples in this discovery package. NOT real production data. Generated to be illustrative of the kinds of patterns the dashboard surfaces.",
+  "absences": [
+    {
+      "storeNbr": "1458",
+      "associate": "DOE, JOHN (12345678)",
+      "win": "12345678",
+      "absenceDate": "2026-06-02",
+      "callDateTime": "2026-06-02T06:14:00-05:00",
+      "dept": "GM",
+      "job": "Cashier",
+      "absenceType": "Absence",
+      "absenceReason": "Personal",
+      "confirmation": "C2987632",
+      "source": "IVR",
+      "_source": { "module": "closinglist", "capturedAt": "2026-06-02T09:42:00-05:00", "sourceUrl": "https://ivrattcloud-prod.wal-mart.com/ailAbsence.aspx" }
+    },
+    {
+      "storeNbr": "1458",
+      "associate": "SMITH, MARY",
+      "win": null,
+      "absenceDate": "2026-06-02",
+      "callDateTime": "2026-06-02T05:55:00-05:00",
+      "dept": "GM",
+      "job": "Cashier",
+      "absenceType": "Tardy",
+      "absenceReason": "Traffic",
+      "confirmation": null,
+      "source": "IVR",
+      "_source": { "module": "closinglist", "capturedAt": "2026-06-02T09:42:00-05:00", "sourceUrl": "https://ivrattcloud-prod.wal-mart.com/ailAbsence.aspx" }
+    },
+    {
+      "storeNbr": "1458",
+      "associate": "NGUYEN, ALEX (87654321)",
+      "win": "87654321",
+      "absenceDate": "2026-06-02",
+      "callDateTime": "2026-06-02T07:02:00-05:00",
+      "dept": "Front End",
+      "job": "Service Lead",
+      "absenceType": "Absence",
+      "absenceReason": "Sick",
+      "confirmation": "C2987635",
+      "source": "IVR",
+      "_source": { "module": "closinglist", "capturedAt": "2026-06-02T09:42:00-05:00", "sourceUrl": "https://ivrattcloud-prod.wal-mart.com/ailAbsence.aspx" }
+    }
+  ],
+  "compliance": [
+    {
+      "facility": "01458",
+      "taskName": "Weekly Eyewash Inspection",
+      "assignedGroups": ["Facilities"],
+      "dueDate": "2026-06-09",
+      "dueAt": null,
+      "daysUntilDue": 7,
+      "isOverdue": false,
+      "isDueSoon": true,
+      "category": "weekly",
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T06:00:00-05:00", "sourceUrl": "https://go.enviance.com/CustomApp/...", "panelId": "cd2f57ae-5625-4762-8f88-1d47d915cc54" }
+    },
+    {
+      "facility": "01458",
+      "taskName": "Monthly AP Security Tour",
+      "assignedGroups": ["AP"],
+      "dueDate": "2026-05-31",
+      "dueAt": null,
+      "daysUntilDue": -2,
+      "isOverdue": true,
+      "isDueSoon": false,
+      "category": "monthly",
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T06:00:00-05:00", "sourceUrl": "https://go.enviance.com/CustomApp/...", "panelId": "cd2f57ae-5625-4762-8f88-1d47d915cc54" }
+    },
+    {
+      "facility": "01458",
+      "taskName": "Monthly Fire Extinguisher Inspection",
+      "assignedGroups": ["Facilities"],
+      "dueDate": "2026-06-30",
+      "dueAt": null,
+      "daysUntilDue": 28,
+      "isOverdue": false,
+      "isDueSoon": false,
+      "category": "monthly",
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T06:00:00-05:00", "sourceUrl": "https://go.enviance.com/CustomApp/...", "panelId": "cd2f57ae-5625-4762-8f88-1d47d915cc54" }
+    }
+  ],
+  "accidentEvidence": [
+    {
+      "storeNbr": "1458",
+      "reportType": "BodilyInjury",
+      "referenceNbr": "BI-2026-01874",
+      "trackingNbr": "T-998211",
+      "claimant": "JANE D.",
+      "daysOpen": 18,
+      "customerStatement": "complete",
+      "witnessStatement": "missing",
+      "video": "missing",
+      "photos": "complete",
+      "evidenceCollectionSheet": "complete",
+      "evidenceStatus": "partial",
+      "enhancedExport": "no",
+      "missingItems": ["witnessStatement", "video"],
+      "missingCount": 2,
+      "priorityScore": 8,
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T09:30:00-05:00", "sourceUrl": "https://one.walmart.com/.../accident-charge-summary.html" }
+    },
+    {
+      "storeNbr": "1458",
+      "reportType": "GarageKeeperPropertyDamage",
+      "referenceNbr": "GK-2026-00321",
+      "trackingNbr": "T-998455",
+      "claimant": "ANON.",
+      "daysOpen": 3,
+      "customerStatement": "missing",
+      "witnessStatement": "complete",
+      "video": "complete",
+      "photos": "complete",
+      "evidenceCollectionSheet": "complete",
+      "evidenceStatus": "partial",
+      "enhancedExport": "yes",
+      "missingItems": ["customerStatement"],
+      "missingCount": 1,
+      "priorityScore": 2,
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T09:30:00-05:00", "sourceUrl": "https://one.walmart.com/.../accident-charge-summary.html" }
+    }
+  ],
+  "cvp": [
+    {
+      "storeNbr": "1458",
+      "wmWeekNbr": 17,
+      "deptGroupNbr": 2,
+      "firstCvpQty": 2419,
+      "cvpToCvpQty": 1610,
+      "cvpTotalQty": 5800,
+      "cvpSalesQty": 1033,
+      "cvpSalesRetailCents": 480300,
+      "sellThroughPct": 17.8,
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T09:45:00-05:00", "queryParams": { "storeNbr": "1458", "wmWeekNbr": 17, "deptGroupNbr": 2 } }
+    }
+  ],
+  "registerDiscrepancies": [
+    {
+      "storeNbr": "1458",
+      "date": "2026-05-30",
+      "registerNbr": "67",
+      "amountCents": -2000,
+      "type": "short",
+      "amountAbsCents": 2000,
+      "operators": [],
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T16:00:00-05:00", "sourceMethod": "xlsx-import", "reportId": "65c97d6a-7ad8-498d-b752-69028d408993" }
+    },
+    {
+      "storeNbr": "1458",
+      "date": "2026-05-31",
+      "registerNbr": "68",
+      "amountCents": 2300,
+      "type": "over",
+      "amountAbsCents": 2300,
+      "operators": [],
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T16:00:00-05:00", "sourceMethod": "xlsx-import", "reportId": "65c97d6a-7ad8-498d-b752-69028d408993" }
+    },
+    {
+      "storeNbr": "1458",
+      "date": "2026-05-29",
+      "registerNbr": "10",
+      "amountCents": -20000,
+      "type": "short",
+      "amountAbsCents": 20000,
+      "operators": [],
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T16:00:00-05:00", "sourceMethod": "xlsx-import", "reportId": "65c97d6a-7ad8-498d-b752-69028d408993" }
+    },
+    {
+      "storeNbr": "1458",
+      "date": "2026-05-29",
+      "registerNbr": "11",
+      "amountCents": 20000,
+      "type": "over",
+      "amountAbsCents": 20000,
+      "operators": [],
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T16:00:00-05:00", "sourceMethod": "xlsx-import", "reportId": "65c97d6a-7ad8-498d-b752-69028d408993" }
+    },
+    {
+      "storeNbr": "1458",
+      "date": "2026-05-28",
+      "registerNbr": "42",
+      "amountCents": -15500,
+      "type": "short",
+      "amountAbsCents": 15500,
+      "operators": [],
+      "_source": { "module": "livedashboard", "capturedAt": "2026-06-02T16:00:00-05:00", "sourceMethod": "xlsx-import", "reportId": "65c97d6a-7ad8-498d-b752-69028d408993" }
+    }
+  ],
+  "registerFindings": [
+    {
+      "id": "f-1458-2026-05-30-67",
+      "storeNbr": "1458",
+      "primaryDate": "2026-05-30",
+      "primaryRegister": "67",
+      "primaryAmountCents": -2000,
+      "matchType": "nearby-register-offset",
+      "matchedAgainst": [
+        { "date": "2026-05-31", "registerNbr": "68", "amountCents": 2300, "deltaCents": 300, "daysApart": 1 }
+      ],
+      "severity": "low",
+      "reason": "Register 67 short $20.00 on 2026-05-30 likely offset by register 68 over $23.00 on 2026-05-31",
+      "dismissed": false,
+      "dismissedAt": null,
+      "dismissedBy": null,
+      "note": null
+    },
+    {
+      "id": "f-1458-2026-05-29-10",
+      "storeNbr": "1458",
+      "primaryDate": "2026-05-29",
+      "primaryRegister": "10",
+      "primaryAmountCents": -20000,
+      "matchType": "nearby-register-offset",
+      "matchedAgainst": [
+        { "date": "2026-05-29", "registerNbr": "11", "amountCents": 20000, "deltaCents": 0, "daysApart": 0 }
+      ],
+      "severity": "low",
+      "reason": "Register 10 short $200.00 likely offset by register 11 over $200.00 (same day) — possible till check-in",
+      "dismissed": false,
+      "dismissedAt": null,
+      "dismissedBy": null,
+      "note": null
+    },
+    {
+      "id": "f-1458-2026-05-28-42",
+      "storeNbr": "1458",
+      "primaryDate": "2026-05-28",
+      "primaryRegister": "42",
+      "primaryAmountCents": -15500,
+      "matchType": "none",
+      "matchedAgainst": [],
+      "severity": "high",
+      "reason": "Register 42 short $155.00 on 2026-05-28 — no offset found within 3 days. R1 unmatched.",
+      "dismissed": false,
+      "dismissedAt": null,
+      "dismissedBy": null,
+      "note": null
+    }
+  ],
+  "freshness": {
+    "absences":   { "sourceId": "absences",   "lastSuccess": "2026-06-02T09:42:00-05:00", "lastAttempt": "2026-06-02T09:42:00-05:00", "lastError": null,                                      "staleAfterMs": 1800000,  "isStale": false },
+    "compliance": { "sourceId": "compliance", "lastSuccess": "2026-06-02T06:00:00-05:00", "lastAttempt": "2026-06-02T06:00:00-05:00", "lastError": null,                                      "staleAfterMs": 43200000, "isStale": false },
+    "accident":   { "sourceId": "accident",   "lastSuccess": "2026-06-02T09:30:00-05:00", "lastAttempt": "2026-06-02T09:30:00-05:00", "lastError": null,                                      "staleAfterMs": 3600000,  "isStale": false },
+    "cvp":        { "sourceId": "cvp",        "lastSuccess": "2026-06-02T09:45:00-05:00", "lastAttempt": "2026-06-02T09:45:00-05:00", "lastError": null,                                      "staleAfterMs": 1800000,  "isStale": false },
+    "register":   { "sourceId": "register",   "lastSuccess": "2026-06-01T16:00:00-05:00", "lastAttempt": "2026-06-01T16:00:00-05:00", "lastError": null,                                      "staleAfterMs": 86400000, "isStale": false }
+  }
+}

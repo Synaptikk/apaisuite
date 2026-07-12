@@ -1,0 +1,47 @@
+{
+  "slicerFound": true,
+  "slicerRect": {},
+  "slicerAncestorPath": [
+    "div.slicer-dropdown-menu[role=combobox][aria=\"Store\"]",
+    "div.slicer-content-wrapper",
+    "div.slicer-container",
+    "div.visual.customPadding.allow-deferred-rendering",
+    "visual-modern",
+    "div.visualWrapper.report",
+    "div.vcBody.themableBackgroundColor.themableBorderColorSolid",
+    "div.visualContent.noVisualContainerHeader.noPopOutBar"
+  ],
+  "slicerVisualOuterHtmlSnip": "<div _ngcontent-ng-c2448798784=\"\" ng-non-bindable=\"\" skip-children-focus=\"\" extended-shortcut-scope=\"\" toolbar-anchor=\"\" class=\"visualContainer unselectable readMode hideBorder noVisualTitle droppableElement ui-droppable visualHeaderAbove\" role=\"group\" aria-roledescription=\"Slicer\" tab-order=\"5000\" tabindex=\"0\" aria-hidden=\"false\" touch-action=\"auto\"><p _ngcontent-ng-c2448798784=\"\" role=\"tooltip\" aria-hidden=\"true\" localize=\"VisualContainer_VisualsEnterHint_OnView\" class=\"visualsEnterHint\" id=\"visualsEnterHint-aee770bfad008d03c1ca\">Press Enter to explore data</p><!----><!----><p _ngcontent-ng-c2448798784=\"\" role=\"tooltip\" aria-hidden=\"true\" class=\"visualsEnterHint\" id=\"visualsLabel-aee770bfad008d03c1ca\"></p><div _ngcontent-ng-c2448798784=\"\" class=\"visualContainerBorder themableBorderColor\"></div><!----><div _ngcontent-ng-c2448798784=\"\" class=\"visualContainerScreen\"></div><!----><spinner _ngcontent-ng-c2448798784=\"\" localize-tooltip=\"Visual_Loading_AlertText\" _nghost-ng-c1606928464=\"\" title=\"Visuals are loading...\"><div _ngcontent-ng-c1606928464=\"\" class=\"powerbi-spinner xsmall\"><div _ngcontent-ng-c1606928464=\"\" data-testid=\"spinner\" class=\"spinner\"><div _ngcontent-ng-c1606928464=\"\" class=\"circle\"></div><div _ngcontent-ng-c1606928464=\"\" class=\"circle\"></div><div _ngcontent-ng-c1606928464=\"\" class=\"circle\"></div><div _ngcontent-ng-c1606928464=\"\" class=\"circle\"></div><div _ngcontent-ng-c1606928464=\"\" class=\"circle\"></div></div></div></spinner><!----><!----><!----><!----><!----><div _ngcontent-ng-c2448798784=\"\" class=\"visualContent noVisualContainerHeader noPopOutBar\" focus-nav-mode=\"Group\"><!----><!----><div _ngcontent-ng-c2448798784=\"\" data-sub-selection-hide-outline=\"true\" data-sub-selection-display-name=\"Visual_Area\" class=\"vcBody themableBackgroundColor themableBorderColorSolid sub-selectable\" data-sub-selection-object-name=\"visual-area\" data-subselectable-region=\"visual-area\" data-sub-selection-type=\"3\" style=\"transform: scale(1.11389); width: 136.301px; height: 70.7126px;\"><div _ngcontent-ng-c2448798784=\"\" data-testid=\"visual-style\" class=\"visualWrapper report\" style=\"padding: 5px; background-color: rgb(255, 255, 255);\"><!----><!----><!----><!----><!----><!----><!----><!----><!----><visual-modern _ngcontent-ng-c2448798784=\"\" data-automation-type=\"visual\" data-testid=\"visual\" _nghost-ng-c2638285324=\"\"><div _ngcontent-ng-c2638285324=\"\" data-testid=\"visual-content-desc\" ng-non-bindable=\"\" class=\"visual customPadding allow-deferred-rendering visual-slicer\" initialized=\"\"><div class=\"slicer-container\" style=\"height: 60.7126px;\"><span aria-live=\"polite\" role=\"status\" style=\"display: none;\"></span><div class=\"slicer-header-wrapper\"><div class=\"slicer-header\"><div class=\"slicer-header-title\" style=\"border-style: none; border-color: rgb(96, 94, 92); border-width: 0px; font-size: 16px;\"><span class=\"slicer-header-clear enable-hover\" aria-label=\"Clear selections\" role=\"button\" tabindex=\"0\" style=\"font-size: 16px; color: rgb(96, 94, 92);\"></span><h3 class=\"slicer-header-text\" title=\"Store\" aria-label=\"Store\" style=\"font-size: 16px; font-family: wf_standard-font, helvetica, arial, sans-serif; color: rgb(37, 36, 35); font-weight: normal; font-style: normal; text-decoration: none; order: 2;\">Store</h3><div class=\"slicer-header-pending-text\" style=\"font-size: 16px; font-family: wf_standard-font, helvetica, arial, sans-serif; color: rgb(37, 36, 35); font-weight: normal; font-style: normal; text-decoration: none; display: none; order: 1;\">(Not yet applied)</div><svg width=\"12\" height=\"12\" viewBox=\"0 0 17 16\" class=\"slicer-header-pending-icon\" xmlns=\"https://www.w3.org/2000/svg\" viewbox=\"0 0 12 12\" style=\"display: none; opacity: 1; order: 3;\">\n        <path class=\"slicer-header-pending-icon-path OfficeIconColors_HighContrast\" d=\"M8.00781 0C12.4261 0 16.0078 3.58172 16.0078 8C16.0078 12.4183 12.4261\n        16 8.00781 16C3.58953 16 0.0078125 12.4183 0.0078125 8C0.0078125 3.58172 3.58953 0 8.00781 0ZM7.50781 3C7.23167 3 7.00781 3.22386\n        ",
+  "inputsInSlicerVisual": [],
+  "allOptionsCount": 8,
+  "visibleOptionsCount": 0,
+  "containersMentioningStore": [
+    {
+      "tag": "H3",
+      "role": null,
+      "aria": "Store",
+      "visible": true,
+      "classes": [
+        "slicer-header-text"
+      ]
+    },
+    {
+      "tag": "DIV",
+      "role": "combobox",
+      "aria": "Store",
+      "visible": true,
+      "classes": [
+        "slicer-dropdown-menu"
+      ]
+    },
+    {
+      "tag": "DIV",
+      "role": "listbox",
+      "aria": "Store",
+      "visible": false,
+      "classes": [
+        "slicerBody"
+      ]
+    }
+  ]
+}
