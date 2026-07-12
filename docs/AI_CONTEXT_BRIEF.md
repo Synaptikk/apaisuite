@@ -4,7 +4,7 @@
 > and be oriented enough to do useful work without reading the rest of `docs/`.
 > Everything else is read-on-demand. See [`DOC_STATUS.md`](DOC_STATUS.md) for the map.
 
-**Last reviewed:** 2026-06-02 · **Suite version:** 0.8.2
+**Last reviewed:** 2026-07-12 · **Suite version:** 0.9.0
 
 ---
 
@@ -22,17 +22,21 @@ through `qrcallbox.com` (Chrome Web Store path is deferred — see
 
 ---
 
-## What's live right now (2026-06-02)
+## What's live right now (2026-07-12)
 
 | Module | Slug | Status | What it does |
 |---|---|---|---|
-| LiveDashboard | `livedashboard` | beta (Phase 1) | 5-widget home/header dashboard: callouts, compliance, accident evidence, CVP, register exceptions. Phase 1 live: CVP (Hoops tRPC) + Absences (closinglist bridge). Discovery package at `docs/live_dashboard_backend/`. |
-| ClosingList | `closinglist` | live | Closing-shift email draft from CaseVisibility + IVR call-offs |
-| AurorBuddy | `aurorbuddy` | live | Auror suspect ↔ APPRISS/Secure cross-reference + CCTV evidence download (uses `debugger` for HLS capture) |
-| SparkFraud | `sparkfraud` | live | Register-event → Spark/Express/GMD delivery-driver trip correlation; OMS order/item drill-down |
+| LiveDashboard | `livedashboard` | live (Phase 2) | 6-widget home/header dashboard: CVP, Absences, Compliance (Enviance capture-replay), Accident Evidence, Register Long/Short, Recognition. |
+| AurorBuddy | `aurorbuddy` | live | Auror suspect ↔ APPRISS/Secure cross-reference + CCTV evidence download. Backend rewrite shipped 2026-06-07 (corrected Firestore schema: `transactionTotalCandidate` vs `finalEventValue`). |
+| ORC Corridor Monitor | `orcmonitor` | live | Real-time ORC threat tracking: maps suspect Auror event history onto store corridors to surface approaching actors. |
+| LicenseIntake | `licenseintake` | live | Scanner-driven DL capture (DS9808 / PDF417) + Auror person-draft + APPRISS card cross-reference. Native messaging bridge for scanner input. |
+| SparkFraud | `sparkfraud` | live | Register-event → Spark/Express/GMD delivery-driver trip correlation; OMS order/item drill-down. Canonical enums registry added. |
 | ClaimsDisposition | `claimsdisposition` | live | 30-day Looker Studio pull (`apscpi.wal-mart.com`), per-store/per-user outlier analysis. Uses BigQuery via Cloud Functions for historical roll-ups. |
-| DigitalLocks | `digitallocks` | live (V1) | Daily AP review of digital-lock unlock events; risk-scored, in-browser IndexedDB only, no network |
-| Workvivo | `workvivo` | beta | QRCallBox ↔ Workvivo token-heartbeat: reads `window.v2.chatConfig.access_token` hourly and POSTs it to QRCallBox so QR-scan notifications keep working without SAML/MFA replay |
+| DigitalLocks | `digitallocks` | live (V1) | Daily AP review of digital-lock unlock events; risk-scored, in-browser IndexedDB only, no network. Power BI driver content script on disk (V1.5). |
+| Workvivo | `workvivo` | live | QRCallBox ↔ Workvivo token-heartbeat: reads `window.v2.chatConfig.access_token` hourly and POSTs it to QRCallBox. |
+| ClosingList | `closinglist` | live | Closing-shift email draft from CaseVisibility + IVR call-offs |
+| StockingPlan | `stockingplan` | live | Overnight stocking plan: freight from CaseVisibility → labour hours → associate assignments. |
+| AssocPurchases | `assocpurchases` | **WIP, disabled** in `_registry.js` | Markdown ↔ associate-discount-card cross-reference (self-purchase + friend/family fraud). |
 | ClaimsBuddy | `claimsbuddy` | **WIP, disabled** in `_registry.js` | Clearsight claims helper. Has `native_host/` (native messaging). Re-enable by uncommenting the import + array entry. |
 
 Toolbar click opens `app.html` (the shell). Sidebar nav order is set by the
