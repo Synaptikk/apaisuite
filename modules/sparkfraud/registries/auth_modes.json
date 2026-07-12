@@ -1,0 +1,139 @@
+{
+  "_meta": {
+    "purpose": "How SparkFraud authenticates against each origin. The 'header set per origin/realmid' is currently scattered across app.js:buildHeaders, background.js:driveOrderResolution cleanup, background.js:fetchJson gscope branch, and every dispatcher recon script. This file is the single source of truth.",
+    "seeded_from": [
+      "extension/app.js:201-251 (buildHeaders)",
+      "extension/background.js:367-374 (OMS header strip list)",
+      "extension/background.js:446 (gscope fetchJson cleanHeaders)",
+      "extension/background.js:495-587 (getGscopeCookies)",
+      "notes/api_endpoints.md:144-188 (Auth model section)",
+      "notes/sso.md"
+    ],
+    "seeded_on": "2026-05-22",
+    "data_safety_rules": [
+      "NEVER log or persist cookie VALUES — only names.",
+      "NEVER include x-authheader/x-authtoken values in telemetry, fixtures, docs, or commit messages.",
+      "Captured headers in chrome.storage.session are session-scoped and die with Edge — that is intentional."
+    ]
+  },
+
+  "swift_dispatcher": {
+    "_purpose": "Calling swift.walmart.com Spark Dispatcher endpoints. Header-based auth — NO cookies attach (confirmed in notes/api_endpoints.md:179-180).",
+    "origin": "https://swift.walmart.com",
+    "auth_strategy": "HEADER_ONLY",
+    "cookies_required": [],
+    "headers_required": {
+      "content-type":           "application/json",
+      "accept":                 "application/json, text/plain, */*",
+      "accept-language":        "en-US",
+      "cache-control":          "no-cache",
+      "device_timezone":        "<store TZ — see store_config.json>",
+      "installed_app":          "spark-dispatcher.us",
+      "referer":                "https://swift.walmart.com/sparkApp/",
+      "tenantid":               "0",
+      "wm_consumer.tenant_id":  "0",
+      "wm_tenant_id":           "0",
+      "x-authheader":           "<gscope cookie 'authHeader' value>",
+      "x-authtoken":            "<gscope cookie 'authToken' value>",
+      "x-channel":              "WEB",
+      "x-domain":               "USLM",
+      "x-firstname":            "<from cookie 'displayName' first word>",
+      "x-lastname":             "<from cookie 'displayName' remainder>",
+      "x-loggedindomain":       "<cookie 'loggedInDomain' (lowercased lookup) — default 'store'>",
+      "x-loggedinusername":     "<cookie 'loggedInUserName'>",
+      "x-realmid":              "DISPATCHER_WEB_UI",
+      "x-source":               "DISPATCHER",
+      "x-sourceapp":            "DISPATCHER_WEB_UI",
+      "x-storeid":              "<cookie 'store-no' or store_config default>",
+      "x-tenant":               "WALMART_US",
+      "x-tenantid":             "0",
+      "x-timezone":             "+00:00",
+      "x-userid":               "<cookie 'loginId'>",
+      "x-username":             "<cookie 'displayName'>"
+    },
+    "cookie_keys_consumed": [
+      "authToken",
+      "authHeader",
+      "loginId",
+      "displayName",
+      "store-no",
+      "loggedInDomain",
+      "loggedInUserName"
+    ],
+    "cookie_lookup_note": "Cookie names from gscope are inconsistent in case. app.js:215 lowercases all keys before lookup. NEW consumers MUST do the same.",
+    "confidence": "VERIFIED",
+    "source": "notes/api_endpoints.md:144-180, captured from natural SPA requests."
+  },
+
+  "gscope_oms_drive": {
+    "_purpose": "Calling gscope provider-oms/orders by driving the Order Resolution UI in a helper tab and harvesting the natural response. SLOW PATH.",
+    "origin": "https://gscope.walmartlabs.com",
+    "auth_strategy": "DRIVE_UI_AND_CAPTURE",
+    "cookies_required": ["JSESSIONID", "authToken", "authHeader"],
+    "cookies_attached_via": "Same-origin: the helper tab IS a gscope tab, so the browser attaches all cookies (incl. HttpOnly JSESSIONID) automatically.",
+    "headers_required": "None set by us — the SPA's interceptors set the right x-realmid and other headers when its own fetch fires.",
+    "tab_lifecycle": "Open fresh background tab → drive form → capture response from window.__SPARK_CAP → close tab. NEVER reuse a tab (notes/api_endpoints.md 'Reusing the Order Resolution tab' — second drive hangs).",
+    "confidence": "VERIFIED",
+    "source": "extension/background.js:261-389 (driveOrderResolution), notes/api_endpoints.md:236-253"
+  },
+
+  "gscope_replay": {
+    "_purpose": "Replaying gscope endpoints with captured headers via in-gscope-tab fetch. FAST PATH (subsequent calls after drive-the-UI has captured headers once).",
+    "origin": "https://gscope.walmartlabs.com",
+    "auth_strategy": "REPLAY_CAPTURED_HEADERS_VIA_IN_TAB_FETCH",
+    "cookies_required": ["JSESSIONID", "authToken", "authHeader"],
+    "cookies_attached_via": "Same-origin: fetch runs inside an open gscope tab via chrome.scripting.executeScript, so cookies attach automatically.",
+    "headers_required": "Captured at slow-path drive time; persisted in chrome.storage.session.omsHeaders (session-scoped).",
+    "headers_strip_list_before_replay": [
+      "host",
+      "content-length",
+      "cookie",
+      "user-agent",
+      ":authority",
+      ":method",
+      ":path",
+      ":scheme",
+      "origin",
+      "referer",
+      "accept-encoding",
+      "connection"
+    ],
+    "strip_list_rationale": "Chrome won't allow setting these — browser-managed or pseudo-headers from HTTP/2. Sending them throws or is silently ignored.",
+    "stale_header_recovery": "On 401/403 with cached headers, clear chrome.storage.session.omsHeaders and fall through to slow path (background.js:306).",
+    "confidence": "VERIFIED",
+    "source": "extension/background.js:278-311"
+  },
+
+  "gscope_in_tab_generic": {
+    "_purpose": "Generic gscope endpoint via in-tab fetch with minimal headers (just content-type). Used by fetchJson when no captured headers exist.",
+    "origin": "https://gscope.walmartlabs.com",
+    "auth_strategy": "IN_TAB_FETCH_COOKIES_ONLY",
+    "cookies_required": ["JSESSIONID", "authToken", "authHeader"],
+    "headers_set": {"content-type": "application/json"},
+    "headers_NOT_set_and_why": "Dispatcher-specific x-* headers (x-realmid: DISPATCHER_WEB_UI etc.) would be wrong for OMS / other gscope endpoints. The server rejects requests with mismatched realmid (notes/api_endpoints.md:240-244).",
+    "confidence": "LIKELY",
+    "source": "extension/background.js:430-473",
+    "open_question": "Which gscope endpoints accept cookie-only auth and which require their realmid-specific headers? Currently unknown — most non-OMS gscope endpoints not yet driven."
+  },
+
+  "walmart_consumer": {
+    "_purpose": "Calling walmart.com consumer product pages for og:image scrape.",
+    "origin": "https://www.walmart.com",
+    "auth_strategy": "UNAUTHENTICATED",
+    "cookies_required": [],
+    "headers_required": {},
+    "fetch_options": {"credentials": "omit"},
+    "confidence": "VERIFIED",
+    "source": "extension/background.js:101-104"
+  },
+
+  "cookie_extraction_strategy": {
+    "_purpose": "Workaround for Walmart-managed Edge's gutted chrome.cookies API. Documented here so future consumers don't re-discover.",
+    "problem": "chrome.cookies.getAll({}) from extension SW returns only 2 cookies for the entire profile (Edge corp policy).",
+    "workaround": "Read non-HttpOnly cookies via chrome.scripting.executeScript injected into a gscope tab (document.cookie returns them all in-page). Merge with chrome.cookies.getAll for HttpOnly cookies.",
+    "implementation": "extension/background.js:495-587 (getGscopeCookies)",
+    "preconditions": "At least one tab open on https://gscope.walmartlabs.com/* and that tab is responsive (we race against a 5s timeout per tab and try each one).",
+    "confidence": "VERIFIED",
+    "source": "notes/puppeteering_playbook.md (chrome.cookies API is gutted)"
+  }
+}

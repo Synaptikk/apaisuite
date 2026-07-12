@@ -1,0 +1,13 @@
+{
+  "name": "apaisuite-dev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling: CDP attach to a running Edge instance for live SW debugging.",
+  "scripts": {
+    "debug:aurorbuddy": "node edge-debug.mjs aurorbuddy-preflight"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}

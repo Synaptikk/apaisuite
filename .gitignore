@@ -1,0 +1,25 @@
+# Signing keys — never commit
+*.pem
+
+# Release tooling scratch
+scripts/node_modules/
+scripts/.staging/
+
+# Dev tooling — puppeteer-core + chromium-bidi for the Edge CDP debug helper.
+# ~40 MB of native modules that have no business in the published extension.
+# scripts/release.sh strips dev/ at package time; this prevents accidental commit.
+dev/node_modules/
+
+# Playwright MCP session logs / snapshots (generated in module dev folders)
+**/.playwright-mcp/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Built artifacts (created by scripts/release.sh into /tmp, never here, but
+# guard against accidental in-tree builds)
+apaisuite-*.zip
+apaisuite-*.crx

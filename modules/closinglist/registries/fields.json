@@ -1,0 +1,144 @@
+{
+  "$schema_version": "1.0.0",
+  "last_updated": "2026-05-22",
+  "reconArtifact": "casevisibility-recon-2026-05-22T19-42-08-399Z.json + schema dump 2026-05-22",
+  "notes": "VERIFIED field names from schema dump. Timestamp format is ASSUMED 'YYYY/MM/DD HH:MM' (length=16) by inference from businessDate convention; parser is tolerant of common alternates.",
+  "fields": {
+    "associate.win_nbr": {
+      "purpose": "Walmart Identification Number (employee ID). Not used in email output.",
+      "type": "number",
+      "apiSource": "schedule.scheduled_associates[i].win_nbr",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22",
+      "notes": "Treat as sensitive. Do not display, do not log."
+    },
+    "associate.fname": {
+      "purpose": "Legal first name.",
+      "type": "string",
+      "apiSource": "schedule.scheduled_associates[i].fname",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22",
+      "notes": "May be empty when preferred_name is set."
+    },
+    "associate.lname": {
+      "purpose": "Legal last name. Only the first character (last initial) is used in email.",
+      "type": "string",
+      "apiSource": "schedule.scheduled_associates[i].lname",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.preferred_name": {
+      "purpose": "Preferred first name. Display this in email when non-empty; fall back to fname.",
+      "type": "string",
+      "apiSource": "schedule.scheduled_associates[i].preferred_name",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.displayName": {
+      "purpose": "Computed: '{preferred_name OR fname} {lname[0]}'.",
+      "type": "string",
+      "examplePattern": "Shane S",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22",
+      "notes": "Skip the row entirely if both name fields are empty (write-in placeholders)."
+    },
+    "associate.shift_start_ts": {
+      "purpose": "Whole-shift start timestamp (includes meal break).",
+      "type": "string-timestamp",
+      "apiSource": "schedule.scheduled_associates[i].shift_start_ts",
+      "format": "ASSUMED 'YYYY/MM/DD HH:MM' (length 16)",
+      "status": "INFERRED",
+      "lastVerified": "2026-05-22",
+      "notes": "Parser tolerates ISO ('YYYY-MM-DDTHH:MM'), dash-separated, slash-separated, and 12h variants."
+    },
+    "associate.shift_end_ts": {
+      "purpose": "Whole-shift end timestamp.",
+      "type": "string-timestamp",
+      "apiSource": "schedule.scheduled_associates[i].shift_end_ts",
+      "status": "INFERRED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.shift_minutes": {
+      "purpose": "Whole-shift length in minutes (includes meal).",
+      "type": "number",
+      "apiSource": "schedule.scheduled_associates[i].shift_minutes",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.meal_*": {
+      "purpose": "Meal break window. Not surfaced in v1 email.",
+      "apiSource": "schedule.scheduled_associates[i].meal_start_ts / meal_end_ts / meal_minutes",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.shift1_job_code": {
+      "purpose": "Job code for the first work segment.",
+      "type": "string",
+      "apiSource": "schedule.scheduled_associates[i].shift1_job_code",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.shift1_job_desc": {
+      "purpose": "Human-readable label of the first job segment.",
+      "type": "string",
+      "apiSource": "schedule.scheduled_associates[i].shift1_job_desc",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22"
+    },
+    "associate.shift1_start_ts": { "type": "string-timestamp", "status": "VERIFIED" },
+    "associate.shift1_end_ts": { "type": "string-timestamp", "status": "VERIFIED" },
+    "associate.shift1_minutes": { "type": "number", "status": "VERIFIED" },
+    "associate.shift2_job_code": {
+      "purpose": "Job code for the second work segment (may be empty).",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22",
+      "notes": "Empty when associate works only one job segment. shift2_minutes was observed as a string in the dump — handle both number and string by coercion."
+    },
+    "associate.shift2_job_desc": { "status": "VERIFIED" },
+    "associate.shift2_start_ts": { "status": "VERIFIED" },
+    "associate.shift2_end_ts": { "status": "VERIFIED" },
+    "associate.shift2_minutes": { "status": "VERIFIED" },
+
+    "headcount_changes[i]": {
+      "purpose": "Aggregate call-off + write-in count per job code. This is the ONLY call-off info available.",
+      "type": "object",
+      "shape": {
+        "job_nbr": "number",
+        "job_desc": "string",
+        "nbr_scheduled_plus_write_ins": "number",
+        "nbr_called_off": "number"
+      },
+      "apiSource": "headcount_changes[i]",
+      "status": "VERIFIED",
+      "lastVerified": "2026-05-22",
+      "notes": "Rendered in email as 'Call-offs by job:' bullet list. User manually annotates which named associates are absent."
+    },
+
+    "schedule_changes[i]": {
+      "purpose": "Possibly per-associate schedule edits (call-ins, no-shows). Empty in test data.",
+      "shape": "UNKNOWN",
+      "status": "UNKNOWN",
+      "notes": "Re-run schema dump on a day with non-zero changes to discover the structure. ClosingList v1 ignores this array."
+    }
+  },
+  "filters": {
+    "afternoonEvening": {
+      "purpose": "Defines which associates count as 'afternoon/evening' for the closing email.",
+      "rule": "shift_start_ts hour >= startCutoff OR shift_end_ts hour >= endCutoff",
+      "defaultStartCutoff": "13:00",
+      "defaultEndCutoff": "17:00",
+      "userConfigurable": true,
+      "configKey": "afternoonCutoff",
+      "status": "ASSUMED",
+      "notes": "Default cutoff; user can adjust via popup."
+    }
+  },
+  "emailRendering": {
+    "lineFormat": "{displayName}: {shiftStartFormatted} - {shiftEndFormatted}:",
+    "sortBy": "shift_start_ts ascending",
+    "aggregateCallOffSection": "headcount_changes filtered to nbr_called_off > 0, rendered as '{job_desc}: {nbr_called_off}'",
+    "exampleOutput": "Shane S: 1:00 PM - 10:00 PM:\nJohn D: 2:00 PM - 11:00 PM:\n\nCall-offs by job (aggregate, names not tracked by system):\nStocking 2 TA: 1",
+    "status": "VERIFIED",
+    "source": "user confirmation 2026-05-22"
+  }
+}

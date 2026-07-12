@@ -1,0 +1,79 @@
+{
+  "version": "0.1.0",
+  "lastUpdated": "2026-06-02",
+  "description": "Per-source polling defaults. All times in milliseconds. See docs/live_dashboard_backend/POLLING_PLAN.md for rationale. These are the seed values; the user can override via livedashboard.settings.refreshIntervals.",
+  "sources": {
+    "absences": {
+      "intervalMs":       900000,
+      "intervalLabel":    "15 min",
+      "cacheMs":          900000,
+      "staleAfterMs":     1800000,
+      "alarmName":        "livedashboard.absences",
+      "cost":             "high (3-page WebForms scrape; MAC-error retries possible)",
+      "minIntervalMs":    600000,
+      "rationale":        "IVR data updates within minutes. 15 min surfaces callouts quickly without overrunning the cluster's intermittent failure rate."
+    },
+    "compliance": {
+      "intervalMs":       21600000,
+      "intervalLabel":    "6 hours",
+      "cacheMs":          21600000,
+      "staleAfterMs":     43200000,
+      "alarmName":        "livedashboard.compliance",
+      "cost":             "low (small JSON XHR)",
+      "minIntervalMs":    1800000,
+      "rationale":        "Due dates change slowly. Hourly is wasteful; 6h captures any meaningful change."
+    },
+    "accident": {
+      "intervalMs":       1800000,
+      "intervalLabel":    "30 min",
+      "cacheMs":          1800000,
+      "staleAfterMs":     3600000,
+      "alarmName":        "livedashboard.accident",
+      "cost":             "medium (one or two requests per pull)",
+      "minIntervalMs":    600000,
+      "rationale":        "Evidence status changes when investigators upload — 30 min keeps the feedback loop tight."
+    },
+    "cvp": {
+      "intervalMs":       900000,
+      "intervalLabel":    "15 min",
+      "cacheMs":          900000,
+      "staleAfterMs":     1800000,
+      "alarmName":        "livedashboard.cvp",
+      "cost":             "low (single GraphQL call, ~1-2s)",
+      "minIntervalMs":    300000,
+      "rationale":        "Hoops is fast; 15 min is a natural fresh-feeling cadence."
+    },
+    "register": {
+      "v1": {
+        "mode":           "manual",
+        "intervalMs":     null,
+        "intervalLabel":  "manual only",
+        "alarmName":      null,
+        "cost":           "high — Power BI Excel export workflow",
+        "rationale":      "V1 ships import-only. User explicitly drops XLSX. Avoids the failure mode where Power BI session expires silently and stale data goes unnoticed."
+      },
+      "v1_5": {
+        "mode":           "auto",
+        "intervalMs":     21600000,
+        "intervalLabel":  "6 hours",
+        "cacheMs":        21600000,
+        "staleAfterMs":   86400000,
+        "alarmName":      "livedashboard.register",
+        "cost":           "high (Power BI auto-driver + xlsx capture)",
+        "minIntervalMs":  3600000,
+        "rationale":      "Register data updates at end of day/shift. 4 pulls per day plenty."
+      }
+    }
+  },
+  "global": {
+    "refreshAllTimeoutMs":   30000,
+    "refreshAllPartialOk":   true,
+    "alarmsMinPeriodMin":    1,
+    "adaptiveBackoff": {
+      "enabled":                  false,
+      "v1Note":                   "Not enabled in V1 — re-evaluate after V1.5 ships and we see real failure rates.",
+      "v2Formula":                "nextInterval = baseInterval * Math.min(2 ^ consecutiveFailures, 8)",
+      "maxBackoffMultiplier":     8
+    }
+  }
+}

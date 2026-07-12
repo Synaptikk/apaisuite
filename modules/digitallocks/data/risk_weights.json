@@ -1,0 +1,41 @@
+{
+  "_comment": "DigitalLocks risk weights. Editable. Sum determines riskScore; bands map score to riskLevel. Weights match the V1 spec in DIGITAL_LOCKS_MODULE.md.",
+  "weights": {
+    "AFTERHOURS_DEEP":    50,
+    "AFTERHOURS_EDGE":    35,
+    "ROLE_MISMATCH":      25,
+    "HIGH_RISK_ZONE":     20,
+    "HIGH_VOLUME":        15,
+    "MULTI_ZONE_WINDOW":  15,
+    "REPEATED_SAME_LOCK": 10,
+    "UNUSUAL_SOURCE":     10,
+    "DAY_HOUR_SPIKE":     10,
+    "ORDER_NO_MATCH":     50,
+    "NEW_HIRE_CONTEXT":   10
+  },
+  "bands": [
+    { "min":  0, "label": "Normal"   },
+    { "min": 25, "label": "Watch"    },
+    { "min": 50, "label": "High"     },
+    { "min": 75, "label": "Critical" }
+  ],
+  "timeWindows": {
+    "_comment": "Local-time hour ranges, 0-23. `deepAfterHours` is the high-severity overnight band; `edgeAfterHours` is the medium-severity early/late bands.",
+    "deepAfterHours": { "fromHour": 0,  "toHour": 5  },
+    "edgeAfterHours": [
+      { "fromHour": 23, "toHour": 24 },
+      { "fromHour": 5,  "toHour": 7  }
+    ]
+  },
+  "thresholds": {
+    "_comment": "Volume rule kicks in when a user's per-day unlock count exceeds BOTH the high-water percentile across all (user,day) pairs in the import AND the absolute floor (so a 5-event day in a quiet file isn't flagged).",
+    "volumePercentile": 0.95,
+    "volumeAbsoluteFloor": 15,
+    "multiZoneWindowMinutes": 30,
+    "multiZoneCountThreshold": 3,
+    "repeatedLockWindowMinutes": 5,
+    "hourSpikeStdDevs": 2,
+    "newHireThresholdDays": 90,
+    "orderLookupWindowHours": 4
+  }
+}

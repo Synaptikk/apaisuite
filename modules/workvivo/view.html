@@ -1,0 +1,165 @@
+<!-- modules/workvivo/view.html
+     Status + config panel for the Workvivo token-heartbeat module.
+     Loaded into the shell viewport when the user navigates to #/workvivo.
+     view.js fetches this file at mount time. Element IDs are wv- prefixed,
+     scoped to .module-workvivo by the shell. -->
+
+<div class="wv-header">
+  <h1>QRCallBox</h1>
+  <p class="muted">
+    Token-heartbeat connector for
+    <a href="https://qrcallbox.com" target="_blank" rel="noreferrer">qrcallbox.com</a>.
+  </p>
+</div>
+
+<section class="card wv-status">
+  <div class="wv-status-head">
+    <span id="wv-statusDot" class="wv-dot"></span>
+    <strong id="wv-statusHeadline">Status: loading…</strong>
+  </div>
+  <div id="wv-statusDetail" class="muted tiny">Reading state…</div>
+
+  <div class="wv-status-row">
+    <div>
+      <div class="field-label">Last attempt</div>
+      <div id="wv-lastAttempt" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Last success</div>
+      <div id="wv-lastSuccess" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Workvivo tab open?</div>
+      <div id="wv-tabOpen" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Heartbeat cadence</div>
+      <div id="wv-cadence" class="wv-value">—</div>
+    </div>
+  </div>
+
+  <div class="wv-action-row">
+    <button id="wv-refreshNow" class="btn btn-primary btn-sm btn-pill">
+      Send heartbeat now
+    </button>
+    <span id="wv-refreshMsg" class="muted tiny"></span>
+  </div>
+</section>
+
+<section class="card wv-config">
+  <label class="field">
+    <span class="field-label">API key</span>
+    <input id="wv-apiKey" class="input" type="password" spellcheck="false"
+           placeholder="paste once — masked after save">
+  </label>
+
+  <div class="wv-action-row">
+    <button id="wv-saveConfig" class="btn btn-primary btn-sm btn-pill">
+      Save
+    </button>
+    <button id="wv-clearConfig" class="btn btn-secondary btn-sm">
+      Clear
+    </button>
+    <span id="wv-saveMsg" class="muted tiny"></span>
+  </div>
+</section>
+
+<section id="wv-connection" class="card wv-connection" hidden>
+  <h2 class="wv-section-title">Your QRCallBox</h2>
+  <div class="wv-conn-grid">
+    <div>
+      <div class="field-label">User</div>
+      <div id="wv-connUser" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Store</div>
+      <div id="wv-connStore" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Posting to</div>
+      <div id="wv-connChannel" class="wv-value">—</div>
+    </div>
+    <div>
+      <div class="field-label">Time zone</div>
+      <div id="wv-connTimeZone" class="wv-value">—</div>
+    </div>
+  </div>
+
+  <div class="wv-conn-stats">
+    <div class="wv-stat">
+      <div id="wv-connTotalScans" class="wv-stat-num">—</div>
+      <div class="wv-stat-label">Scans (7d)</div>
+    </div>
+    <div class="wv-stat">
+      <div id="wv-connPosted" class="wv-stat-num">—</div>
+      <div class="wv-stat-label">Posted to Workvivo</div>
+    </div>
+    <div class="wv-stat">
+      <div id="wv-connAvgResp" class="wv-stat-num">—</div>
+      <div class="wv-stat-label">Avg response</div>
+    </div>
+  </div>
+
+  <div class="field-label">Recent scans</div>
+  <ul id="wv-connRecent" class="wv-recent-list muted tiny">
+    <li class="muted">Loading…</li>
+  </ul>
+
+  <p id="wv-connFootnote" class="muted tiny"></p>
+</section>
+
+<section class="card wv-about">
+  <h2 class="wv-section-title">About QRCallBox</h2>
+  <p>
+    <strong>QRCallBox is a physical callbox replacement, saving thousands of
+    dollars per store.</strong> Instead of installing wall-mounted intercoms,
+    every department gets a printed QR poster. A customer scans the poster,
+    a notification fires to the associates working that store, and the first
+    responder claims it.
+  </p>
+  <p class="muted">
+    Notifications go down two parallel paths so a single dead phone or stale
+    chat session never strands a customer:
+  </p>
+  <ul class="wv-about-list muted">
+    <li><strong>FCM push</strong> to every on-shift associate's Android phone
+        (the QRCallBox app). Works without any browser involvement.</li>
+    <li><strong>Workvivo chat post</strong> in the store's QRCallBox channel,
+        so anyone watching chat sees it too — and so response time gets
+        tracked against the chat reply, not just the app claim.</li>
+  </ul>
+  <p class="muted">
+    Every scan creates an analytics record: who claimed it, how fast, which
+    area, time-of-day patterns. The store manager dashboard at
+    <a href="https://qrcallbox.com" target="_blank" rel="noreferrer">qrcallbox.com</a>
+    surfaces it all — top responders, busiest areas, response-time trends.
+  </p>
+
+  <h2 class="wv-section-title" style="margin-top:1rem">What this connector does</h2>
+  <p class="muted">
+    The Workvivo half of the system needs a fresh Sendbird chat token to
+    post into your store's channel. Sendbird tokens issued through Walmart
+    SSO can't be refreshed by a server — MFA can't be replayed. This module
+    solves that by acting as a quiet courier:
+  </p>
+  <ul class="wv-about-list muted">
+    <li>Once an hour, it reads your live <code>window.v2.chatConfig.access_token</code>
+        from any open <a href="https://workvivo.walmart.com/chat" target="_blank" rel="noreferrer">workvivo.walmart.com</a> tab.</li>
+    <li>It POSTs that token to your QRCallBox cloud function, authenticated by
+        the API key you generated at
+        <a href="https://qrcallbox.com" target="_blank" rel="noreferrer">qrcallbox.com</a>
+        → Workvivo tab.</li>
+    <li>QRCallBox stores the fresh token and, the moment a QR scan happens,
+        opens a Sendbird WebSocket using it and posts the chat notification —
+        all server-side, 24/7. The extension only needs to be running for the
+        hourly refill, not for each individual scan.</li>
+  </ul>
+  <p class="muted tiny">
+    <strong>Operation:</strong> as long as Chrome is your daily-driver
+    browser and you have a <code>workvivo.walmart.com</code> tab open at
+    least once a day, QRCallBox stays synced automatically — no panel
+    visits, no re-pasting, no token expiry alerts to chase. The token never
+    leaves Walmart-controlled hosts: <code>workvivo.walmart.com</code> →
+    extension SW → <code>qrcallbox.com</code> (your own cloud function).
+  </p>
+</section>

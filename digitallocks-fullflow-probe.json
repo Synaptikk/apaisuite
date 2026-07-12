@@ -1,0 +1,17 @@
+{
+  "wanted": "1458",
+  "steps": [
+    "found slicer",
+    "clicked slicer (open)"
+  ],
+  "filteredOptions": [],
+  "menuItemsAfterMore": [],
+  "menuItemsAfterExport": [],
+  "dialogButtons": [],
+  "downloadFired": null,
+  "trace": [
+    "slicer rect: {\"x\":243.54513549804688,\"y\":257.18890380859375,\"width\":129.54177856445312,\"height\":30.074981689453125,\"top\":257.18890380859375,\"right\":373.0869140625,\"bottom\":287.2638854980469,\"left\":243.54513549804688}",
+    "inputs scanned: 10 labels: [vis | aria=\"Global search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"] [hid | aria=\"Search\"]"
+  ],
+  "error": "Slicer's search input not found (after excluding 'Global search')\nError: Slicer's search input not found (after excluding 'Global search')\n    at pptr:evaluate;file%3A%2F%2F%2FC%3A%2FUsers%2Fses008s.s01458%2FDesktop%2FAPAISuite%2Funified-extension-suite%2Fdev%2Fprobe-digitallocks-fullflow.mjs%3A35%3A29:68:24"
+}

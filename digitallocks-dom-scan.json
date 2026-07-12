@@ -1,0 +1,600 @@
+{
+  "pbiApi": {
+    "windowPowerBi": true,
+    "windowReport": false,
+    "angularExposed": false,
+    "windowKeysMatching": [
+      "visualViewport",
+      "reportError",
+      "crashReport",
+      "powerbi",
+      "powerBIGoalsEnabledForBootstrap",
+      "embeddedWebContentIframeSource",
+      "powerPlatformClusterCategory",
+      "powerBIOperator",
+      "powerBIOperatorLocale",
+      "ocvSurveyConfigs",
+      "azurePortalUrl",
+      "powerBILocalFrontEndUrl",
+      "powerQueryResourceName",
+      "powerBISDKGlobalServiceInstanceName",
+      "clientAuthSecureEmbedEnabled",
+      "reportObjectIdString",
+      "rdlReportSubPathRegex",
+      "reportObjectId",
+      "rdlReportObjectId",
+      "reportRegexString",
+      "reportRegex",
+      "hasReportObjectId",
+      "powerBIWebBootstrap",
+      "powerBIAccessToken",
+      "powerBIAccessTokenExpiry"
+    ]
+  },
+  "reportHosts": [
+    {
+      "tag": "EXPLORATION-CONTAINER",
+      "classes": "",
+      "dataAttrs": [
+        "data-testid=report-content"
+      ]
+    },
+    {
+      "tag": "DIV",
+      "classes": "appBarLeft",
+      "dataAttrs": [
+        "data-testid=app-bar-left-report"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "idx": 0,
+      "type": "text",
+      "placeholder": "Search",
+      "ariaLabel": "Global search",
+      "name": "",
+      "id": "",
+      "value": "1458",
+      "rect": {
+        "x": 756,
+        "y": 14,
+        "w": 400,
+        "h": 20
+      },
+      "parentTextSnip": "New Digital Lock Events  Data updated 6/2/26 2\n.tri-overflow"
+    },
+    {
+      "idx": 1,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 339,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 2,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 361,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 3,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 383,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 4,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 406,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 5,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 428,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 6,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 450,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 7,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 472,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 8,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 495,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 9,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 517,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 10,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 539,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 11,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 561,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 12,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 584,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 13,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 606,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 14,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 628,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 15,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 651,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 16,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 673,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 17,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 695,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 18,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 717,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 19,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 740,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 20,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 762,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 21,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 784,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 22,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 807,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 23,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 829,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 24,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 851,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    },
+    {
+      "idx": 25,
+      "type": "checkbox",
+      "placeholder": "",
+      "ariaLabel": null,
+      "name": "",
+      "id": "",
+      "value": "on",
+      "rect": {
+        "x": 392,
+        "y": 873,
+        "w": 14,
+        "h": 14
+      },
+      "parentTextSnip": "Select Row"
+    }
+  ],
+  "exportish": [
+    {
+      "tag": "BUTTON",
+      "text": "New Digital Lock Events Data updated 6/2/26",
+      "aria": "New Digital Lock Events",
+      "rect": {
+        "x": 68,
+        "y": 0,
+        "w": 340,
+        "h": 48
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Download",
+      "rect": {
+        "x": 1720,
+        "y": 0,
+        "w": 48,
+        "h": 48
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Export",
+      "aria": "",
+      "rect": {
+        "x": 149,
+        "y": 48,
+        "w": 100,
+        "h": 40
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Reset filters, slicers, and other data view changes you've m",
+      "rect": {
+        "x": 1647,
+        "y": 48,
+        "w": 40,
+        "h": 40
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Refresh visuals—when the data model has been updated, refres",
+      "rect": {
+        "x": 1796,
+        "y": 48,
+        "w": 32,
+        "h": 40
+      }
+    }
+  ],
+  "topbarButtons": [],
+  "fileMenuCandidates": [
+    {
+      "text": "File",
+      "aria": null
+    }
+  ],
+  "storeMentions": [
+    {
+      "tag": "INPUT",
+      "type": "text",
+      "aria": "Global search",
+      "placeholder": "Search",
+      "classes": ""
+    },
+    {
+      "tag": "H3",
+      "aria": "Store",
+      "classes": "slicer-header-text"
+    },
+    {
+      "tag": "DIV",
+      "aria": "Store",
+      "classes": "slicer-dropdown-menu"
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "aria": null,
+      "placeholder": "",
+      "classes": ""
+    }
+  ]
+}

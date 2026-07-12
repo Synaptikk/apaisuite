@@ -1,0 +1,143 @@
+/* modules/workvivo/styles.css
+ * Scoped to .module-workvivo by the shell's container wrapper.
+ * Reuses suite-wide tokens from styles/tokens.css — only add module-local
+ * styles here. */
+
+.module-workvivo .wv-header {
+  margin-bottom: 1rem;
+}
+
+.module-workvivo .wv-header h1 {
+  margin: 0 0 0.25rem 0;
+}
+
+.module-workvivo .card + .card {
+  margin-top: 1rem;
+}
+
+.module-workvivo .wv-section-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+}
+
+/* ── Status card ─────────────────────────────────────────────── */
+
+.module-workvivo .wv-status-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.module-workvivo .wv-dot {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--apai-muted, #888);
+  flex: 0 0 auto;
+}
+.module-workvivo .wv-dot[data-color="ok"]      { background: var(--apai-success, #2ea44f); }
+.module-workvivo .wv-dot[data-color="warn"]    { background: var(--apai-warning, #d29922); }
+.module-workvivo .wv-dot[data-color="fail"]    { background: var(--apai-danger,  #cf222e); }
+.module-workvivo .wv-dot[data-color="neutral"] { background: var(--apai-muted,   #888); }
+
+.module-workvivo .wv-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.module-workvivo .wv-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.module-workvivo .wv-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+/* ── Config + help cards ─────────────────────────────────────── */
+
+.module-workvivo .wv-config .field {
+  margin-top: 0.75rem;
+}
+
+.module-workvivo .wv-help-list {
+  margin: 0.5rem 0 0.5rem 1.25rem;
+  padding: 0;
+}
+
+.module-workvivo .wv-help-list li {
+  margin: 0.25rem 0;
+}
+
+.module-workvivo .wv-about p + ul,
+.module-workvivo .wv-about ul + p {
+  margin-top: 0.5rem;
+}
+
+.module-workvivo .wv-about-list {
+  margin: 0 0 0 1.25rem;
+  padding: 0;
+}
+
+.module-workvivo .wv-about-list li {
+  margin: 0.25rem 0;
+}
+
+/* ── Connection card (Your QRCallBox) ────────────────────────── */
+
+.module-workvivo .wv-conn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 0.5rem 0 1rem 0;
+}
+
+.module-workvivo .wv-conn-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem 0;
+}
+
+.module-workvivo .wv-stat {
+  text-align: center;
+  padding: 0.5rem;
+  background: var(--apai-surface-2, rgba(0,0,0,0.04));
+  border-radius: 0.5rem;
+}
+
+.module-workvivo .wv-stat-num {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.module-workvivo .wv-stat-label {
+  font-size: 0.75rem;
+  color: var(--apai-muted, #888);
+  margin-top: 0.125rem;
+}
+
+.module-workvivo .wv-recent-list {
+  list-style: none;
+  margin: 0.25rem 0 0.5rem 0;
+  padding: 0;
+}
+
+.module-workvivo .wv-recent-list li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--apai-border, rgba(0,0,0,0.06));
+}
+
+.module-workvivo .wv-recent-list li:last-child {
+  border-bottom: 0;
+}

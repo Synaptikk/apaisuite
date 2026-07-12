@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- APAISuite logo: blue badge with shield + star — Asset Protection motif.
+       Replaces the prior yellow Spark glyph. Designed flat (no gradients) so
+       it rasterises cleanly at 16/32/48/128 px via scripts/render-icons.mjs. -->
+  <rect width="128" height="128" rx="20" fill="#0071CE"/>
+  <!-- Shield outline -->
+  <path d="M64 24 L96 34 L96 68 C96 86 82 100 64 108 C46 100 32 86 32 68 L32 34 Z"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="5"
+        stroke-linejoin="round"/>
+  <!-- 5-point star (centered at 64,66, outer radius 14, inner radius 5.5).
+       Numeric coords pre-computed so renderers don't need transforms. -->
+  <path d="M64 52
+           L67.23 61.95
+           L77.7 61.95
+           L69.23 68.1
+           L72.46 78.05
+           L64 71.9
+           L55.54 78.05
+           L58.77 68.1
+           L50.3 61.95
+           L60.77 61.95 Z"
+        fill="#FFFFFF"/>
+</svg>

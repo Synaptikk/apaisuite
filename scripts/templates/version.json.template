@@ -1,0 +1,8 @@
+{
+  "version": "{{VERSION}}",
+  "downloadUrl": "{{LANDING_URL}}",
+  "zipUrl": "{{ZIP_URL}}",
+  "cwsListingUrl": "{{CWS_LISTING_URL}}",
+  "publishedAt": "{{PUBLISHED_AT}}",
+  "releaseNotes": "{{RELEASE_NOTES}}"
+}

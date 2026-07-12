@@ -1,0 +1,137 @@
+<!-- modules/sparkfraud/view.html
+     Adapted from donor extension/app.html. Standalone <html>/<head>/<body>
+     wrappers removed (shell owns them). IDs prefixed `sf-` to avoid
+     collisions with other modules' DOM. -->
+
+<div class="sf-header">
+  <h1>SparkFraud</h1>
+  <button id="sf-help" class="btn btn-secondary btn-sm" title="What SparkFraud does + how to use it">? How to use</button>
+  <span id="sf-auth-status" class="badge"></span>
+  <button id="sf-dev-clear" class="btn-icon" title="Clear gscope cookies + service workers + cache (use if gscope is stuck spinning). You'll need to re-do SSO afterward.">🧹</button>
+  <button id="sf-dev-reload" class="btn-icon" title="Reload the entire APAISuite extension (developer only)">⟳</button>
+</div>
+
+<!-- How-to-use modal — opened by the ? button in the header.
+     Uses native <dialog> + the shared .modal classes from components.css. -->
+<dialog id="sf-help-modal" class="modal">
+  <header class="modal-head">
+    <span>How to use SparkFraud</span>
+    <button id="sf-help-close" class="btn-icon" aria-label="Close">×</button>
+  </header>
+  <div class="modal-body sf-help-body">
+    <h3>What it does</h3>
+    <p>
+      SparkFraud identifies the most likely <b>Spark / Express delivery driver</b>
+      who was at a specific register at a specific time — so an AP investigator
+      can correlate a fraud event to a driver and that driver's order contents.
+    </p>
+
+    <h3>Workflow</h3>
+    <ol>
+      <li>Set <b>Store</b>, <b>Date</b>, <b>Event time</b>, and the <b>± minute window</b> (start narrow; widen if no candidates).</li>
+      <li>Pick which <b>delivery types</b> to query — Spark, Express, Scheduled Grocery.</li>
+      <li>Click <b>Find candidates</b>. Results stream in as Dispatcher returns trips, then OMS items follow per batch.</li>
+      <li>Each trip card shows: <b>confidence badge</b>, driver, customer-delivery window, in-store shopping window (PICKED → DISPATCHED), and the orders they handled.</li>
+      <li>Click a trip card to expand its <b>item list</b> (name, UPC, qty, price, status, customer first name).</li>
+    </ol>
+
+    <h3>Quick lookup</h3>
+    <p>
+      The search bar at the top auto-detects input type: <b>order IDs</b> (all-digit, comma-separated)
+      go through OMS directly; a <b>driver's name</b> opens Dispatcher's native driver-search and
+      brings the captured trip data back into the suite.
+    </p>
+
+    <h3>Watchlist (real-time monitoring)</h3>
+    <p>
+      Click <b>+ Watch</b> on any trip card to add that driver to the watchlist. The extension polls
+      Dispatcher in the background every 3 minutes via <code>chrome.alarms</code>. When a watched
+      driver transitions into an <b>active status</b> — Enroute to Pickup, At Pickup, or Trip In
+      Progress — you'll get an <b>OS notification</b> with their current order IDs. The order
+      item details are auto-fetched and surfaced in the Watchlist panel's "Recent hits" section.
+    </p>
+    <p>
+      The poll runs as long as the extension is loaded — you don't need to keep the SparkFraud
+      tab open. Drivers stay on the list until you click the <code>×</code> next to them. The
+      hit-history ring buffer keeps the most recent 100 alerts.
+    </p>
+
+    <h3>Confidence levels</h3>
+    <p>
+      Each candidate trip carries an <b>investigative lead quality</b> label — VERIFIED, LIKELY,
+      POSSIBLE, UNKNOWN, or CONFLICTING. These reflect how well the trip's data matches the
+      register event you queried; <b>they are NEVER proof and NEVER an accusation of guilt</b>.
+    </p>
+
+    <h3>Limitations</h3>
+    <ul>
+      <li>Dispatcher's API caps responses at ~200 trips per query; very busy stores in wide time windows may exceed the cap.</li>
+      <li>Driver-name matching is loose (first + last word, case-insensitive) — middle names/initials are tolerated, but unusual punctuation may miss.</li>
+      <li>The watchlist needs a valid gscope session; if SSO has expired the poll silently no-ops until you sign back in.</li>
+    </ul>
+  </div>
+  <footer class="modal-foot">
+    <button id="sf-help-close-btn" class="btn btn-primary">Got it</button>
+  </footer>
+</dialog>
+
+<section class="sf-filters sf-lookup">
+  <label class="field sf-field-grow">
+    <span class="field-label">Quick lookup</span>
+    <input type="text" id="sf-quick-lookup" class="input"
+           placeholder="Order ID(s) — digits, comma-separated — OR a driver's full name (auto-detected)">
+  </label>
+  <button id="sf-quick-go"    class="btn btn-primary   btn-pill">Go</button>
+  <button id="sf-quick-watch" class="btn btn-secondary btn-pill hidden"
+          title="Add the typed driver name to the watchlist for the current store">+ Watchlist</button>
+</section>
+
+<!-- Watchlist panel — populated by view.js::renderWatchlist after mount.
+     Hidden until at least one driver is being watched OR a hit fires. -->
+<details id="sf-watchlist-card" class="card sf-watchlist hidden">
+  <summary>👁 Watchlist — <span id="sf-watchlist-summary">0 watched</span></summary>
+  <div id="sf-watchlist-body" class="sf-watchlist-body"></div>
+</details>
+
+<section class="sf-filters">
+  <div class="sf-row">
+    <label class="field"><span class="field-label">Store</span>
+      <input type="text" id="sf-store" class="input" placeholder="store #" maxlength="6">
+    </label>
+    <label class="field"><span class="field-label">Date</span>
+      <input type="date" id="sf-date" class="input">
+    </label>
+    <label class="field"><span class="field-label">Event time (HH:MM)</span>
+      <input type="time" id="sf-event-time" class="input" value="08:40">
+    </label>
+    <label class="field"><span class="field-label">Window (± minutes)</span>
+      <input type="number" id="sf-window-min" class="input" value="30" min="5" max="240">
+    </label>
+  </div>
+  <div class="sf-row">
+    <fieldset class="fieldset">
+      <legend>Delivery type</legend>
+      <label class="check"><input type="checkbox" id="sf-dt-spark"   checked> <span>Spark Shop &amp; Deliver</span></label>
+      <label class="check"><input type="checkbox" id="sf-dt-express" checked> <span>Express Delivery</span></label>
+      <label class="check"><input type="checkbox" id="sf-dt-sched"   checked> <span>Scheduled Grocery</span></label>
+    </fieldset>
+    <button id="sf-search" class="btn btn-primary btn-pill">Find candidates</button>
+    <button id="sf-whos-here" class="btn btn-secondary btn-pill" title="Open a popup listing every driver currently in active status at the store (en route to pickup / at pickup / trip in progress), with their orders + items">👁 Who's here now?</button>
+  </div>
+</section>
+
+<section class="sf-filters sf-secondary">
+  <label class="field sf-field-grow">
+    <span class="field-label">Item filter</span>
+    <input type="text" id="sf-item-filter" class="input" placeholder="e.g. coke, walnuts — narrows the orders below by item name/UPC">
+  </label>
+  <label class="check sf-viable-toggle" title="Only show trips whose in-store window (PICKED → DISPATCHED) contains your event time. The shopper has to have actually been at the register at that moment to be a real candidate.">
+    <input type="checkbox" id="sf-viable-only" checked>
+    <span>Only viable</span>
+  </label>
+  <span id="sf-result-summary" class="muted tiny"></span>
+</section>
+
+<main id="sf-results" class="sf-results">
+  <p class="muted">Enter event time and click <b>Find candidates</b>.</p>
+</main>

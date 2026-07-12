@@ -1,0 +1,117 @@
+/* modules/closinglist/styles.css
+   Module-local styles. All selectors live under .module-closinglist (the
+   wrapper the shell adds at mount). Donor styles were extracted from
+   ClosingList's popup.css; brand colors and component patterns have been
+   replaced with suite tokens (var(--apai-*)). Fixed popup dimensions
+   removed — the module now flows into the shell viewport. */
+
+.module-closinglist {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.module-closinglist .cl-header {
+  margin-bottom: var(--sp-4);
+}
+.module-closinglist .cl-header h1 {
+  margin-bottom: var(--sp-1);
+}
+
+/* ---- Config card ------------------------------------------------------ */
+.module-closinglist .cl-grid {
+  display: grid;
+  grid-template-columns: 120px 180px 1fr;
+  gap: var(--sp-3);
+  align-items: end;
+}
+.module-closinglist .cl-grid .field { gap: var(--sp-1); }
+.module-closinglist .cl-grid .input { width: 100%; }
+.module-closinglist .cl-field-grow { grid-column: span 1; }
+
+/* ---- Filters panel ---------------------------------------------------- */
+.module-closinglist .cl-filters {
+  padding: 0;
+}
+.module-closinglist .cl-filters summary {
+  cursor: pointer;
+  padding: var(--sp-3) var(--sp-5);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  user-select: none;
+  list-style: none;
+  font-size: var(--fs-md);
+}
+.module-closinglist .cl-filters summary::-webkit-details-marker { display: none; }
+.module-closinglist .cl-filters summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: var(--sp-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.module-closinglist .cl-filters[open] summary::before {
+  transform: rotate(90deg);
+}
+.module-closinglist .cl-filter-body {
+  padding: 0 var(--sp-5) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.module-closinglist .cl-filter-body .cl-grid {
+  grid-template-columns: 1fr 1fr;
+}
+.module-closinglist .cl-field-full { width: 100%; }
+.module-closinglist .cl-field-full .input { width: 100%; }
+.module-closinglist .cl-label-with-reset {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.module-closinglist .cl-linkbtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--module-accent);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+  font-weight: var(--fw-medium);
+}
+.module-closinglist .cl-linkbtn:hover { color: var(--module-accent-dark); }
+
+/* ---- Action row ------------------------------------------------------- */
+.module-closinglist .cl-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: var(--sp-5) 0 var(--sp-3);
+}
+.module-closinglist .cl-action #cl-collect {
+  flex: 0 0 auto;
+}
+.module-closinglist .cl-action .status-strip {
+  flex: 1;
+}
+
+/* ---- Email draft + button row ---------------------------------------- */
+.module-closinglist .cl-email-label {
+  display: block;
+  margin: var(--sp-3) 0 var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+}
+.module-closinglist .cl-email {
+  width: 100%;
+  min-height: 420px;
+}
+.module-closinglist .cl-button-row {
+  margin-top: var(--sp-3);
+}
+.module-closinglist .cl-footer-note {
+  margin-left: auto;
+}

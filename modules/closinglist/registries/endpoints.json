@@ -1,0 +1,110 @@
+{
+  "$schema_version": "1.0.0",
+  "last_updated": "2026-05-22",
+  "reconArtifact": "casevisibility-recon-2026-05-22T19-42-08-399Z.json",
+  "notes": "All endpoints are same-origin and authenticated via the SSO session cookie. The extension calls them with default browser credentials; we never read, store, or transmit auth headers.",
+  "baseUrl": "https://radapps3.wal-mart.com",
+  "endpoints": {
+    "main_init": {
+      "purpose": "PRIMARY: Returns store config + the entire scheduled associates roster + schedule changes + headcount changes for a given store and business date.",
+      "method": "POST",
+      "pathPattern": "/Protected/CaseVisibility/ashx/Main.ashx?func=init&storeNbr={storeNbr}&businessDate={businessDate}",
+      "queryParams": {
+        "func": "init",
+        "storeNbr": "string, 3-4 digit store number",
+        "businessDate": "string YYYY/MM/DD e.g. '2026/05/22' (slashes, NOT dashes)"
+      },
+      "bodyShape": "unknown (XHR observed as POST with query params; body content not captured)",
+      "responseContentType": "application/json; charset=utf-8",
+      "responseShape": {
+        "alignment": {
+          "facility_type": "string",
+          "facility_nbr": "number",
+          "address_line_1": "string",
+          "city_name": "string",
+          "state_prov_code": "string",
+          "postal_code": "number",
+          "loc_format_desc": "string",
+          "timezone": "string",
+          "market_nbr": "number",
+          "region_nbr": "number"
+        },
+        "wm_yr_wk": "object with wm_yr, wm_wk, wk_start_date, wk_end_date, ly_comp_yr, ly_comp_wk",
+        "show_scheduled_associates": "boolean",
+        "schedule": {
+          "store_nbr": "number",
+          "business_date": "string",
+          "refreshed_from_api": "boolean",
+          "scheduled_associates": "Array<object>(per-associate; field names PENDING schema dump)"
+        },
+        "schedule_changes": "Array<object>(empty in test run; likely call-in/call-off entries)",
+        "headcount_changes": "Array<object>(len=1 in test run)"
+      },
+      "triggeredBy": "search.submitButton click; also fires on page load when defaults are set",
+      "confidence": 0.95,
+      "status": "VERIFIED",
+      "source": "recon artifact 2026-05-22 — XHR at 9545ms returned 200 in 2065ms",
+      "lastVerified": "2026-05-22",
+      "notes": "This is the canonical source for the closing list. Per-associate field names within scheduled_associates need a schema dump (see recon-helper/inspect-associate-schema.js)."
+    },
+    "pallet_pickup_planned": {
+      "purpose": "Planned pallet pickup info per store. Not needed for closing email.",
+      "method": "GET",
+      "pathPattern": "/Protected/CaseVisibility/ashx/PalletPickup.ashx?func=getPlannedPickupByStore&storeNbr={storeNbr}",
+      "responseContentType": "application/json; charset=utf-8",
+      "responseShape": "Array<object>(len=1 in test run)",
+      "confidence": 0.85,
+      "status": "VERIFIED",
+      "source": "recon XHR at 9545ms",
+      "lastVerified": "2026-05-22",
+      "notes": "Out of scope for ClosingList."
+    },
+    "shipments_load_summary": {
+      "purpose": "Per-load shipment details. Not needed for closing email.",
+      "method": "GET",
+      "pathPattern": "/Protected/CaseVisibility/ashx/Shipments.ashx?func=getLoadSummaryAndDetailsFromAPI&storeNbr={storeNbr}&businessDate={businessDate}&loadID={loadID}&trailerID={trailerID}&ttype={shipmentType}",
+      "responseContentType": "application/json; charset=utf-8",
+      "responseShape": "{status, message, store_nbr, load_id, shipment_type, data_source, refreshed_from_api, shipment_summary[], shipment_details[]}",
+      "confidence": 0.9,
+      "status": "VERIFIED",
+      "source": "recon XHRs at 11607-11608ms (multiple parallel calls per shipment)",
+      "lastVerified": "2026-05-22",
+      "notes": "Out of scope for ClosingList."
+    },
+    "star_freight": {
+      "purpose": "Star freight events from DB2. Not needed for closing email.",
+      "method": "GET",
+      "pathPattern": "/Protected/CaseVisibility/ashx/StarFreight.ashx?func=getStarFreightFromDB2&storeNbr={storeNbr}&loadIDs={csv}&alsoGetNonStarFreightEventCodes=true",
+      "responseContentType": "application/json; charset=utf-8",
+      "responseShape": "Array<object>(len=10964 in test run)",
+      "confidence": 0.85,
+      "status": "VERIFIED",
+      "source": "recon XHR at 11608ms",
+      "lastVerified": "2026-05-22",
+      "notes": "Out of scope for ClosingList. Large response."
+    },
+    "hit_counter": {
+      "purpose": "Page logs usage analytics back to the server.",
+      "method": "GET",
+      "pathPattern": "/Protected/CaseVisibility/ashx/HitCounter.ashx?func=logUsage&appName=CVT&storeNbr={storeNbr}&notes={notes}",
+      "responseContentType": "application/json; charset=utf-8",
+      "responseShape": "{rows_inserted: number}",
+      "confidence": 0.9,
+      "status": "VERIFIED",
+      "source": "recon XHR at 11609ms",
+      "lastVerified": "2026-05-22",
+      "notes": "Do NOT call from the extension. We are not the page; we should not poison usage analytics with synthetic hits. The page itself will log when the user opens it normally."
+    },
+    "csrfTokenSource": {
+      "purpose": "Check whether any anti-forgery token is required.",
+      "method": null,
+      "pathPattern": null,
+      "tokenLocation": "NONE OBSERVED",
+      "confidence": 0.7,
+      "status": "INFERRED",
+      "source": "recon — no CSRF token query params or headers observed on any XHR",
+      "lastVerified": "2026-05-22",
+      "notes": "Cookie-only auth appears sufficient. If a token does exist, it would be in a header we deliberately didn't capture — but the pattern of these ASHX endpoints suggests classic ASP.NET handlers without anti-forgery middleware."
+    }
+  }
+}

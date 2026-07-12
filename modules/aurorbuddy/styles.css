@@ -1,0 +1,328 @@
+/* modules/aurorbuddy/styles.css
+   Adapted from donor extension/styles.css.
+   - All selectors scoped under .module-aurorbuddy
+   - :root palette block dropped (suite tokens handle it)
+   - Color literals replaced with --apai-* or --module-accent
+   - Body/header/main rules dropped (shell owns layout)
+   - Kept verbatim: suspects table, mug photo, card-block, txns table,
+     link buttons, the two-layer progress bar (also in shared but the
+     scaffolding here is specific to ab-scan-progressbar) */
+
+.module-aurorbuddy {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.module-aurorbuddy .ab-header {
+  margin-bottom: var(--sp-4);
+}
+.module-aurorbuddy .ab-header h1 {
+  margin-bottom: var(--sp-1);
+}
+
+/* ── Step-1 config row ─────────────────────────────────────────────────── */
+.module-aurorbuddy .ab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  align-items: flex-end;
+}
+.module-aurorbuddy .ab-row .field {
+  gap: var(--sp-1);
+}
+.module-aurorbuddy .ab-row .input {
+  width: 120px;
+}
+.module-aurorbuddy .ab-row input[type="range"] {
+  width: 200px;
+  accent-color: var(--apai-blue);
+}
+.module-aurorbuddy .ab-inline-toggle {
+  margin-left: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+/* ── Auth pills, narrative scan-context lines ──────────────────────────── */
+.module-aurorbuddy #ab-auth-pills {
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+
+.module-aurorbuddy #ab-scan-context {
+  padding: var(--sp-2) 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.module-aurorbuddy .ab-ctx-line {
+  font-size: var(--fs-base);
+  color: var(--apai-ink-soft);
+  line-height: var(--lh-base);
+  opacity: 0;
+  transition: opacity var(--duration-med) ease-in;
+}
+.module-aurorbuddy .ab-ctx-line.active { opacity: 1; }
+.module-aurorbuddy .ab-ctx-line b { font-weight: var(--fw-semi); color: #0F172A; }
+
+.module-aurorbuddy #ab-progress {
+  font-size: var(--fs-md);
+  color: var(--apai-muted);
+  padding: var(--sp-2) 0;
+}
+
+/* ── Suspects table ────────────────────────────────────────────────────── */
+.module-aurorbuddy table.suspects {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-base);
+}
+.module-aurorbuddy table.suspects thead tr {
+  background: var(--apai-blue);
+  color: white;
+  text-align: left;
+}
+.module-aurorbuddy table.suspects th {
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.module-aurorbuddy table.suspects th:first-child { border-top-left-radius: 10px; }
+.module-aurorbuddy table.suspects th:last-child  { border-top-right-radius: 10px; }
+.module-aurorbuddy table.suspects td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--apai-border);
+  vertical-align: middle;
+}
+.module-aurorbuddy table.suspects tr.suspect-row:hover { background: #EFF6FF; }
+
+.module-aurorbuddy .col-num   { width: 60px; }
+.module-aurorbuddy .col-photo { width: 72px; }
+.module-aurorbuddy .col-total { width: 110px; }
+.module-aurorbuddy .total-val { color: var(--apai-error); font-weight: var(--fw-semi); }
+.module-aurorbuddy .zebra     { background: #FAFAFA; }
+.module-aurorbuddy .pad       { padding: 8px 14px; }
+
+.module-aurorbuddy .suspect-row a {
+  color: var(--apai-blue);
+  text-decoration: none;
+  font-weight: var(--fw-semi);
+}
+.module-aurorbuddy .suspect-row a:hover { text-decoration: underline; }
+
+/* Mugshot */
+.module-aurorbuddy .mug {
+  width: 56px; height: 56px;
+  border-radius: var(--rad-md);
+  object-fit: cover;
+  border: 1px solid var(--apai-border);
+  box-shadow: var(--shadow-1);
+}
+.module-aurorbuddy .mug-empty {
+  display: flex; align-items: center; justify-content: center;
+  background: #F3F4F6; color: #9CA3AF; font-size: 20px;
+}
+
+/* Home-row highlight */
+.module-aurorbuddy table.txns tr.row-home td        { background: #EFF6FF; }
+.module-aurorbuddy table.txns tr.row-home.zebra td  { background: #DBEAFE; }
+
+/* 'Show all stores' toggle visibility — single class on the module root */
+.module-aurorbuddy:not(.show-all-stores) table.txns tr.row-nonhome { display: none; }
+.module-aurorbuddy.show-all-stores .hidden-rows-note               { display: none; }
+.module-aurorbuddy:not(.show-all-stores) tr.suspect-row.suspect-no-home-txns,
+.module-aurorbuddy:not(.show-all-stores) tr.appriss-detail.suspect-no-home-txns {
+  display: none;
+}
+
+/* ── Expanded APPRISS detail row ───────────────────────────────────────── */
+.module-aurorbuddy tr.appriss-detail > td {
+  background: #F8FAFC;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--apai-border);
+}
+
+/* Per-card "slab" inside the detail row */
+.module-aurorbuddy .card-block {
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  overflow: hidden;
+  margin-bottom: var(--sp-3);
+  background: var(--apai-bg-elev);
+  box-shadow: var(--shadow-1);
+}
+.module-aurorbuddy .card-block:last-child { margin-bottom: 0; }
+.module-aurorbuddy .card-head {
+  background: #EFF6FF;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-md);
+  border-bottom: 1px solid var(--apai-border);
+}
+.module-aurorbuddy .card-name  { font-weight: var(--fw-semi); color: var(--apai-blue-darker); }
+.module-aurorbuddy .card-last4 {
+  background: var(--apai-bg-elev);
+  border: 1px solid #BFDBFE;
+  color: var(--apai-blue);
+  padding: 2px 10px;
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+}
+
+/* Transaction table */
+.module-aurorbuddy table.txns {
+  width: 100%;
+  font-size: var(--fs-sm);
+  border-collapse: collapse;
+}
+.module-aurorbuddy table.txns thead tr {
+  background: var(--apai-bg-soft);
+  color: var(--apai-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.module-aurorbuddy table.txns th,
+.module-aurorbuddy table.txns td { padding: 6px 12px; text-align: left; }
+.module-aurorbuddy table.txns td { border-top: 1px solid var(--apai-border); }
+.module-aurorbuddy table.txns tr:hover td { background: #FAFAFA; }
+.module-aurorbuddy table.txns tr.row-home:hover td { background: #DBEAFE; }
+
+/* ── Link buttons (CCTV / Receipt / Save / Fill Auror) ─────────────────── */
+.module-aurorbuddy .btn-red,
+.module-aurorbuddy .btn-green,
+.module-aurorbuddy .btn-blue,
+.module-aurorbuddy .btn-gray,
+.module-aurorbuddy .btn-orange {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  border-radius: var(--rad-pill);
+  text-decoration: none;
+  color: white;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 0;
+  font-family: inherit;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.module-aurorbuddy .btn-red    { background: var(--apai-error); }
+.module-aurorbuddy .btn-red:hover { background: #991616; }
+.module-aurorbuddy .btn-green  { background: var(--apai-success); }
+.module-aurorbuddy .btn-green:hover { background: #145C2B; }
+.module-aurorbuddy .btn-blue   { background: var(--apai-blue); }
+.module-aurorbuddy .btn-blue:hover { background: var(--apai-blue-dark); }
+.module-aurorbuddy .btn-gray   { background: #4B5563; }
+.module-aurorbuddy .btn-gray:hover { background: #1F2937; }
+.module-aurorbuddy .btn-orange { background: #FF7A1A; }
+.module-aurorbuddy .btn-orange:hover { background: #E25A00; }
+
+/* Disabled state — donor relied on shared `.btn:disabled` from styles.css.
+   The module's color-only button classes (.btn-red etc.) don't carry the
+   .btn base class, so the shared :disabled rule never fires. Replicate it
+   here so in-flight Save/Fill/Receipt buttons visibly gray out. */
+.module-aurorbuddy .btn-red:disabled,
+.module-aurorbuddy .btn-green:disabled,
+.module-aurorbuddy .btn-blue:disabled,
+.module-aurorbuddy .btn-gray:disabled,
+.module-aurorbuddy .btn-orange:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.module-aurorbuddy .link-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.module-aurorbuddy .link-row .btn-pushed-right { margin-left: auto; }
+
+/* Inline status under Fill / Save */
+.module-aurorbuddy .fill-status,
+.module-aurorbuddy .save-status {
+  display: inline-block;
+  margin-left: var(--sp-2);
+}
+.module-aurorbuddy .fill-status a,
+.module-aurorbuddy .save-status a { color: var(--apai-blue); }
+
+/* ── Store-list details ───────────────────────────────────────────────── */
+.module-aurorbuddy #ab-stores-result details[open] > summary { margin-bottom: 6px; }
+.module-aurorbuddy #ab-stores-result details > summary {
+  cursor: pointer;
+  color: var(--apai-blue);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.module-aurorbuddy #ab-stores-result details > summary:hover { text-decoration: underline; }
+.module-aurorbuddy #ab-stores-result code {
+  background: #F3F4F6;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  padding: 1px 5px;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+}
+
+/* ── ⏱ Scan timings panel ─────────────────────────────────────────────────
+   Mirrors the donor templates/index.html <details id="timings-card"> panel.
+   Hidden during scans; populated by view.js renderTimings(). */
+.module-aurorbuddy .ab-timings-card {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+}
+.module-aurorbuddy .ab-timings-card > summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  user-select: none;
+}
+.module-aurorbuddy .ab-timings-card > summary:hover { color: var(--apai-blue); }
+.module-aurorbuddy .ab-timings-body {
+  margin-top: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--apai-border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.module-aurorbuddy .ab-timings-body .t-total { color: var(--apai-blue); }
+
+/* Awaiting final value (Mark Submitted V1 — FINAL_VALUE_CAPTURE_PLAN.md §6) */
+.module-aurorbuddy .ab-awaiting-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "meta action"
+    "status status";
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--apai-border);
+}
+.module-aurorbuddy .ab-awaiting-row:last-child { border-bottom: none; }
+.module-aurorbuddy .ab-awaiting-meta { grid-area: meta; }
+.module-aurorbuddy .ab-awaiting-action {
+  grid-area: action;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.module-aurorbuddy .ab-awaiting-status { grid-area: status; min-height: 1em; }
+.module-aurorbuddy .ab-money-prefix {
+  color: var(--apai-muted);
+  font-family: var(--font-mono);
+  padding-right: 2px;
+}
+.module-aurorbuddy .ab-final-value-input {
+  width: 90px;
+  font-family: var(--font-mono);
+}

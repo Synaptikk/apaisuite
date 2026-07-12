@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LicenseIntake — manual test harness</title>
+    <style>
+      body { font: 13px/1.4 -apple-system, "Segoe UI", sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+      h1 { font-size: 18px; }
+      h2 { font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+      .test { padding: 6px 10px; margin: 4px 0; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; }
+      .pass { background: #e6f6ea; color: #155724; }
+      .fail { background: #fbe9eb; color: #8a1a26; }
+      .info { background: #eef3fa; color: #1f3866; }
+      pre.console { background: #f7f7f8; border: 1px solid #ddd; padding: 8px 10px; max-height: 280px; overflow: auto; font-size: 11px; }
+      .summary { font-weight: 600; padding: 8px 12px; border-radius: 4px; margin-top: 12px; }
+      .summary.ok { background: #d5efdb; color: #155724; }
+      .summary.bad { background: #f4c3c8; color: #8a1a26; }
+      code { background: #eef3fa; padding: 1px 4px; border-radius: 2px; }
+    </style>
+  </head>
+  <body>
+    <h1>LicenseIntake — manual test harness</h1>
+    <p>
+      Open this file by loading the APAISuite unpacked extension and
+      navigating to the URL shown by <code>chrome.runtime.getURL("modules/licenseintake/dev/testLicenseParser.html")</code>
+      in the suite's console, OR just opening the file directly in Edge
+      (ES module imports use relative paths). All test inputs are
+      <strong>synthetic</strong>; no real PII is in this file or the
+      fixtures.
+    </p>
+    <div id="results"></div>
+    <h2>Console capture (verifies no raw payload appears)</h2>
+    <pre class="console" id="console"></pre>
+    <h2>Live module summary</h2>
+    <pre class="console" id="summary"></pre>
+
+    <script type="module">
+      import {
+        parseLicensePayload, detectFormat,
+      } from "../lib/license_parser.js";
+      import {
+        scoreAurorPersonMatch, chooseBestMatch, createPersonDraft,
+        normalizeAurorPersonResult,
+      } from "../lib/auror_search_adapter.js";
+      import {
+        scoreTransactionCandidate, summarizeCandidates,
+        normalizeCardLookupResult,
+      } from "../lib/card_lookup_adapter.js";
+      import {
+        maskLicenseNumber, maskDob, maskDobToDecade,
+        buildRedactedPreview, redactForLog,
+      } from "../lib/redaction.js";
+      import {
+        FAKE_FULL, FAKE_ADDRESS_TRAP, FAKE_LEGACY_DAA,
+        FAKE_NO_LF, FAKE_PREFIX_NOISE, FAKE_NOT_AAMVA,
+        FAKE_EMPTY, FAKE_MINIMAL,
+        FAKE_AUROR_CANDIDATES_FOR_QUILLEN, FAKE_AUROR_CANDIDATES_EMPTY,
+      } from "../test/fixtures/fakeLicensePayloads.js";
+
+      // ── Console capture so we can assert no raw payload leaks ──
+      const capturedLogs = [];
+      const realLog  = console.log.bind(console);
+      const realInfo = console.info.bind(console);
+      const realWarn = console.warn.bind(console);
+      console.log  = (...a) => { capturedLogs.push(["log",  a.map(stringify).join(" ")]); realLog(...a); };
+      console.info = (...a) => { capturedLogs.push(["info", a.map(stringify).join(" ")]); realInfo(...a); };
+      console.warn = (...a) => { capturedLogs.push(["warn", a.map(stringify).join(" ")]); realWarn(...a); };
+      function stringify(x) { try { return typeof x === "string" ? x : JSON.stringify(x); } catch { return String(x); } }
+
+      const results = document.getElementById("results");
+      let passed = 0, failed = 0;
+
+      function group(title) {
+        const h = document.createElement("h2");
+        h.textContent = title;
+        results.appendChild(h);
+      }
+      function check(name, ok, detail = "") {
+        const el = document.createElement("div");
+        el.className = "test " + (ok ? "pass" : "fail");
+        el.textContent = (ok ? "✓ " : "✗ ") + name + (detail ? " — " + detail : "");
+        results.appendChild(el);
+        if (ok) passed++; else failed++;
+      }
+      function info(text) {
+        const el = document.createElement("div");
+        el.className = "test info";
+        el.textContent = text;
+        results.appendChild(el);
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      group("1. detectFormat");
+      check("FAKE_FULL → PDF417/AAMVA", detectFormat(FAKE_FULL).startsWith("PDF417"));
+      check("FAKE_NOT_AAMVA → 1D numeric", detectFormat(FAKE_NOT_AAMVA).startsWith("1D"));
+      check("FAKE_EMPTY → Empty", detectFormat(FAKE_EMPTY) === "Empty");
+
+      // ─────────────────────────────────────────────────────────────
+      group("2. parseLicensePayload — happy path");
+      const full = parseLicensePayload(FAKE_FULL);
+      check("firstName parsed", full.firstName === "Atticus", `got "${full.firstName}"`);
+      check("lastName parsed", full.lastName === "Quillen", `got "${full.lastName}"`);
+      check("middleName parsed", full.middleName === "Barnaby", `got "${full.middleName}"`);
+      check("DOB ISO MMDDYYYY → YYYY-MM-DD", full.dob === "1985-03-15", `got "${full.dob}"`);
+      check("licenseNumber present", full.licenseNumber === "GA999000001");
+      check("address city correct", full.city === "Atlanta", `got "${full.city}"`);
+      check("state correct", full.state === "GA");
+      check("postal correct", full.postalCode === "30303");
+      check("sex normalized to M", full.sex === "M");
+      check("expirationDate parsed", full.expirationDate === "2030-03-15");
+      check("parseConfidence = 1.0", full.parseConfidence === 1.0, String(full.parseConfidence));
+      check("redactedPreview built", full.redactedPreview.includes("QUILLEN") && full.redactedPreview.includes("DL ******0001"),
+        `got "${full.redactedPreview}"`);
+
+      // ─────────────────────────────────────────────────────────────
+      group("3. parseLicensePayload — edge cases");
+      const trap = parseLicensePayload(FAKE_ADDRESS_TRAP);
+      check("DAI extracted past 'DESOTA' false positive",
+        trap.city === "SAVANNAH", `got "${trap.city}"`);
+      check("address1 contains DESOTA (not consumed as DAH)",
+        (trap.address1 || "").includes("DESOTA"), `got "${trap.address1}"`);
+      check("DAH (address2) did not get hijacked",
+        trap.address2 === null, `got "${trap.address2}"`);
+
+      const legacy = parseLicensePayload(FAKE_LEGACY_DAA);
+      check("legacy DAA: last=Pemberton", legacy.lastName === "Pemberton");
+      check("legacy DAA: first=Eugenia", legacy.firstName === "Eugenia");
+      check("legacy DAA: middle=Marguerite", legacy.middleName === "Marguerite");
+      check("legacy DAA: warning surfaced",
+        legacy.parseWarnings.some((w) => w.includes("DAA")));
+
+      const noLf = parseLicensePayload(FAKE_NO_LF);
+      check("no-LF: last=Vantassel", noLf.lastName === "Vantassel");
+      check("no-LF: first=Inigo", noLf.firstName === "Inigo");
+
+      const prefixNoise = parseLicensePayload(FAKE_PREFIX_NOISE);
+      check("prefix 'X' stripped, still parses", prefixNoise.firstName === "Atticus");
+      check("prefix strip recorded as warning",
+        prefixNoise.parseWarnings.some((w) => w.includes("prefix")));
+
+      const notAamva = parseLicensePayload(FAKE_NOT_AAMVA);
+      check("non-AAMVA → confidence 0", notAamva.parseConfidence === 0);
+      check("non-AAMVA → warning explains why",
+        notAamva.parseWarnings.some((w) => w.includes("ANSI")));
+
+      const empty = parseLicensePayload(FAKE_EMPTY);
+      check("empty input → confidence 0", empty.parseConfidence === 0);
+
+      const minimal = parseLicensePayload(FAKE_MINIMAL);
+      check("minimal: partial confidence (~0.7)", Math.abs(minimal.parseConfidence - 0.7) < 0.01,
+        String(minimal.parseConfidence));
+
+      // ─────────────────────────────────────────────────────────────
+      group("4. Redaction");
+      check("maskLicenseNumber → last 4", maskLicenseNumber("GA999000001") === "*******0001");
+      check("maskDob → year only", maskDob("1985-03-15") === "1985-**-**");
+      check("maskDobToDecade", maskDobToDecade("1985-03-15") === "1980s");
+      const preview = buildRedactedPreview({
+        firstName: "Atticus", lastName: "Quillen", middleName: "Barnaby",
+        dob: "1985-03-15", licenseNumber: "GA999000001", address1: "9999 DESOTA DR",
+      });
+      check("preview hides DOB month/day",
+        preview.includes("1985-**-**") && !preview.includes("03-15"));
+      check("preview shows only last 4 of DL",
+        preview.includes("*******0001") && !preview.includes("GA999000001"));
+      check("preview hides address content",
+        preview.includes("address present") && !preview.includes("DESOTA"));
+
+      // redactForLog walks objects.
+      const redacted = redactForLog({
+        sessionId: "li_abc",
+        parsedPerson: { firstName: "Atticus", lastName: "Quillen", licenseNumber: "GA999000001" },
+        notes: "operator note",
+      });
+      check("redactForLog: PII fields → [REDACTED]",
+        redacted.parsedPerson.firstName === "[REDACTED]" &&
+        redacted.parsedPerson.lastName === "[REDACTED]" &&
+        redacted.parsedPerson.licenseNumber === "[REDACTED]");
+      check("redactForLog: non-PII keys pass through",
+        redacted.sessionId === "li_abc" && redacted.notes === "operator note");
+
+      // ─────────────────────────────────────────────────────────────
+      group("5. Auror match scoring");
+      const person = parseLicensePayload(FAKE_FULL);
+      const candidates = FAKE_AUROR_CANDIDATES_FOR_QUILLEN.map(normalizeAurorPersonResult);
+      const scored = candidates.map((c) => scoreAurorPersonMatch(person, c));
+      check("top candidate scores >= 0.8 with DOB match",
+        scored[0].matchScore >= 0.8, `score=${scored[0].matchScore}`);
+      check("reasons include 'DOB exact match'",
+        scored[0].matchReasons.some((r) => r.includes("DOB")));
+      const best = chooseBestMatch(scored, 0.5);
+      check("chooseBestMatch returns top", !!best && best.pNumber === scored[0].pNumber);
+      check("chooseBestMatch returns null when all below threshold",
+        chooseBestMatch(FAKE_AUROR_CANDIDATES_EMPTY, 0.5) === null);
+
+      const draft = createPersonDraft(person);
+      check("draft has _confirmationRequired:true", draft._confirmationRequired === true);
+      check("draft.submitState = 'draft_only'", draft.submitState === "draft_only");
+
+      // ─────────────────────────────────────────────────────────────
+      group("6. Transaction scoring + summary");
+      const txn = {
+        transactionId: "t1", date: "2026-05-30", storeNumber: "1234",
+        amount: 49.99, maskedPan: "************1234", surnameOnCard: "QUILLEN",
+        matchScore: 0, matchReasons: [],
+      };
+      const scoredTxn = scoreTransactionCandidate(person, txn);
+      check("surname exact match → score >= 0.7", scoredTxn.matchScore >= 0.7);
+      const summary = summarizeCandidates([scoredTxn]);
+      check("summary mentions count + strong/weak", summary.includes("1 transaction") && summary.includes("strong"));
+
+      // ─────────────────────────────────────────────────────────────
+      group("7. Console safety — assert no raw PII leaked");
+      const FORBIDDEN_STRINGS = [
+        // Names from fixtures
+        "Atticus", "QUILLEN", "Barnaby", "Pemberton", "Eugenia",
+        "Vantassel", "Inigo", "DESOTA", "Mermaid",
+        // DLs
+        "GA999000001", "GA999000002", "GA999000003", "GA999000004",
+        // DOBs (full)
+        "03151985", "07041977", "12121990", "08081999",
+      ];
+      const allLogText = capturedLogs.map((l) => l[1]).join("\n");
+      const leaks = FORBIDDEN_STRINGS.filter((s) => allLogText.includes(s));
+      check(
+        "no fixture names / DLs / full DOBs appear in console output",
+        leaks.length === 0,
+        leaks.length ? `LEAKS: ${leaks.join(", ")}` : "clean",
+      );
+
+      // ─────────────────────────────────────────────────────────────
+      const summaryEl = document.createElement("div");
+      summaryEl.className = "summary " + (failed === 0 ? "ok" : "bad");
+      summaryEl.textContent = `${passed} passed, ${failed} failed`;
+      results.appendChild(summaryEl);
+
+      // Dump console capture.
+      document.getElementById("console").textContent = capturedLogs
+        .map(([lvl, text]) => `[${lvl}] ${text}`)
+        .join("\n") || "(no console output)";
+
+      // Dump module summary.
+      document.getElementById("summary").textContent = JSON.stringify({
+        passed, failed,
+        parsedFullPreview: full.redactedPreview,
+        topMatchScore: scored[0].matchScore,
+        topMatchReasons: scored[0].matchReasons,
+        cardSummary: summary,
+      }, null, 2);
+    </script>
+  </body>
+</html>

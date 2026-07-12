@@ -1,0 +1,24 @@
+{
+  "_comment": "Substring matches (case-insensitive) against the concatenated zone+lock name. A hit adds the HIGH_RISK_ZONE weight to the event's risk score. Add/remove keywords here without code changes.",
+  "keywords": [
+    "electronics",
+    "cage",
+    "1/2 cage",
+    "half cage",
+    "phones",
+    "phone",
+    "gaming",
+    "jewelry",
+    "sporting",
+    "firearm",
+    "ammo",
+    "ammunition",
+    "pharmacy",
+    "wireless",
+    "tobacco",
+    "liquor",
+    "spirits",
+    "high ticket",
+    "high-ticket"
+  ]
+}

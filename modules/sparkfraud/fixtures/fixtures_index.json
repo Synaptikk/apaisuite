@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "purpose": "Catalog of all replay fixtures. Future fixture generators (REPLAY-03 capture+sanitize tooling) write here.",
+    "format_version": 1
+  },
+  "fixtures": [
+    {
+      "name": "morning_rush",
+      "files": {
+        "dispatcher": "dispatcher_morning_rush.json",
+        "oms": null
+      },
+      "scenario": "3-trip morning candidate set for store 9999 on synthetic 2026-05-07. Designed to exercise viable on-time, viable delayed, and not-viable cases.",
+      "store": "9999",
+      "synthetic_date": "2026-05-07",
+      "default_event_time_local": "08:40",
+      "default_event_tz_assumed": "America/New_York",
+      "default_window_min": 30,
+      "expected_viable_count": 2,
+      "expected_completed_count": 3,
+      "sanitized": true,
+      "synthetic_ids": true,
+      "source": "Hand-crafted (not derived from any captured live response)",
+      "usage": "Load app.html?replay=morning_rush, then set Date input to 2026-05-07 and click 'Find candidates' with defaults (08:40, ±30min, dt-spark + dt-express)."
+    }
+  ]
+}

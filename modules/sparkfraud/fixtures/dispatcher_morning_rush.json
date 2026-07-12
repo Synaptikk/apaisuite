@@ -1,0 +1,153 @@
+{
+  "_meta": {
+    "fixture_name": "morning_rush",
+    "source": "Hand-crafted synthetic — NOT derived from any captured live response",
+    "synthetic_date": "2026-05-07",
+    "store": "9999",
+    "default_event_time_local": "08:40",
+    "default_event_tz_assumed": "America/New_York (EDT, UTC-04:00)",
+    "viability_design": "Trip 1 viable on-time; Trip 2 viable delayed; Trip 3 in search window but NOT viable (PICKED/DISPATCHED do not bracket 08:40).",
+    "shape_note": "Mirrors notes/api_endpoints.md dispatcher_trips response shape. batchId omitted to match current live shape per app.js:373 comment.",
+    "_warning": "If the live Dispatcher response shape changes, this fixture will diverge. Re-derive when capture+sanitize tooling exists (REPLAY-03)."
+  },
+  "payload": {
+    "tasksByClientId": {
+      "0": {
+        "tripDisplayStatusMap": {
+          "atPickup":         {"count": 2,  "delayed": 0, "onTime": 2, "cancelled": 0},
+          "unAssigned":       {"count": 5,  "delayed": 0, "onTime": 5, "cancelled": 0},
+          "completed":        {"count": 30, "delayed": 1, "onTime": 29, "cancelled": 0},
+          "tripInProgress":   {"count": 4,  "delayed": 0, "onTime": 4, "cancelled": 0},
+          "courierRequested": {"count": 1,  "delayed": 0, "onTime": 1, "cancelled": 0},
+          "enrouteToPickup":  {"count": 3,  "delayed": 0, "onTime": 3, "cancelled": 0}
+        },
+        "trips": [
+          {
+            "storeId": 9999,
+            "carrier": "FLEX",
+            "displayTripStatus": "completed",
+            "transitStatus": "ON_TIME",
+            "tripStatusDisplayText": "Driver completed delivery",
+            "serviceProvider": "FLEX",
+            "customerStartTime": "2026-05-07T12:00:00Z",
+            "customerEndTime":   "2026-05-07T13:00:00Z",
+            "driver": {
+              "driverUserId": "driver_001@synthetic.local",
+              "driverUuid":   "00000000-0000-0000-0000-000000000001",
+              "firstName":    "Driver",
+              "lastName":     "One",
+              "preferredName":"D1",
+              "contact": {"phoneNumber": "+15555550001"}
+            },
+            "orders": [
+              {
+                "id":          "10000000-0000-0000-0000-000000000001",
+                "orderId":     "200099900000001",
+                "dropNumber":  1,
+                "tenantId":    0, "clientId": 0, "secondaryClientId": 0,
+                "storeId":     9999,
+                "status":      "DELIVERED",
+                "orderType":   "GMD",
+                "externalStatus": "completed",
+                "customerStartTime": "2026-05-07T12:00:00Z",
+                "customerEndTime":   "2026-05-07T13:00:00Z",
+                "taskEvents": [
+                  {"eventTime": "2026-05-07T12:30:00Z", "eventStatus": "PICKED"},
+                  {"eventTime": "2026-05-07T12:45:00Z", "eventStatus": "DISPATCHED"}
+                ]
+              },
+              {
+                "id":          "10000000-0000-0000-0000-000000000002",
+                "orderId":     "200099900000002",
+                "dropNumber":  2,
+                "tenantId":    0, "clientId": 0, "secondaryClientId": 0,
+                "storeId":     9999,
+                "status":      "DELIVERED",
+                "orderType":   "GMD",
+                "externalStatus": "completed",
+                "customerStartTime": "2026-05-07T12:00:00Z",
+                "customerEndTime":   "2026-05-07T13:00:00Z",
+                "taskEvents": [
+                  {"eventTime": "2026-05-07T12:32:00Z", "eventStatus": "PICKED"},
+                  {"eventTime": "2026-05-07T12:46:00Z", "eventStatus": "DISPATCHED"}
+                ]
+              }
+            ]
+          },
+          {
+            "storeId": 9999,
+            "carrier": "DOORDASH",
+            "displayTripStatus": "completed",
+            "transitStatus": "DELAYED",
+            "tripStatusDisplayText": "Driver completed delivery (delayed)",
+            "serviceProvider": "DOORDASH",
+            "customerStartTime": "2026-05-07T12:00:00Z",
+            "customerEndTime":   "2026-05-07T14:00:00Z",
+            "driver": {
+              "driverUserId": "driver_002@synthetic.local",
+              "driverUuid":   "00000000-0000-0000-0000-000000000002",
+              "firstName":    "Driver",
+              "lastName":     "Two",
+              "preferredName":"D2",
+              "contact": {"phoneNumber": "+15555550002"}
+            },
+            "orders": [
+              {
+                "id":          "20000000-0000-0000-0000-000000000003",
+                "orderId":     "200099900000003",
+                "dropNumber":  1,
+                "tenantId":    0, "clientId": 0, "secondaryClientId": 0,
+                "storeId":     9999,
+                "status":      "DELIVERED",
+                "orderType":   "GMD",
+                "externalStatus": "completed",
+                "customerStartTime": "2026-05-07T12:00:00Z",
+                "customerEndTime":   "2026-05-07T14:00:00Z",
+                "taskEvents": [
+                  {"eventTime": "2026-05-07T12:35:00Z", "eventStatus": "PICKED"},
+                  {"eventTime": "2026-05-07T12:50:00Z", "eventStatus": "DISPATCHED"}
+                ]
+              }
+            ]
+          },
+          {
+            "storeId": 9999,
+            "carrier": "FLEX",
+            "displayTripStatus": "completed",
+            "transitStatus": "ON_TIME",
+            "tripStatusDisplayText": "Driver completed delivery",
+            "serviceProvider": "FLEX",
+            "customerStartTime": "2026-05-07T12:30:00Z",
+            "customerEndTime":   "2026-05-07T13:30:00Z",
+            "driver": {
+              "driverUserId": "driver_003@synthetic.local",
+              "driverUuid":   "00000000-0000-0000-0000-000000000003",
+              "firstName":    "Driver",
+              "lastName":     "Three",
+              "preferredName":"D3",
+              "contact": {"phoneNumber": "+15555550003"}
+            },
+            "orders": [
+              {
+                "id":          "30000000-0000-0000-0000-000000000004",
+                "orderId":     "200099900000004",
+                "dropNumber":  1,
+                "tenantId":    0, "clientId": 0, "secondaryClientId": 0,
+                "storeId":     9999,
+                "status":      "DELIVERED",
+                "orderType":   "GMD",
+                "externalStatus": "completed",
+                "customerStartTime": "2026-05-07T12:30:00Z",
+                "customerEndTime":   "2026-05-07T13:30:00Z",
+                "taskEvents": [
+                  {"eventTime": "2026-05-07T13:00:00Z", "eventStatus": "PICKED"},
+                  {"eventTime": "2026-05-07T13:05:00Z", "eventStatus": "DISPATCHED"}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

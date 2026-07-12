@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "purpose": "x-realmid header values per endpoint. gscope endpoints reject requests with mismatched realmid; the SPA's interceptors set the right one per page. We can only assert the realmid for endpoints we've actively driven.",
+    "seeded_from": [
+      "extension/app.js:237 (x-realmid: DISPATCHER_WEB_UI)",
+      "extension/background.js:446 (rationale comment — gscope endpoints want different realmids)",
+      "notes/api_endpoints.md:185-188",
+      "notes/puppeteering_playbook.md (Different gscope endpoints want different x-realmid)"
+    ],
+    "seeded_on": "2026-05-22",
+    "policy": "DO NOT guess realmids. If you don't have a captured value, the realmid is UNKNOWN and the endpoint must be driven (not replayed) until captured.",
+    "regenerable_via": "recon/_capture.py (PROPOSED — passive observer reads x-realmid from natural request headers)"
+  },
+
+  "realmids": [
+    {
+      "realmid": "DISPATCHER_WEB_UI",
+      "endpoints": [
+        "dispatcher_trips",
+        "dispatcher_counts",
+        "dispatcher_attention",
+        "swift_permissions",
+        "swift_config"
+      ],
+      "discovered_in": "Natural SPA request capture from /mfe/spark/dashboard",
+      "consumer_files": ["extension/app.js:237", "extension/background.js:driveOrderResolution captured headers"],
+      "confidence": "VERIFIED"
+    },
+    {
+      "realmid": "<UNKNOWN — must be captured from natural OMS request>",
+      "endpoints": ["oms_orders"],
+      "discovered_in": "Not yet enumerated. Currently we let the SPA set it via drive-and-capture (auth_modes.json#gscope_oms_drive).",
+      "consumer_files": ["extension/background.js:driveOrderResolution"],
+      "confidence": "UNKNOWN",
+      "drift_risk": "MEDIUM — we have a captured-headers replay path but no record of WHICH realmid the SPA sets. If a future capture lacks the realmid header, fast-path replay will silently 403."
+    },
+    {
+      "realmid": "<UNKNOWN>",
+      "endpoints": ["gateway_userdetails", "gateway_userpref_get", "gateway_userpref_set", "gateway_smc_promise", "gateway_cms_config", "gateway_cms_custom_config"],
+      "discovered_in": "Bootstrap traffic only; not driven by SparkFraud yet.",
+      "confidence": "UNKNOWN",
+      "note": "Per background.js:446 'gscope endpoints reject requests with mismatched realmid'. Calling these with cookie-only auth (auth_modes.json#gscope_in_tab_generic) may or may not work depending on endpoint-level realmid enforcement."
+    }
+  ]
+}

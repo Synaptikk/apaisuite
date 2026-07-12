@@ -1,0 +1,241 @@
+/* modules/stockingplan/styles.css
+   All selectors scoped under .module-stockingplan (applied by the shell). */
+
+.module-stockingplan {
+  --sp-accent:  #1a237e;
+  --sp-fc-bg:   #e8f5e9;
+  --sp-fc-tag:  #2e7d32;
+  --sp-gm-bg:   #e3f2fd;
+  --sp-gm-tag:  #1565c0;
+  --sp-callout: #b71c1c;
+  --sp-callout-bg: #ffcdd2;
+}
+
+/* Header */
+.module-stockingplan .sp-header h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.1em;
+}
+
+/* Config grid */
+.module-stockingplan .sp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.module-stockingplan .sp-action-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.9rem;
+  flex-wrap: wrap;
+}
+
+/* Section titles */
+.module-stockingplan .sp-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.module-stockingplan .sp-count-badge {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--apai-muted, #666);
+}
+
+/* Associate name list — 3 columns, alphabetical flow */
+.module-stockingplan .sp-assoc-list {
+  columns: 3;
+  column-gap: 1.5rem;
+}
+
+.module-stockingplan .sp-name-item {
+  break-inside: avoid;
+  font-size: 0.88rem;
+  padding: 2px 0;
+}
+
+.module-stockingplan .sp-name-item.sp-callout {
+  color: var(--sp-callout);
+}
+
+/* Plan table */
+.module-stockingplan .sp-rates-note {
+  margin-bottom: 0.6rem;
+}
+
+.module-stockingplan .sp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.module-stockingplan .sp-table th {
+  background: var(--sp-accent);
+  color: #fff;
+  text-align: left;
+  padding: 5px 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.module-stockingplan .sp-th-num { text-align: right; }
+
+.module-stockingplan .sp-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+
+.module-stockingplan .sp-td-num { text-align: right; }
+
+.module-stockingplan .sp-hrs {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.module-stockingplan .sp-dept-header td {
+  background: #e8eaf6;
+  font-weight: 600;
+  padding: 5px 8px;
+}
+
+.module-stockingplan .sp-aisle-row .sp-td-dept {
+  padding-left: 1.5rem;
+}
+
+/* Tags */
+.module-stockingplan .sp-tag {
+  font-size: 0.72rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.module-stockingplan .sp-tag.fc {
+  background: var(--sp-fc-bg);
+  color: var(--sp-fc-tag);
+}
+
+.module-stockingplan .sp-tag.gm {
+  background: var(--sp-gm-bg);
+  color: var(--sp-gm-tag);
+}
+
+/* Assignment input + chips */
+.module-stockingplan .sp-td-assign {
+  min-width: 14rem;
+}
+
+.module-stockingplan .sp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.2rem;
+}
+
+.module-stockingplan .sp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--apai-blue, #1976d2);
+  color: #fff;
+  border-radius: 12px;
+  padding: 1px 7px;
+  font-size: 0.8rem;
+}
+
+.module-stockingplan .sp-chip-remove {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 2px;
+}
+
+.module-stockingplan .sp-chip-remove:hover {
+  color: #fff;
+}
+
+.module-stockingplan .sp-autocomplete-wrap {
+  position: relative;
+}
+
+.module-stockingplan .sp-assign-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.82rem;
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.module-stockingplan .sp-assign-input:focus {
+  outline: none;
+  border-color: var(--sp-accent);
+}
+
+.module-stockingplan .sp-dropdown {
+  position: absolute;
+  z-index: 100;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.module-stockingplan .sp-dd-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.module-stockingplan .sp-dd-item:hover {
+  background: #e8eaf6;
+}
+
+.module-stockingplan .sp-dd-callout {
+  color: var(--sp-callout);
+}
+
+.module-stockingplan .sp-dd-callout::after {
+  content: " (call out)";
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+/* Output row */
+.module-stockingplan .sp-output-row {
+  margin-top: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.module-stockingplan .sp-recipient-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.module-stockingplan .sp-recipient-field .input {
+  width: 16rem;
+}

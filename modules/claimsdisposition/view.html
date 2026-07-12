@@ -1,0 +1,28 @@
+<!-- modules/claimsdisposition/view.html
+     Static markup shell. view.js owns all dynamic content, injected into
+     the unnamed section containers below. IDs prefixed `cd-` to scope
+     away from other modules' DOM. -->
+
+<div id="cd-root" class="cd-root">
+  <div id="cd-header"      class="cd-header"></div>
+  <div id="cd-data-source" class="cd-data-source cd-no-print"></div>
+  <div id="cd-progress"    class="cd-progress cd-no-print cd-hidden"></div>
+  <div id="cd-filters"     class="cd-filters cd-no-print"></div>
+
+  <main id="cd-main" class="cd-main">
+    <div id="cd-loading" class="cd-card cd-center cd-muted">Loading claims data…</div>
+    <div id="cd-error"   class="cd-card cd-error cd-hidden"></div>
+
+    <div id="cd-content" class="cd-hidden">
+      <div id="cd-summary"        class="cd-section"></div>
+      <div id="cd-market-charts"  class="cd-section"></div>
+      <div id="cd-store-table"    class="cd-section"></div>
+      <div id="cd-time-of-day"    class="cd-section"></div>
+      <div id="cd-day-of-week"    class="cd-section"></div>
+      <div id="cd-outlier-panel"  class="cd-section"></div>
+    </div>
+  </main>
+
+  <div id="cd-drawer-host"></div>
+  <div id="cd-modal-host"></div>
+</div>

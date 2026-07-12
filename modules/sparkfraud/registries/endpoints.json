@@ -1,0 +1,225 @@
+{
+  "_meta": {
+    "purpose": "Canonical inventory of every internal Walmart endpoint SparkFraud touches or has documented. Replaces the inline URL constants in extension/*.js and the prose tables in notes/api_endpoints.md.",
+    "seeded_from": [
+      "extension/app.js:3-4 (SWIFT_DASHBOARD, GSCOPE_ORDERS)",
+      "extension/background.js (various URLs)",
+      "notes/api_endpoints.md (full surface)",
+      "notes/tools/dispatcher_mfe.md (Dispatcher detail)"
+    ],
+    "seeded_on": "2026-05-22",
+    "regenerable_from": "recon/_capture.py (PROPOSED — passive observer of natural SPA traffic)"
+  },
+
+  "endpoints": [
+    {
+      "name": "dispatcher_trips",
+      "purpose": "Primary fraud-investigation endpoint. Trip list with assigned Spark driver + orders, filterable by store/time/service-type.",
+      "method": "POST",
+      "origin": "https://swift.walmart.com",
+      "path": "/sparkApp/api/proxy/v4/dashboard",
+      "auth_mode": "swift_dispatcher",
+      "realmid": "DISPATCHER_WEB_UI",
+      "consumed_by": ["extension/app.js:fetchTrips", "recon/dispatcher (dispatcher_today_v3.py — canonical)"],
+      "body_shape": {
+        "startTime":      "ISO-8601 with offset, e.g. 2026-05-07T08:00:00-04:00",
+        "endTime":        "ISO-8601 with offset",
+        "pickupPointIds": ["<store id string>"],
+        "clients":        ["0"],
+        "pageSize":       200,
+        "services":       "enums.json#services (subset)",
+        "serviceTypes":   "enums.json#serviceTypes (subset, optional)"
+      },
+      "response_shape_summary": "payload.tasksByClientId['0'].{tripDisplayStatusMap, trips[]}; each trip has {storeId, batchId?, carrier, displayTripStatus, transitStatus, customerStartTime, customerEndTime, driver{firstName,lastName,driverUserId,contact.phoneNumber,...}, orders[{orderId, dropNumber, status, externalStatus, taskEvents?[]}]}",
+      "pagination": "pageSize:200 in body; no offset/cursor observed — paging mechanism unknown (notes/tools/dispatcher_mfe.md:218 TODO)",
+      "confidence": "VERIFIED",
+      "fixture_candidates": ["dispatcher_today_v2.json (needs sanitization before promotion to extension/fixtures/)"]
+    },
+
+    {
+      "name": "dispatcher_counts",
+      "purpose": "Same filter shape as trips, returns status-count map only. Faster for tab-count refreshes.",
+      "method": "POST",
+      "origin": "https://swift.walmart.com",
+      "path": "/sparkApp/api/proxy/v2/dashboard/counts",
+      "auth_mode": "swift_dispatcher",
+      "realmid": "DISPATCHER_WEB_UI",
+      "consumed_by": [],
+      "body_shape": "Identical to dispatcher_trips",
+      "response_shape_summary": "tripDisplayStatusMap only — no trip details",
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:80-81"
+    },
+
+    {
+      "name": "dispatcher_attention",
+      "purpose": "Counts of trips requiring attention. Default 7-day window.",
+      "method": "POST",
+      "origin": "https://swift.walmart.com",
+      "path": "/sparkApp/api/proxy/v4/dispatches/attention",
+      "auth_mode": "swift_dispatcher",
+      "realmid": "DISPATCHER_WEB_UI",
+      "consumed_by": [],
+      "body_shape": "dispatcher_trips body + 'counts': true",
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:82"
+    },
+
+    {
+      "name": "oms_orders",
+      "purpose": "Per-order item lookup. Returns 87-field rows; one row per item (NOT per order).",
+      "method": "GET",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/provider-oms/orders",
+      "query_shape": {
+        "limit":   200,
+        "offset":  0,
+        "orderNo": "<comma-separated order IDs>"
+      },
+      "auth_mode": "gscope_oms_drive (slow path) | gscope_replay (fast path)",
+      "realmid": "varies (different from DISPATCHER_WEB_UI — let SPA set it)",
+      "consumed_by": ["extension/app.js:fetchOrderItems", "extension/background.js:driveOrderResolution", "recon/dispatcher (order_items_full2.py — canonical)"],
+      "response_shape_summary": "{status, header, payload: [<row>{orderNo, itemId, itemName, upc/wupc/sku, quantity, unitPrice, lineStatus, customerFirstName, customerEmail, shipToAddress, ...}]}",
+      "response_size_caveat": "Observed: 9 orders ≈ 365KB, 21 orders ≈ >1MB (truncated at 1MB cap before 2026-05-22 fix). capture.js now allows ≥10MB (extension/capture.js). Above ~50 orders single-call risks exceeding 10MB. OMS-PAGINATION-01 (2026-05-22) chunks app.js:fetchOrderItems requests into batches of OMS_BATCH_SIZE (default 10) to stay well under cap. Reduce OMS_BATCH_SIZE if single-order responses ever exceed ~1MB.",
+      "pagination_caveat": "Endpoint accepts limit/offset query params (we hardcode limit=200&offset=0). For SparkFraud, batching is done client-side: split orderIds into chunks of OMS_BATCH_SIZE and fire N separate requests with comma-separated subsets. Each batch is a separate driveOrderResolution call sharing the fast-path cached headers.",
+      "header_totalCount_caveat": "header.headerAttributes.totalCount is ORDER count, not ROW count (notes/api_endpoints.md:92)",
+      "confidence": "VERIFIED",
+      "fixture_candidates": ["orders_response.json (needs sanitization)"]
+    },
+
+    {
+      "name": "walmart_consumer_item",
+      "purpose": "Scrape og:image meta tag for product thumbnails. Walmart asset URLs are NOT derivable from itemId/UPC/WUPC.",
+      "method": "GET",
+      "origin": "https://www.walmart.com",
+      "path": "/ip/{itemId}",
+      "auth_mode": "walmart_consumer",
+      "consumed_by": ["extension/background.js:getItemImage"],
+      "response_shape_summary": "Consumer product HTML; we extract <meta property=\"og:image\" content=\"...\">",
+      "caveats": [
+        "Some itemIds have no og:image (internal items like 'BAG'). Negative cache with shorter TTL.",
+        "Each lookup ~500ms — cache aggressively. 7-day TTL in chrome.storage.local."
+      ],
+      "confidence": "VERIFIED",
+      "anti_pattern": "DO NOT probe i5.walmartimages.com URL patterns — 11 patterns × 6 items × 6 origins all 404 (notes/api_endpoints.md:200-216)."
+    },
+
+    {
+      "name": "swift_permissions",
+      "purpose": "Role check during page bootstrap. NOT needed for read-only data pulls.",
+      "method": "POST",
+      "origin": "https://swift.walmart.com",
+      "path": "/sparkApp/permissions",
+      "auth_mode": "swift_dispatcher",
+      "consumed_by": [],
+      "body_shape": {"accesses": ["<role>"], "storeId": "<store id>"},
+      "response_shape_summary": "{roles[], permittedActions[]}",
+      "confidence": "VERIFIED",
+      "source": "notes/tools/dispatcher_mfe.md:159-162"
+    },
+
+    {
+      "name": "swift_config",
+      "purpose": "Shared config registry. Used to fetch LMDE_CARRIER_MASTER (carrier enum source).",
+      "method": "POST",
+      "origin": "https://swift.walmart.com",
+      "path": "/sparkApp/api/smc/configuration/v2/getConfig",
+      "auth_mode": "swift_dispatcher",
+      "consumed_by": ["enums.json#carriers (regenerable_via)"],
+      "body_shape": {"header": {"configCategory": "<category>", "configIdentifier": "<identifier>"}},
+      "known_identifiers": ["LMDE_CARRIER_MASTER (returns carrier list)"],
+      "confidence": "VERIFIED",
+      "source": "notes/tools/dispatcher_mfe.md:164-170"
+    },
+
+    {
+      "name": "gateway_userdetails",
+      "purpose": "User record bootstrap. Fires on every gscope page load — informational only.",
+      "method": "GET",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/manage/userdetails",
+      "query_shape": {"domain": "us", "loginid": "<user>"},
+      "auth_mode": "gscope_in_tab_generic",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:107"
+    },
+    {
+      "name": "gateway_userpref_get",
+      "method": "GET",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/provider-userpref/pref",
+      "query_shape": {"userId": "<user>"},
+      "auth_mode": "gscope_in_tab_generic",
+      "purpose": "Saved user preferences. Informational.",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:108"
+    },
+    {
+      "name": "gateway_userpref_set",
+      "method": "POST",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/provider-userpref/pref",
+      "auth_mode": "gscope_in_tab_generic",
+      "purpose": "Save user prefs. Informational.",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:109"
+    },
+    {
+      "name": "gateway_smc_promise",
+      "method": "POST",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/smc/promise",
+      "auth_mode": "gscope_in_tab_generic",
+      "purpose": "Store metadata. Returns store record for pickupPointIds. Possible source for store_config regeneration.",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:110"
+    },
+    {
+      "name": "gateway_cms_config",
+      "method": "GET",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/cms/getConfig",
+      "query_shape": {"path": "<route>", "market": "us"},
+      "auth_mode": "gscope_in_tab_generic",
+      "purpose": "Page config.",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:111"
+    },
+    {
+      "name": "gateway_cms_custom_config",
+      "method": "GET",
+      "origin": "https://gscope.walmartlabs.com",
+      "path": "/api/gateway/cms/getCustomConfig",
+      "query_shape": {"configKey": "<key>", "path": "<route>", "market": "us"},
+      "auth_mode": "gscope_in_tab_generic",
+      "purpose": "Custom config. E.g. dispatcherUIEnvConfig exposes the swift.walmart.com path.",
+      "consumed_by": [],
+      "confidence": "VERIFIED",
+      "source": "notes/api_endpoints.md:112"
+    }
+  ],
+
+  "do_not_call_endpoints": {
+    "_purpose": "Endpoints we probed that don't exist — they return SPA index.html as a 200 router fallback. Documented to prevent re-probing.",
+    "spa_router_fallback_size_bytes": 8281,
+    "paths": [
+      "/v3/api-docs",
+      "/v2/api-docs",
+      "/swagger-ui.html",
+      "/swagger-ui/",
+      "/swagger-resources",
+      "/openapi.json",
+      "/openapi.yaml",
+      "/actuator",
+      "/actuator/mappings",
+      "/graphql"
+    ],
+    "detection_rule": "If a gscope response is 200 OK with body length == 8281, treat as SPA fallback (NOT a real endpoint).",
+    "source": "notes/api_endpoints.md:194-199"
+  }
+}

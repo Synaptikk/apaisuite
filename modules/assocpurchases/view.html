@@ -1,0 +1,65 @@
+<!-- modules/assocpurchases/view.html -->
+
+<div id="ap-root" class="ap-root">
+
+  <div class="ap-header">
+    <h2 class="ap-title">Associate Purchases</h2>
+    <p class="ap-subtitle">Cross-reference MUMD markdowns with associate discount-card purchases.</p>
+  </div>
+
+  <div class="ap-controls">
+    <label class="ap-label">
+      Store #
+      <input id="ap-store" type="number" class="ap-input" value="1458" min="1" max="9999">
+    </label>
+    <label class="ap-label">
+      Start Date
+      <input id="ap-start" type="date" class="ap-input">
+    </label>
+    <label class="ap-label">
+      End Date
+      <input id="ap-end" type="date" class="ap-input">
+    </label>
+    <button id="ap-run-btn" class="ap-btn ap-btn-primary">Investigate</button>
+  </div>
+
+  <div id="ap-status" class="ap-status ap-hidden"></div>
+  <div id="ap-error"  class="ap-error  ap-hidden"></div>
+
+  <div id="ap-results" class="ap-hidden">
+    <div id="ap-summary" class="ap-summary"></div>
+
+    <section class="ap-section">
+      <h3 class="ap-section-title">
+        Markdown Associates
+        <span class="ap-badge ap-badge-neutral" id="ap-md-count">0</span>
+      </h3>
+      <p class="ap-section-desc">Everyone who performed markdowns in this period.</p>
+      <div id="ap-md-table-wrap" class="ap-table-wrap">
+        <p class="ap-empty">No data yet.</p>
+      </div>
+    </section>
+
+    <section class="ap-section">
+      <h3 class="ap-section-title">
+        Self-Purchase Matches
+        <span class="ap-badge" id="ap-self-count">0</span>
+      </h3>
+      <p class="ap-section-desc">Associates who performed markdowns AND appear in the APPRISS discount-card purchase list.</p>
+      <div id="ap-self-table-wrap" class="ap-table-wrap">
+        <p class="ap-empty">No self-purchase matches found.</p>
+      </div>
+    </section>
+
+    <section class="ap-section">
+      <h3 class="ap-section-title">
+        Within-1-Hour Purchases
+        <span class="ap-badge ap-badge-pending">pending</span>
+      </h3>
+      <p class="ap-section-desc">Non-food items purchased by ANY associate using their discount card within 1 hour of the markdown. Phase 2.</p>
+      <div class="ap-table-wrap">
+        <p class="ap-empty ap-muted">Requires APPRISS per-card drill-down — Phase 2.</p>
+      </div>
+    </section>
+  </div>
+</div>

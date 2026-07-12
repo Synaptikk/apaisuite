@@ -1,0 +1,474 @@
+/* Reusable components — used by the shell and any module.
+   See docs/DESIGN_SYSTEM.md for the full inventory and usage examples. */
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--rad-md);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semi);
+  line-height: 1;
+  color: var(--apai-ink);
+  background: var(--apai-bg-elev);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.btn:hover { background: var(--apai-bg); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled, .btn[aria-disabled="true"] {
+  opacity: 0.45; cursor: not-allowed; pointer-events: none;
+}
+
+.btn-primary {
+  background: var(--module-accent);
+  color: white;
+}
+.btn-primary:hover { background: var(--module-accent-dark); }
+.btn-primary:active { background: var(--module-accent-darker); }
+
+.btn-secondary {
+  background: var(--apai-bg-elev);
+  border-color: var(--apai-border);
+  color: var(--apai-ink);
+}
+.btn-secondary:hover { background: var(--apai-bg-soft); border-color: var(--apai-muted); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--module-accent);
+}
+.btn-ghost:hover { background: var(--module-accent-bg); }
+
+.btn-danger {
+  background: var(--apai-error);
+  color: white;
+}
+.btn-danger:hover { background: #991616; }
+
+.btn-icon {
+  width: 32px; height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--apai-muted);
+  border-radius: var(--rad-md);
+}
+.btn-icon:hover { background: var(--apai-bg); color: var(--apai-ink); }
+.btn-icon svg { width: 18px; height: 18px; }
+
+.btn-pill { border-radius: var(--rad-pill); }
+.btn-sm   { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); }
+.btn-lg   { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-lg); }
+
+/* Button group (segmented) */
+.btn-group {
+  display: inline-flex;
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.btn-group-item {
+  padding: var(--sp-1) var(--sp-4);
+  background: transparent;
+  border: 0;
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--apai-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+.btn-group-item:hover { color: var(--apai-ink); }
+.btn-group-item.is-active {
+  background: var(--module-accent);
+  color: white;
+}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.card {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-lg);
+  padding: var(--sp-5) var(--sp-6);
+  box-shadow: var(--shadow-1);
+}
+.card + .card { margin-top: var(--sp-4); }
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+}
+
+.card-step {
+  display: inline-flex;
+  width: 22px; height: 22px;
+  border-radius: var(--rad-pill);
+  background: var(--module-accent);
+  color: white;
+  align-items: center; justify-content: center;
+  font-size: var(--fs-sm); font-weight: var(--fw-semi);
+}
+
+.card-body { /* default; just a marker class */ }
+
+.card-block {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+.card-block:last-child { margin-bottom: 0; }
+
+.card-head {
+  background: var(--apai-bg-soft);
+  padding: var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+/* ── Pills (auth state, status) ─────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 3px var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  background: var(--apai-bg-elev);
+  color: var(--apai-muted);
+}
+.pill-checking { color: var(--apai-muted); }
+.pill-ok       { background: var(--apai-success-bg); border-color: #A7F3D0; color: #047857; }
+.pill-fail     { background: var(--apai-error-bg);   border-color: #FECACA; color: var(--apai-error); }
+.pill-warn     { background: var(--apai-warn-bg);    border-color: #FCD34D; color: #92400E; }
+
+/* ── Badges (confidence, flags) ─────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: white;
+  background: var(--apai-muted);
+}
+.badge + .badge { margin-left: var(--sp-1); }
+
+.badge-success    { background: var(--apai-success); }
+.badge-warn       { background: var(--apai-warn); }
+.badge-muted      { background: var(--apai-muted); }
+.badge-neutral    { background: #9CA3AF; }
+.badge-danger     { background: var(--apai-error); }
+.badge-info       { background: var(--apai-info); }
+
+/* Common flag badges */
+.badge-home       { background: #DCFCE7; color: #166534; }
+.badge-threat     { background: #FEE2E2; color: var(--apai-error); }
+.badge-orc        { background: #F3E8FF; color: #7E22CE; }
+
+/* ── Status strip (left-border colored message) ─────────────── */
+.status-strip {
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--apai-muted);
+  background: var(--apai-bg-soft);
+  font-size: var(--fs-md);
+  color: var(--apai-ink-soft);
+  border-radius: 0 var(--rad-sm) var(--rad-sm) 0;
+}
+.status-strip-ok    { border-left-color: var(--apai-success); background: var(--apai-success-bg); color: #1A5D2E; }
+.status-strip-error { border-left-color: var(--apai-error);   background: var(--apai-error-bg);   color: #832222; }
+.status-strip-warn  { border-left-color: var(--apai-warn);    background: var(--apai-warn-bg);    color: #92400E; }
+.status-strip-info  { border-left-color: var(--apai-info);    background: var(--apai-info-bg);    color: var(--apai-blue-darker); }
+
+/* ── Form controls ──────────────────────────────────────────── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--apai-muted);
+}
+.field-label { font-size: var(--fs-sm); color: var(--apai-muted); }
+
+.input, .select, .textarea {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+  font-size: var(--fs-base);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.input:focus, .select:focus, .textarea:focus {
+  outline: 2px solid var(--module-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.textarea { font-family: var(--font-mono); font-size: var(--fs-md); min-height: 200px; resize: vertical; }
+
+.fieldset {
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-1) var(--sp-3);
+  margin: 0;
+}
+.fieldset legend { font-size: var(--fs-sm); color: var(--apai-muted); padding: 0 var(--sp-1); }
+
+.check {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-md); color: var(--apai-ink);
+  cursor: pointer; user-select: none;
+}
+.check input { accent-color: var(--module-accent); cursor: pointer; }
+
+/* ── Data tables ────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-base);
+}
+.data-table thead tr {
+  background: var(--apai-bg-soft);
+  color: var(--apai-muted);
+  text-align: left;
+}
+.data-table th {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.data-table td {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--apai-border);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover td { background: var(--apai-bg-soft); }
+.data-table .zebra { background: #FAFAFA; }
+
+.data-table-compact th, .data-table-compact td {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.data-table-bordered {
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  overflow: hidden;
+}
+
+/* ── Filter bar ─────────────────────────────────────────────── */
+.filter-bar {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: flex-end;
+}
+
+/* ── States ─────────────────────────────────────────────────── */
+.state-empty, .state-loading, .state-error {
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-md);
+  border-radius: var(--rad-md);
+}
+.state-empty   { background: var(--apai-bg-soft); border: 1px dashed var(--apai-border); }
+.state-loading { color: var(--apai-ink-soft); }
+.state-error   { background: var(--apai-error-bg); color: var(--apai-error); border: 1px solid #FECACA; }
+
+/* ── Spinner ────────────────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--apai-border);
+  border-top-color: var(--module-accent);
+  border-radius: var(--rad-pill);
+  animation: apai-spin 0.6s linear infinite;
+  vertical-align: text-bottom;
+  margin-right: var(--sp-1);
+}
+.spinner-lg { width: 24px; height: 24px; border-width: 3px; }
+@keyframes apai-spin { to { transform: rotate(360deg); } }
+
+/* ── Progress bar (two-layer text trick lifted from AurorBuddy) */
+.progress-bar {
+  position: relative;
+  height: 24px;
+  background: var(--apai-border);
+  border-radius: var(--rad-pill);
+  overflow: hidden;
+  margin: var(--sp-2) 0 var(--sp-4);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+}
+.progress-fill {
+  position: absolute; top: 0; left: 0; bottom: 0;
+  width: var(--pct, 0%);
+  background: linear-gradient(90deg, var(--module-accent), var(--module-accent-dark));
+  transition: width var(--duration-slow) var(--ease-out);
+  border-radius: var(--rad-pill);
+}
+.progress-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-sm); font-weight: var(--fw-semi);
+  letter-spacing: 0.01em;
+  pointer-events: none;
+}
+.progress-text-empty  { color: var(--apai-ink-soft); }
+.progress-text-filled {
+  color: white;
+  clip-path: inset(0 calc(100% - var(--pct, 0%)) 0 0);
+  transition: clip-path var(--duration-slow) var(--ease-out);
+}
+.progress-bar.done .progress-fill { background: var(--apai-success); }
+
+/* ── Modal (native <dialog>) ────────────────────────────────── */
+.modal {
+  border: 0;
+  border-radius: var(--rad-lg);
+  padding: 0;
+  background: var(--apai-bg-elev);
+  box-shadow: var(--shadow-3);
+  max-width: 600px;
+  width: 90vw;
+}
+.modal::backdrop { background: rgba(0,0,0,0.5); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--apai-border);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-lg);
+}
+.modal-body { padding: var(--sp-5); }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--apai-border);
+  background: var(--apai-bg-soft);
+}
+
+/* ── Toast ──────────────────────────────────────────────────── */
+.toast-region {
+  position: fixed;
+  bottom: var(--sp-5); right: var(--sp-5);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  z-index: 1000;
+}
+.toast {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 3px solid var(--module-accent);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-md);
+  box-shadow: var(--shadow-2);
+  max-width: 360px;
+}
+.toast-ok    { border-left-color: var(--apai-success); }
+.toast-error { border-left-color: var(--apai-error); }
+.toast-warn  { border-left-color: var(--apai-warn); }
+
+/* ── Module cards (dashboard) ───────────────────────────────── */
+.module-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.module-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+.module-card-head {
+  display: flex; align-items: center; gap: var(--sp-3);
+}
+.module-card-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--rad-md);
+  background: var(--apai-info-bg);
+  color: var(--apai-blue);
+  display: flex; align-items: center; justify-content: center;
+}
+.module-card-icon svg { width: 22px; height: 22px; }
+.module-card-name {
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-lg);
+  letter-spacing: -0.01em;
+}
+.module-card-desc {
+  color: var(--apai-muted);
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+}
+.module-card-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: auto;
+}
+
+/* ── Drag-to-reorder (sidebar nav items + home module cards) ──────
+   Wired in app.js::wireModuleDnD. The element being dragged gets
+   .is-dragging (fades out); the element currently hovered as a drop
+   target gets .is-drop-target (accent border on the leading edge so
+   the user sees where the dragged item will land). */
+.module-card.is-dragging,
+.shell-nav-item.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+.module-card.is-drop-target {
+  box-shadow: -3px 0 0 0 var(--apai-blue), var(--shadow-2);
+  transform: translateY(-1px);
+}
+.shell-nav-item.is-drop-target {
+  box-shadow: inset 3px 0 0 0 var(--apai-blue);
+  background: var(--apai-info-bg);
+}
+.module-card[draggable="true"],
+.shell-nav-item[draggable="true"] {
+  cursor: grab;
+}
+.module-card[draggable="true"]:active,
+.shell-nav-item[draggable="true"]:active {
+  cursor: grabbing;
+}

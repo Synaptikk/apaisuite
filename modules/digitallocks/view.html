@@ -1,0 +1,37 @@
+<!-- modules/digitallocks/view.html
+     Static markup shell. view.js mounts dynamic content into each region.
+     IDs prefixed `dl-` so they don't collide with other modules. -->
+
+<div id="dl-root" class="dl-root">
+
+  <header id="dl-header" class="dl-header">
+    <h1>Digital Locks Review</h1>
+    <p class="dl-header-subtitle">
+      Triage digital lock unlock events suggested for daily AP review. Each
+      score is a prioritization hint — never a verdict.
+    </p>
+    <div class="dl-header-actions" id="dl-header-actions">
+      <!-- Import / Open Power BI / Archive buttons injected by view.js -->
+    </div>
+  </header>
+
+  <section id="dl-import-banner" class="dl-import-banner dl-hidden"></section>
+  <section id="dl-import-warnings" class="dl-warnings dl-hidden"></section>
+
+  <section id="dl-summary" class="dl-summary"></section>
+  <section id="dl-filters" class="dl-filters"></section>
+
+  <nav id="dl-tabs" class="dl-tabs">
+    <button type="button" class="dl-tab is-active" data-view="active">Active review</button>
+    <button type="button" class="dl-tab" data-view="checklist">Daily checklist</button>
+    <button type="button" class="dl-tab" data-view="history">History</button>
+    <button type="button" class="dl-tab" data-view="users">Users</button>
+  </nav>
+
+  <main id="dl-main" class="dl-main">
+    <div id="dl-empty" class="dl-empty dl-hidden"></div>
+    <div id="dl-content"></div>
+  </main>
+
+  <div id="dl-drawer-host"></div>
+</div>

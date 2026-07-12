@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__context7__resolve-library-id",
+      "WebFetch(domain:developer.chrome.com)",
+      "WebSearch",
+      "Bash(chmod +x *)",
+      "Bash(bash scripts/release.sh --dry-run patch)",
+      "Bash(powershell -NoProfile -Command \"Get-Command Compress-Archive\")",
+      "Bash(cp \"C:\\\\Users\\\\ses008s.s01458\\\\Desktop\\\\APAISuite\\\\unified-extension-suite\\\\manifest.json\" \"/tmp/manifest.json.bak\")",
+      "Bash(bash scripts/release.sh patch)",
+      "Bash(powershell.exe -NoProfile -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead\\('C:\\\\Users\\\\ses008s.s01458\\\\Desktop\\\\QRCallBox\\\\public\\\\extension\\\\apaisuite-0.4.1.zip'\\).Entries | Select-Object -First 15 -Property FullName,Length\")",
+      "Bash(rm -f /tmp/manifest.json.bak)",
+      "Bash(powershell.exe *)",
+      "Bash(cd /tmp)",
+      "Bash(rm -rf ziptest)",
+      "Bash(mkdir -p ziptest/myapp/sub)",
+      "Bash(echo \"hello\")",
+      "Bash(echo \"nested\")",
+      "Bash(pwsh.exe -NoProfile -Command \"exit 0\")",
+      "Bash(python -c \"import zipfile; print\\('zipfile ok'\\)\")",
+      "Bash(npm install *)",
+      "Bash(node --input-type=module -e ' *)"
+    ]
+  }
+}

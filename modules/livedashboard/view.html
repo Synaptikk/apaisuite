@@ -1,0 +1,81 @@
+<section class="ld-root">
+  <!-- Compact strip header -->
+  <header class="ld-strip-head">
+    <div class="ld-title">
+      <strong>Live Dashboard</strong>
+      <span class="ld-store">
+        Store
+        <input id="ld-store-input" type="text" inputmode="numeric" autocomplete="off" maxlength="5" />
+      </span>
+    </div>
+    <div class="ld-strip-controls">
+      <span id="ld-status-text" class="ld-status-mini">Ready.</span>
+      <button id="ld-refresh-btn" class="btn btn-primary btn-sm">Refresh</button>
+    </div>
+  </header>
+
+  <!-- Widget row — 5 widgets, clickable for drill-down -->
+  <div class="ld-grid" role="tablist" aria-label="Dashboard widgets">
+
+    <button class="ld-widget" id="ld-w-absences" data-sev="unknown" data-drill="absences" type="button" aria-expanded="false">
+      <span class="ld-widget-head">
+        <span class="ld-widget-title">Callouts Today</span>
+        <span class="ld-widget-pill" id="ld-w-absences-pill">—</span>
+      </span>
+      <span class="ld-widget-primary" id="ld-w-absences-primary">—</span>
+      <span class="ld-widget-secondary" id="ld-w-absences-secondary">no data yet</span>
+      <span class="ld-widget-foot" id="ld-w-absences-foot">never refreshed</span>
+    </button>
+
+    <button class="ld-widget" id="ld-w-compliance" data-sev="unknown" data-drill="compliance" type="button" aria-expanded="false">
+      <span class="ld-widget-head">
+        <span class="ld-widget-title">Compliance Due Soon</span>
+        <span class="ld-widget-pill" id="ld-w-compliance-pill">—</span>
+      </span>
+      <span class="ld-widget-primary" id="ld-w-compliance-primary">—</span>
+      <span class="ld-widget-secondary" id="ld-w-compliance-secondary">no data yet</span>
+      <span class="ld-widget-foot" id="ld-w-compliance-foot">never refreshed</span>
+    </button>
+
+    <button class="ld-widget" id="ld-w-accident" data-sev="unknown" data-drill="accident" type="button" aria-expanded="false">
+      <span class="ld-widget-head">
+        <span class="ld-widget-title">Accident Details</span>
+        <span class="ld-widget-pill" id="ld-w-accident-pill">—</span>
+      </span>
+      <span class="ld-widget-primary" id="ld-w-accident-primary">—</span>
+      <span class="ld-widget-secondary" id="ld-w-accident-secondary">no data yet</span>
+      <span class="ld-widget-foot" id="ld-w-accident-foot">never refreshed</span>
+    </button>
+
+    <button class="ld-widget" id="ld-w-cvp" data-sev="unknown" data-drill="cvp" type="button" aria-expanded="false">
+      <span class="ld-widget-head">
+        <span class="ld-widget-title">CVP Sell Through</span>
+        <span class="ld-widget-pill" id="ld-w-cvp-pill">—</span>
+      </span>
+      <span class="ld-widget-primary" id="ld-w-cvp-primary">—</span>
+      <span class="ld-widget-secondary" id="ld-w-cvp-secondary">no data yet</span>
+      <span class="ld-widget-foot" id="ld-w-cvp-foot">never refreshed</span>
+    </button>
+
+    <button class="ld-widget" id="ld-w-register" data-sev="unknown" data-drill="register" type="button" aria-expanded="false">
+      <span class="ld-widget-head">
+        <span class="ld-widget-title">Register Exceptions</span>
+        <span class="ld-widget-pill" id="ld-w-register-pill">—</span>
+      </span>
+      <span class="ld-widget-primary" id="ld-w-register-primary">—</span>
+      <span class="ld-widget-secondary" id="ld-w-register-secondary">no data yet</span>
+      <span class="ld-widget-foot" id="ld-w-register-foot">never refreshed</span>
+    </button>
+
+  </div>
+
+  <!-- Drill-down panel — populated by view.js when a widget is clicked -->
+  <section class="ld-drill" id="ld-drill" hidden>
+    <div class="ld-drill-head">
+      <strong id="ld-drill-title">Details</strong>
+      <button id="ld-drill-close" class="btn btn-sm" type="button" aria-label="Close drill-down">Close</button>
+    </div>
+    <div class="ld-drill-body" id="ld-drill-body"></div>
+  </section>
+
+</section>
