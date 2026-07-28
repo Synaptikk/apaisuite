@@ -58,23 +58,30 @@ export async function postTextToWorkvivo({ channelName, text }) {
  * @param {string} [args.caption]
  * @returns {Promise<{ok:boolean, path:"sdk"|"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
  */
-export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileName, caption }) {
+export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileName, caption, onStep }) {
+  const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
   if (!pngBase64) return { ok: false, path: "none", errorClass: "INPUT", error: "missing pngBase64" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
+  step("ensure-tab");
   const tabRes = await _ensureWorkvivoTab();
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
+  step("tab-ready", { tabId, openedFresh });
 
   try {
     // Try SDK path first.
+    step("sdk-post");
     const viaSdk = await _runInTab(tabId, IN_PAGE_POST_VIA_SDK, [{ channelName, pngBase64, fileName, caption }]);
+    step("sdk-post-done", { ok: !!viaSdk?.ok, errorClass: viaSdk?.errorClass });
     if (viaSdk?.ok) return { ...viaSdk, path: "sdk" };
     if (viaSdk?.errorClass === "AUTH") {
       return { ...viaSdk, path: "sdk" };                                   // don't retry via REST if token is bad
     }
     // Fall through to REST.
+    step("rest-post");
     const viaRest = await _runInTab(tabId, IN_PAGE_POST_VIA_REST, [{ channelName, pngBase64, fileName, caption }]);
+    step("rest-post-done", { ok: !!viaRest?.ok, errorClass: viaRest?.errorClass });
     return { ...(viaRest || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
