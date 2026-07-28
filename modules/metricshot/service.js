@@ -30,7 +30,7 @@ import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "
 import { captureMetric } from "./lib/capture.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
-import { scrapeVizPick } from "./lib/sources/vizpick_scrape.js";
+import { scrapeVizPick, dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
 import { formatUnscannedMessage } from "./lib/format_message.js";
 import { createLogging } from "../../shared/logging.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
@@ -651,6 +651,13 @@ export const handlers = {
     const id = String(msg?.id || "");
     const got = await chrome.storage.local.get(`${PFX}scrapeDebug.${id}`);
     return { ok: true, debug: got[`${PFX}scrapeDebug.${id}`] || null };
+  },
+
+  // Diagnostic: after the user manually clicks "Download to Excel" on the
+  // VizPick tab, this reads back the export/command requests the capture ring
+  // recorded so we can reverse-engineer the data-export endpoint.
+  async "dump-export-requests"() {
+    return await dumpExportRequests();
   },
 
   async "get-preview"(msg) {

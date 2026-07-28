@@ -215,3 +215,45 @@ async function _dumpRingSummary(tabId) {
     return { frames: frames.length, byFrame: frames };
   } catch { return null; }
 }
+
+// Surface the requests fired by Tableau's "Download to Excel/Data" flow so we
+// can reverse-engineer the export endpoint. The crosstab export is a
+// multi-step command dance (open dialog → generate → fetch tempfile). We look
+// for the command + export URL signatures in the ring after the user clicks
+// the button, so we can wire up a headless replay of that same sequence.
+export async function dumpExportRequests() {
+  const tabId = await _findVizPickTabId();
+  if (!tabId) return { ok: false, error: "no VizPick tab open" };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      func: () => {
+        const cap = window.__APAISUITE_METRICSHOT_TABLEAU_CAP;
+        if (!cap) return null;
+        const SIGS = [
+          "export", "crosstab", "tempfile", "generate-crosstab",
+          "vud", "export-data", "downloadfile", "prepfiledownload",
+          "summary-data", "underlying-data",
+        ];
+        const all = cap.all();
+        const hits = all.filter((e) => {
+          const u = (e.url || "").toLowerCase();
+          return SIGS.some((s) => u.includes(s));
+        });
+        return hits.map((e) => ({
+          method: e.method,
+          url: e.url,
+          status: e.status,
+          reqBody: (e.reqBody || "").slice(0, 2000),
+          respHead: (e.respBody || "").slice(0, 2000),
+          respLen: (e.respBody || "").length,
+        }));
+      },
+    });
+    const frames = (results || []).map((r) => r?.result).filter(Boolean);
+    return { ok: true, tabId, byFrame: frames };
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
