@@ -64,6 +64,7 @@ export async function mount(host, container) {
   $("ms-f-probe").addEventListener("click", onFormProbe);
   $("ms-preview-close").addEventListener("click", () => { cancelCrop(); $("ms-preview-card").hidden = true; });
   $("ms-log-refresh").addEventListener("click", refreshLog);
+  $("ms-dump-export")?.addEventListener("click", dumpExport);
   $("ms-store-nudge-open")?.addEventListener("click", () => host.route("#/settings"));
 
   // Crop tool buttons + drag handlers.
@@ -162,6 +163,21 @@ export async function mount(host, container) {
       $("ms-log-pre").textContent = lines.length ? lines.join("\n") : "(no events yet)";
     } catch (e) {
       $("ms-log-pre").textContent = `Log unavailable: ${e?.message ?? e}`;
+    }
+  }
+
+  // TEMP diagnostic: dump the export/command requests recorded after the user
+  // clicks Tableau's Download button, so we can reverse-engineer the endpoint.
+  async function dumpExport() {
+    const pre = $("ms-dump-export-pre");
+    pre.textContent = "Reading capture ring…";
+    try {
+      const res = await host.messaging.send("dump-export-requests", {});
+      pre.textContent = JSON.stringify(res, null, 2);
+      try { await navigator.clipboard.writeText(JSON.stringify(res, null, 2)); host.ui?.toast?.("Export requests copied to clipboard."); }
+      catch { /* clipboard blocked — still shown in the panel */ }
+    } catch (e) {
+      pre.textContent = `Dump failed: ${e?.message ?? e}`;
     }
   }
 
