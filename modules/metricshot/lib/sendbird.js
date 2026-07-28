@@ -131,7 +131,24 @@ async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
     return { ok: false, errorClass: "NO_TAB", error: `could not open workvivo tab: ${tab?.__err || "unknown"}` };
   }
 
-  const ready = await _waitForSdk(tab.id, waitMs);
+  // Background tabs are throttled and Workvivo defers booting the Sendbird
+  // SDK until the tab is visible. Give it a short grace period hidden; if the
+  // SDK hasn't appeared, briefly foreground the tab to force bootstrap, then
+  // restore the user's original tab. With a live session this makes posting
+  // fully automatic — no phantom NO_SDK from a hidden tab that never inits.
+  let ready = await _waitForSdk(tab.id, Math.min(waitMs, 8_000));
+  if (!ready) {
+    const prevActive = await _currentActiveTab();
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+    try {
+      ready = await _waitForSdk(tab.id, Math.max(waitMs - 8_000, 10_000));
+    } finally {
+      // Restore focus to whatever the user was looking at.
+      if (prevActive?.id && prevActive.id !== tab.id) {
+        await chrome.tabs.update(prevActive.id, { active: true }).catch(() => {});
+      }
+    }
+  }
   if (!ready) {
     // Capture a diagnostic so NO_SDK isn't a dead end — shows which frames
     // exist and any Sendbird-ish globals present but unmatched.
@@ -143,6 +160,15 @@ async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
     };
   }
   return { ok: true, tabId: tab.id, openedFresh: true };
+}
+
+// The tab the user is currently looking at, so we can restore focus after
+// briefly foregrounding the workvivo tab to boot its SDK.
+async function _currentActiveTab() {
+  try {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return t || null;
+  } catch { return null; }
 }
 
 async function _findWorkvivoTabsSorted() {
