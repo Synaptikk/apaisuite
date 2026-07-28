@@ -564,13 +564,28 @@ export async function mount(host, container) {
   function onCropPointerDown(e) {
     if (!cropCtx) return;
     const r = $("ms-crop-overlay").getBoundingClientRect();
-    cropDrag = { x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top };
+    const px = Math.max(0, Math.min(r.width,  e.clientX - r.left));
+    const py = Math.max(0, Math.min(r.height, e.clientY - r.top));
+
+    // Click-move-click model: if a box is currently being sized, this second
+    // click LOCKS it in place rather than throwing it away and starting over
+    // (the old bug — every pointerdown reset the box to zero size).
+    if (cropDrag && cropDrag.active) {
+      cropDrag.x1 = px;
+      cropDrag.y1 = py;
+      cropDrag.active = false;
+      drawCropBox();
+      return;
+    }
+
+    // Otherwise begin a new box (first click, or redraw after a locked one).
+    cropDrag = { x0: px, y0: py, x1: px, y1: py, downX: px, downY: py, active: true };
     $("ms-crop-overlay").setPointerCapture?.(e.pointerId);
     drawCropBox();
   }
 
   function onCropPointerMove(e) {
-    if (!cropDrag) return;
+    if (!cropDrag || !cropDrag.active) return;
     const r = $("ms-crop-overlay").getBoundingClientRect();
     cropDrag.x1 = Math.max(0, Math.min(r.width,  e.clientX - r.left));
     cropDrag.y1 = Math.max(0, Math.min(r.height, e.clientY - r.top));
@@ -578,8 +593,16 @@ export async function mount(host, container) {
   }
 
   function onCropPointerUp(e) {
-    if (!cropDrag) return;
+    if (!cropDrag || !cropDrag.active) return;
     $("ms-crop-overlay").releasePointerCapture?.(e.pointerId);
+    // Two interaction styles, both supported:
+    //  - DRAG: press → move → release. If the pointer actually moved, treat the
+    //    release as the lock.
+    //  - CLICK-MOVE-CLICK: press+release in ~the same spot is just placing the
+    //    first corner — keep the box active so the next move rubber-bands and
+    //    the next click locks it (handled in onCropPointerDown).
+    const moved = Math.abs(cropDrag.x1 - cropDrag.downX) + Math.abs(cropDrag.y1 - cropDrag.downY);
+    if (moved > 4) cropDrag.active = false;
   }
 
   function drawCropBox() {
