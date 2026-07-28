@@ -339,12 +339,26 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
       metric.caption?.trim() || null,
       `Captured: ${localWhen}`,
     ].filter(Boolean);
-    const post = await postScreenshotToWorkvivo({
-      channelName: metric.destination?.channelName,
-      pngBase64:   captureRes.pngBase64,
-      fileName,
-      caption:     captionLines.join("\n"),
+    log.emit("run-step", { id: metric.id, attempt, step: "post-start", channelName: metric.destination?.channelName });
+    // Watchdog: postScreenshotToWorkvivo opens/primes a Workvivo tab and can
+    // wait ~45s for the Sendbird SDK, all without emitting anything. Race it
+    // so a hung post surfaces instead of stalling the run silently.
+    const POST_WATCHDOG_MS = 120_000;
+    let _pwd;
+    const _postTimeout = new Promise((resolve) => {
+      _pwd = setTimeout(() => resolve({ ok: false, __timedOut: true, errorClass: "POST_HUNG", error: `post hung > ${POST_WATCHDOG_MS / 1000}s` }), POST_WATCHDOG_MS);
     });
+    const post = await Promise.race([
+      postScreenshotToWorkvivo({
+        channelName: metric.destination?.channelName,
+        pngBase64:   captureRes.pngBase64,
+        fileName,
+        caption:     captionLines.join("\n"),
+      }),
+      _postTimeout,
+    ]);
+    clearTimeout(_pwd);
+    log.emit("run-step", { id: metric.id, attempt, step: "post-done", ok: !!post.ok, path: post.path, errorClass: post.errorClass });
 
     if (!post.ok) {
       lastFail = { stage: "post", reason: post.error, class: post.errorClass, attempt };
