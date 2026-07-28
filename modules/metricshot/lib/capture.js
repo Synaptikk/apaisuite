@@ -256,13 +256,28 @@ export async function captureMetric(metric, opts = {}) {
               `containText: missing anchors after ${res.waitedMs}ms — ${res.missing.map(m => `"${m}"`).join(", ")} (found: ${res.foundNames.join(", ") || "none"})`);
           }
           region = res.region;
+          step("region-found", { x: region.x, y: region.y, width: region.width, height: region.height, anchors: res.foundNames?.length });
         }
         if (!region) return _fail(tabId, capturedAt, "region mode requires clip or containText");
         // Apply padding + clamp to viewport so we don't ask CDP for a clip
         // that spills off the rendered surface.
-        const pad = cap.padding || { top: 0, right: 0, bottom: 0, left: 0 };
+        let pad = cap.padding || { top: 0, right: 0, bottom: 0, left: 0 };
         const vw = cap.viewportWidth  || 1500;
         const vh = cap.viewportHeight || 1000;
+        const MIN_DIM = 100;  // must clear validate.js's 100×100 floor
+
+        // Self-heal: if the saved padding (e.g. a too-aggressive crop) would
+        // collapse the region below the min capture size, drop the padding
+        // and use the raw anchor region. Prevents a bad crop from silently
+        // bricking every capture — the screenshot degrades to "uncropped"
+        // instead of "13×12 garbage".
+        const paddedW = region.width  + pad.left + pad.right;
+        const paddedH = region.height + pad.top  + pad.bottom;
+        if ((paddedW < MIN_DIM || paddedH < MIN_DIM) && region.width >= MIN_DIM && region.height >= MIN_DIM) {
+          step("padding-collapsed", { paddedW, paddedH, regionW: region.width, regionH: region.height });
+          pad = { top: 0, right: 0, bottom: 0, left: 0 };
+        }
+
         const px = Math.max(0, region.x - pad.left);
         const py = Math.max(0, region.y - pad.top);
         // Guard against a bad saved crop: never ask CDP for a degenerate or
