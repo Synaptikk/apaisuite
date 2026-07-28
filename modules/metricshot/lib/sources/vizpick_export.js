@@ -21,6 +21,7 @@
 // parse_vizpick_export.js. Single responsibility, per SOLID.
 
 import { parseXlsx } from "./xlsx_min.js";
+import { mapLocationDetails, mapDepartmentBreakout } from "./parse_vizpick_export.js";
 
 // The two worksheets that back the follow-up text, with the sheetdocId GUIDs
 // captured from the export dialog response. If Tableau republishes the
@@ -95,7 +96,41 @@ export async function exportVizPickSheets(opts = {}) {
   };
 }
 
-// ── One sheet: fire command, get resultKey, fetch file ─────────────────────
+// ── High-level: export + parse into follow-up row shapes ───────────────────
+
+/**
+ * Drop-in replacement for the old scrapeVizPick(): exports both crosstab
+ * sheets and maps them into the { locationDetails, departmentBreakout } shape
+ * that format_message.js consumes. Same result contract so callers don't care
+ * how the data was obtained.
+ *
+ * @param {object} [opts]  passed through to exportVizPickSheets (format, tabId)
+ * @returns {Promise<{ ok:boolean, locationDetails?:object[],
+ *   departmentBreakout?:object[], error?:string, errorClass?:string,
+ *   debug?:object }>}
+ */
+export async function getVizPickFollowUpData(opts = {}) {
+  const res = await exportVizPickSheets(opts);
+  if (!res.ok) {
+    return { ok: false, errorClass: res.errorClass || "EXPORT_FAILED", error: res.error, debug: res.debug };
+  }
+  const locRows  = res.sheets.locationDetails?.rows || [];
+  const deptRows = res.sheets.departmentBreakout?.rows || [];
+  const locationDetails    = mapLocationDetails(locRows);
+  const departmentBreakout = mapDepartmentBreakout(deptRows);
+  return {
+    ok: locationDetails.length > 0 || departmentBreakout.length > 0,
+    locationDetails,
+    departmentBreakout,
+    debug: {
+      ...res.debug,
+      locRowCount: locRows.length,
+      deptRowCount: deptRows.length,
+    },
+  };
+}
+
+// ── Low-level: raw sheet export ────────────────────────────────────────────
 
 async function _exportOne(tabId, ctx, sheetdocId, format) {
   const cmd = EXPORT_CMD[format];

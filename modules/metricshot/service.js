@@ -30,8 +30,8 @@ import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "
 import { captureMetric } from "./lib/capture.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
-import { scrapeVizPick, dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
-import { exportVizPickSheets } from "./lib/sources/vizpick_export.js";
+import { dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
+import { exportVizPickSheets, getVizPickFollowUpData } from "./lib/sources/vizpick_export.js";
 import { formatUnscannedMessage } from "./lib/format_message.js";
 import { createLogging } from "../../shared/logging.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
@@ -399,7 +399,7 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
  */
 async function _sendVizPickFollowUp(metric, priorStatus) {
   try {
-    const scrape = await scrapeVizPick();
+    const scrape = await getVizPickFollowUpData();
     if (!scrape.ok) {
       log.emit("followup-scrape-failed", {
         id: metric.id, errorClass: scrape.errorClass,
@@ -587,7 +587,7 @@ export const handlers = {
       // whatever's in the capture ring.
       let followUp = null;
       if (metric.id === "vizpick-score") {
-        const scrape = await scrapeVizPick().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+        const scrape = await getVizPickFollowUpData().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
         if (scrape.ok) {
           const text = formatUnscannedMessage({
             metricName: metric.name,
@@ -604,22 +604,19 @@ export const handlers = {
           };
         } else {
           followUp = { ok: false, errorClass: scrape.errorClass, error: scrape.error };
-          // Stash the raw captured response so we can inspect Tableau's actual
-          // shape and fix the parser. Retrievable via the "get-scrape-debug"
-          // RPC / exposed in the UI. Only the first ~64KB to stay under quota.
+          // Stash the export debug (session/base/errors) so a failure is
+          // diagnosable from the UI without re-running. Small blob, no quota
+          // worries now that we no longer dump the giant bootstrap body.
           try {
-            const dbg = scrape.debug || {};
             await chrome.storage.local.set({
               [`${PFX}scrapeDebug.${id}`]: {
                 at: Date.now(),
                 errorClass: scrape.errorClass,
                 error: scrape.error,
-                capturedUrl: dbg.capturedUrl || null,
-                respBodyPreview: (dbg.respBodyPreview || "").slice(0, 65_536),
-                ringSummary: dbg.ringSummary || null,
+                exportDebug: scrape.debug || null,
               },
             });
-            log.emit("scrape-debug-saved", { id, errorClass: scrape.errorClass, hasBody: !!dbg.respBodyPreview });
+            log.emit("scrape-debug-saved", { id, errorClass: scrape.errorClass });
           } catch (_) { /* quota / serialization — ignore */ }
         }
       }
@@ -727,7 +724,7 @@ export const handlers = {
   // Debug: probe the VizQL scrape without posting. Returns the parsed rows +
   // a truncated raw-body preview so the parser can be tuned against real data.
   async "debug-scrape"() {
-    const scrape = await scrapeVizPick();
+    const scrape = await getVizPickFollowUpData();
     return { ok: true, scrape };
   },
 
@@ -738,7 +735,7 @@ export const handlers = {
     const list = await loadMetrics();
     const metric = list.find((m) => m.id === id);
     if (!metric) return { ok: false, error: "not found" };
-    const scrape = await scrapeVizPick();
+    const scrape = await getVizPickFollowUpData();
     if (!scrape.ok) return { ok: false, error: scrape.error, errorClass: scrape.errorClass, scrape };
     const text = formatUnscannedMessage({
       metricName: metric.name,
