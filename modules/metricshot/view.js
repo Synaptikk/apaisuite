@@ -65,6 +65,7 @@ export async function mount(host, container) {
   $("ms-preview-close").addEventListener("click", () => { cancelCrop(); $("ms-preview-card").hidden = true; });
   $("ms-log-refresh").addEventListener("click", refreshLog);
   $("ms-dump-export")?.addEventListener("click", dumpExport);
+  $("ms-try-export")?.addEventListener("click", tryExport);
   $("ms-store-nudge-open")?.addEventListener("click", () => host.route("#/settings"));
 
   // Crop tool buttons + drag handlers.
@@ -178,6 +179,21 @@ export async function mount(host, container) {
       catch { /* clipboard blocked — still shown in the panel */ }
     } catch (e) {
       pre.textContent = `Dump failed: ${e?.message ?? e}`;
+    }
+  }
+
+  // TEMP diagnostic: run the headless crosstab export and show the real rows
+  // so we can confirm column layout + wire the follow-up text.
+  async function tryExport() {
+    const pre = $("ms-dump-export-pre");
+    pre.textContent = "Running headless export (this can take a few seconds)…";
+    try {
+      const res = await host.messaging.send("try-export", { format: "excel" });
+      pre.textContent = JSON.stringify(res, null, 2);
+      try { await navigator.clipboard.writeText(JSON.stringify(res, null, 2)); host.ui?.toast?.("Export result copied to clipboard."); }
+      catch { /* clipboard blocked — still shown in the panel */ }
+    } catch (e) {
+      pre.textContent = `Export failed: ${e?.message ?? e}`;
     }
   }
 

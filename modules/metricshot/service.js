@@ -31,6 +31,7 @@ import { captureMetric } from "./lib/capture.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
 import { scrapeVizPick, dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
+import { exportVizPickSheets } from "./lib/sources/vizpick_export.js";
 import { formatUnscannedMessage } from "./lib/format_message.js";
 import { createLogging } from "../../shared/logging.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
@@ -658,6 +659,26 @@ export const handlers = {
   // recorded so we can reverse-engineer the data-export endpoint.
   async "dump-export-requests"() {
     return await dumpExportRequests();
+  },
+
+  // Headless replay of the crosstab export — returns the real parsed rows for
+  // the two VizPick sheets so we can see column layout + wire the follow-up.
+  async "try-export"(msg) {
+    const format = msg?.format === "csv" ? "csv" : "excel";
+    const res = await exportVizPickSheets({ format }).catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+    // Trim rows in the response preview so we don't blow the message size.
+    if (res?.sheets) {
+      for (const k of Object.keys(res.sheets)) {
+        const rows = res.sheets[k].rows || [];
+        res.sheets[k] = {
+          fileName: res.sheets[k].fileName,
+          rowCount: rows.length,
+          colCount: rows[0]?.length ?? 0,
+          sample: rows.slice(0, 8),
+        };
+      }
+    }
+    return res;
   },
 
   async "get-preview"(msg) {
