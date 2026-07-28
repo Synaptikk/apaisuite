@@ -269,5 +269,8 @@ export function migrationMatches(migration, existing) {
       && existing.capture.containText.includes(migration.fromContainTextIncludes)
     );
   }
+  if (migration.fromZoom !== undefined) {
+    checks.push((existing.capture?.zoom ?? 1) === migration.fromZoom);
+  }
   return checks.length > 0 && checks.every(Boolean);
 }
