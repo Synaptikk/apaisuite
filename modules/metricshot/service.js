@@ -354,6 +354,7 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
         pngBase64:   captureRes.pngBase64,
         fileName,
         caption:     captionLines.join("\n"),
+        onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: `post:${name}`, ...(extra || {}) }),
       }),
       _postTimeout,
     ]);
