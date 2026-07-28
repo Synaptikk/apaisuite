@@ -34,7 +34,7 @@ export const SEED_METRICS = [
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "12:50" },
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "20:00" },
     ],
-    destination: { type: "workvivo-sendbird", channelName: "1458 Leadership" },
+    destination: { type: "workvivo-sendbird", channelName: "@me" },
     caption: "",
     capture: {
       // "region" + containText → smallest bounding box that includes each of

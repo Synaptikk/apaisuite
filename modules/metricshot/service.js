@@ -138,6 +138,21 @@ async function ensureSeed() {
         }
       }
     }
+
+    // One-time channel flip to @me (self-DM) for the pre-seeded vizpick-score.
+    // Guarded by a marker so it fires exactly once — if the user later sets a
+    // real channel, we won't clobber it on the next boot.
+    const chanMarker = await chrome.storage.local.get(`${PFX}channelMigratedToMe`);
+    if (!chanMarker[`${PFX}channelMigratedToMe`]) {
+      const vp = current.find((m) => m.id === "vizpick-score");
+      if (vp && vp.destination?.channelName === "1458 Leadership") {
+        vp.destination = { ...vp.destination, channelName: "@me", channelUrl: undefined, resolvedAt: undefined };
+        mutated = true;
+        log.emit("migrated-channel", { id: "vizpick-score", to: "@me" });
+      }
+      await chrome.storage.local.set({ [`${PFX}channelMigratedToMe`]: Date.now() });
+    }
+
     if (mutated) await saveMetrics(current);
     await applyScheduleMigrations(current);
     return;
