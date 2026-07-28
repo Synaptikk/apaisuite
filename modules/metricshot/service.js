@@ -602,6 +602,23 @@ export const handlers = {
           };
         } else {
           followUp = { ok: false, errorClass: scrape.errorClass, error: scrape.error };
+          // Stash the raw captured response so we can inspect Tableau's actual
+          // shape and fix the parser. Retrievable via the "get-scrape-debug"
+          // RPC / exposed in the UI. Only the first ~64KB to stay under quota.
+          try {
+            const dbg = scrape.debug || {};
+            await chrome.storage.local.set({
+              [`${PFX}scrapeDebug.${id}`]: {
+                at: Date.now(),
+                errorClass: scrape.errorClass,
+                error: scrape.error,
+                capturedUrl: dbg.capturedUrl || null,
+                respBodyPreview: (dbg.respBodyPreview || "").slice(0, 65_536),
+                ringSummary: dbg.ringSummary || null,
+              },
+            });
+            log.emit("scrape-debug-saved", { id, errorClass: scrape.errorClass, hasBody: !!dbg.respBodyPreview });
+          } catch (_) { /* quota / serialization — ignore */ }
         }
       }
 
@@ -625,6 +642,14 @@ export const handlers = {
       log.emit("preview-failed", { id, reason });
       return { ok: false, error: reason };
     }
+  },
+
+  // Retrieve the last saved scrape-debug blob (raw Tableau response preview)
+  // so the parser can be fixed against real data.
+  async "get-scrape-debug"(msg) {
+    const id = String(msg?.id || "");
+    const got = await chrome.storage.local.get(`${PFX}scrapeDebug.${id}`);
+    return { ok: true, debug: got[`${PFX}scrapeDebug.${id}`] || null };
   },
 
   async "get-preview"(msg) {
