@@ -32,6 +32,12 @@ export async function mount(host, container) {
   let homeStore = null;
   let editingId = null;
 
+  // Crop-tool state. `cropCtx` holds the last preview's geometry so a drawn
+  // box can be mapped back to padding insets. `cropDrag` tracks an in-progress
+  // drag in on-screen (CSS) pixels.
+  let cropCtx = null;   // { id, clipUsed, anchorRegion, padding, natW, natH }
+  let cropDrag = null;  // { x0, y0, x1, y1 }
+
   // 3. Subscribe to broadcasts BEFORE first render so we don't miss anything.
   const unsubStatus = host.messaging.on("status-changed", ({ id, status }) => {
     const m = metrics.find((x) => x.id === id);
@@ -56,9 +62,18 @@ export async function mount(host, container) {
   $("ms-form").addEventListener("submit", onFormSubmit);
   $("ms-f-preview").addEventListener("click", onFormPreview);
   $("ms-f-probe").addEventListener("click", onFormProbe);
-  $("ms-preview-close").addEventListener("click", () => $("ms-preview-card").hidden = true);
+  $("ms-preview-close").addEventListener("click", () => { cancelCrop(); $("ms-preview-card").hidden = true; });
   $("ms-log-refresh").addEventListener("click", refreshLog);
   $("ms-store-nudge-open")?.addEventListener("click", () => host.route("#/settings"));
+
+  // Crop tool buttons + drag handlers.
+  $("ms-crop-start")?.addEventListener("click", startCrop);
+  $("ms-crop-cancel")?.addEventListener("click", cancelCrop);
+  $("ms-crop-save")?.addEventListener("click", saveCrop);
+  const cropOverlay = $("ms-crop-overlay");
+  cropOverlay?.addEventListener("pointerdown", onCropPointerDown);
+  cropOverlay?.addEventListener("pointermove", onCropPointerMove);
+  cropOverlay?.addEventListener("pointerup", onCropPointerUp);
 
   // 5. Row action delegation.
   const rowsUnsub = host.ui.delegate(container, "click", "[data-action]", async (_e, el) => {
@@ -251,7 +266,7 @@ export async function mount(host, container) {
     try {
       const res = await host.messaging.send("preview", { id });
       if (!res.pngBase64) throw new Error(res.error || "no image");
-      showPreview(res.pngBase64, res.width, res.height, `Preview: ${nameOf(id)} · ${res.width}×${res.height}`, res.followUp);
+      showPreview(res.pngBase64, res.width, res.height, `Preview: ${nameOf(id)} · ${res.width}×${res.height}`, res.followUp, { id, ...res });
     } catch (e) {
       host.ui.toast(`Preview failed: ${e?.message ?? e}`, { kind: "error" });
     }
@@ -376,7 +391,7 @@ export async function mount(host, container) {
       $("ms-form-msg").textContent = "Capturing preview…";
       const p = await host.messaging.send("preview", { id: res.id });
       if (!p.pngBase64) throw new Error(p.error || "no image");
-      showPreview(p.pngBase64, p.width, p.height, `Preview · ${p.width}×${p.height}`, p.followUp);
+      showPreview(p.pngBase64, p.width, p.height, `Preview · ${p.width}×${p.height}`, p.followUp, { id: res.id, ...p });
       $("ms-form-msg").textContent = "Preview ready — check the panel below the modal.";
     } catch (err) {
       $("ms-form-msg").textContent = `Preview failed: ${err?.message ?? err}`;
@@ -403,10 +418,26 @@ export async function mount(host, container) {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  function showPreview(pngBase64, w, h, label, followUp) {
-    $("ms-preview-img").src = `data:image/png;base64,${pngBase64}`;
+  function showPreview(pngBase64, w, h, label, followUp, ctx) {
+    const img = $("ms-preview-img");
+    img.src = `data:image/png;base64,${pngBase64}`;
     $("ms-preview-meta").textContent = label || "";
     $("ms-preview-card").hidden = false;
+
+    // Crop tool is only offered for region-mode captures that reported their
+    // geometry (clipUsed + anchorRegion). Other modes have nothing to inset.
+    cancelCrop();
+    const canCrop = !!(ctx && ctx.id && ctx.clipUsed && ctx.anchorRegion);
+    $("ms-crop-start").hidden = !canCrop;
+    cropCtx = canCrop
+      ? {
+          id: ctx.id,
+          clipUsed: ctx.clipUsed,
+          anchorRegion: ctx.anchorRegion,
+          padding: ctx.padding || { top: 0, right: 0, bottom: 0, left: 0 },
+          natW: w, natH: h,
+        }
+      : null;
 
     const wrap = $("ms-preview-followup");
     const pre  = $("ms-followup-pre");
@@ -424,6 +455,122 @@ export async function mount(host, container) {
     }
 
     $("ms-preview-card").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // ── Crop tool ───────────────────────────────────────────────────────────
+  // The preview image IS the captured clip box (cropCtx.clipUsed, in viewport
+  // px). When the user drags a keep-rectangle, we convert it to viewport px,
+  // then express it as padding insets relative to the anchor region so the
+  // dynamic containText anchoring still works on future captures:
+  //   left   = anchor.x               - keep.x
+  //   top    = anchor.y               - keep.y
+  //   right  = keep.x2 - (anchor.x + anchor.width)
+  //   bottom = keep.y2 - (anchor.y + anchor.height)
+  // Negative insets crop inward; positive add margin.
+  function startCrop() {
+    if (!cropCtx) return;
+    $("ms-crop-start").hidden = true;
+    $("ms-crop-save").hidden = false;
+    $("ms-crop-cancel").hidden = false;
+    $("ms-crop-hint").hidden = false;
+    $("ms-crop-overlay").hidden = false;
+    $("ms-crop-box").hidden = true;
+    cropDrag = null;
+  }
+
+  function cancelCrop() {
+    cropDrag = null;
+    const box = $("ms-crop-box");
+    if (box) box.hidden = true;
+    const ov = $("ms-crop-overlay");
+    if (ov) ov.hidden = true;
+    $("ms-crop-save").hidden = true;
+    $("ms-crop-cancel").hidden = true;
+    $("ms-crop-hint").hidden = true;
+    $("ms-crop-start").hidden = !cropCtx;
+  }
+
+  function onCropPointerDown(e) {
+    if (!cropCtx) return;
+    const r = $("ms-crop-overlay").getBoundingClientRect();
+    cropDrag = { x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top };
+    $("ms-crop-overlay").setPointerCapture?.(e.pointerId);
+    drawCropBox();
+  }
+
+  function onCropPointerMove(e) {
+    if (!cropDrag) return;
+    const r = $("ms-crop-overlay").getBoundingClientRect();
+    cropDrag.x1 = Math.max(0, Math.min(r.width,  e.clientX - r.left));
+    cropDrag.y1 = Math.max(0, Math.min(r.height, e.clientY - r.top));
+    drawCropBox();
+  }
+
+  function onCropPointerUp(e) {
+    if (!cropDrag) return;
+    $("ms-crop-overlay").releasePointerCapture?.(e.pointerId);
+  }
+
+  function drawCropBox() {
+    if (!cropDrag) return;
+    const box = $("ms-crop-box");
+    const x = Math.min(cropDrag.x0, cropDrag.x1);
+    const y = Math.min(cropDrag.y0, cropDrag.y1);
+    const w = Math.abs(cropDrag.x1 - cropDrag.x0);
+    const h = Math.abs(cropDrag.y1 - cropDrag.y0);
+    box.hidden = false;
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.style.width = `${w}px`;
+    box.style.height = `${h}px`;
+  }
+
+  async function saveCrop() {
+    if (!cropCtx || !cropDrag) {
+      host.ui.toast("Draw a crop box first.", { kind: "error" });
+      return;
+    }
+    const img = $("ms-preview-img");
+    // Displayed size can differ from natural size (max-width:100%). Scale the
+    // on-screen drag back to natural (viewport) pixels.
+    const dispW = img.clientWidth  || cropCtx.natW;
+    const dispH = img.clientHeight || cropCtx.natH;
+    const sx = cropCtx.natW / dispW;
+    const sy = cropCtx.natH / dispH;
+
+    const dx = Math.min(cropDrag.x0, cropDrag.x1) * sx;
+    const dy = Math.min(cropDrag.y0, cropDrag.y1) * sy;
+    const dw = Math.abs(cropDrag.x1 - cropDrag.x0) * sx;
+    const dh = Math.abs(cropDrag.y1 - cropDrag.y0) * sy;
+    if (dw < 8 || dh < 8) {
+      host.ui.toast("Crop box is too small.", { kind: "error" });
+      return;
+    }
+
+    // Keep-rectangle in absolute viewport px = clipUsed origin + offset in img.
+    const keep = {
+      x:  cropCtx.clipUsed.x + dx,
+      y:  cropCtx.clipUsed.y + dy,
+      x2: cropCtx.clipUsed.x + dx + dw,
+      y2: cropCtx.clipUsed.y + dy + dh,
+    };
+    const a = cropCtx.anchorRegion;
+    const padding = {
+      left:   Math.round(a.x - keep.x),
+      top:    Math.round(a.y - keep.y),
+      right:  Math.round(keep.x2 - (a.x + a.width)),
+      bottom: Math.round(keep.y2 - (a.y + a.height)),
+    };
+
+    try {
+      const res = await host.messaging.send("set-crop", { id: cropCtx.id, padding });
+      if (!res.ok) throw new Error(res.error || "save failed");
+      cropCtx.padding = res.padding;
+      cancelCrop();
+      host.ui.toast("Crop saved — re-run Preview to confirm.");
+    } catch (e) {
+      host.ui.toast(`Crop save failed: ${e?.message ?? e}`, { kind: "error" });
+    }
   }
 
   function nameOf(id) {

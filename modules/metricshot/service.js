@@ -495,6 +495,24 @@ export const handlers = {
     return { ok: true };
   },
 
+  // Persist a crop adjustment from the preview crop tool. `padding` insets
+  // (may be negative) are applied on top of the anchor region at capture time.
+  async "set-crop"(msg) {
+    const id = String(msg?.id || "");
+    const p = msg?.padding || {};
+    const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
+    const list = await loadMetrics();
+    const idx = list.findIndex((m) => m.id === id);
+    if (idx < 0) return { ok: false, error: "not found" };
+    list[idx].capture = {
+      ...list[idx].capture,
+      padding: { top: num(p.top), right: num(p.right), bottom: num(p.bottom), left: num(p.left) },
+    };
+    await saveMetrics(list);
+    log.emit("set-crop", { id, padding: list[idx].capture.padding });
+    return { ok: true, padding: list[idx].capture.padding };
+  },
+
   async "run-now"(msg) {
     const id = String(msg?.id || "");
     const list = await loadMetrics();
@@ -570,6 +588,11 @@ export const handlers = {
       width: v.width, height: v.height,
       at: res.capturedAt,
       followUp,
+      // Crop-tool inputs: the absolute box we captured, the anchor region
+      // before padding, and the padding currently applied.
+      clipUsed: res.clipUsed || null,
+      anchorRegion: res.anchorRegion || null,
+      padding: metric.capture?.padding || null,
     };
   },
 

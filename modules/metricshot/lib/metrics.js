@@ -87,16 +87,20 @@ export function normalizeMetric(m) {
     out.capture.clip = null;
   }
   // Normalize padding: number → {top,right,bottom,left}; missing sides default to 0.
+  // NOTE: padding may be NEGATIVE to crop *inward* (used by the preview crop
+  // tool to trim edges like Tableau's left accent band). capture.js clamps the
+  // final clip box to the viewport, so negatives are safe here.
   if (typeof out.capture.padding === "number" && Number.isFinite(out.capture.padding)) {
-    const n = Math.max(0, out.capture.padding);
+    const n = out.capture.padding;
     out.capture.padding = { top: n, right: n, bottom: n, left: n };
   } else if (out.capture.padding && typeof out.capture.padding === "object") {
     const p = out.capture.padding;
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
     out.capture.padding = {
-      top:    Math.max(0, Number(p.top)    || 0),
-      right:  Math.max(0, Number(p.right)  || 0),
-      bottom: Math.max(0, Number(p.bottom) || 0),
-      left:   Math.max(0, Number(p.left)   || 0),
+      top:    num(p.top),
+      right:  num(p.right),
+      bottom: num(p.bottom),
+      left:   num(p.left),
     };
   } else {
     out.capture.padding = { top: 0, right: 0, bottom: 0, left: 0 };

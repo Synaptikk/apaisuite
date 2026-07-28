@@ -65,10 +65,21 @@
   <div class="ms-preview-head">
     <h2 class="ms-section-title">Preview</h2>
     <span id="ms-preview-meta" class="muted tiny"></span>
-    <button id="ms-preview-close" class="btn btn-secondary btn-sm">Close</button>
+    <div class="ms-preview-head-actions">
+      <button id="ms-crop-start" class="btn btn-secondary btn-sm" hidden>Adjust crop</button>
+      <button id="ms-crop-save" class="btn btn-primary btn-sm" hidden>Save crop</button>
+      <button id="ms-crop-cancel" class="btn btn-secondary btn-sm" hidden>Cancel</button>
+      <button id="ms-preview-close" class="btn btn-secondary btn-sm">Close</button>
+    </div>
   </div>
+  <p id="ms-crop-hint" class="muted tiny" hidden>Drag a box over the area to keep. Everything outside it is cropped away on every future capture.</p>
   <div class="ms-preview-body">
-    <img id="ms-preview-img" alt="Metric preview">
+    <div class="ms-crop-stage" id="ms-crop-stage">
+      <img id="ms-preview-img" alt="Metric preview">
+      <div class="ms-crop-overlay" id="ms-crop-overlay" hidden>
+        <div class="ms-crop-box" id="ms-crop-box" hidden></div>
+      </div>
+    </div>
   </div>
   <div class="ms-preview-followup" id="ms-preview-followup" hidden>
     <div class="ms-followup-head">
