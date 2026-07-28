@@ -314,11 +314,46 @@ function IN_PAGE_RESOLVE_CHANNEL(channelName) {
     return null;
   }
 
+  function _isSelfSentinel(name) {
+    const s = String(name || "").trim().toLowerCase();
+    return s === "@me" || s === "@self" || s === "(me)";
+  }
+  async function _findOrCreateSelfChannel(found) {
+    const { sdk, api } = found;
+    const meId = (sdk.currentUser && sdk.currentUser.userId) || null;
+    if (!meId) throw new Error("no current user on SDK (not signed in?)");
+    let q;
+    if (api === "v4") q = sdk.groupChannel.createMyGroupChannelListQuery({ limit: 100, includeEmpty: true });
+    else { q = sdk.GroupChannel.createMyGroupChannelListQuery(); q.limit = 100; q.includeEmpty = true; }
+    for (let page = 0; page < 5; page++) {
+      const list = await new Promise((res, rej) => {
+        try {
+          if (typeof q.next === "function" && q.next.length === 0) Promise.resolve(q.next()).then(res, rej);
+          else q.next((c, e) => e ? rej(e) : res(c || []));
+        } catch (e) { rej(e); }
+      });
+      for (const ch of list) {
+        const m = ch.members || [];
+        if (m.length === 1 && String(m[0].userId) === String(meId)) return ch;
+      }
+      if (!list || !list.length) break;
+      if (typeof q.hasNext === "boolean" && !q.hasNext) break;
+    }
+    if (api === "v4") return await sdk.groupChannel.createChannel({ invitedUserIds: [meId], name: "MetricShot (me)", isDistinct: true });
+    return await new Promise((res, rej) => {
+      const p = new sdk.GroupChannelParams();
+      p.addUserIds([meId]); p.isDistinct = true; p.name = "MetricShot (me)";
+      sdk.GroupChannel.createChannel(p, (ch, e) => e ? rej(e) : res(ch));
+    });
+  }
+
   return (async () => {
     try {
       const found = locateSdk();
       if (!found) return { ok: false, errorClass: "SDK_MISSING", error: "no SendBird SDK found" };
-      const channel = await findChannel(found, channelName);
+      const channel = _isSelfSentinel(channelName)
+        ? await _findOrCreateSelfChannel(found)
+        : await findChannel(found, channelName);
       if (!channel) return { ok: false, errorClass: "NOT_FOUND", error: `channel not joined: ${channelName}` };
       return { ok: true, channelUrl: channel.url, name: channel.name || channelName };
     } catch (e) {
@@ -375,11 +410,46 @@ function IN_PAGE_POST_VIA_SDK({ channelName, pngBase64, fileName, caption }) {
     return null;
   }
 
+  function _isSelfSentinel(name) {
+    const s = String(name || "").trim().toLowerCase();
+    return s === "@me" || s === "@self" || s === "(me)";
+  }
+  async function _findOrCreateSelfChannel(found) {
+    const { sdk, api } = found;
+    const meId = (sdk.currentUser && sdk.currentUser.userId) || null;
+    if (!meId) throw new Error("no current user on SDK (not signed in?)");
+    let q;
+    if (api === "v4") q = sdk.groupChannel.createMyGroupChannelListQuery({ limit: 100, includeEmpty: true });
+    else { q = sdk.GroupChannel.createMyGroupChannelListQuery(); q.limit = 100; q.includeEmpty = true; }
+    for (let page = 0; page < 5; page++) {
+      const list = await new Promise((res, rej) => {
+        try {
+          if (typeof q.next === "function" && q.next.length === 0) Promise.resolve(q.next()).then(res, rej);
+          else q.next((c, e) => e ? rej(e) : res(c || []));
+        } catch (e) { rej(e); }
+      });
+      for (const ch of list) {
+        const m = ch.members || [];
+        if (m.length === 1 && String(m[0].userId) === String(meId)) return ch;
+      }
+      if (!list || !list.length) break;
+      if (typeof q.hasNext === "boolean" && !q.hasNext) break;
+    }
+    if (api === "v4") return await sdk.groupChannel.createChannel({ invitedUserIds: [meId], name: "MetricShot (me)", isDistinct: true });
+    return await new Promise((res, rej) => {
+      const p = new sdk.GroupChannelParams();
+      p.addUserIds([meId]); p.isDistinct = true; p.name = "MetricShot (me)";
+      sdk.GroupChannel.createChannel(p, (ch, e) => e ? rej(e) : res(ch));
+    });
+  }
+
   return (async () => {
     try {
       const found = locateSdk();
       if (!found) return { ok: false, errorClass: "SDK_MISSING", error: "no SendBird SDK" };
-      const channel = await findChannel(found, channelName);
+      const channel = _isSelfSentinel(channelName)
+        ? await _findOrCreateSelfChannel(found)
+        : await findChannel(found, channelName);
       if (!channel) return { ok: false, errorClass: "NOT_FOUND", error: `channel not joined: ${channelName}` };
 
       const bin = atob(pngBase64);
@@ -540,11 +610,46 @@ function IN_PAGE_POST_TEXT_VIA_SDK({ channelName, text }) {
     return null;
   }
 
+  function _isSelfSentinel(name) {
+    const s = String(name || "").trim().toLowerCase();
+    return s === "@me" || s === "@self" || s === "(me)";
+  }
+  async function _findOrCreateSelfChannel(found) {
+    const { sdk, api } = found;
+    const meId = (sdk.currentUser && sdk.currentUser.userId) || null;
+    if (!meId) throw new Error("no current user on SDK (not signed in?)");
+    let q;
+    if (api === "v4") q = sdk.groupChannel.createMyGroupChannelListQuery({ limit: 100, includeEmpty: true });
+    else { q = sdk.GroupChannel.createMyGroupChannelListQuery(); q.limit = 100; q.includeEmpty = true; }
+    for (let page = 0; page < 5; page++) {
+      const list = await new Promise((res, rej) => {
+        try {
+          if (typeof q.next === "function" && q.next.length === 0) Promise.resolve(q.next()).then(res, rej);
+          else q.next((c, e) => e ? rej(e) : res(c || []));
+        } catch (e) { rej(e); }
+      });
+      for (const ch of list) {
+        const m = ch.members || [];
+        if (m.length === 1 && String(m[0].userId) === String(meId)) return ch;
+      }
+      if (!list || !list.length) break;
+      if (typeof q.hasNext === "boolean" && !q.hasNext) break;
+    }
+    if (api === "v4") return await sdk.groupChannel.createChannel({ invitedUserIds: [meId], name: "MetricShot (me)", isDistinct: true });
+    return await new Promise((res, rej) => {
+      const p = new sdk.GroupChannelParams();
+      p.addUserIds([meId]); p.isDistinct = true; p.name = "MetricShot (me)";
+      sdk.GroupChannel.createChannel(p, (ch, e) => e ? rej(e) : res(ch));
+    });
+  }
+
   return (async () => {
     try {
       const found = locateSdk();
       if (!found) return { ok: false, errorClass: "SDK_MISSING", error: "no SendBird SDK" };
-      const channel = await findChannel(found, channelName);
+      const channel = _isSelfSentinel(channelName)
+        ? await _findOrCreateSelfChannel(found)
+        : await findChannel(found, channelName);
       if (!channel) return { ok: false, errorClass: "NOT_FOUND", error: `channel not joined: ${channelName}` };
 
       const messageId = await new Promise((resolve, reject) => {
