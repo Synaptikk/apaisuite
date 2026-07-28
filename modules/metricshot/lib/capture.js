@@ -218,6 +218,8 @@ export async function captureMetric(metric, opts = {}) {
     let pngBase64 = null;
     let width = null;
     let height = null;
+    let clipUsed = null;
+    let anchorRegion = null;
     try {
       // 11. Capture.
       if (cap.mode === "selector" && cap.selector) {
@@ -257,6 +259,11 @@ export async function captureMetric(metric, opts = {}) {
         pngBase64 = shot?.data;
         width  = Math.round(pw);
         height = Math.round(ph);
+        // Expose the exact box we cropped + the anchor region before padding.
+        // The UI's crop tool maps a sub-rectangle drawn on the preview back to
+        // padding insets relative to `anchorRegion`.
+        clipUsed = { x: px, y: py, width: pw, height: ph };
+        anchorRegion = { x: region.x, y: region.y, width: region.width, height: region.height };
       } else {
         const shot = await _sendCdp(tabId, "Page.captureScreenshot", {
           format: "png",
@@ -274,6 +281,8 @@ export async function captureMetric(metric, opts = {}) {
       ok: true,
       pngBase64,
       width, height,
+      clipUsed,
+      anchorRegion,
       tabId,
       capturedAt,
     };

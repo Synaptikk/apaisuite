@@ -135,3 +135,26 @@ test("metricNeedsStore: false for static or absent parameter values", () => {
 test("metricNeedsStore: ignores non-string parameter values", () => {
   assert.equal(metricNeedsStore({ capture: { parameterValues: { N: 42, B: true } } }), false);
 });
+
+test("normalizeMetric: keeps NEGATIVE padding (crop-inward from the crop tool)", () => {
+  const n = normalizeMetric({
+    name: "x",
+    url: "https://x/",
+    schedules: [{ days: ["MON"], time: "10:00" }],
+    destination: { channelName: "c" },
+    capture: { padding: { top: -3, right: -10, bottom: -5, left: -15 } },
+  });
+  // Must NOT be clamped to 0 — negatives crop inward.
+  assert.deepEqual(n.capture.padding, { top: -3, right: -10, bottom: -5, left: -15 });
+});
+
+test("normalizeMetric: coerces non-finite padding sides to 0", () => {
+  const n = normalizeMetric({
+    name: "x",
+    url: "https://x/",
+    schedules: [{ days: ["MON"], time: "10:00" }],
+    destination: { channelName: "c" },
+    capture: { padding: { top: "nope", right: 12, bottom: undefined, left: null } },
+  });
+  assert.deepEqual(n.capture.padding, { top: 0, right: 12, bottom: 0, left: 0 });
+});

@@ -140,6 +140,35 @@
   display: block;
   max-width: 100%;
 }
+
+/* ── Crop tool ──────────────────────────────────────────── */
+.module-metricshot .ms-preview-head-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.module-metricshot .ms-crop-stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.module-metricshot .ms-crop-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  /* Dim the whole image; the crop box punches a clear window via box-shadow. */
+  background: rgba(15, 23, 42, 0.45);
+}
+.module-metricshot .ms-crop-overlay[hidden] { display: none; }
+.module-metricshot .ms-crop-box {
+  position: absolute;
+  border: 2px solid var(--apai-blue, #0071ce);
+  /* Huge spread punches a "hole" so the selected region reads at full brightness. */
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.45);
+  background: transparent;
+  pointer-events: none;
+}
+.module-metricshot .ms-crop-box[hidden] { display: none; }
 .module-metricshot .ms-preview-followup {
   margin-top: var(--sp-3);
   padding: var(--sp-3);
