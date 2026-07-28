@@ -337,23 +337,27 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
       store,
     };
 
-    // Follow-up text message on non-first-of-day slots. Only for VizPick
-    // (identified by the scrapeVizPick source). Skipped silently on manual
-    // "Run now" because there's no scheduled dow/hhmm context.
-    if (reason === "scheduled" && scheduledAt) {
+    // Follow-up text message. On scheduled runs it fires on non-first-of-day
+    // slots (the 2pm/8pm posts). On a manual "Run now" there's no slot
+    // context, so we treat it like a non-first post and send it too — that's
+    // what a manual run is for: exercising the whole pipeline end to end.
+    const isVizPickFollowUp = metric.destination?.type === "workvivo-sendbird"
+      && metric.id === "vizpick-score";
+    if (isVizPickFollowUp && reason === "scheduled" && scheduledAt) {
       const zone = resolveZone(metric.timezone);
       const parts = partsInZone(scheduledAt, zone);
       const hhmm = `${String(parts.hh).padStart(2,"0")}:${String(parts.mm).padStart(2,"0")}`;
       const first = isFirstOfDay(metric, parts.dow, hhmm);
-      const wantsExtras = metric.destination?.type === "workvivo-sendbird"
-        && metric.id === "vizpick-score"                                    // scoped to VizPick for now
-        && !first;
-      if (wantsExtras) {
-        const followUp = await _sendVizPickFollowUp(metric, status);
-        status.followUp = followUp;
+      if (!first) {
+        status.followUp = await _sendVizPickFollowUp(metric, status);
       } else {
-        status.followUp = { skipped: first ? "first-of-day" : "not-applicable" };
+        status.followUp = { skipped: "first-of-day" };
       }
+    } else if (isVizPickFollowUp && reason !== "scheduled") {
+      // Manual run — send it so the operator can verify the follow-up text.
+      status.followUp = await _sendVizPickFollowUp(metric, status);
+    } else if (metric.id === "vizpick-score") {
+      status.followUp = { skipped: "not-applicable" };
     }
 
     await Promise.all([
