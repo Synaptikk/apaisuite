@@ -31,7 +31,7 @@ export const SEED_METRICS = [
     timezone: "local",
     schedules: [
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "10:00" },
-      { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "14:00" },
+      { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "12:50" },
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "20:00" },
     ],
     destination: { type: "workvivo-sendbird", channelName: "1458 Leadership" },
