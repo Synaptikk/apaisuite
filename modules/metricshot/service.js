@@ -283,7 +283,28 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
   let lastFail = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     log.emit("run-start", { id: metric.id, reason, runKey, attempt, store });
-    const captureRes = await captureMetric(metric);
+    // Emit step breadcrumbs (like preview) AND race against a watchdog so a
+    // hung CDP/debugger await can never silently stall the run forever — the
+    // exact symptom of a wedged/reused Tableau tab. Mirror of the preview
+    // path in this file. captureMetric is documented "never throws", but a
+    // stuck await inside it is what the timeout guards against.
+    const CAPTURE_WATCHDOG_MS = cap.watchdogMs ?? 90_000;
+    let _wd;
+    const _timeout = new Promise((resolve) => {
+      _wd = setTimeout(() => resolve({ ok: false, __timedOut: true }), CAPTURE_WATCHDOG_MS);
+    });
+    const captureRes = await Promise.race([
+      captureMetric(metric, {
+        onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: name, ...(extra || {}) }),
+      }),
+      _timeout,
+    ]);
+    clearTimeout(_wd);
+    if (captureRes && captureRes.__timedOut) {
+      lastFail = { stage: "capture", reason: `capture hung > ${CAPTURE_WATCHDOG_MS / 1000}s (see last run-step)`, attempt };
+      log.emit("capture-failed", { id: metric.id, attempt, reason: lastFail.reason });
+      continue;
+    }
     if (!captureRes.ok) {
       lastFail = { stage: "capture", reason: captureRes.reason, attempt };
       log.emit("capture-failed", { id: metric.id, attempt, reason: captureRes.reason });
