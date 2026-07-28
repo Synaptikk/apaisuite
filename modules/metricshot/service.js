@@ -28,7 +28,7 @@ import { SEED_METRICS, SEED_URL_MIGRATIONS } from "./data/defaults.js";
 import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches } from "./lib/metrics.js";
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
-import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel } from "./lib/sendbird.js";
+import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
 import { dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
 import { exportVizPickSheets, getVizPickFollowUpData } from "./lib/sources/vizpick_export.js";
@@ -689,6 +689,13 @@ export const handlers = {
   // Diagnostic: after the user manually clicks "Download to Excel" on the
   // VizPick tab, this reads back the export/command requests the capture ring
   // recorded so we can reverse-engineer the data-export endpoint.
+  // Diagnostic: deep-introspect the Workvivo tab to find where the Sendbird
+  // SDK actually lives + its shape, so we can fix detection when Workvivo
+  // changes the global. Never posts.
+  async "introspect-sdk"() {
+    return await introspectSdk();
+  },
+
   async "dump-export-requests"() {
     return await dumpExportRequests();
   },
