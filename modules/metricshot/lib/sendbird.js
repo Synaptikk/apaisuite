@@ -64,7 +64,7 @@ export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileNam
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
   step("ensure-tab");
-  const tabRes = await _ensureWorkvivoTab();
+  const tabRes = await _ensureWorkvivoTab({ onStep: step });
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
   step("tab-ready", { tabId, openedFresh });
@@ -118,25 +118,30 @@ export async function resolveChannel(channelName) {
  * We keep this local rather than importing across the module boundary so
  * metricshot doesn't take a runtime dependency on workvivo.
  */
-async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
+async function _ensureWorkvivoTab({ waitMs = 25_000, onStep } = {}) {
+  const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
   // Always open our own tab in the background — never reuse the user's.
+  step("tab-create");
   const tab = await chrome.tabs.create({ url: "https://workvivo.walmart.com/chat", active: false })
     .catch((e) => ({ __err: String(e?.message ?? e) }));
   if (!tab || tab.__err || !tab.id) {
     return { ok: false, errorClass: "NO_TAB", error: `could not open workvivo tab: ${tab?.__err || "unknown"}` };
   }
+  step("tab-opened", { tabId: tab.id });
 
   // Background tabs are throttled and Workvivo defers booting the Sendbird
   // SDK until the tab is visible. Give it a short grace period hidden; if the
   // SDK hasn't appeared, briefly foreground the tab to force bootstrap, then
   // restore the user's original tab. With a live session this makes posting
   // fully automatic — no phantom NO_SDK from a hidden tab that never inits.
-  let ready = await _waitForSdk(tab.id, Math.min(waitMs, 8_000));
+  step("sdk-wait-hidden");
+  let ready = await _waitForSdk(tab.id, Math.min(waitMs, 6_000));
   if (!ready) {
+    step("sdk-wait-foreground");
     const prevActive = await _currentActiveTab();
     await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
     try {
-      ready = await _waitForSdk(tab.id, Math.max(waitMs - 8_000, 10_000));
+      ready = await _waitForSdk(tab.id, Math.max(waitMs - 6_000, 8_000));
     } finally {
       // Restore focus to whatever the user was looking at.
       if (prevActive?.id && prevActive.id !== tab.id) {
@@ -148,12 +153,14 @@ async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
     // Capture a diagnostic so NO_SDK isn't a dead end — shows which frames
     // exist and any Sendbird-ish globals present but unmatched.
     const probe = await _probeSdk(tab.id).catch(() => null);
+    step("sdk-not-found", { probe });
     return {
       ok: false, errorClass: "NO_SDK",
       error: `opened workvivo tab but Sendbird SDK didn't appear within ${Math.round(waitMs/1000)}s — sign in to Workvivo, then retry`,
       debug: probe,
     };
   }
+  step("sdk-ready");
   return { ok: true, tabId: tab.id, openedFresh: true };
 }
 
