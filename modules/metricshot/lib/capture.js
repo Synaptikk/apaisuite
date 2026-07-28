@@ -250,8 +250,11 @@ export async function captureMetric(metric, opts = {}) {
         const vh = cap.viewportHeight || 1000;
         const px = Math.max(0, region.x - pad.left);
         const py = Math.max(0, region.y - pad.top);
-        const pw = Math.min(vw - px, region.width  + pad.left + pad.right);
-        const ph = Math.min(vh - py, region.height + pad.top  + pad.bottom);
+        // Guard against a bad saved crop: never ask CDP for a degenerate or
+        // off-surface clip (that returns no image). Clamp width/height to at
+        // least 1px and keep the box inside the viewport.
+        const pw = Math.max(1, Math.min(vw - px, region.width  + pad.left + pad.right));
+        const ph = Math.max(1, Math.min(vh - py, region.height + pad.top  + pad.bottom));
         const shot = await _sendCdp(tabId, "Page.captureScreenshot", {
           format: "png",
           clip: { x: px, y: py, width: pw, height: ph, scale: 1 },
