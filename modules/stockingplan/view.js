@@ -3,14 +3,22 @@
 import * as Compute from "./lib/compute.js";
 import { toPlaintext, toPrintHtml } from "./lib/render.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
+import { getUserHomeStore } from "../../shared/userStore.js";
 
 const CV_URL     = "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html";
 const CV_MATCH   = /^https:\/\/radapps3\.wal-mart\.com\/Protected\/CaseVisibility\//;
 
 const DEFAULTS = {
   storeNbr:  "",
-  startHour: 22,
 };
+
+// A valid store is 1–5 digits. Empty / non-numeric input must NOT silently
+// fall through to the data source, which defaults to store "1" (no data) and
+// produces a blank report. Returns the trimmed store or "" if invalid.
+function validStoreNbr(raw) {
+  const v = String(raw ?? "").trim();
+  return /^\d{1,5}$/.test(v) ? v : "";
+}
 
 export async function mount(host, container) {
   // Inject stylesheet.
@@ -31,23 +39,22 @@ export async function mount(host, container) {
 
   const $ = (id) => container.querySelector("#" + id);
 
-  // Load saved prefs.
+  // Load saved prefs. Shell home-store default wins if set; otherwise use
+  // the module's own persisted value.
   const stored = await host.storage.sync.get();
-  $("sp-storeNbr").value     = stored.storeNbr  ?? DEFAULTS.storeNbr;
+  $("sp-storeNbr").value     = (await getUserHomeStore()) || stored.storeNbr || DEFAULTS.storeNbr;
   $("sp-businessDate").value = todayIso();
-  $("sp-recipient") && ($("sp-recipient").value = "");   // field removed — no-op guard
-  $("sp-startHour").value    = stored.startHour  ?? DEFAULTS.startHour;
 
   async function savePrefs() {
     await host.storage.sync.set({
       storeNbr:  $("sp-storeNbr").value.trim() || DEFAULTS.storeNbr,
-      startHour: Number($("sp-startHour").value) || DEFAULTS.startHour,
     });
   }
 
   // State managed in this closure.
   let plan        = null;   // Compute.buildPlan output
-  let assignments = new Map(); // rowKey → string[]
+  // assignments: Map<rowKey, { shift: 'stock2'|'stock3'|null, names: string[] }>
+  let assignments = new Map();
 
   // Status helper.
   const $status = $("sp-status");
@@ -66,6 +73,7 @@ export async function mount(host, container) {
 
     setStatus("Opening CaseVisibility (background)…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
+    
     const loaded  = await host.tabs.waitForLoad(created.id, 30_000);
     if (!loaded) throw new Error("CaseVisibility tab load timed out.");
 
@@ -99,14 +107,16 @@ export async function mount(host, container) {
 
     try {
       await savePrefs();
-      const storeNbr    = $("sp-storeNbr").value.trim()    || DEFAULTS.storeNbr;
+      const storeNbr = validStoreNbr($("sp-storeNbr").value);
+      if (!storeNbr) {
+        setStatus("Enter a valid store number (1–5 digits) before collecting. Blank/invalid stores produce an empty report.", "error");
+        $("sp-storeNbr").focus();
+        return;
+      }
       const businessDate = $("sp-businessDate").value      || todayIso();
-      const startHour   = Number($("sp-startHour").value)  || DEFAULTS.startHour;
       console.log("[stockingplan] onCollect start", { storeNbr, businessDate });
 
       setStatus("Finding CaseVisibility tab…");
-      const { tab, opened } = await openCvTab();
-      console.log("[stockingplan] CV tab:", tab.id, tab.url, "opened:", opened);
       const { tab, opened } = await openCvTab();
       cvTabId  = tab.id;
       cvOpened = opened;
@@ -139,11 +149,17 @@ export async function mount(host, container) {
       plan = Compute.buildPlan(
         schedResp.data,
         { byDept: freightResp.byDept, byAisle: freightResp.byAisle },
-        { storeNbr, businessDate, startHour }
+        { storeNbr, businessDate }
       );
 
       renderAssociates();
       renderPlanTable();
+      
+      // Render truck details if available
+      if (freightResp.trucks && freightResp.trucks.length > 0) {
+        renderTrucks(freightResp.trucks);
+        $("sp-trucks-panel").hidden = false;
+      }
 
       $("sp-assoc-section").hidden = false;
       $("sp-plan-section").hidden  = false;
@@ -159,9 +175,73 @@ export async function mount(host, container) {
     } finally {
       // Close the CV tab only if we opened it — don't touch a tab the user
       // already had open.
-      if (cvOpened && cvTabId) host.tabs.remove(cvTabId).catch(() => {});
+      if (cvOpened && cvTabId) {
+        await host.tabs.remove(cvTabId).catch(() => {});
+      }
       $btn.disabled = false;
     }
+  }
+
+  // --- Render trucks sidebar ----------------------------------------------
+
+  function renderTrucks(trucks) {
+    const list = $("sp-trucks-list");
+    list.innerHTML = "";
+
+    trucks.forEach(truck => {
+      const card = document.createElement("div");
+      card.className = "sp-truck-card";
+      
+      const typeClass = truck.type.toLowerCase().replace(/\s/g, '-');
+      card.classList.add(`sp-truck-${typeClass}`);
+      
+      card.innerHTML = `
+        <div class="sp-truck-header">
+          <span class="sp-truck-type">${esc(truck.type)}</span>
+          <span class="sp-truck-eta">${esc(truck.eta)}</span>
+        </div>
+        <div class="sp-truck-details">
+          <div class="sp-truck-row">
+            <span class="sp-truck-label">Trailer:</span>
+            <span class="sp-truck-value">${esc(truck.trailer)}</span>
+          </div>
+          <div class="sp-truck-row">
+            <span class="sp-truck-label">Load ID:</span>
+            <button class="sp-truck-loadid" data-loadid="${esc(truck.loadId)}" title="Click to copy">
+              ${esc(truck.loadId)}
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="sp-truck-row">
+            <span class="sp-truck-label">Cases:</span>
+            <span class="sp-truck-value">
+              ${truck.grocCases > 0 ? `${truck.grocCases.toLocaleString()} Groc/Cons` : ''}
+              ${truck.gmCases > 0 ? (truck.grocCases > 0 ? ' + ' : '') + `${truck.gmCases.toLocaleString()} GM` : ''}
+              ${truck.bpCases > 0 ? (truck.grocCases > 0 || truck.gmCases > 0 ? ' + ' : '') + `${truck.bpCases.toLocaleString()} BP` : ''}
+              = <strong>${truck.totalCases.toLocaleString()}</strong>
+            </span>
+          </div>
+          ${truck.status ? `<div class="sp-truck-status">${esc(truck.status)}</div>` : ''}
+        </div>
+      `;
+      
+      // Add click-to-copy for Load ID
+      const loadIdBtn = card.querySelector('.sp-truck-loadid');
+      loadIdBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(truck.loadId);
+          const originalText = loadIdBtn.innerHTML;
+          loadIdBtn.innerHTML = '✓ Copied!';
+          setTimeout(() => { loadIdBtn.innerHTML = originalText; }, 2000);
+        } catch (e) {
+          console.error('Failed to copy:', e);
+        }
+      });
+      
+      list.appendChild(card);
+    });
   }
 
   // --- Render associates ---------------------------------------------------
@@ -171,13 +251,40 @@ export async function mount(host, container) {
     list.innerHTML = "";
     $("sp-assoc-count").textContent = `(${plan.associates.length})`;
 
-    const sorted = [...plan.associates].sort((a, b) => a.name.localeCompare(b.name));
-    for (const a of sorted) {
-      const item = document.createElement("div");
-      item.className = "sp-name-item" + (a.calledOut ? " sp-callout" : "");
-      item.textContent = a.name + (a.calledOut ? " ✗" : "");
-      list.appendChild(item);
-    }
+    // Group by role
+    const groups = {
+      stock2: { label: 'Stock 2 TA', associates: [] },
+      stock3: { label: 'Overnight TA', associates: [] },
+      modteam: { label: 'Overnight Mod Team', associates: [] },
+      maintenance: { label: 'Overnight Maintenance', associates: [] },
+      other: { label: 'Other', associates: [] },
+    };
+
+    plan.associates.forEach(a => {
+      const role = a.role || 'other';
+      if (groups[role]) groups[role].associates.push(a);
+      else groups.other.associates.push(a);
+    });
+
+    // Render each group
+    Object.entries(groups).forEach(([roleKey, group]) => {
+      if (group.associates.length === 0) return;
+
+      const header = document.createElement('div');
+      header.className = 'sp-assoc-group-header';
+      const callOuts = group.associates.filter(a => a.calledOut).length;
+      header.textContent = `${group.label} (${group.associates.length}${callOuts ? `, ${callOuts} call-outs` : ''})`;
+      list.appendChild(header);
+
+      const sorted = [...group.associates].sort((a, b) => a.name.localeCompare(b.name));
+      sorted.forEach(a => {
+        const item = document.createElement("div");
+        item.className = "sp-name-item" + (a.calledOut ? " sp-callout" : "");
+        item.dataset.role = roleKey;
+        item.textContent = a.name + (a.calledOut ? " ✗" : "");
+        list.appendChild(item);
+      });
+    });
   }
 
   // --- Render plan table ---------------------------------------------------
@@ -197,8 +304,9 @@ export async function mount(host, container) {
       <tr>
         <th class="sp-th-dept">Dept / Aisle</th>
         <th class="sp-th-num">Cases</th>
-        <th class="sp-th-num">BPs</th>
+        <th class="sp-th-num">Inner Packs</th>
         <th class="sp-th-num">Hours</th>
+        <th class="sp-th-shift">Shift</th>
         <th class="sp-th-assign">Assigned</th>
       </tr>
     </thead>`;
@@ -219,7 +327,7 @@ export async function mount(host, container) {
       const hdr = document.createElement("tr");
       hdr.className = "sp-dept-header";
       const secLabel = sec.label || `Dept ${sec.deptNbr}`;
-      hdr.innerHTML = `<td colspan="5">${esc(secLabel)} <span class='sp-tag fc'>F&amp;C</span> — by aisle</td>`;
+      hdr.innerHTML = `<td colspan="6">${esc(secLabel)} <span class='sp-tag fc'>F&amp;C</span> — by aisle</td>`;
       tbody.appendChild(hdr);
 
       for (const pair of sec.pairs) {
@@ -230,7 +338,7 @@ export async function mount(host, container) {
     }
 
     if (plan.deptTasks.length === 0 && plan.aisleSections.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">No freight rows found. The freight data shape may be unrecognised — check the browser console.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="muted">No freight rows found. The freight data shape may be unrecognised — check the browser console.</td></tr>`;
     }
   }
 
@@ -240,13 +348,20 @@ export async function mount(host, container) {
     tr.className = "sp-plan-row" + (indented ? " sp-aisle-row" : "");
     tr.dataset.rowKey = key;
 
-    const assignedNames = assignments.get(key) || [];
+    const assignment = assignments.get(key) || { shift: null, names: [] };
 
     tr.innerHTML = `
       <td class="sp-td-dept">${labelHtml}</td>
       <td class="sp-td-num">${cases}</td>
       <td class="sp-td-num">${bps}</td>
       <td class="sp-td-num sp-hrs">${hours}h</td>
+      <td class="sp-td-shift">
+        <select class="sp-shift-select" data-key="${esc(key)}">
+          <option value="">—</option>
+          <option value="stock2">Stock 2</option>
+          <option value="stock3">Stock 3</option>
+        </select>
+      </td>
       <td class="sp-td-assign">
         <div class="sp-chips" data-key="${esc(key)}"></div>
         <div class="sp-autocomplete-wrap">
@@ -255,9 +370,20 @@ export async function mount(host, container) {
         </div>
       </td>`;
 
+    // Set shift dropdown value
+    const shiftSelect = tr.querySelector(".sp-shift-select");
+    if (assignment.shift) shiftSelect.value = assignment.shift;
+
+    // Wire shift select change
+    shiftSelect.addEventListener("change", () => {
+      const newShift = shiftSelect.value || null;
+      const current = assignments.get(key) || { shift: null, names: [] };
+      assignments.set(key, { shift: newShift, names: current.names });
+    });
+
     // Render existing chips.
     const chipsEl = tr.querySelector(".sp-chips");
-    for (const name of assignedNames) addChip(chipsEl, key, name);
+    for (const name of assignment.names) addChip(chipsEl, key, name);
 
     // Wire up the type-to-filter input.
     const input    = tr.querySelector(".sp-assign-input");
@@ -266,9 +392,25 @@ export async function mount(host, container) {
     input.addEventListener("input", () => {
       const q = input.value.trim().toLowerCase();
       if (!q) { dropdown.hidden = true; return; }
-      const matches = plan.associates
+      
+      // Filter associates by selected shift if one is chosen
+      const selectedShift = shiftSelect.value;
+      let matches = plan.associates;
+      
+      if (selectedShift) {
+        // For stock2, show stock2 associates
+        // For stock3, show stock3 + modteam (they both work overnight freight)
+        matches = matches.filter(a => {
+          if (selectedShift === 'stock2') return a.role === 'stock2';
+          if (selectedShift === 'stock3') return a.role === 'stock3' || a.role === 'modteam';
+          return true;
+        });
+      }
+      
+      matches = matches
         .filter((a) => a.name.toLowerCase().includes(q))
         .slice(0, 8);
+      
       if (!matches.length) { dropdown.hidden = true; return; }
       dropdown.innerHTML = matches
         .map((a) => `<li class="sp-dd-item${a.calledOut ? " sp-dd-callout" : ""}" data-name="${esc(a.name)}">${esc(a.name)}</li>`)
@@ -298,9 +440,9 @@ export async function mount(host, container) {
   }
 
   function selectAssociate(key, name, input, dropdown, chipsEl) {
-    const current = assignments.get(key) || [];
-    if (!current.includes(name)) {
-      current.push(name);
+    const current = assignments.get(key) || { shift: null, names: [] };
+    if (!current.names.includes(name)) {
+      current.names.push(name);
       assignments.set(key, current);
       addChip(chipsEl, key, name);
     }
@@ -314,8 +456,9 @@ export async function mount(host, container) {
     chip.dataset.name = name;
     chip.innerHTML = `${esc(name)} <button class="sp-chip-remove" aria-label="Remove ${esc(name)}" title="Remove">×</button>`;
     chip.querySelector(".sp-chip-remove").addEventListener("click", () => {
-      const arr = (assignments.get(key) || []).filter((n) => n !== name);
-      assignments.set(key, arr);
+      const current = assignments.get(key) || { shift: null, names: [] };
+      current.names = current.names.filter((n) => n !== name);
+      assignments.set(key, current);
       chip.remove();
     });
     chipsEl.appendChild(chip);
@@ -346,7 +489,7 @@ export async function mount(host, container) {
   function onOpenOutlook() {
     if (!plan) { setStatus("Generate the plan first.", "error"); return; }
     const text     = toPlaintext(plan, assignments);
-    const storeNbr = $("sp-storeNbr").value.trim() || DEFAULTS.storeNbr;
+    const storeNbr = validStoreNbr($("sp-storeNbr").value) || plan.storeNbr;
     const date     = $("sp-businessDate").value || todayIso();
     const subject  = `Stocking Plan — Store ${storeNbr} — ${date}`;
     const url =

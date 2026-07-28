@@ -1,0 +1,353 @@
+/* modules/metricshot/styles.css
+   Module-local styles. Every selector is under .module-metricshot (added by
+   the shell at mount time). Colors + spacing come from tokens.css. */
+
+.module-metricshot {
+  --module-accent: #0071CE;
+  --module-accent-dark: #005ba3;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.module-metricshot .ms-header {
+  margin-bottom: var(--sp-4);
+}
+.module-metricshot .ms-header h1 { margin-bottom: var(--sp-1); }
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.module-metricshot .ms-toolbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.module-metricshot .ms-toolbar-row > div {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.module-metricshot #ms-home-store {
+  font-weight: var(--fw-medium);
+}
+.module-metricshot #ms-tick-state {
+  font-family: var(--font-mono, monospace);
+}
+
+/* ── Table ───────────────────────────────────────────────────────────── */
+.module-metricshot .ms-table-card {
+  padding: 0;
+  overflow-x: auto;
+}
+.module-metricshot .ms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.module-metricshot .ms-table th,
+.module-metricshot .ms-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--apai-border, #e5e7eb);
+  vertical-align: middle;
+  text-align: left;
+}
+.module-metricshot .ms-table th {
+  background: var(--apai-surface-2, #f8fafc);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.module-metricshot .ms-col-enabled { text-align: center; width: 80px; }
+.module-metricshot .ms-col-actions { white-space: nowrap; text-align: right; }
+.module-metricshot .ms-col-actions .btn { margin-left: var(--sp-1); }
+
+.module-metricshot .btn-xs {
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--rad-sm, 4px);
+}
+
+/* Simple pill fallbacks in case components.css doesn't define these variants. */
+.module-metricshot .pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  background: var(--apai-surface-2, #eef2f7);
+  color: var(--apai-ink, #1f2937);
+  border: 1px solid var(--apai-border, #e5e7eb);
+}
+.module-metricshot .pill-success { background: #dcfce7; color: #14532d; border-color: #86efac; }
+.module-metricshot .pill-warn    { background: #fef3c7; color: #78350f; border-color: #fcd34d; }
+.module-metricshot .pill-danger  { background: #fee2e2; color: #7f1d1d; border-color: #fca5a5; }
+.module-metricshot .pill-muted   { background: #f3f4f6; color: #6b7280; }
+
+/* Enabled toggle */
+.module-metricshot .ms-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.module-metricshot .ms-switch input {
+  opacity: 0;
+  width: 0; height: 0;
+}
+.module-metricshot .ms-switch span {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #cbd5e1;
+  border-radius: 999px;
+  transition: 0.15s;
+}
+.module-metricshot .ms-switch span::before {
+  content: "";
+  position: absolute;
+  height: 16px; width: 16px;
+  top: 2px; left: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.15s;
+}
+.module-metricshot .ms-switch input:checked + span {
+  background: var(--module-accent);
+}
+.module-metricshot .ms-switch input:checked + span::before {
+  transform: translateX(16px);
+}
+
+/* ── Preview ─────────────────────────────────────────────────────────── */
+.module-metricshot .ms-preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.module-metricshot .ms-preview-head h2 { margin: 0; flex: 0 0 auto; }
+.module-metricshot #ms-preview-meta { flex: 1; }
+.module-metricshot .ms-preview-body {
+  border: 1px solid var(--apai-border, #e5e7eb);
+  border-radius: var(--rad-md, 6px);
+  overflow: auto;
+  background: #fafafa;
+  max-height: 720px;
+}
+.module-metricshot .ms-preview-body img {
+  display: block;
+  max-width: 100%;
+}
+.module-metricshot .ms-preview-followup {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--apai-border, #e5e7eb);
+  border-radius: var(--rad-md, 6px);
+  background: #fafafa;
+}
+.module-metricshot .ms-followup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--sp-2);
+}
+.module-metricshot .ms-followup-pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: #fff;
+  border: 1px solid var(--apai-border, #e5e7eb);
+  border-radius: var(--rad-sm, 4px);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 480px;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, "Menlo", monospace);
+}
+.module-metricshot .ms-section-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  margin: 0;
+}
+
+/* ── Log panel ───────────────────────────────────────────────────────── */
+.module-metricshot .ms-log { padding: 0; }
+.module-metricshot .ms-log summary {
+  cursor: pointer;
+  padding: var(--sp-3) var(--sp-5);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  user-select: none;
+  list-style: none;
+  font-size: var(--fs-md);
+}
+.module-metricshot .ms-log summary::-webkit-details-marker { display: none; }
+.module-metricshot .ms-log summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: var(--sp-2);
+  transition: transform var(--duration-fast, 0.12s);
+}
+.module-metricshot .ms-log[open] summary::before { transform: rotate(90deg); }
+.module-metricshot .ms-log-body {
+  padding: 0 var(--sp-5) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.module-metricshot .ms-log-pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: var(--sp-3);
+  border-radius: var(--rad-md, 6px);
+  font-size: 11px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre;
+  font-family: var(--font-mono, ui-monospace, "Menlo", monospace);
+}
+
+/* ── Modal ───────────────────────────────────────────────────────────── */
+.module-metricshot .ms-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  z-index: 1000;
+  overflow: auto;
+}
+.module-metricshot .ms-modal-backdrop[hidden] {
+  /* Belt + suspenders: MEMORY.md warns opacity-only toggles leave click-eating layers.
+     `hidden` sets display:none which is authoritative — but browsers occasionally
+     ignore the [hidden] attribute for elements with certain display values. */
+  display: none !important;
+}
+.module-metricshot .ms-modal {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: var(--sp-5);
+}
+.module-metricshot .ms-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-3);
+}
+
+.module-metricshot .ms-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.module-metricshot .ms-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.module-metricshot .ms-form .input {
+  width: 100%;
+}
+.module-metricshot .ms-textarea {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm);
+}
+.module-metricshot .ms-inline {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.module-metricshot .ms-req { color: #dc2626; margin-left: 2px; }
+.module-metricshot .ms-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+
+.module-metricshot .ms-schedule {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+.module-metricshot .ms-day-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.module-metricshot .ms-day-chips label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--rad-md, 6px);
+  border: 1px solid var(--apai-border, #e5e7eb);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  background: #fff;
+}
+.module-metricshot .ms-day-chips label:has(input:checked) {
+  border-color: var(--module-accent);
+  background: rgba(0, 113, 206, 0.06);
+}
+
+.module-metricshot .ms-advanced summary {
+  cursor: pointer;
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  padding: var(--sp-2) 0;
+}
+.module-metricshot .ms-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--apai-border, #e5e7eb);
+}
+
+.module-metricshot .ms-form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.module-metricshot .ms-form-actions-right {
+  margin-left: auto;
+  display: flex;
+  gap: var(--sp-2);
+}
+.module-metricshot #ms-form-msg {
+  margin-top: var(--sp-1);
+  min-height: 1.2em;
+}
+.module-metricshot .btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+.module-metricshot .btn-danger:hover { background: #b91c1c; }
+
+/* ── Store-required nudge banner ──────────────────────────────── */
+.module-metricshot .ms-store-nudge {
+  background: var(--apai-warn-bg);
+  border: 1px solid var(--apai-warn);
+  margin-bottom: var(--sp-4);
+}
+.module-metricshot .ms-store-nudge[hidden] { display: none !important; }
+.module-metricshot .ms-store-nudge-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.module-metricshot .ms-store-nudge-icon { font-size: var(--fs-xl); flex: 0 0 auto; }
+.module-metricshot .ms-store-nudge-body > div { flex: 1 1 260px; }
+.module-metricshot .ms-store-nudge-body strong { color: var(--apai-warn); }
+.module-metricshot .ms-store-nudge-body p { margin: 2px 0 0; }
+.module-metricshot .ms-store-nudge-body .btn { flex: 0 0 auto; }

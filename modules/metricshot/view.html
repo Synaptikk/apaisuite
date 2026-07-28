@@ -1,0 +1,228 @@
+<!-- modules/metricshot/view.html
+     Management UI for the Metric Screenshot Scheduler.
+     Loaded into the shell viewport when the user navigates to #/metricshot.
+     Element IDs are ms- prefixed, scoped to .module-metricshot by the shell. -->
+
+<div class="ms-header">
+  <h1>Metric Shots</h1>
+  <p class="muted">
+    Scheduled screenshots of internal metric dashboards, posted to Workvivo channels.
+    Uses your existing authenticated tabs — no credentials stored.
+  </p>
+</div>
+
+<section class="card ms-toolbar">
+  <div class="ms-toolbar-row">
+    <div>
+      <span id="ms-home-store" class="pill">Store: —</span>
+      <span id="ms-tick-state" class="muted tiny">Next tick: —</span>
+    </div>
+    <div>
+      <button id="ms-add" class="btn btn-primary btn-sm btn-pill">+ Add Metric</button>
+      <button id="ms-refresh" class="btn btn-secondary btn-sm">Refresh</button>
+    </div>
+  </div>
+</section>
+
+<!-- Shown only when no home store is set. Metrics can't capture without a
+     store (they'd render Tableau's default store 1 = blank report). -->
+<section id="ms-store-nudge" class="card ms-store-nudge" role="alert" hidden>
+  <div class="ms-store-nudge-body">
+    <span class="ms-store-nudge-icon" aria-hidden="true">⚠️</span>
+    <div>
+      <strong>Set your store to enable scheduled captures.</strong>
+      <p class="muted tiny">
+        VizPick and other store-scoped metrics need your store number.
+        Without it, captures are paused so you don't post a blank
+        (default-store) report.
+      </p>
+    </div>
+    <button id="ms-store-nudge-open" class="btn btn-primary btn-sm btn-pill" type="button">Open Settings → Defaults</button>
+  </div>
+</section>
+
+<section class="card ms-table-card">
+  <table class="data-table ms-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Schedule</th>
+        <th>Destination</th>
+        <th>Last capture</th>
+        <th>Last successful post</th>
+        <th>Status</th>
+        <th class="ms-col-enabled">Enabled</th>
+        <th class="ms-col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="ms-tbody">
+      <tr><td colspan="8" class="state-loading">Loading…</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="card ms-preview" hidden id="ms-preview-card">
+  <div class="ms-preview-head">
+    <h2 class="ms-section-title">Preview</h2>
+    <span id="ms-preview-meta" class="muted tiny"></span>
+    <button id="ms-preview-close" class="btn btn-secondary btn-sm">Close</button>
+  </div>
+  <div class="ms-preview-body">
+    <img id="ms-preview-img" alt="Metric preview">
+  </div>
+  <div class="ms-preview-followup" id="ms-preview-followup" hidden>
+    <div class="ms-followup-head">
+      <strong>Follow-up text</strong>
+      <span id="ms-followup-meta" class="muted tiny"></span>
+    </div>
+    <pre id="ms-followup-pre" class="ms-followup-pre"></pre>
+  </div>
+</section>
+
+<details class="card ms-log">
+  <summary>Recent activity</summary>
+  <div class="ms-log-body">
+    <button id="ms-log-refresh" class="btn btn-secondary btn-sm">Refresh log</button>
+    <pre id="ms-log-pre" class="ms-log-pre">…</pre>
+  </div>
+</details>
+
+<!-- Add / Edit modal ------------------------------------------------------->
+<div class="ms-modal-backdrop" id="ms-modal-backdrop" hidden>
+  <div class="ms-modal card" role="dialog" aria-modal="true" aria-labelledby="ms-modal-title">
+    <div class="ms-modal-head">
+      <h2 id="ms-modal-title" class="ms-section-title">Add metric</h2>
+      <button id="ms-modal-close" class="btn btn-secondary btn-sm" aria-label="Close">✕</button>
+    </div>
+
+    <form id="ms-form" class="ms-form">
+      <input type="hidden" id="ms-f-id">
+
+      <label class="field">
+        <span class="field-label">Name<span class="ms-req">*</span></span>
+        <input id="ms-f-name" class="input" required maxlength="80" placeholder="VizPick Score">
+      </label>
+
+      <label class="field">
+        <span class="field-label">URL<span class="ms-req">*</span></span>
+        <input id="ms-f-url" class="input" type="url" required placeholder="https://stores.tableau.wal-mart.com/...">
+      </label>
+
+      <div class="field">
+        <span class="field-label">Schedule<span class="ms-req">*</span></span>
+        <div class="ms-schedule">
+          <div class="ms-schedule-times">
+            <label class="tiny">Times (24h, one per line — e.g. 10:00, 14:00, 20:00):</label>
+            <textarea id="ms-f-times" class="input ms-textarea" rows="3" placeholder="10:00&#10;14:00&#10;20:00"></textarea>
+          </div>
+          <div class="ms-schedule-days">
+            <label class="tiny">Days:</label>
+            <div class="ms-day-chips" id="ms-f-days">
+              <label><input type="checkbox" value="MON" checked>MON</label>
+              <label><input type="checkbox" value="TUE" checked>TUE</label>
+              <label><input type="checkbox" value="WED" checked>WED</label>
+              <label><input type="checkbox" value="THU" checked>THU</label>
+              <label><input type="checkbox" value="FRI" checked>FRI</label>
+              <label><input type="checkbox" value="SAT" checked>SAT</label>
+              <label><input type="checkbox" value="SUN" checked>SUN</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Workvivo channel name<span class="ms-req">*</span></span>
+        <input id="ms-f-channel" class="input" required placeholder="1458 Leadership">
+        <span class="muted tiny">Must be a channel you're already a member of.</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Caption (optional)</span>
+        <input id="ms-f-caption" class="input" placeholder="Current metric update">
+      </label>
+
+      <label class="field ms-inline">
+        <input type="checkbox" id="ms-f-enabled" checked>
+        <span>Enabled</span>
+      </label>
+
+      <details class="ms-advanced">
+        <summary>Advanced capture</summary>
+        <div class="ms-advanced-body">
+          <label class="field">
+            <span class="field-label">Capture mode</span>
+            <select id="ms-f-mode" class="input">
+              <option value="viewport">Viewport (recommended)</option>
+              <option value="fullpage">Full page</option>
+              <option value="selector">CSS selector</option>
+              <option value="region">Region (text-anchored bounding box)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Selector (for selector mode)</span>
+            <input id="ms-f-selector" class="input" placeholder=".tabCanvas">
+          </label>
+          <label class="field">
+            <span class="field-label">Region: contain text anchors (for region mode, comma-separated)</span>
+            <input id="ms-f-contain-text" class="input" placeholder="Backroom Health, Fresh, Stocking Baseline">
+            <span class="muted tiny">Smallest bounding box that includes elements matching each of these visible strings.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Required selector (wait until visible)</span>
+            <input id="ms-f-req-selector" class="input" placeholder=".tabCanvas, canvas.tab-widget">
+          </label>
+          <label class="field">
+            <span class="field-label">Hide selectors (comma-separated)</span>
+            <input id="ms-f-hide-selectors" class="input" placeholder="nav.top-bar, .cookie-banner">
+          </label>
+          <div class="ms-grid-2">
+            <label class="field">
+              <span class="field-label">Viewport width</span>
+              <input id="ms-f-vw" class="input" type="number" min="320" max="3840" value="1440">
+            </label>
+            <label class="field">
+              <span class="field-label">Viewport height</span>
+              <input id="ms-f-vh" class="input" type="number" min="240" max="2400" value="1000">
+            </label>
+          </div>
+          <div class="ms-grid-2">
+            <label class="field">
+              <span class="field-label">Settle delay (ms)</span>
+              <input id="ms-f-settle" class="input" type="number" min="0" max="120000" value="8000">
+            </label>
+            <label class="field">
+              <span class="field-label">Page-load timeout (ms)</span>
+              <input id="ms-f-timeout" class="input" type="number" min="5000" max="600000" value="60000">
+            </label>
+          </div>
+          <div class="ms-grid-2">
+            <label class="field">
+              <span class="field-label">Retries</span>
+              <input id="ms-f-retries" class="input" type="number" min="0" max="5" value="2">
+            </label>
+            <label class="field">
+              <span class="field-label">Catch-up window (ms)</span>
+              <input id="ms-f-catchup" class="input" type="number" min="0" max="86400000" value="3600000">
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">Timezone</span>
+            <input id="ms-f-tz" class="input" placeholder="local" value="local">
+            <span class="muted tiny">IANA name (America/Chicago) or "local".</span>
+          </label>
+        </div>
+      </details>
+
+      <div class="ms-form-actions">
+        <button type="button" id="ms-f-preview" class="btn btn-secondary btn-sm">Preview screenshot</button>
+        <button type="button" id="ms-f-probe" class="btn btn-secondary btn-sm">Validate destination</button>
+        <div class="ms-form-actions-right">
+          <button type="button" id="ms-f-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+          <button type="submit" id="ms-f-save" class="btn btn-primary btn-sm btn-pill">Save</button>
+        </div>
+      </div>
+
+      <div id="ms-form-msg" class="muted tiny"></div>
+    </form>
+  </div>
+</div>
