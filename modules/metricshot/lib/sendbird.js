@@ -105,33 +105,21 @@ export async function resolveChannel(channelName) {
 }
 
 /**
- * Locate a live workvivo.walmart.com tab whose Sendbird SDK is loaded. If
- * none exists, open one in the background and wait for the SDK to appear.
+ * Always opens its OWN fresh background workvivo.walmart.com tab, waits for
+ * the Sendbird SDK to boot, and returns it with openedFresh:true so the
+ * caller (_closeIfOwn) closes it after the post. We deliberately do NOT
+ * reuse an existing user tab — reusing one both risks hijacking the user's
+ * live chat session AND was the source of a hang (waiting on the SDK of a
+ * throttled/backgrounded reused tab that never reported ready). Cost is
+ * ~15–45s of SDK bootstrap per post; that's the price for isolation.
  *
  * Mirrors the openWorkvivoTab + waitForLiveToken pattern used by the
  * workvivo module's manual heartbeat path (modules/workvivo/lib/extract.js).
  * We keep this local rather than importing across the module boundary so
  * metricshot doesn't take a runtime dependency on workvivo.
- *
- * If we open the tab ourselves, the caller closes it after the operation
- * via _closeIfOwn — user-owned tabs are never touched. Reopening on each
- * post costs ~15–45 s of SDK bootstrap; that's the price for not leaving
- * a workvivo tab sitting in the user's tab strip between posts.
  */
 async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
-  // Fast path: an existing tab whose SDK is already up.
-  const existing = await _findWorkvivoTabsSorted();
-  for (const tab of existing) {
-    if (await _sdkReady(tab.id)) return { ok: true, tabId: tab.id, openedFresh: false };
-  }
-  if (existing.length) {
-    // A tab exists but the SDK isn't loaded yet — wait for it (user just
-    // navigated, page is still bootstrapping).
-    const ready = await _waitForSdk(existing[0].id, Math.min(waitMs, 15_000));
-    if (ready) return { ok: true, tabId: existing[0].id, openedFresh: false };
-  }
-
-  // No usable tab — open one in the background.
+  // Always open our own tab in the background — never reuse the user's.
   const tab = await chrome.tabs.create({ url: "https://workvivo.walmart.com/chat", active: false })
     .catch((e) => ({ __err: String(e?.message ?? e) }));
   if (!tab || tab.__err || !tab.id) {
@@ -176,12 +164,6 @@ async function _currentActiveTab() {
     const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     return t || null;
   } catch { return null; }
-}
-
-async function _findWorkvivoTabsSorted() {
-  const tabs = await chrome.tabs.query({ url: WORKVIVO_PATTERN });
-  return tabs.filter((t) => typeof t.id === "number")
-    .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
 }
 
 async function _sdkReady(tabId) {
