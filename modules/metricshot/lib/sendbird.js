@@ -336,6 +336,7 @@ async function _ensureAnyWorkvivoTab({ waitMs = 20_000 } = {}) {
   return { ok: true, tabId: tab.id, openedFresh: true };
 }
 
+async function _waitForSdk(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   // First wait for the tab to reach `complete` — no point probing during load.
   while (Date.now() < deadline) {
