@@ -459,9 +459,28 @@ export async function mount(host, container) {
       wrap.hidden = false;
       meta.textContent = `scrape failed`;
       pre.textContent = `[${followUp.errorClass || "?"}] ${followUp.error || "unknown"}`;
+      // On a PARSE failure the raw Tableau body was stashed — offer to copy it
+      // so the parser can be fixed against real data.
+      if (ctx?.id) maybeShowScrapeDebug(ctx.id);
     }
 
     $("ms-preview-card").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // Fetch the stashed raw Tableau response for a failed scrape and append it
+  // to the follow-up panel + copy to clipboard, so it can be shared to fix
+  // the parser. Best-effort; silent if nothing saved.
+  async function maybeShowScrapeDebug(id) {
+    try {
+      const res = await host.messaging.send("get-scrape-debug", { id });
+      const dbg = res?.debug;
+      if (!dbg) return;
+      const body = dbg.respBodyPreview || "";
+      const pre = $("ms-followup-pre");
+      pre.textContent += `\n\n── Raw Tableau response (${body.length} chars) ──\nURL: ${dbg.capturedUrl || "?"}\n\n${body}`;
+      try { await navigator.clipboard.writeText(body); host.ui.toast("Raw scrape body copied to clipboard."); }
+      catch { /* clipboard blocked — it's still shown in the panel */ }
+    } catch { /* ignore */ }
   }
 
   // ── Crop tool ───────────────────────────────────────────────────────────
