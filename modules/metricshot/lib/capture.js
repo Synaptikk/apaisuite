@@ -51,7 +51,13 @@ export async function captureMetric(metric, opts = {}) {
   let attached = false;
   let deviceOverridden = false;
 
+  // Progress breadcrumb hook. Lets the caller trace exactly which phase a
+  // capture stalls on (preview showed "start" then silence = a hung await).
+  // No-op safe if not provided.
+  const step = (name, extra) => { try { opts.onStep?.(name, extra); } catch { /* ignore */ } };
+
   try {
+    step("resolve-url");
     // 1. Locate / open the tab.
     const resolvedUrl = await _expandUrlTemplates(metric.url);
     const target = new URL(resolvedUrl);
@@ -74,11 +80,13 @@ export async function captureMetric(metric, opts = {}) {
       openedFresh = true;
     }
     tabId = tab.id;
+    step("tab-ready", { tabId, openedFresh });
 
     // 2. Attach CDP + inject visibility spoof BEFORE navigation. This is
     //    critical for Tableau / other viz that pause rendering on hidden
     //    tabs — same rationale as sparkfraud/service.js:197-203.
     attached = await _attach(tabId);
+    step("cdp-attached", { attached });
     if (attached) {
       await _sendCdp(tabId, "Page.enable", {}).catch(() => {});
       await _sendCdp(tabId, "Page.addScriptToEvaluateOnNewDocument", {
@@ -130,8 +138,10 @@ export async function captureMetric(metric, opts = {}) {
     }
 
     // 5. Wait for tab.status === "complete".
+    step("wait-load", { needsNavigate });
     const loadedOk = await _waitForTabStatus(tabId, "complete", cap.timeoutMs ?? 60_000);
     if (!loadedOk) return _fail(tabId, capturedAt, "page did not finish loading within timeout");
+    step("loaded");
 
     // 6. SSO check: if URL doesn't match target, try one click on the SSO
     //    button, then wait to land on target.
@@ -149,6 +159,7 @@ export async function captureMetric(metric, opts = {}) {
 
     // 7. In-page authenticity check: title/H1 sniff. Guards against a login
     //    surface served under the same origin/path.
+    step("auth-probe");
     const auth = await _readAuthProbe(tabId);
     if (looksLikeAuthWall(auth)) {
       return _fail(tabId, capturedAt, `page appears to be a login/access-denied surface (title="${(auth.title || "").slice(0, 60)}")`);
@@ -156,6 +167,7 @@ export async function captureMetric(metric, opts = {}) {
 
     // 8. Optional required-selector gate.
     if (cap.requiredSelector) {
+      step("wait-required-selector", { selector: cap.requiredSelector });
       const ok = await _waitForSelectorVisible(tabId, cap.requiredSelector, cap.timeoutMs ?? 60_000);
       if (!ok) return _fail(tabId, capturedAt, `requiredSelector never became visible: ${cap.requiredSelector}`);
     }
@@ -206,8 +218,9 @@ export async function captureMetric(metric, opts = {}) {
     }
 
     // 9. DOM-stability + settle delay.
+    step("wait-dom-stable");
     await _waitForDomStable(tabId, 1000, Math.min(cap.timeoutMs ?? 60_000, 15_000)).catch(() => {});
-    if (cap.settleDelayMs > 0) await _delay(cap.settleDelayMs);
+    if (cap.settleDelayMs > 0) { step("settle-delay", { ms: cap.settleDelayMs }); await _delay(cap.settleDelayMs); }
 
     // 10. Hide sticky headers / configured selectors.
     let restoreHide = null;
@@ -220,6 +233,7 @@ export async function captureMetric(metric, opts = {}) {
     let height = null;
     let clipUsed = null;
     let anchorRegion = null;
+    step("capture", { mode: cap.mode });
     try {
       // 11. Capture.
       if (cap.mode === "selector" && cap.selector) {
@@ -235,6 +249,7 @@ export async function captureMetric(metric, opts = {}) {
       } else if (cap.mode === "region") {
         let region = cap.clip;
         if (!region && Array.isArray(cap.containText) && cap.containText.length) {
+          step("region-search", { anchors: cap.containText });
           const res = await _regionForContainText(tabId, cap.containText, Math.min(cap.timeoutMs ?? 60_000, 30_000));
           if (!res.region) {
             return _fail(tabId, capturedAt,
@@ -279,6 +294,7 @@ export async function captureMetric(metric, opts = {}) {
     }
 
     if (!pngBase64) return _fail(tabId, capturedAt, "Page.captureScreenshot returned no data");
+    step("captured", { width, height, bytes: pngBase64.length });
 
     return {
       ok: true,
