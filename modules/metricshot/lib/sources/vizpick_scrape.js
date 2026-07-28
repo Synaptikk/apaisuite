@@ -71,7 +71,12 @@ export async function scrapeVizPick() {
       error: `parseVizPickResponse failed: ${parsed.reason}`,
       debug: {
         capturedUrl: captured.url,
-        respBodyPreview: (captured.respBody || "").slice(0, 4096),
+        bodyLen: captured.respBody?.length ?? 0,
+        // A raw head-slice is useless — the first few KB are just dashboard
+        // layout/zone chrome. The row data lives deep in dataDictionary /
+        // dataValues. Extract targeted windows around those markers so the
+        // shared debug snippet actually contains the columns the parser needs.
+        respBodyPreview: _dataWindows(captured.respBody),
       },
     };
   }
@@ -82,6 +87,58 @@ export async function scrapeVizPick() {
     departmentBreakout: parsed.departmentBreakout,
     debug: { capturedUrl: captured.url, bodyLen: captured.respBody?.length ?? 0 },
   };
+}
+
+// Pull targeted windows out of the (huge) Tableau body around the markers
+// that actually carry row data, so the debug snippet we surface/share is
+// useful for tuning the parser rather than 4KB of dashboard chrome. Returns
+// a concatenation of labelled excerpts, capped to stay under storage quota.
+function _dataWindows(body) {
+  if (!body || typeof body !== "string") return "";
+  const markers = [
+    "dataDictionary",
+    "dataSegments",
+    "dataColumns",
+    "dataValues",
+    "fieldCaption",
+    "Location Age",
+    "Cases Seen",
+    "Pick %",
+    "vizData",
+    "paneColumnsData",
+  ];
+  const WINDOW = 3000;      // chars each side of a marker hit
+  const MAX_HITS = 12;      // don't dump the whole body
+  const MAX_TOTAL = 60_000; // storage-quota safety
+  const out = [];
+  let total = 0;
+  const seen = [];
+  for (const marker of markers) {
+    let from = 0, hits = 0;
+    while (hits < 3) {
+      const idx = body.indexOf(marker, from);
+      if (idx < 0) break;
+      // Skip if this window heavily overlaps one we already grabbed.
+      if (seen.some((s) => Math.abs(s - idx) < WINDOW)) { from = idx + marker.length; continue; }
+      const start = Math.max(0, idx - WINDOW);
+      const end = Math.min(body.length, idx + WINDOW);
+      const excerpt = body.slice(start, end);
+      out.push(`\n\n===== "${marker}" @${idx} (\u00b1${WINDOW}) =====\n${excerpt}`);
+      seen.push(idx);
+      total += excerpt.length;
+      hits++;
+      from = idx + marker.length;
+      if (out.length >= MAX_HITS || total >= MAX_TOTAL) break;
+    }
+    if (out.length >= MAX_HITS || total >= MAX_TOTAL) break;
+  }
+  if (!out.length) {
+    // No data markers at all — fall back to a head slice + a tail slice so we
+    // can at least see both ends of whatever this response is.
+    return `(no data markers found; body ${body.length} chars)\n--- HEAD ---\n`
+      + body.slice(0, 4000) + `\n--- TAIL ---\n` + body.slice(-4000);
+  }
+  return `(body ${body.length} chars; ${out.length} windows)` + out.join("");
 }
 
 async function _findVizPickTabId() {
