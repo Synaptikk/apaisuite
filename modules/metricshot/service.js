@@ -139,6 +139,7 @@ async function ensureSeed() {
       }
     }
     if (mutated) await saveMetrics(current);
+    await applyScheduleMigrations(current);
     return;
   }
   const marker = await chrome.storage.local.get(`${PFX}seededOnce`);
@@ -146,6 +147,36 @@ async function ensureSeed() {
   await saveMetrics(SEED_METRICS);
   await chrome.storage.local.set({ [`${PFX}seededOnce`]: Date.now() });
   log.emit("seeded", { count: SEED_METRICS.length });
+}
+
+// One-time schedule fix-ups for already-saved metrics. Unlike the URL
+// migrations (fingerprint-matched, can re-fire safely), a schedule change is
+// user-visible and must NOT re-apply after the user re-edits it. So each entry
+// is gated by its own storage marker: fires once, ever, then leaves the user's
+// schedule alone forever. Idempotent by construction.
+const SCHEDULE_MIGRATIONS = [
+  { marker: "schedMig.vizpick-1400-to-1250", id: "vizpick-score", from: "14:00", to: "12:50" },
+];
+
+async function applyScheduleMigrations(current) {
+  for (const mig of SCHEDULE_MIGRATIONS) {
+    const key = `${PFX}${mig.marker}`;
+    const seen = await chrome.storage.local.get(key);
+    if (seen[key]) continue;                                    // already applied once
+    const metric = current.find((m) => m.id === mig.id);
+    let changed = false;
+    if (metric && Array.isArray(metric.schedules)) {
+      for (const s of metric.schedules) {
+        if (s.time === mig.from) { s.time = mig.to; changed = true; }
+      }
+    }
+    if (changed) {
+      await saveMetrics(current);
+      log.emit("migrated-schedule", { id: mig.id, from: mig.from, to: mig.to });
+    }
+    // Mark it seen whether or not it matched — a one-shot is a one-shot.
+    await chrome.storage.local.set({ [key]: Date.now() });
+  }
 }
 
 // ── Alarm ────────────────────────────────────────────────────────────────
