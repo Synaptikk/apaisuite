@@ -68,6 +68,7 @@ export async function mount(host, container) {
 
   // Crop tool buttons + drag handlers.
   $("ms-crop-start")?.addEventListener("click", startCrop);
+  $("ms-crop-reset")?.addEventListener("click", resetCrop);
   $("ms-crop-cancel")?.addEventListener("click", cancelCrop);
   $("ms-crop-save")?.addEventListener("click", saveCrop);
   const cropOverlay = $("ms-crop-overlay");
@@ -438,6 +439,10 @@ export async function mount(host, container) {
           natW: w, natH: h,
         }
       : null;
+    // Offer Reset only when a non-zero crop is currently saved.
+    const p = cropCtx?.padding;
+    const hasCrop = !!(p && (p.top || p.right || p.bottom || p.left));
+    $("ms-crop-reset").hidden = !(canCrop && hasCrop);
 
     const wrap = $("ms-preview-followup");
     const pre  = $("ms-followup-pre");
@@ -488,6 +493,25 @@ export async function mount(host, container) {
     $("ms-crop-cancel").hidden = true;
     $("ms-crop-hint").hidden = true;
     $("ms-crop-start").hidden = !cropCtx;
+    const p = cropCtx?.padding;
+    $("ms-crop-reset").hidden = !(cropCtx && p && (p.top || p.right || p.bottom || p.left));
+  }
+
+  // Clear any saved crop (padding back to 0). Recovery hatch if a crop ever
+  // trims too much or breaks the capture.
+  async function resetCrop() {
+    if (!cropCtx) return;
+    try {
+      const res = await host.messaging.send("set-crop", {
+        id: cropCtx.id, padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      });
+      if (!res.ok) throw new Error(res.error || "reset failed");
+      cropCtx.padding = res.padding;
+      cancelCrop();
+      host.ui.toast("Crop reset — re-run Preview to confirm.");
+    } catch (e) {
+      host.ui.toast(`Crop reset failed: ${e?.message ?? e}`, { kind: "error" });
+    }
   }
 
   function onCropPointerDown(e) {
