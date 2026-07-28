@@ -538,7 +538,25 @@ export const handlers = {
     if (!metric) return { ok: false, error: "not found" };
     log.emit("preview-start", { id });
     try {
-      const res = await captureMetric(metric);
+      // Watchdog: captureMetric is documented as "never throws", but a hung
+      // CDP/debugger await can stall it forever (symptom: preview-start with
+      // no completion line). Race it against a timeout so we ALWAYS resolve.
+      const WATCHDOG_MS = 90_000;
+      let watchdog;
+      const timeout = new Promise((resolve) => {
+        watchdog = setTimeout(() => resolve({ __timedOut: true }), WATCHDOG_MS);
+      });
+      const res = await Promise.race([
+        captureMetric(metric, {
+          onStep: (name, extra) => log.emit("preview-step", { id, step: name, ...(extra || {}) }),
+        }),
+        timeout,
+      ]);
+      clearTimeout(watchdog);
+      if (res && res.__timedOut) {
+        log.emit("preview-failed", { id, reason: `capture hung > ${WATCHDOG_MS / 1000}s (see last preview-step)` });
+        return { ok: false, error: `capture timed out after ${WATCHDOG_MS / 1000}s — check the last preview-step in the log` };
+      }
       if (!res.ok) {
         log.emit("preview-failed", { id, reason: res.reason });
         return { ok: false, error: res.reason };
