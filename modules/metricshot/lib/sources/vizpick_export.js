@@ -200,7 +200,13 @@ async function _exportOne(tabId, ctx, sheetdocId, format) {
 
 async function _resolveSessionContext(tabId) {
   // Pull any recent vizql request URL and slice out the base + session id.
-  //   https://host/vizql/t/OnlineGrocery/w/VizPick/v/VizPickDetails/sessions/<SID>/...
+  // Two URL shapes carry a session id, and the export commands must be built
+  // against the base WITHOUT any interstitial segment:
+  //   command:   .../v/VizPickDetails/sessions/<SID>/commands/...
+  //   bootstrap: .../v/VizPickDetails/bootstrapSession/sessions/<SID>
+  // During a Preview only the bootstrap URL is in the ring, so we must accept
+  // an optional segment (e.g. "bootstrapSession") between the base and
+  // "/sessions/". The captured base is always up to "/v/<view>".
   const urls = await _runInTab(tabId, () => {
     const cap = window.__APAISUITE_METRICSHOT_TABLEAU_CAP;
     if (!cap) return null;
@@ -209,7 +215,9 @@ async function _resolveSessionContext(tabId) {
   if (!urls || !urls.length) {
     return { ok: false, error: "capture ring empty — reload VizPick tab", debug: { urls } };
   }
-  const re = /^(https:\/\/[^/]+\/vizql\/t\/[^/]+\/w\/[^/]+\/v\/[^/]+)\/sessions\/([^/?]+)/;
+  // base = scheme://host/vizql/t/<site>/w/<wb>/v/<view>
+  // then optionally /<something> (e.g. bootstrapSession) then /sessions/<sid>
+  const re = /^(https:\/\/[^/]+\/vizql\/t\/[^/]+\/w\/[^/]+\/v\/[^/]+)(?:\/[^/]+)?\/sessions\/([^/?]+)/;
   for (let i = urls.length - 1; i >= 0; i--) {
     const m = re.exec(urls[i]);
     if (m) return { ok: true, base: m[1], sessionId: m[2] };
