@@ -59,13 +59,16 @@ export const SEED_METRICS = [
       // anchor is the legend's LAST LINE — its rect ends at the text baseline
       // so a raw crop clips the tails of glyphs like "y" and the small trailing
       // wt.% subscript. 40px bottom gives a comfortable margin.
-      padding: { top: 8, right: 16, bottom: 40, left: 8 },
+      padding: { top: 12, right: 24, bottom: 48, left: 12 },
       requiredSelector: ".tab-parameter",
       hideSelectors: [],
       parameterValues: { "Store": "{{HOME_STORE}}" },
       viewportWidth: 1500,
       viewportHeight: 1000,
-      zoom: 1,
+      // Zoom out slightly so the full VizPick report fits the capture surface
+      // instead of the right/bottom edges being clipped. Tunable in the UI
+      // (Advanced capture → Zoom).
+      zoom: 0.85,
       settleDelayMs: 8000,
       timeoutMs: 60000,
       retries: 2,
@@ -99,5 +102,11 @@ export const SEED_URL_MIGRATIONS = [
     // v0.1.3 — region mode but with "Fresh" as an anchor (matched too many
     // elements or none). Migrate to the more reliable anchor set.
     fromContainTextIncludes: "Fresh",
+  },
+  {
+    // v0.1.4 — region mode at zoom:1 clipped the right/bottom of the report.
+    // Migrate to zoom:0.85 + roomier padding so the full viz fits the frame.
+    // Keyed on zoom===1 so it fires once then leaves user-tuned zooms alone.
+    fromZoom: 1,
   },
 ];

@@ -110,7 +110,19 @@ export async function captureMetric(metric, opts = {}) {
           mobile: false,
         });
         if (cap.zoom && cap.zoom !== 1) {
-          await _sendCdp(tabId, "Emulation.setPageScaleFactor", { pageScaleFactor: cap.zoom }).catch(() => {});
+          // NOTE: Emulation.setPageScaleFactor is pinch-zoom (compositor only)
+          // — it does NOT reflow layout, and Tableau ignores it, so content
+          // still overflowed and got clipped. Use CSS zoom on the root element
+          // instead: it actually shrinks + reflows the page so a zoom < 1 fits
+          // more of the report into the capture surface. Applied via
+          // addScriptToEvaluateOnNewDocument so it survives the upcoming reload.
+          const zoomJs = `try{document.documentElement.style.zoom='${cap.zoom}';}catch(e){}`;
+          await _sendCdp(tabId, "Page.addScriptToEvaluateOnNewDocument", { source: zoomJs }).catch(() => {});
+          await chrome.scripting.executeScript({
+            target: { tabId, allFrames: false },
+            func: (z) => { try { document.documentElement.style.zoom = String(z); } catch (e) {} },
+            args: [cap.zoom],
+          }).catch(() => {});
         }
         deviceOverridden = true;
       } catch (e) {

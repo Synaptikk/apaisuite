@@ -326,6 +326,7 @@ export async function mount(host, container) {
     $("ms-f-hide-selectors").value = (c.hideSelectors || []).join(", ");
     $("ms-f-vw").value = c.viewportWidth ?? 1440;
     $("ms-f-vh").value = c.viewportHeight ?? 1000;
+    $("ms-f-zoom").value = c.zoom ?? 1;
     $("ms-f-settle").value = c.settleDelayMs ?? 8000;
     $("ms-f-timeout").value = c.timeoutMs ?? 60000;
     $("ms-f-retries").value = c.retries ?? 2;
@@ -359,7 +360,9 @@ export async function mount(host, container) {
         hideSelectors: hide,
         viewportWidth: parseInt($("ms-f-vw").value, 10) || 1440,
         viewportHeight: parseInt($("ms-f-vh").value, 10) || 1000,
-        zoom: 1,
+        // CSS zoom (<1 shrinks content to fit more into the capture surface).
+        // Clamped to the validator's (0, 3] range; falls back to 1 if blank.
+        zoom: Math.min(3, Math.max(0.25, parseFloat($("ms-f-zoom").value) || 1)),
         settleDelayMs: parseInt($("ms-f-settle").value, 10) || 0,
         timeoutMs: parseInt($("ms-f-timeout").value, 10) || 60000,
         retries: parseInt($("ms-f-retries").value, 10) || 0,
