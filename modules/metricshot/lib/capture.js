@@ -118,23 +118,28 @@ export async function captureMetric(metric, opts = {}) {
       }
     }
 
-    // 4. Ensure the tab is on the right URL.
-    //    - Freshly opened: it was already navigated but the spoof was
-    //      registered after the navigation started. Reload so the spoof
-    //      applies to *this* document too.
-    //    - Existing tab: if the URL wandered (user navigated), re-navigate.
+    // 4. Ensure the tab is on the right URL AND that our visibility spoof
+    //    applies to the live document.
+    //    The spoof is registered via Page.addScriptToEvaluateOnNewDocument,
+    //    which only runs for a *new* document. So:
+    //      - Wrong URL       → navigate (loads a new doc, spoof applies).
+    //      - Freshly opened  → reload (spoof was registered after the initial
+    //                          navigation started).
+    //      - Reused + correct URL → reload anyway. Without a fresh document
+    //        the spoof never runs on THIS doc; a hidden/reused Tableau tab
+    //        then stays paused and renders blank — the classic "preview works
+    //        once, then never loads again" bug.
     const currentTab = await chrome.tabs.get(tabId);
-    const needsNavigate = openedFresh
-      || !currentTab.url
-      || new URL(currentTab.url).origin !== target.origin
-      || !_pathMatches(currentTab.url, resolvedUrl);
+    const urlOk = !!currentTab.url
+      && new URL(currentTab.url).origin === target.origin
+      && _pathMatches(currentTab.url, resolvedUrl);
+    const needsNavigate = !urlOk;
 
     if (needsNavigate) {
-      if (openedFresh) {
-        await chrome.tabs.reload(tabId).catch(() => {});
-      } else {
-        await chrome.tabs.update(tabId, { url: resolvedUrl });
-      }
+      await chrome.tabs.update(tabId, { url: resolvedUrl });
+    } else if (attached) {
+      // Correct URL already (fresh or reused) — reload so the spoof applies.
+      await chrome.tabs.reload(tabId).catch(() => {});
     }
 
     // 5. Wait for tab.status === "complete".
