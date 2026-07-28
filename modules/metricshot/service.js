@@ -504,9 +504,14 @@ export const handlers = {
     const list = await loadMetrics();
     const idx = list.findIndex((m) => m.id === id);
     if (idx < 0) return { ok: false, error: "not found" };
+    // Defense-in-depth: absurdly large negative insets collapse the capture
+    // region below the min size (validate.js rejects <100px), which leaves
+    // the user unable to open the preview to fix it. Cap each inset so the
+    // client crop math can't brick a metric.
+    const cap = (v) => Math.max(-2000, num(v));
     list[idx].capture = {
       ...list[idx].capture,
-      padding: { top: num(p.top), right: num(p.right), bottom: num(p.bottom), left: num(p.left) },
+      padding: { top: cap(p.top), right: cap(p.right), bottom: cap(p.bottom), left: cap(p.left) },
     };
     await saveMetrics(list);
     log.emit("set-crop", { id, padding: list[idx].capture.padding });

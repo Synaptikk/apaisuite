@@ -86,6 +86,7 @@ export async function mount(host, container) {
     if (action === "delete")   return deleteMetric(id);
     if (action === "run")      return runNow(id);
     if (action === "preview")  return previewNow(id);
+    if (action === "resetcrop") return resetCropById(id);
   });
   const togglesUnsub = host.ui.delegate(container, "change", "[data-toggle-id]", async (_e, el) => {
     const id = el.dataset.toggleId;
@@ -223,6 +224,7 @@ export async function mount(host, container) {
         <td class="ms-col-actions">
           <button data-action="run"       data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-secondary btn-xs" title="Run now">Run</button>
           <button data-action="preview"   data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-secondary btn-xs" title="Preview">Preview</button>
+          ${rowHasCrop(m) ? `<button data-action="resetcrop" data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-secondary btn-xs" title="Clear the saved crop">Reset crop</button>` : ""}
           <button data-action="edit"      data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-secondary btn-xs" title="Edit">Edit</button>
           <button data-action="duplicate" data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-secondary btn-xs" title="Duplicate">Dup</button>
           <button data-action="delete"    data-id="${host.ui.escapeHtml(m.id)}" class="btn btn-danger btn-xs" title="Delete">Del</button>
@@ -514,6 +516,29 @@ export async function mount(host, container) {
     }
   }
 
+  // Does this metric have a non-zero saved crop? Used to show a row-level
+  // "Reset crop" button so a bad crop is recoverable even when Preview itself
+  // fails (a too-aggressive crop shrinks capture below the min size, so the
+  // preview panel never opens — the in-panel Reset would be unreachable).
+  function rowHasCrop(m) {
+    const p = m?.capture?.padding;
+    return !!(p && (p.top || p.right || p.bottom || p.left));
+  }
+
+  // Row-level reset: works without a loaded preview (recovers the deadlock).
+  async function resetCropById(id) {
+    try {
+      const res = await host.messaging.send("set-crop", {
+        id, padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      });
+      if (!res.ok) throw new Error(res.error || "reset failed");
+      host.ui.toast(`Crop reset for "${nameOf(id)}" — try Preview again.`);
+      await refresh();
+    } catch (e) {
+      host.ui.toast(`Crop reset failed: ${e?.message ?? e}`, { kind: "error" });
+    }
+  }
+
   function onCropPointerDown(e) {
     if (!cropCtx) return;
     const r = $("ms-crop-overlay").getBoundingClientRect();
@@ -566,8 +591,14 @@ export async function mount(host, container) {
     const dy = Math.min(cropDrag.y0, cropDrag.y1) * sy;
     const dw = Math.abs(cropDrag.x1 - cropDrag.x0) * sx;
     const dh = Math.abs(cropDrag.y1 - cropDrag.y0) * sy;
-    if (dw < 8 || dh < 8) {
-      host.ui.toast("Crop box is too small.", { kind: "error" });
+    // The saved region ends up ~= the drawn box (natural px). The capture is
+    // rejected below 100×100 (validate.js), which used to leave the user stuck
+    // — preview fails, panel never opens, in-panel Reset unreachable. Enforce
+    // a comfortable minimum here so a bad crop can't be saved in the first
+    // place.
+    const MIN_CROP_PX = 120;
+    if (dw < MIN_CROP_PX || dh < MIN_CROP_PX) {
+      host.ui.toast(`Crop box too small — draw at least ${MIN_CROP_PX}×${MIN_CROP_PX}px.`, { kind: "error" });
       return;
     }
 
