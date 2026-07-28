@@ -63,7 +63,7 @@ export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileNam
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
   const tabRes = await _ensureWorkvivoTab();
-  if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error };
+  if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
 
   try {
@@ -133,9 +133,13 @@ async function _ensureWorkvivoTab({ waitMs = 45_000 } = {}) {
 
   const ready = await _waitForSdk(tab.id, waitMs);
   if (!ready) {
+    // Capture a diagnostic so NO_SDK isn't a dead end — shows which frames
+    // exist and any Sendbird-ish globals present but unmatched.
+    const probe = await _probeSdk(tab.id).catch(() => null);
     return {
       ok: false, errorClass: "NO_SDK",
       error: `opened workvivo tab but Sendbird SDK didn't appear within ${Math.round(waitMs/1000)}s — sign in to Workvivo, then retry`,
+      debug: probe,
     };
   }
   return { ok: true, tabId: tab.id, openedFresh: true };
@@ -148,27 +152,64 @@ async function _findWorkvivoTabsSorted() {
 }
 
 async function _sdkReady(tabId) {
+  const found = await _probeSdk(tabId);
+  return found?.ready === true;
+}
+
+// Probe every frame of the tab for the Sendbird SDK. Returns a diagnostic
+// object: { ready, via, frames, globalsSeen } so callers can log WHY it did
+// or didn't find the SDK (the old detector only checked the top frame and a
+// hardcoded list of global names — a rename or an iframe hid it completely).
+async function _probeSdk(tabId) {
   try {
     const res = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: false },
+      target: { tabId, allFrames: true },
       world: "MAIN",
       func: () => {
         const w = /** @type any */ (globalThis);
-        const candidates = [
-          w.v2 && w.v2.chat && w.v2.chat.sdk,
-          w.v2 && w.v2.chatSdk,
-          w.SendBird && (typeof w.SendBird.getInstance === "function" ? w.SendBird.getInstance() : null),
-          w.sb, w.sendbird,
-        ].filter(Boolean);
-        return candidates.some((c) =>
+        const hasSig = (c) => !!(c && (
           c?.groupChannel?.createMyGroupChannelListQuery ||
           c?.GroupChannel?.createMyGroupChannelListQuery
-        );
+        ));
+        // 1. Known global names (fast path).
+        const named = {
+          "v2.chat.sdk": w.v2 && w.v2.chat && w.v2.chat.sdk,
+          "v2.chatSdk": w.v2 && w.v2.chatSdk,
+          "SendBird.getInstance": w.SendBird && (typeof w.SendBird.getInstance === "function" ? w.SendBird.getInstance() : null),
+          "sb": w.sb,
+          "sendbird": w.sendbird,
+        };
+        for (const [name, c] of Object.entries(named)) {
+          if (hasSig(c)) return { ready: true, via: name, frame: location.href };
+        }
+        // 2. Name-agnostic shallow scan of window's own enumerable props
+        //    (one level deep). Catches a renamed/bundled global.
+        const globalsSeen = [];
+        let ownKeys = [];
+        try { ownKeys = Object.keys(w); } catch { /* cross-origin */ }
+        for (const k of ownKeys) {
+          let v;
+          try { v = w[k]; } catch { continue; }
+          if (!v || (typeof v !== "object" && typeof v !== "function")) continue;
+          if (hasSig(v)) return { ready: true, via: `window.${k}`, frame: location.href };
+          // Note interesting-looking globals for diagnostics.
+          if (/send ?bird|chat|sdk|v2/i.test(k)) globalsSeen.push(k);
+        }
+        return { ready: false, via: null, frame: location.href, globalsSeen: globalsSeen.slice(0, 25) };
       },
     });
-    return res?.[0]?.result === true;
-  } catch (_) {
-    return false;
+    const frames = (res || []).map((r) => r?.result).filter(Boolean);
+    const hit = frames.find((f) => f.ready);
+    if (hit) return { ready: true, via: hit.via, frame: hit.frame, frames: frames.length };
+    return {
+      ready: false,
+      via: null,
+      frames: frames.length,
+      globalsSeen: [...new Set(frames.flatMap((f) => f.globalsSeen || []))].slice(0, 40),
+      frameUrls: frames.map((f) => f.frame).slice(0, 10),
+    };
+  } catch (e) {
+    return { ready: false, error: String(e?.message ?? e) };
   }
 }
 

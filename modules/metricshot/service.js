@@ -299,6 +299,7 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
         id: metric.id, attempt,
         errorClass: post.errorClass, error: safeShort(post.error),
         path: post.path,
+        ...(post.debug ? { sdkProbe: post.debug } : {}),
       });
       // AUTH failures won't recover on retry — the Sendbird session is stale.
       if (post.errorClass === "AUTH") break;
