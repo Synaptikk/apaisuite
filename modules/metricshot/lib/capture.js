@@ -161,6 +161,14 @@ export async function captureMetric(metric, opts = {}) {
     //    surface served under the same origin/path.
     step("auth-probe");
     const auth = await _readAuthProbe(tabId);
+    if (auth.probeError) {
+      // The tab wouldn't run our probe script within the timeout — almost
+      // always a wedged/zombie reused tab. Reload it so the NEXT scheduler
+      // retry starts from a fresh document instead of re-hitting the same
+      // stuck one, then fail fast with an actionable message.
+      await chrome.tabs.reload(tabId).catch(() => {});
+      return _fail(tabId, capturedAt, `page is unresponsive (auth probe failed: ${auth.probeError}) — the Tableau tab was stuck; reloaded it, retry should recover`);
+    }
     if (looksLikeAuthWall(auth)) {
       return _fail(tabId, capturedAt, `page appears to be a login/access-denied surface (title="${(auth.title || "").slice(0, 60)}")`);
     }
@@ -355,6 +363,20 @@ async function _sendCdp(tabId, method, params) {
   return chrome.debugger.sendCommand({ tabId }, method, params);
 }
 
+// Race a promise against a timeout. chrome.scripting.executeScript and
+// chrome.debugger.sendCommand have NO built-in timeout — against a wedged /
+// zombie tab (e.g. a reused Tableau session stuck mid-render) they never
+// resolve, and the only backstop was the blunt 90s capture watchdog. Wrapping
+// individual probes lets a stuck step fail fast so the capture can surface a
+// useful error (and the scheduler can retry) instead of hanging.
+function _withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error(`${label || "operation"} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 // ── Tab / navigation helpers ─────────────────────────────────────────────
 
 async function _waitForTabStatus(tabId, wanted, timeoutMs) {
@@ -444,7 +466,7 @@ async function _tryClickSso(tabId) {
 
 async function _readAuthProbe(tabId) {
   try {
-    const [{ result }] = await chrome.scripting.executeScript({
+    const [{ result }] = await _withTimeout(chrome.scripting.executeScript({
       target: { tabId, allFrames: false },
       func: () => ({
         title: document.title || "",
@@ -452,10 +474,12 @@ async function _readAuthProbe(tabId) {
           ...Array.from(document.querySelectorAll("h1, h2")).slice(0, 3).map((h) => (h.textContent || "").trim()),
         ],
       }),
-    });
+    }), 15_000, "auth-probe executeScript");
     return result || { title: "", headings: [] };
   } catch (e) {
-    return { title: "", headings: [] };
+    // A wedged tab makes executeScript hang; the timeout lands here. Return a
+    // sentinel so the caller can distinguish "probe failed" from "clean page".
+    return { title: "", headings: [], probeError: String(e?.message ?? e) };
   }
 }
 
