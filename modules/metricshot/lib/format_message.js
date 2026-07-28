@@ -4,7 +4,7 @@
 // the 2pm and 8pm posts. Two sections:
 //
 //   1. Un-scanned bins bucketed by hours since last scan (>12h / >9h / >6h)
-//   2. Bottom 5 departments by pick %
+//   2. Departments below a pick-% threshold (default 80%)
 //
 // Pure — no chrome.* or DOM access. Input is the parseVizPickResponse output
 // plus the metric config + a `now` epoch for the header timestamp.
@@ -16,7 +16,9 @@ const DEFAULT_TIERS = [
 ];
 
 const MAX_BINS_PER_TIER = 20;
-const DEFAULT_BOTTOM_N = 5;
+// Departments at or above this pick % are considered healthy and omitted.
+// Expressed as a fraction (0..1) to match parseVizPickResponse's pickPct.
+const DEFAULT_PICK_THRESHOLD = 0.80;
 
 /**
  * @param {object} args
@@ -26,14 +28,14 @@ const DEFAULT_BOTTOM_N = 5;
  * @param {Array}  args.locationDetails     from parseVizPickResponse
  * @param {Array}  args.departmentBreakout  from parseVizPickResponse
  * @param {Array}  [args.tiers]             override default 12/9/6 tiers
- * @param {number} [args.bottomN=5]         how many low-pick depts to list
+ * @param {number} [args.pickThreshold=0.80] list depts BELOW this pick % (fraction)
  * @returns {string|null}  the message body, or null if nothing to say
  */
 export function formatUnscannedMessage({
   metricName, at, timezone,
   locationDetails, departmentBreakout,
   tiers = DEFAULT_TIERS,
-  bottomN = DEFAULT_BOTTOM_N,
+  pickThreshold = DEFAULT_PICK_THRESHOLD,
 }) {
   const lines = [];
   const timeStr = _fmtTime(at, timezone);
@@ -46,10 +48,10 @@ export function formatUnscannedMessage({
     lines.push(...binsSection);
   }
 
-  const deptsSection = _buildDeptsSection(departmentBreakout || [], bottomN);
+  const deptsSection = _buildDeptsSection(departmentBreakout || [], pickThreshold);
   if (deptsSection) {
     lines.push("");
-    lines.push(`Lowest pick % (bottom ${bottomN}):`);
+    lines.push(`Departments below ${_fmtPct(pickThreshold)} pick:`);
     lines.push(...deptsSection);
   }
 
@@ -95,19 +97,22 @@ function _buildBinsSection(rows, tiers) {
   return any ? out : null;
 }
 
-function _buildDeptsSection(rows, bottomN) {
+function _buildDeptsSection(rows, pickThreshold) {
   const scored = rows
     .filter((r) => r.dept && r.dept !== "Total" && Number.isFinite(r.pickPct))
     .map((r) => ({
       dept: r.dept,
-      pickPct: r.pickPct,
+      // Normalize to a fraction so the threshold compare is consistent
+      // whether Tableau hands us 0..1 or 0..100.
+      pickPct: r.pickPct <= 1.5 ? r.pickPct : r.pickPct / 100,
       total: Number.isFinite(r.totalPicked) ? r.totalPicked : null,
-    }));
+    }))
+    .filter((d) => d.pickPct < pickThreshold);
   if (!scored.length) return null;
 
+  // Worst first.
   scored.sort((a, b) => a.pickPct - b.pickPct);
-  const bottom = scored.slice(0, bottomN);
-  return bottom.map((d) => {
+  return scored.map((d) => {
     const suffix = d.total != null ? ` — ${d.total} picked` : "";
     return `  · Dept ${d.dept}: ${_fmtPct(d.pickPct)}${suffix}`;
   });
