@@ -25,7 +25,7 @@
 //     metricshot.lastPreview.<id>  — { pngBase64, at, width, height } (UI cache)
 
 import { SEED_METRICS, SEED_URL_MIGRATIONS } from "./data/defaults.js";
-import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore } from "./lib/metrics.js";
+import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches } from "./lib/metrics.js";
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel } from "./lib/sendbird.js";
@@ -112,21 +112,21 @@ async function ensureSeed() {
   const current = await loadMetrics();
   if (current.length > 0) {
     // Migrate any stored copies of an older, known-broken seed.
+    //
+    // A migration entry describes ONE specific broken state. ALL of its
+    // specified fingerprint keys must match for it to fire (AND semantics).
+    // Using OR here was a bug: v0.1.2 lists the *current* URL as `fromUrl`,
+    // so an OR match re-fired on every SW restart and wiped the user's
+    // capture block (incl. their saved crop) back to seed defaults.
     let mutated = false;
     for (const migration of SEED_URL_MIGRATIONS) {
       for (const seed of SEED_METRICS) {
         const existing = current.find((m) => m.id === seed.id);
         if (!existing) continue;
-        const matchesOldUrl = migration.fromUrl && existing.url === migration.fromUrl;
-        const matchesOldSelector = migration.fromRequiredSelector
-          && existing.capture?.requiredSelector === migration.fromRequiredSelector;
-        const matchesOldMode = migration.fromCaptureMode
-          && existing.capture?.mode === migration.fromCaptureMode
-          && (!migration.fromUrl || existing.url === migration.fromUrl);
-        const matchesOldContainText = migration.fromContainTextIncludes
-          && Array.isArray(existing.capture?.containText)
-          && existing.capture.containText.includes(migration.fromContainTextIncludes);
-        if (matchesOldUrl || matchesOldSelector || matchesOldMode || matchesOldContainText) {
+
+        // Only fire if ALL of this migration's specified fingerprint keys
+        // match (see metrics.js::migrationMatches for the why).
+        if (migrationMatches(migration, existing)) {
           existing.url = seed.url;
           // Full replace of capture block on migration — old fields we no
           // longer use (like requiredSelector defaults from prior seed) get
@@ -537,63 +537,71 @@ export const handlers = {
     const metric = list.find((m) => m.id === id);
     if (!metric) return { ok: false, error: "not found" };
     log.emit("preview-start", { id });
-    const res = await captureMetric(metric);
-    if (!res.ok) {
-      log.emit("preview-failed", { id, reason: res.reason });
-      return { ok: false, error: res.reason };
-    }
-    const v = validatePngBytes(base64ToBytes(res.pngBase64));
-    if (!v.ok) {
-      log.emit("preview-failed", { id, reason: `validation: ${v.reason}` });
-      return { ok: false, error: `validation: ${v.reason}` };
-    }
-    await chrome.storage.local.set({
-      [`${PFX}lastPreview.${id}`]: {
-        pngBase64: res.pngBase64,
-        at: res.capturedAt,
-        width: v.width, height: v.height,
-      },
-    });
-
-    // Also assemble the follow-up text (VizPick-only for now) so the user can
-    // eyeball what 2pm/8pm would post alongside the image. This runs after
-    // the screenshot — the tab is already loaded + primed, so scrape reads
-    // whatever's in the capture ring.
-    let followUp = null;
-    if (metric.id === "vizpick-score") {
-      const scrape = await scrapeVizPick().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
-      if (scrape.ok) {
-        const text = formatUnscannedMessage({
-          metricName: metric.name,
-          at: res.capturedAt,
-          timezone: metric.timezone,
-          locationDetails: scrape.locationDetails,
-          departmentBreakout: scrape.departmentBreakout,
-        });
-        followUp = {
-          ok: true,
-          text,
-          binsCount: scrape.locationDetails?.length ?? 0,
-          deptsCount: scrape.departmentBreakout?.length ?? 0,
-        };
-      } else {
-        followUp = { ok: false, errorClass: scrape.errorClass, error: scrape.error };
+    try {
+      const res = await captureMetric(metric);
+      if (!res.ok) {
+        log.emit("preview-failed", { id, reason: res.reason });
+        return { ok: false, error: res.reason };
       }
-    }
+      const v = validatePngBytes(base64ToBytes(res.pngBase64));
+      if (!v.ok) {
+        log.emit("preview-failed", { id, reason: `validation: ${v.reason}` });
+        return { ok: false, error: `validation: ${v.reason}` };
+      }
+      await chrome.storage.local.set({
+        [`${PFX}lastPreview.${id}`]: {
+          pngBase64: res.pngBase64,
+          at: res.capturedAt,
+          width: v.width, height: v.height,
+        },
+      });
 
-    log.emit("preview-ok", { id, width: v.width, height: v.height, followUpOk: followUp?.ok ?? null });
-    return {
-      ok: true,
-      pngBase64: res.pngBase64,
-      width: v.width, height: v.height,
-      at: res.capturedAt,
-      followUp,
-      // Crop-tool inputs: the absolute box we captured, the anchor region
-      // before padding, and the padding currently applied.
-      clipUsed: res.clipUsed || null,
-      anchorRegion: res.anchorRegion || null,
-      padding: metric.capture?.padding || null,
-    };
+      // Also assemble the follow-up text (VizPick-only for now) so the user can
+      // eyeball what 2pm/8pm would post alongside the image. This runs after
+      // the screenshot — the tab is already loaded + primed, so scrape reads
+      // whatever's in the capture ring.
+      let followUp = null;
+      if (metric.id === "vizpick-score") {
+        const scrape = await scrapeVizPick().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+        if (scrape.ok) {
+          const text = formatUnscannedMessage({
+            metricName: metric.name,
+            at: res.capturedAt,
+            timezone: metric.timezone,
+            locationDetails: scrape.locationDetails,
+            departmentBreakout: scrape.departmentBreakout,
+          });
+          followUp = {
+            ok: true,
+            text,
+            binsCount: scrape.locationDetails?.length ?? 0,
+            deptsCount: scrape.departmentBreakout?.length ?? 0,
+          };
+        } else {
+          followUp = { ok: false, errorClass: scrape.errorClass, error: scrape.error };
+        }
+      }
+
+      log.emit("preview-ok", { id, width: v.width, height: v.height, followUpOk: followUp?.ok ?? null });
+      return {
+        ok: true,
+        pngBase64: res.pngBase64,
+        width: v.width, height: v.height,
+        at: res.capturedAt,
+        followUp,
+        // Crop-tool inputs: the absolute box we captured, the anchor region
+        // before padding, and the padding currently applied.
+        clipUsed: res.clipUsed || null,
+        anchorRegion: res.anchorRegion || null,
+        padding: metric.capture?.padding || null,
+      };
+    } catch (e) {
+      // Never let a thrown capture error swallow the preview silently — that
+      // showed up as a "preview-start" with no matching completion line.
+      const reason = String(e?.message ?? e);
+      log.emit("preview-failed", { id, reason });
+      return { ok: false, error: reason };
+    }
   },
 
   async "get-preview"(msg) {
