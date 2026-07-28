@@ -238,3 +238,36 @@ export function metricNeedsStore(m) {
   if (!pv || typeof pv !== "object") return false;
   return Object.values(pv).some((v) => typeof v === "string" && v.includes("{{"));
 }
+
+/**
+ * Does a stored metric match a seed-migration fingerprint?
+ *
+ * A migration entry describes ONE specific broken past state. Only the keys
+ * it actually specifies are evaluated, and ALL of them must match (AND).
+ * Returns false if the entry specifies no conditions (so an empty entry can
+ * never nuke a user's config).
+ *
+ * Bug history: this used OR, and one entry listed the *current* URL as its
+ * `fromUrl`, so it re-fired on every service-worker restart and wiped the
+ * user's capture block (incl. saved crop) back to seed defaults.
+ */
+export function migrationMatches(migration, existing) {
+  if (!migration || !existing) return false;
+  const checks = [];
+  if (migration.fromUrl !== undefined) {
+    checks.push(existing.url === migration.fromUrl);
+  }
+  if (migration.fromRequiredSelector !== undefined) {
+    checks.push(existing.capture?.requiredSelector === migration.fromRequiredSelector);
+  }
+  if (migration.fromCaptureMode !== undefined) {
+    checks.push(existing.capture?.mode === migration.fromCaptureMode);
+  }
+  if (migration.fromContainTextIncludes !== undefined) {
+    checks.push(
+      Array.isArray(existing.capture?.containText)
+      && existing.capture.containText.includes(migration.fromContainTextIncludes)
+    );
+  }
+  return checks.length > 0 && checks.every(Boolean);
+}

@@ -14,6 +14,7 @@ import {
   readyForSave,
   shortScheduleSummary,
   metricNeedsStore,
+  migrationMatches,
   DEFAULT_CAPTURE,
 } from "../metrics.js";
 
@@ -157,4 +158,33 @@ test("normalizeMetric: coerces non-finite padding sides to 0", () => {
     capture: { padding: { top: "nope", right: 12, bottom: undefined, left: null } },
   });
   assert.deepEqual(n.capture.padding, { top: 0, right: 12, bottom: 0, left: 0 });
+});
+
+test("migrationMatches: ALL specified keys must match (AND, not OR)", () => {
+  const existing = {
+    url: "https://old/",
+    capture: { requiredSelector: "iframe", mode: "region" },
+  };
+  // Both keys match → true.
+  assert.equal(migrationMatches({ fromUrl: "https://old/", fromRequiredSelector: "iframe" }, existing), true);
+  // One key wrong → false (OR would have wrongly returned true).
+  assert.equal(migrationMatches({ fromUrl: "https://old/", fromRequiredSelector: "canvas" }, existing), false);
+});
+
+test("migrationMatches: REGRESSION — current URL alone must not re-fire", () => {
+  // The v0.1.2 entry lists the current seed URL as fromUrl but ALSO requires
+  // capture mode 'viewport'. A metric already migrated to region mode must
+  // NOT match, or the migration nukes the user's saved crop on every restart.
+  const currentUrl = "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?:embed=y&:toolbar=n";
+  const migrated = { url: currentUrl, capture: { mode: "region", containText: ["x"] } };
+  assert.equal(migrationMatches({ fromCaptureMode: "viewport", fromUrl: currentUrl }, migrated), false);
+  // But a still-broken viewport-mode metric on that URL SHOULD match.
+  const broken = { url: currentUrl, capture: { mode: "viewport" } };
+  assert.equal(migrationMatches({ fromCaptureMode: "viewport", fromUrl: currentUrl }, broken), true);
+});
+
+test("migrationMatches: empty/degenerate inputs never match", () => {
+  assert.equal(migrationMatches({}, { url: "x" }), false);
+  assert.equal(migrationMatches(null, { url: "x" }), false);
+  assert.equal(migrationMatches({ fromUrl: "x" }, null), false);
 });
