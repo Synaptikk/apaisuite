@@ -239,7 +239,103 @@ async function _probeSdk(tabId) {
   }
 }
 
-async function _waitForSdk(tabId, timeoutMs) {
+/**
+ * Deep-introspect the Workvivo tab to find where the Sendbird SDK actually
+ * lives and what its shape is. Unlike _probeSdk (which only checks a fixed
+ * signature), this walks a couple levels down from promising globals and
+ * reports method names — so when Workvivo changes the SDK shape we can SEE
+ * the new one instead of guessing. Diagnostic only; never posts.
+ *
+ * @returns {Promise<object>} per-frame findings
+ */
+export async function introspectSdk() {
+  const tabRes = await _ensureAnyWorkvivoTab();
+  if (!tabRes.ok) return { ok: false, error: tabRes.error };
+  const { tabId, openedFresh } = tabRes;
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      func: () => {
+        const w = /** @type any */ (globalThis);
+        const out = { frame: location.href, candidates: [] };
+        // Signals that an object might be (or contain) the SDK.
+        const looksLikeSdk = (o) => !!(o && typeof o === "object" && (
+          o.groupChannel || o.GroupChannel || o.openChannel ||
+          o.currentUser || o.connect || o.addChannelHandler ||
+          o.createMyGroupChannelListQuery
+        ));
+        const describe = (o) => {
+          const info = { type: typeof o };
+          try {
+            const keys = [];
+            for (const k in o) { keys.push(k); if (keys.length > 60) break; }
+            info.keys = keys;
+          } catch { info.keys = "<unreadable>"; }
+          for (const sub of ["groupChannel", "GroupChannel", "currentUser", "openChannel"]) {
+            try {
+              if (o[sub]) {
+                const mk = [];
+                for (const k in o[sub]) { mk.push(k); if (mk.length > 60) break; }
+                info[sub] = mk;
+              }
+            } catch { /* skip */ }
+          }
+          return info;
+        };
+        let ownKeys = [];
+        try { ownKeys = Object.keys(w); } catch { /* cross-origin */ }
+        for (const k of ownKeys) {
+          let v;
+          try { v = w[k]; } catch { continue; }
+          if (!v || (typeof v !== "object" && typeof v !== "function")) continue;
+          if (looksLikeSdk(v)) { out.candidates.push({ path: `window.${k}`, ...describe(v) }); continue; }
+          // One level down: window.<k>.<k2>
+          let subKeys = [];
+          try { subKeys = Object.keys(v); } catch { continue; }
+          for (const k2 of subKeys.slice(0, 40)) {
+            let v2;
+            try { v2 = v[k2]; } catch { continue; }
+            if (looksLikeSdk(v2)) out.candidates.push({ path: `window.${k}.${k2}`, ...describe(v2) });
+            // Two levels down for known wrappers (e.g. WidgetSDK.sb, v2.chat.sdk)
+            if (v2 && typeof v2 === "object") {
+              let subKeys2 = [];
+              try { subKeys2 = Object.keys(v2); } catch { continue; }
+              for (const k3 of subKeys2.slice(0, 40)) {
+                let v3;
+                try { v3 = v2[k3]; } catch { continue; }
+                if (looksLikeSdk(v3)) out.candidates.push({ path: `window.${k}.${k2}.${k3}`, ...describe(v3) });
+              }
+            }
+          }
+        }
+        return out;
+      },
+    });
+    const frames = (res || []).map((r) => r?.result).filter(Boolean);
+    return { ok: true, frames };
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e) };
+  } finally {
+    await _closeIfOwn(tabId, openedFresh);
+  }
+}
+
+// Like _ensureWorkvivoTab but does NOT require the SDK to be ready — we just
+// need a loaded workvivo tab to introspect. Reuses an existing tab if present.
+async function _ensureAnyWorkvivoTab({ waitMs = 20_000 } = {}) {
+  const existing = await chrome.tabs.query({ url: WORKVIVO_PATTERN });
+  if (existing.length) {
+    await _waitForSdk(existing[0].id, Math.min(waitMs, 20_000)).catch(() => {});
+    return { ok: true, tabId: existing[0].id, openedFresh: false };
+  }
+  const tab = await chrome.tabs.create({ url: "https://workvivo.walmart.com/chat", active: false })
+    .catch((e) => ({ __err: String(e?.message ?? e) }));
+  if (!tab || tab.__err || !tab.id) return { ok: false, error: tab?.__err || "could not open workvivo tab" };
+  await _waitForSdk(tab.id, waitMs).catch(() => {});
+  return { ok: true, tabId: tab.id, openedFresh: true };
+}
+
   const deadline = Date.now() + timeoutMs;
   // First wait for the tab to reach `complete` — no point probing during load.
   while (Date.now() < deadline) {

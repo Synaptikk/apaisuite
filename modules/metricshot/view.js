@@ -66,6 +66,7 @@ export async function mount(host, container) {
   $("ms-log-refresh").addEventListener("click", refreshLog);
   $("ms-dump-export")?.addEventListener("click", dumpExport);
   $("ms-try-export")?.addEventListener("click", tryExport);
+  $("ms-introspect-sdk")?.addEventListener("click", introspectSdkClick);
   $("ms-store-nudge-open")?.addEventListener("click", () => host.route("#/settings"));
 
   // Crop tool buttons + drag handlers.
@@ -179,6 +180,21 @@ export async function mount(host, container) {
       catch { /* clipboard blocked — still shown in the panel */ }
     } catch (e) {
       pre.textContent = `Dump failed: ${e?.message ?? e}`;
+    }
+  }
+
+  // TEMP diagnostic: find where the Sendbird SDK lives in the Workvivo tab
+  // + its shape, so we can fix detection when Workvivo changes the global.
+  async function introspectSdkClick() {
+    const pre = $("ms-dump-export-pre");
+    pre.textContent = "Opening Workvivo tab + introspecting SDK (up to ~20s)…";
+    try {
+      const res = await host.messaging.send("introspect-sdk", {});
+      pre.textContent = JSON.stringify(res, null, 2);
+      try { await navigator.clipboard.writeText(JSON.stringify(res, null, 2)); host.ui?.toast?.("SDK introspection copied to clipboard."); }
+      catch { /* clipboard blocked — still shown in the panel */ }
+    } catch (e) {
+      pre.textContent = `Introspect failed: ${e?.message ?? e}`;
     }
   }
 
