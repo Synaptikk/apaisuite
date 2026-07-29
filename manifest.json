@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "APAISuite",
   "short_name": "APAISuite",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Unified internal AP fraud-investigation suite. Consolidates ClosingList, AurorBuddy, SparkFraud, ClaimsBuddy, ORC Corridor Monitor, and other AP tools behind one shell.",
   "minimum_chrome_version": "120",
   "action": {
@@ -45,7 +45,7 @@
     "https://ivrattcloud-prod.wal-mart.com/*",
     "https://app.us.auror.co/*",
     "https://*.auror.co/*",
-    "https://wmtus.apprissretailcloud.com/*",
+    "https://apps.apprissretail.com/*",
     "https://*.walmart.com/*",
     "https://*.wal-mart.com/*",
     "https://gscope.walmartlabs.com/*",
@@ -64,10 +64,16 @@
     "https://apscpi.wal-mart.com/*",
     "https://app.powerbi.com/*",
     "https://*.pbidedicated.windows.net/*",
+    "https://*.analysis.windows.net/*",
+    "https://stores.tableau.wal-mart.com/*",
     "https://go.enviance.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
-    "https://securetoken.googleapis.com/*"
+    "https://securetoken.googleapis.com/*",
+    "https://graph.microsoft.com/*",
+    "https://outlook.office.com/*",
+    "https://outlook.office365.com/*",
+    "https://api-*.sendbird.com/*"
   ],
   "content_scripts": [
     {
@@ -184,6 +190,28 @@
     },
     {
       "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "modules/market120/content/powerbi_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://stores.tableau.wal-mart.com/*"
+      ],
+      "js": [
+        "modules/market120/content/tableau_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "https://app.us.auror.co/*",
         "https://*.auror.co/*"
       ],
@@ -202,6 +230,28 @@
         "modules/aurorbuddy/content/secure_pill.js"
       ],
       "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://stores.tableau.wal-mart.com/*"
+      ],
+      "js": [
+        "modules/metricshot/content/tableau_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://workvivo.walmart.com/*"
+      ],
+      "js": [
+        "modules/metricshot/content/wv_session_sniffer.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
       "all_frames": false
     }
   ],

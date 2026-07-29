@@ -13,7 +13,7 @@ Scheduled screenshots of internal metric dashboards, posted into Workvivo channe
 3. Wait for readiness (`document.readyState`, an optional `requiredSelector`, DOM-stability, then a configurable settle delay).
 4. `Page.captureScreenshot` via CDP.
 5. Sniff the PNG (signature, size, dimensions) and the page (`document.title` / `<h1>`) to refuse login/access-denied captures.
-6. Post the image into the configured Sendbird group channel from inside the user's `workvivo.walmart.com` tab — primary path uses the loaded SendBird SDK, fallback uses Sendbird's REST API via MAIN-world `fetch`.
+6. Post the image into the configured Sendbird group channel via the Sendbird Platform REST API, run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests; the REST post then uses that key. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name.
 7. Record a deterministic run key so restarts + duplicate ticks never repost the same slot.
 
 ---
@@ -63,7 +63,7 @@ The metric shows up in the table with Enabled toggled on. It will fire at the ne
 
 ## Safety / auth policy
 
-- **No credentials stored.** All auth is inherited from the user's existing SSO tabs.
+- **No credentials stored.** All auth is inherited from the user's existing SSO tabs. The Sendbird `Session-key` is read live from the workvivo tab at post time and used only in-memory for that request — it is never persisted or logged.
 - **No cookies, tokens, or headers logged.** `shared/logging.js` auto-redacts fields whose names match `authtoken|bearer|cookie|password|jwt|...` and this module's log emissions never include those fields anyway.
 - **No mutating actions.** The capture pipeline reads the DOM, optionally hides configured selectors via a `<style>` tag, and takes a screenshot. It does not click buttons, submit forms, or navigate away from the metric URL — with the single exception of the shared `auth.clickSso` helper for landing-page SSO buttons.
 - **Login-page detection.** If the tab lands on a URL that doesn't match the target, or if the target's title/H1 matches the login/SSO regex from `shared/auth.js`, the capture is refused and no screenshot is posted. Status becomes `AUTH` and the UI shows the warning pill.
