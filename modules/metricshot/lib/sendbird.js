@@ -231,6 +231,7 @@ function IN_PAGE_INTROSPECT() {
     userId: (c && c.userId) || (w.v2 && w.v2.id != null ? String(w.v2.id) : null),
     href: location.href,
     signedIn: !!(w.v2 && w.v2.id),
+    netlog: (w.__APAISUITE_METRICSHOT_NETLOG || []).slice(-30),
   };
 }
 

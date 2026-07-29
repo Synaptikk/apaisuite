@@ -27,6 +27,40 @@
   // Shape: { sessionKey, appId, userId, ts } — null until first sniff.
   window.__APAISUITE_METRICSHOT_SBKEY = null;
 
+  // ── Recon log ─────────────────────────────────────────────────
+  // Ring buffer of recent non-GET requests, so we can discover how the
+  // Workvivo UI *actually* uploads images (the Sendbird session-key path
+  // returns 400 "File-messages via SDK are disabled"). Populated for
+  // sendbird.com AND workvivo.walmart.com POST/PUT/PATCH calls. Read via
+  // window.__APAISUITE_METRICSHOT_NETLOG. Capped so it can't grow unbounded.
+  const NETLOG_MAX = 60;
+  window.__APAISUITE_METRICSHOT_NETLOG = [];
+  function netlog(entry) {
+    try {
+      const log = window.__APAISUITE_METRICSHOT_NETLOG;
+      log.push({ ...entry, ts: Date.now() });
+      if (log.length > NETLOG_MAX) log.splice(0, log.length - NETLOG_MAX);
+    } catch (_) { /* ignore */ }
+  }
+  function interesting(url, method) {
+    if (typeof url !== "string") return false;
+    if (!/sendbird\.com|workvivo\.walmart\.com/i.test(url)) return false;
+    const m = String(method || "GET").toUpperCase();
+    // File uploads are multipart POST/PUT; message sends are POST. Skip GETs.
+    return m === "POST" || m === "PUT" || m === "PATCH";
+  }
+  function bodyKind(body) {
+    if (!body) return null;
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      const fields = [];
+      try { for (const k of body.keys()) fields.push(k); } catch (_) {}
+      return { type: "FormData", fields };
+    }
+    if (typeof body === "string") return { type: "string", len: body.length, sample: body.slice(0, 200) };
+    if (typeof Blob !== "undefined" && body instanceof Blob) return { type: "Blob", size: body.size, mime: body.type };
+    return { type: typeof body };
+  }
+
   const USER_ID_RE = /\/v3\/users\/([^/?]+)/i;
 
   function stash(url, headers) {
@@ -54,6 +88,7 @@
   window.fetch = function (input, init) {
     try {
       const url = typeof input === "string" ? input : (input && input.url) || "";
+      const method = (init && init.method) || (input && typeof input !== "string" && input.method) || "GET";
       if (onlySendbird(url)) {
         const headers = {};
         if (input && typeof input !== "string" && input.headers) {
@@ -69,6 +104,9 @@
         }
         stash(url, headers);
       }
+      if (interesting(url, method)) {
+        netlog({ via: "fetch", method: String(method).toUpperCase(), url, body: bodyKind(init && init.body) });
+      }
     } catch (_) { /* never break the page's fetch */ }
     return origFetch.apply(this, arguments);
   };
@@ -80,17 +118,20 @@
   const origSend = XHR.prototype.send;
 
   XHR.prototype.open = function (method, url) {
-    this.__mshotSniff = { url, headers: {} };
+    this.__mshotSniff = { url, method, headers: {} };
     return origOpen.apply(this, arguments);
   };
   XHR.prototype.setRequestHeader = function (name, value) {
     if (this.__mshotSniff) this.__mshotSniff.headers[String(name).toLowerCase()] = value;
     return origSetHeader.apply(this, arguments);
   };
-  XHR.prototype.send = function () {
+  XHR.prototype.send = function (body) {
     try {
       if (this.__mshotSniff && onlySendbird(this.__mshotSniff.url)) {
         stash(this.__mshotSniff.url, this.__mshotSniff.headers);
+      }
+      if (this.__mshotSniff && interesting(this.__mshotSniff.url, this.__mshotSniff.method)) {
+        netlog({ via: "xhr", method: String(this.__mshotSniff.method).toUpperCase(), url: this.__mshotSniff.url, body: bodyKind(body) });
       }
     } catch (_) { /* ignore */ }
     return origSend.apply(this, arguments);
