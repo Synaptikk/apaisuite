@@ -135,6 +135,18 @@
       return;
     }
 
+    // Forward progress: we're on a real flow page, so the last submit's LB
+    // roll succeeded. Reset the MAC-retry budget — otherwise scattered
+    // transient blips across a single session accumulate and falsely trip
+    // the give-up threshold even though we keep advancing. The budget is
+    // meant to cap *consecutive* failures, not lifetime ones.
+    if ((where === "menu" || where === "criteria" || where === "absence-table") && state.macErrorRetries) {
+      try {
+        await chrome.storage.local.set({ [FLOW_KEY]: { ...state, macErrorRetries: 0 } });
+        state = { ...state, macErrorRetries: 0 };
+      } catch (_) {}
+    }
+
     if (where === "menu") {
       // Menu page: the "AIL Absences and Tardies" radio has AutoPostBack
       // wired to its onclick — a plain .click() fires the postback that
