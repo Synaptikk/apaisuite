@@ -1,22 +1,15 @@
-// Extract the composed in-page functions from sendbird.js and exercise them
-// against a mock Sendbird REST API to validate the flow end-to-end.
+// Extract the in-page REST worker (IN_PAGE_SB) from sendbird.js and exercise
+// it against a mock Sendbird REST API to validate the flow end-to-end.
 import fs from "fs";
 
 const src = fs.readFileSync("modules/metricshot/lib/sendbird.js", "utf8");
 
-// Pull out REST_HELPERS_SRC + _composeInPage + the three IN_PAGE_* consts by
-// evaluating the module's relevant section in a sandbox. Simplest: import the
-// module and reach the functions? They're not exported. So re-derive via eval
-// of the source slice from 'const SBKEY_GLOBAL' onward, minus exports.
+// IN_PAGE_SB is not exported (it's shipped into the page via chrome.scripting),
+// so re-derive it by eval'ing the module tail from 'const SBKEY_GLOBAL' onward.
 const start = src.indexOf("const SBKEY_GLOBAL");
 let body = src.slice(start);
-// Strip the leading export-only public API (already before start). We only need
-// helpers + IN_PAGE_*. But IN_PAGE_* appear after helpers. Eval whole tail.
-// Remove any stray 'export' keywords (none in tail) just in case.
 body = body.replace(/^export\s+/gm, "");
-
-// Expose the composed consts.
-body += "\nglobalThis.__T = { IN_PAGE_RESOLVE_CHANNEL, IN_PAGE_POST_TEXT, IN_PAGE_POST_FILE, IN_PAGE_READ_CREDS, IN_PAGE_INTROSPECT };";
+body += "\nglobalThis.__T = { IN_PAGE_SB, IN_PAGE_READ_CREDS, IN_PAGE_INTROSPECT };";
 
 eval(body);
 const T = globalThis.__T;
@@ -57,25 +50,25 @@ globalThis.fetch = async (url, opts = {}) => {
 // ── Run tests ────────────────────────────────────────────────────────────
 function assert(cond, label) { console.log((cond ? "PASS" : "FAIL") + " — " + label); if (!cond) process.exitCode = 1; }
 
-const r1 = await T.IN_PAGE_RESOLVE_CHANNEL("1458 Leadership");
+const r1 = await T.IN_PAGE_SB({ action: "resolve", channelName: "1458 Leadership" });
 assert(r1.ok && r1.channelUrl === "gc_lead", "resolve named channel");
 
-const r2 = await T.IN_PAGE_RESOLVE_CHANNEL("Nonexistent");
+const r2 = await T.IN_PAGE_SB({ action: "resolve", channelName: "Nonexistent" });
 assert(!r2.ok && r2.errorClass === "NOT_FOUND", "resolve missing channel → NOT_FOUND");
 
-const r3 = await T.IN_PAGE_POST_TEXT({ channelName: "1458 Leadership", text: "hi" });
+const r3 = await T.IN_PAGE_SB({ action: "text", channelName: "1458 Leadership", text: "hi" });
 assert(r3.ok && r3.messageId === "5850000000", "post text to named channel");
 
-const r4 = await T.IN_PAGE_POST_TEXT({ channelName: "@me", text: "self note" });
+const r4 = await T.IN_PAGE_SB({ action: "text", channelName: "@me", text: "self note" });
 assert(r4.ok && r4.channelUrl === "gc_self" && created, "post text to @me (auto-create self)");
 
-const r5 = await T.IN_PAGE_POST_FILE({ channelName: "@me", pngBase64: Buffer.from("PNGDATA").toString("base64"), fileName: "s.png", caption: "cap" });
+const r5 = await T.IN_PAGE_SB({ action: "file", channelName: "@me", pngBase64: Buffer.from("PNGDATA").toString("base64"), fileName: "s.png", caption: "cap" });
 assert(r5.ok && r5.messageId === "5850000000", "post file to @me");
 
 // No-creds case: creds are read fresh from window on each call, so nulling the
 // global mid-run is enough to exercise the NO_SESSION guard.
 globalThis.__APAISUITE_METRICSHOT_SBKEY = null;
-const r6 = await T.IN_PAGE_POST_TEXT({ channelName: "@me", text: "x" });
+const r6 = await T.IN_PAGE_SB({ action: "text", channelName: "@me", text: "x" });
 assert(!r6.ok && r6.errorClass === "NO_SESSION", "no session-key → NO_SESSION");
 
 console.log("done");
