@@ -377,7 +377,17 @@ async function _detach(tabId) {
 }
 
 async function _sendCdp(tabId, method, params) {
-  return chrome.debugger.sendCommand({ tabId }, method, params);
+  // chrome.debugger.sendCommand has NO built-in timeout. Against a reused /
+  // wedged Tableau tab (openedFresh:false), commands like Page.enable or
+  // Emulation.setDeviceMetricsOverride can hang forever — and a trailing
+  // .catch() at the call site does nothing because the await never settles.
+  // Wrap every command so a stuck CDP call rejects fast and the capture
+  // pipeline can surface an error / retry instead of freezing at cdp-attached.
+  return _withTimeout(
+    chrome.debugger.sendCommand({ tabId }, method, params),
+    15_000,
+    `CDP ${method}`,
+  );
 }
 
 // Race a promise against a timeout. chrome.scripting.executeScript and
