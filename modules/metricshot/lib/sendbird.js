@@ -49,7 +49,7 @@ export async function postTextToWorkvivo({ channelName, text }) {
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
   try {
-    const r = await _runInTab(tabId, IN_PAGE_POST_TEXT, [{ channelName, text }]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "text", channelName, text }]);
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
@@ -73,7 +73,7 @@ export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileNam
 
   try {
     step("rest-post");
-    const r = await _runInTab(tabId, IN_PAGE_POST_FILE, [{ channelName, pngBase64, fileName, caption }]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "file", channelName, pngBase64, fileName, caption }]);
     step("rest-post-done", { ok: !!r?.ok, errorClass: r?.errorClass });
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
@@ -90,7 +90,7 @@ export async function resolveChannel(channelName) {
   if (!tabRes.ok) return { ok: false, errorClass: tabRes.errorClass, error: tabRes.error };
   const { tabId, openedFresh } = tabRes;
   try {
-    const r = await _runInTab(tabId, IN_PAGE_RESOLVE_CHANNEL, [channelName]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "resolve", channelName }]);
     return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
@@ -235,20 +235,20 @@ function IN_PAGE_INTROSPECT() {
 }
 
 /**
- * Shared REST core, inlined into each in-page function via a string that we
- * eval? No — serialization can't share helpers. Instead each IN_PAGE_* below
- * re-declares the small set of helpers it needs. To keep DRY within the file
- * without breaking serialization, we build the helpers once as a source
- * string and prepend. See _restHelpersSrc.
+ * The single in-page REST worker. Serialized into the workvivo tab's MAIN
+ * world by chrome.scripting. Dispatches on `arg.action` so all the shared
+ * channel-resolution + auth logic lives in ONE self-contained function
+ * (DRY) without needing eval/new Function — which MV3 service-worker CSP
+ * forbids anyway. All helpers are nested; nothing outside this function is
+ * referenced.
+ *
+ * actions: "resolve" | "text" | "file"
  */
+async function IN_PAGE_SB(arg) {
+  const w = /** @type any */ (globalThis);
+  const creds = w.__APAISUITE_METRICSHOT_SBKEY;
 
-// The REST helper source, shared by all posting in-page functions. Prepending
-// this string keeps the channel-resolution + auth logic in ONE place while
-// still producing fully self-contained functions after serialization.
-const REST_HELPERS_SRC = `
-  const w = globalThis;
-  const creds = w.${SBKEY_GLOBAL};
-  function _readCreds() {
+  function readCreds() {
     if (!creds || !creds.sessionKey) return null;
     const cfg = w.v2 && w.v2.chatConfig;
     return {
@@ -257,7 +257,7 @@ const REST_HELPERS_SRC = `
       userId: creds.userId || (w.v2 && w.v2.id != null ? String(w.v2.id) : null),
     };
   }
-  function _headers(appId, extra) {
+  function headers(appId, extra) {
     return Object.assign({
       "Session-key": creds.sessionKey,
       "App-Id": appId,
@@ -265,19 +265,19 @@ const REST_HELPERS_SRC = `
       "SB-User-Agent": "JS/c4.22.0///oweb",
     }, extra || {});
   }
-  function _isSelf(name) {
+  function isSelf(name) {
     const s = String(name || "").trim().toLowerCase();
     return s === "@me" || s === "@self" || s === "(me)";
   }
-  function _classify(status) {
+  function classify(status) {
     return (status === 401 || status === 403) ? "AUTH" : "REST_FAIL";
   }
-  async function _listChannels(base, userId, headers) {
+  async function listChannels(base, userId, hdrs) {
     let all = [], token = "";
     for (let page = 0; page < 10; page++) {
       const url = base + "/users/" + encodeURIComponent(userId) +
         "/my_group_channels?limit=100&show_member=true" + (token ? "&token=" + encodeURIComponent(token) : "");
-      const r = await fetch(url, { headers });
+      const r = await fetch(url, { headers: hdrs });
       if (!r.ok) return { error: "list " + r.status, status: r.status };
       const j = await r.json().catch(() => ({}));
       all = all.concat(j.channels || []);
@@ -286,105 +286,76 @@ const REST_HELPERS_SRC = `
     }
     return { channels: all };
   }
-  async function _findOrCreateSelf(base, userId, headers) {
-    const listed = await _listChannels(base, userId, headers);
+  async function findOrCreateSelf(base, userId, hdrs, appId) {
+    const listed = await listChannels(base, userId, hdrs);
     if (listed.error) return { error: listed.error, status: listed.status };
     const self = (listed.channels || []).find((c) =>
       (c.members || []).length === 1 && String((c.members[0] || {}).user_id) === String(userId));
     if (self) return { channel: self };
     const r = await fetch(base + "/group_channels", {
       method: "POST",
-      headers: _headers(headers["App-Id"], { "Content-Type": "application/json; charset=utf-8" }),
+      headers: headers(appId, { "Content-Type": "application/json; charset=utf-8" }),
       body: JSON.stringify({ user_ids: [userId], is_distinct: true, name: "MetricShot (me)" }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return { error: "create " + r.status + ": " + (j.message || ""), status: r.status };
     return { channel: j };
   }
-  async function _resolve(base, userId, headers, channelName) {
-    if (_isSelf(channelName)) return await _findOrCreateSelf(base, userId, headers);
-    const listed = await _listChannels(base, userId, headers);
+  async function resolve(base, userId, hdrs, appId, channelName) {
+    if (isSelf(channelName)) return await findOrCreateSelf(base, userId, hdrs, appId);
+    const listed = await listChannels(base, userId, hdrs);
     if (listed.error) return { error: listed.error, status: listed.status };
     const wanted = String(channelName).trim().toLowerCase();
     const match = (listed.channels || []).find((c) => String(c.name || "").trim().toLowerCase() === wanted);
     if (!match) return { error: "channel not joined: " + channelName, notFound: true };
     return { channel: match };
   }
-`;
 
-// Build a self-contained in-page function by prepending the shared helper
-// source to the given body. `body` is a function whose SOURCE (via toString)
-// runs after the helpers are in scope. We wrap in new Function to compose.
-function _composeInPage(bodySrc) {
-  // eslint-disable-next-line no-new-func
-  return new Function("__ARG__", `return (async () => {${REST_HELPERS_SRC}\n${bodySrc}})();`);
+  const c = readCreds();
+  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
+  if (!c.appId || !c.userId) return { ok: false, errorClass: "NO_SESSION", error: "missing app/user id" };
+  const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
+  const hdrs = headers(c.appId);
+
+  const res = await resolve(base, c.userId, hdrs, c.appId, arg.channelName);
+  if (res.error) return { ok: false, errorClass: res.notFound ? "NOT_FOUND" : classify(res.status), error: res.error };
+  const channel = res.channel;
+
+  if (arg.action === "resolve") {
+    return { ok: true, channelUrl: channel.channel_url, name: channel.name };
+  }
+
+  if (arg.action === "text") {
+    const r = await fetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
+      method: "POST",
+      headers: headers(c.appId, { "Content-Type": "application/json; charset=utf-8" }),
+      body: JSON.stringify({ message_type: "MESG", user_id: c.userId, message: String(arg.text) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, errorClass: classify(r.status), error: "post " + r.status + ": " + (j.message || "") };
+    return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
+  }
+
+  if (arg.action === "file") {
+    const bin = atob(arg.pngBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "image/png" });
+    const form = new FormData();
+    form.append("message_type", "FILE");
+    form.append("user_id", c.userId);
+    if (arg.caption) form.append("message", String(arg.caption));
+    form.append("file", blob, arg.fileName || "screenshot.png");
+    // NOTE: do NOT set Content-Type for multipart — the browser adds the boundary.
+    const r = await fetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
+      method: "POST",
+      headers: headers(c.appId),
+      body: form,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, errorClass: classify(r.status), error: "post " + r.status + ": " + (j.message || "") };
+    return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
+  }
+
+  return { ok: false, errorClass: "INPUT", error: "unknown action: " + arg.action };
 }
-
-// Resolve-only.
-const IN_PAGE_RESOLVE_CHANNEL = _composeInPage(`
-  const channelName = __ARG__;
-  const c = _readCreds();
-  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
-  if (!c.appId) return { ok: false, errorClass: "NO_SESSION", error: "no app id" };
-  if (!c.userId) return { ok: false, errorClass: "NO_SESSION", error: "no user id" };
-  const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
-  const headers = _headers(c.appId);
-  const res = await _resolve(base, c.userId, headers, channelName);
-  if (res.error) return { ok: false, errorClass: res.notFound ? "NOT_FOUND" : _classify(res.status), error: res.error };
-  return { ok: true, channelUrl: res.channel.channel_url, name: res.channel.name };
-`);
-
-// Text post.
-const IN_PAGE_POST_TEXT = _composeInPage(`
-  const { channelName, text } = __ARG__;
-  const c = _readCreds();
-  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
-  if (!c.appId || !c.userId) return { ok: false, errorClass: "NO_SESSION", error: "missing app/user id" };
-  const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
-  const headers = _headers(c.appId);
-  const res = await _resolve(base, c.userId, headers, channelName);
-  if (res.error) return { ok: false, errorClass: res.notFound ? "NOT_FOUND" : _classify(res.status), error: res.error };
-  const channel = res.channel;
-  const r = await fetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
-    method: "POST",
-    headers: _headers(c.appId, { "Content-Type": "application/json; charset=utf-8" }),
-    body: JSON.stringify({ message_type: "MESG", user_id: c.userId, message: String(text) }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, errorClass: _classify(r.status), error: "post " + r.status + ": " + (j.message || "") };
-  return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
-`);
-
-// File (screenshot) post.
-const IN_PAGE_POST_FILE = _composeInPage(`
-  const { channelName, pngBase64, fileName, caption } = __ARG__;
-  const c = _readCreds();
-  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
-  if (!c.appId || !c.userId) return { ok: false, errorClass: "NO_SESSION", error: "missing app/user id" };
-  const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
-  const headers = _headers(c.appId);
-  const res = await _resolve(base, c.userId, headers, channelName);
-  if (res.error) return { ok: false, errorClass: res.notFound ? "NOT_FOUND" : _classify(res.status), error: res.error };
-  const channel = res.channel;
-
-  const bin = atob(pngBase64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: "image/png" });
-
-  const form = new FormData();
-  form.append("message_type", "FILE");
-  form.append("user_id", c.userId);
-  if (caption) form.append("message", String(caption));
-  form.append("file", blob, fileName || "screenshot.png");
-
-  // NOTE: do NOT set Content-Type for multipart — the browser adds the boundary.
-  const r = await fetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
-    method: "POST",
-    headers: _headers(c.appId),
-    body: form,
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, errorClass: _classify(r.status), error: "post " + r.status + ": " + (j.message || "") };
-  return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
-`);
