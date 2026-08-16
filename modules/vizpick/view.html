@@ -1,0 +1,54 @@
+<section class="vizpick">
+  <header class="vizpick-header">
+    <div class="vizpick-title">
+      <h1>VizPick Market Rollup</h1>
+      <p class="vizpick-subtitle">
+        Every store's VizPick backroom health for one market, side by side —
+        pulled from Tableau via a background tab. No per-store search.
+      </p>
+    </div>
+    <div class="vizpick-toolbar">
+      <span class="vizpick-freshness" data-freshness="stores">no capture yet</span>
+      <button class="btn btn-primary" data-action="refresh">
+        <span class="btn-label">Refresh</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Market picker — the whole point: no more typing store numbers. -->
+  <section class="vizpick-picker">
+    <label class="vizpick-picker-label" for="vizpick-market-select">Market</label>
+    <select class="vizpick-market-select" id="vizpick-market-select" data-market-select disabled>
+      <option value="">No data yet — click Refresh</option>
+    </select>
+    <span class="vizpick-picker-meta" data-picker-meta></span>
+  </section>
+
+  <!-- Market-average gauges (VizPick's own single-value ring style) -->
+  <section class="vizpick-gauges" data-gauges>
+    <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
+  </section>
+
+  <!-- Per-store cards for the selected market — each shows its own VizPick
+       Health gauge; click a card to expand the rest of its metrics. -->
+  <section class="vizpick-stores">
+    <div class="vizpick-family-head">
+      <h2>Stores in Market</h2>
+      <span class="vizpick-store-count" data-store-count></span>
+    </div>
+    <div class="vizpick-store-grid" data-store-cards>
+      <p class="vizpick-empty">Click Refresh to capture VizPick store data.</p>
+    </div>
+  </section>
+
+  <!-- Debug details (visible only when the last capture reports an error) -->
+  <section class="vizpick-debug" data-debug-section hidden>
+    <h2 class="vizpick-section-heading">Last capture details</h2>
+    <div class="vizpick-debug-body" data-debug-body></div>
+    <p class="vizpick-debug-hint">
+      Details persist to <code>chrome.storage.local["vizpick.debug.stores"]</code>.
+      Open DevTools → Application → Storage to inspect the raw ring summary.
+    </p>
+  </section>
+</section>

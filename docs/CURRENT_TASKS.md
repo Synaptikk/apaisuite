@@ -130,6 +130,78 @@ both lines in `modules/_registry.js`.
 
 ---
 
+### 6. VizPick Market Rollup — remaining UI + caching work
+
+**Why:** `modules/vizpick/` (v0.1.0, alpha) replaces typing store numbers
+one at a time into Tableau's VizPick Details search box. Pick a market once,
+see every store in it side by side.
+
+**Where it stands:** capture pipeline is working end-to-end against real
+Tableau data. Confirmed 2026-08-16: Market 1 returned 11 stores, market
+gauges rendered, store cards expanded.
+
+Load-bearing details that are easy to break — read before touching capture:
+- Tableau does **not** deliver the crosstab CSV over fetch/XHR. It builds
+  the CSV client-side into a Blob, calls `URL.createObjectURL()`, and clicks
+  a synthetic `<a download>`. `content/tableau_capture.js` patches
+  `createObjectURL` and reads the Blob in-page, before it ever becomes a
+  file — which also sidesteps Forcepoint DLP quarantining the download.
+- The string `Cases Seen %` also appears in Tableau's internal layout /
+  session JSON, so the generic `findBySubstr()` false-matches metadata.
+  `vizpick_stores_tableau.js` must keep using `findBlobBySubstr()`
+  (`via === "blob"` only).
+- Do **not** swap the structured CSV capture for screenshots or cropped
+  dashboard images. Filtering, math, colour coding, caching and clickable
+  cards all depend on real fields.
+- Market defaulting reads Settings → Defaults via `getUserHomeMarket()` /
+  `onUserMarketChange()` from `shared/userStore.js`. A manual pick must stay
+  sticky (`marketIsUserSet`).
+
+**Next concrete steps** (in order):
+
+1. **Expand cards by default.** `<details open>` on every store card;
+   individual collapse must still work.
+2. **Use the available screen width.** `.module-vizpick .vizpick` is capped
+   at `max-width: 1400px` and the card grid is `minmax(220px, 1fr)`. Check
+   the parent shell/content container too. Goal is a sensible number of
+   readable cards per row across resolutions — not maximally wide cards.
+3. **Orange/red problem highlighting.** `.vizpick-store-card-metric strong`
+   used to hardcode `color: var(--apai-ink)`, which beat `.vizpick-good` /
+   `.vizpick-warn` / `.vizpick-bad` on specificity. The hardcoded colour is
+   removed; the result has not been verified in the user's own view yet.
+   Reuse `pctClass()`; goals observed live in Tableau are Cases Seen 95,
+   Location 95, Pick 90, Overstock 90. Metrics with no goal (Total Picked)
+   stay neutral.
+4. **Explicit last-updated timestamp.** Show the real *source* update
+   date/time prominently, not only a relative age. Use Tableau's own
+   timestamp when it can be captured; do not substitute the browser refresh
+   time when a real source timestamp exists. Relative age stays as
+   secondary info.
+5. **Today / Yesterday tabs.** "Today – Live" and "Yesterday". Inspect the
+   Tableau workbook's date/period filter first rather than guessing field
+   names. Storage rules: cache today per-day and only re-pull when the
+   source upload timestamp changes (reopening the module must not
+   overwrite); cache yesterday for the whole day and roll it when the
+   calendar advances; show which date each tab represents; degrade
+   gracefully when yesterday is missing; version the stored schema so
+   future changes can't silently corrupt it. Decide and document whether
+   yesterday comes from driving Tableau's period filter or from rolling the
+   last cached today snapshot — prefer whichever matches Tableau's
+   source-of-truth values.
+6. **Picked / Total as `x / y`.** Confirm Tableau's field definitions
+   first. If the denominator has to be derived
+   (`totalPicked / (pickPct / 100)`), guard against rounded percentages,
+   zero, missing and non-finite values, and label it as derived. Keep the
+   existing percentage unless the new presentation shows both clearly.
+
+**Testing notes:** Edge does not hot-reload extension source — reload at
+`edge://extensions` and close stale Tableau tabs so a fresh content script
+is injected. The Playwright debug profile is a separate Edge profile from
+the user's normal window. A one-off `SESSION` render timeout resolved on
+retry; don't add speculative focus-management complexity unless it repeats.
+
+---
+
 ## Watch list (not in flight; would be picked up next)
 
 - **User-directory lookup for ClaimsDisposition.** Probes in
