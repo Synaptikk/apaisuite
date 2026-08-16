@@ -481,10 +481,25 @@ export async function mount(host, container) {
     body.innerHTML = renderDebug(dbg);
   }
 
+  // What the user can actually do about each failure class, stated up front —
+  // the raw envelope stays available underneath for diagnosis.
+  const FIXES = {
+    AUTH:              "Open the Tableau tab that was left open, complete the sign-in, then click Refresh again.",
+    SLOW_RENDER:       "Usually transient. Click Refresh again; if it keeps happening, open the Tableau tab first and let the viz finish loading, then Refresh.",
+    NO_CONTENT_SCRIPT: "Reload the extension at edge://extensions, close every open Tableau tab, then click Refresh.",
+    WRONG_VIEW:        "Close the stray Tableau tab so a fresh one can be opened on the right view, then Refresh.",
+    TABLEAU_ERROR:     "Tableau itself errored. Open the tab that was left open to see its message.",
+    EXPORT_UI:         "Tableau's Download → Crosstab dialog changed or did not open. Check the sheet list in the debug details below.",
+    NO_CAPTURE:        "The export was triggered but no CSV came back. Check the captured URLs in the debug details below.",
+    PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
+  };
+
   function renderDebug(dbg) {
     const parts = [];
     if (dbg.errorClass) parts.push(`<code>${escapeHtml(dbg.errorClass)}</code>`);
     if (dbg.error) parts.push(`<br><span class="vizpick-debug-error">${escapeHtml(String(dbg.error))}</span>`);
+    const fix = FIXES[dbg.errorClass];
+    if (fix) parts.push(`<p class="vizpick-debug-fix"><strong>What to do:</strong> ${escapeHtml(fix)}</p>`);
     if (dbg.debug) {
       parts.push(`<details><summary>Capture debug</summary><pre>${escapeHtml(JSON.stringify(dbg.debug, null, 2))}</pre></details>`);
     }

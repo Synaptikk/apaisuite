@@ -406,6 +406,14 @@
   overflow: auto;
   max-height: 300px;
 }
+.vizpick-debug-fix {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+  border-left: 3px solid var(--apai-error);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-sm);
+}
 .vizpick-debug-hint {
   font-size: var(--fs-xs);
   color: var(--apai-muted);

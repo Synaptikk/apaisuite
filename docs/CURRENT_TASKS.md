@@ -206,6 +206,16 @@ confirmed rendering `#D97706` / `#B91C1C`; absolute source timestamp with
 relative age as secondary; Yesterday/Today tabs each labelled with the
 calendar date they describe; real `x / y` ratios.
 
+**Gotcha — `chrome.tabs.query` cannot see Tableau's view name.** Tableau is a
+hash-router: the view lives entirely in the URL *fragment*
+(`…/#/site/OnlineGrocery/views/VizPick/VizPick`), and match patterns are
+matched against the URL **without** its fragment. So `".../*VizPick*"` matched
+*nothing* — verified live — which silently disabled tab reuse and made every
+Refresh open a new tab and pay a cold render (the usual cause of the `SESSION`
+timeout). Both sources now query the host (`".../*"`) and disambiguate the
+view with a regex in JS. Reuse of an already-rendered tab takes a capture from
+~60s to ~8s, and a pre-existing user tab is never closed.
+
 **Known gaps / next steps:**
 - `Location %`, `Overstock %` and the `VizPick` composite have **no
   current-day equivalent** in the Details export, so the Today tab renders
