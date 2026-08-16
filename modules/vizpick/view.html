@@ -88,7 +88,10 @@
 
   <!-- Debug details (visible only when the last capture reports an error) -->
   <section class="vizpick-debug" data-debug-section hidden>
-    <h2 class="vizpick-section-heading">Last capture details</h2>
+    <div class="vizpick-debug-head">
+      <h2 class="vizpick-section-heading">Last capture details</h2>
+      <button class="vizpick-linkbtn" data-action="dismiss-error">Dismiss</button>
+    </div>
     <div class="vizpick-debug-body" data-debug-body></div>
     <p class="vizpick-debug-hint">
       Details persist to <code>chrome.storage.local["vizpick.debug.stores"]</code>

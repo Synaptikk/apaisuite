@@ -158,6 +158,7 @@ export async function mount(host, container) {
   btnForce.addEventListener("click", () => runRefresh(true));
   btnLoadToday.addEventListener("click", () => runToday(false));
   btnForceToday.addEventListener("click", () => runToday(true));
+  container.querySelector('[data-action="dismiss-error"]')?.addEventListener("click", dismissError);
   btnCancel.addEventListener("click", () => host.messaging.send("cancel_today").catch(() => {}));
   btnResetOrder.addEventListener("click", async () => {
     if (selectedMarket) delete customOrder[selectedMarket];
@@ -700,8 +701,34 @@ export async function mount(host, container) {
     body.innerHTML = renderDebug(dbg);
   }
 
+  async function dismissError() {
+    try { await host.messaging.send("dismiss_error", { sourceId: activeTab === "today" ? "today" : "stores" }); }
+    catch (e) { console.warn("[vizpick] dismiss_error failed:", e?.message ?? e); }
+    await paint();
+  }
+
   function renderDebug(dbg) {
     const parts = [];
+
+    // When did this happen, and did the CURRENT build produce it? A stored
+    // envelope survives an extension reload, so without this an error from
+    // hours ago reads as if the module just failed.
+    const age = dbg.capturedAt ? Date.now() - new Date(dbg.capturedAt).getTime() : null;
+    const stale = age == null || age > 5 * 60_000;
+    const fromOldBuild = state?.captureBuild && dbg.build && dbg.build !== state.captureBuild;
+    const noBuild = !dbg.build;
+    if (stale || fromOldBuild || noBuild) {
+      parts.push(
+        `<p class="vizpick-debug-stale"><strong>This is a saved result from an earlier capture` +
+        (dbg.capturedAt ? ` (${humanAge(age)} ago)` : "") +
+        `, not something that just happened.</strong>` +
+        ((fromOldBuild || noBuild)
+          ? ` It was written by an older build of the extension, so its wording may not match the current code.`
+          : "") +
+        ` Dismiss it, or click Refresh to run a fresh capture.</p>`
+      );
+    }
+
     if (dbg.errorClass) parts.push(`<code>${escapeHtml(dbg.errorClass)}</code>`);
     if (dbg.error) parts.push(`<br><span class="vizpick-debug-error">${escapeHtml(String(dbg.error))}</span>`);
     const fix = FIXES[dbg.errorClass];

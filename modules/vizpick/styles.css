@@ -474,3 +474,17 @@
   color: var(--apai-muted);
 }
 .vizpick-runnote[hidden] { display: none; }
+
+.vizpick-debug-head { display: flex; align-items: baseline; gap: var(--sp-3); }
+.vizpick-debug-head .vizpick-section-heading { margin: 0; }
+.vizpick-debug-head .vizpick-linkbtn { margin-left: auto; }
+/* Marks an error that was loaded from storage rather than just produced. */
+.vizpick-debug-stale {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+  border-left: 3px solid var(--apai-muted);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink);
+}
