@@ -242,6 +242,9 @@ export async function mount(host, container) {
   // 6. Re-paint when a background/other-tab refresh completes.
   const unsub = host.messaging.on("source_complete", () => { paint(); });
   const unsubProgress = host.messaging.on("today_progress", (p) => { renderTodayBar(p); });
+  const unsubPhase = host.messaging.on("capture_phase", (p) => {
+    if (p?.phase) { lastRunNote = p.phase; paintRunNote(); }
+  });
 
   // 7. Follow the Settings → Defaults home market unless the user picked one.
   const unsubMarket = onUserMarketChange((m) => {
@@ -253,6 +256,17 @@ export async function mount(host, container) {
   });
 
   // ── Actions ─────────────────────────────────────────────────────
+  // A capture can legitimately run for minutes, but it must never be able to
+  // spin forever — if the service worker is torn down mid-flight the reply
+  // never arrives and the promise simply never settles. Race every long call
+  // against a client-side deadline so the UI always recovers.
+  function withWatchdog(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, timedOut: true, label }), ms)),
+    ]);
+  }
+
   // `force` re-exports even when Tableau's stamp is unchanged. The default is
   // to skip: an unchanged stamp means the data on screen is already the data
   // upstream has, so re-downloading ~4,600 rows would change nothing.
@@ -261,7 +275,7 @@ export async function mount(host, container) {
     btnForce.hidden = true;
     let res = null;
     try {
-      res = await host.messaging.send("pull_stores", { force: !!force });
+      res = await withWatchdog(host.messaging.send("pull_stores", { force: !!force }), 330_000, "refresh");
     } catch (e) {
       console.warn("[vizpick] pull_stores failed:", e?.message ?? e);
     } finally {
@@ -284,7 +298,9 @@ export async function mount(host, container) {
     btnForceToday.hidden = true;
     let res = null;
     try {
-      res = await host.messaging.send("pull_today", { stores, market: selectedMarket, force: !!force });
+      res = await withWatchdog(
+        host.messaging.send("pull_today", { stores, market: selectedMarket, force: !!force }),
+        45 * 60_000, "today capture");
     } catch (e) {
       console.warn("[vizpick] pull_today failed:", e?.message ?? e);
     } finally {
@@ -301,6 +317,11 @@ export async function mount(host, container) {
   // like a no-op or a failure.
   function noteFor(res, which) {
     if (!res) return null;
+    if (res.timedOut) {
+      return `The ${res.label} is taking longer than expected and the page stopped waiting for it. ` +
+             `It may still finish in the background — reopen this module in a minute to see. ` +
+             `If a Tableau tab was left open, check whether it is actually rendering.`;
+    }
     if (!res.ok) return null;
     if (res.unchanged) {
       const raw = res.sourceUpdate?.raw;
@@ -783,6 +804,7 @@ export async function mount(host, container) {
   return () => {
     unsub();
     unsubProgress();
+    unsubPhase();
     unsubMarket();
     link.remove();
   };

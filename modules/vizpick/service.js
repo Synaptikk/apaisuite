@@ -70,6 +70,7 @@ async function pullStores(msg) {
     const result = await fetchVizpickStoresTableau({
       knownSourceKey: store.yesterday?.sourceKey ?? null,
       force: !!msg?.force,
+      onPhase: (p) => broadcast("capture_phase", { sourceId: "stores", phase: p }),
     });
 
     await chrome.storage.local.set({

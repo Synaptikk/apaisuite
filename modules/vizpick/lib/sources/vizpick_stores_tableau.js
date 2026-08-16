@@ -42,6 +42,11 @@ const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;   // the tiny "Last update" sheet exports fast
 const POLL_MS           = 800;
 const INSTALL_GRACE_MS  = 3_000;    // give the document_start script a beat before assuming it's missing
+// Hard ceiling for the whole capture. The individual waits above can stack to
+// roughly four minutes in the worst case (slow load -> reload -> cold viz ->
+// two exports), and without an overall bound a single wedged step leaves the
+// UI spinning indefinitely. Whatever happens, this returns.
+const OVERALL_BUDGET_MS = 300_000;
 
 // Sheets are selected by NAME, not by a hardcoded thumbnail index. The
 // crosstab dialog lists every worksheet in the workbook alphabetically, so
@@ -60,8 +65,15 @@ const STORE_CSV_NEEDLE = "Cases Seen %";
  * @param {object} [opts]
  * @param {string|null} [opts.knownSourceKey]  Stamp of the data already stored.
  * @param {boolean} [opts.force]  Re-export even if the stamp is unchanged.
+ * @param {(phase:string)=>void} [opts.onPhase]  Progress narration; a capture
+ *   can run for minutes and a bare spinner tells the user nothing.
  */
 export async function fetchVizpickStoresTableau(opts = {}) {
+  const deadline = Date.now() + OVERALL_BUDGET_MS;
+  const budgetLeft = () => deadline - Date.now();
+  const phase = (p) => { try { opts.onPhase?.(p); } catch {} };
+  // Cap any individual wait at whatever is left of the overall budget.
+  const within = (ms) => Math.max(0, Math.min(ms, budgetLeft()));
   const opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open Tableau VizPick tab." };
@@ -82,15 +94,18 @@ export async function fetchVizpickStoresTableau(opts = {}) {
   let succeeded = false;
 
   try {
-    await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
+    phase(didOpen ? "Opening Tableau…" : "Using the open Tableau tab…");
+    await waitForTabLoad(tab.id, within(LOAD_TIMEOUT_MS));
 
-    if (!(await waitForCaptureInstalled(tab.id, INSTALL_GRACE_MS))) {
+    if (!(await waitForCaptureInstalled(tab.id, within(INSTALL_GRACE_MS)))) {
+      phase("Reloading the Tableau tab…");
       await chrome.tabs.reload(tab.id, { bypassCache: false });
-      await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
-      await waitForCaptureInstalled(tab.id, INSTALL_GRACE_MS);
+      await waitForTabLoad(tab.id, within(LOAD_TIMEOUT_MS));
+      await waitForCaptureInstalled(tab.id, within(INSTALL_GRACE_MS));
     }
 
-    const ready = await waitForVizReady(tab.id, VIZ_READY_WAIT_MS);
+    phase("Waiting for the VizPick dashboard to render…");
+    const ready = await waitForVizReady(tab.id, within(VIZ_READY_WAIT_MS));
     if (!ready) {
       // A bare "did not render in time" is unactionable — it can mean SSO,
       // a slow cold render, a Tableau error dialog, or the tab having been
@@ -116,6 +131,7 @@ export async function fetchVizpickStoresTableau(opts = {}) {
     // is ours to suppress. Disarmed again in the finally block.
     await setSuppressDownloads(tab.id, true);
 
+    phase("Reading Tableau's last-update stamp…");
     let sourceUpdate = null;
     try {
       await clearRing(tab.id);
@@ -143,15 +159,25 @@ export async function fetchVizpickStoresTableau(opts = {}) {
       };
     }
 
+    phase("Exporting every store…");
     // Clear the ring so we only match the CSV from *this* export, not a stale one.
     await clearRing(tab.id);
+
+    if (budgetLeft() <= 0) {
+      return {
+        ok: false,
+        errorClass: "TIMEOUT",
+        error: `Gave up after ${Math.round(OVERALL_BUDGET_MS / 1000)}s. The tab was left open — check whether Tableau is responding there.`,
+        keptTabOpen: true,
+      };
+    }
 
     const triggered = await triggerCrosstabExport(tab.id, STORE_SHEET);
     if (!triggered.ok) {
       return { ok: false, errorClass: "EXPORT_UI", error: `Could not drive crosstab export: ${triggered.reason}`, debug: triggered, keptTabOpen: true };
     }
 
-    const csv = await pollForCsv(tab.id, EXPORT_WAIT_MS, POLL_MS);
+    const csv = await pollForCsv(tab.id, within(EXPORT_WAIT_MS), POLL_MS);
     if (!csv) {
       const ring = await dumpRingSummary(tab.id);
       return {
@@ -173,6 +199,7 @@ export async function fetchVizpickStoresTableau(opts = {}) {
       };
     }
 
+    phase("Parsing…");
     // Grand Total row rides along in the same crosstab; used for context.
     const gt = parseGrandTotal(csv.respBody);
 
