@@ -10,6 +10,10 @@
 // giving up, and diagnoses what actually broke instead of always blaming SSO.
 //
 // Each scenario poisons a tab a different way, then runs a real capture:
+//   frozen     — Page.setWebLifecycleState("frozen"), i.e. Memory Saver. The
+//                tab still reports status "complete" and looks healthy, but
+//                its event loop is SUSPENDED. This is the one that was
+//                actually happening in the field.
 //   discarded  — chrome.tabs.discard(), i.e. Chrome reclaiming memory
 //   blank      — the viz torn out of the DOM, URL intact (what a half-dead
 //                tab left by a failed export looks like)
@@ -66,6 +70,16 @@ async function scenario(name, poison) {
 
 const results = [];
 results.push(await scenario("healthy tab (control)", async () => {}));
+
+results.push(await scenario("frozen tab (Memory Saver)", async (t) => {
+  // Exactly what Chrome does to an idle background tab. The user's diagnostics
+  // showed frozen:true on the VizPickDetails tab while the Yesterday tab, used
+  // minutes earlier, was not frozen — which is why Yesterday kept working and
+  // Today never did.
+  const cdp = await t.createCDPSession();
+  await cdp.send("Page.setWebLifecycleState", { state: "frozen" });
+  console.log("  poisoned: froze the tab (event loop suspended)");
+}));
 
 results.push(await scenario("discarded tab", async (t, a) => {
   const id = await a.evaluate(async () => {

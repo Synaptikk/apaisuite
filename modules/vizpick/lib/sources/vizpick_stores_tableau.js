@@ -248,13 +248,29 @@ export async function fetchVizpickStoresTableau(opts = {}) {
 async function findOrOpenReportTab() {
   const all = await chrome.tabs.query({ url: TAB_PATTERN });
   const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
-  if (existing.length) return { tab: existing[0], didOpen: false };
-  // Open ACTIVE: Tableau's rAF-driven render is throttled in background tabs.
-  // We restore the user's previous tab afterward.
+  if (existing.length) {
+    // Prefer a tab Chrome has not reclaimed. `frozen` is the one that looks
+    // healthy and is not: status stays "complete" while the event loop is
+    // SUSPENDED, so the viz never renders and injected polls never run. See
+    // the long note in vizpick_today_tableau.js — this source has only been
+    // luckier, not immune, because its tab tends to have been used recently.
+    const live = existing.find((t) => !t.discarded && !t.frozen) || existing[0];
+    if (live.discarded || live.frozen) {
+      await chrome.tabs.reload(live.id, { bypassCache: false }).catch(() => {});
+    }
+    await keepAwake(live.id);
+    return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
+  }
   // active:false — the capture runs entirely in the background and must
   // never pull the user off the page they are on.
   const tab = await chrome.tabs.create({ url: REPORT_URL, active: false });
+  if (tab) await keepAwake(tab.id);
   return tab ? { tab, didOpen: true } : null;
+}
+
+/** Ask Chrome not to reclaim a tab we are about to drive. */
+async function keepAwake(tabId) {
+  try { await chrome.tabs.update(tabId, { autoDiscardable: false }); } catch {}
 }
 
 

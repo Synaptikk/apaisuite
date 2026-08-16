@@ -227,7 +227,8 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     if (laneCount > 1) stage(`Opening ${laneCount} background tabs`);
     for (let i = 1; i < laneCount; i++) {
       const t = await chrome.tabs.create({ url: DETAILS_URL, active: false }).catch(() => null);
-      if (t) tabs.push({ tab: t, didOpen: true });
+      // Lane tabs are unfocused for the whole crawl — prime Memory Saver bait.
+      if (t) { await keepAwake(t.id); tabs.push({ tab: t, didOpen: true }); }
     }
     // Prepared concurrently — they are all doing the same cold SSO + viz
     // render, so serialising the waits would cost a full render each.
@@ -463,12 +464,18 @@ async function captureStore(tabId, store, failures) {
  * Every lane runs this, so it must be safe to call on several tabs at once.
  */
 async function prepareTab(tabId, opts = {}) {
-  // A discarded tab (Chrome reclaiming memory from background tabs) still
-  // reports status "complete", so waitForTabLoad would return instantly on a
-  // tab that has no document at all. Wake it first or every check below fails
-  // for the wrong reason.
+  // Ask Chrome to stop reclaiming this tab. The crawl runs for minutes in a tab
+  // nobody is looking at, which is exactly what Memory Saver targets.
+  await keepAwake(tabId);
+
+  // Both dormant states report status "complete", so waitForTabLoad would
+  // return instantly on a tab that either has no document (discarded) or has
+  // one that cannot run (frozen). Reloading resumes it; every check below is
+  // meaningless until it does.
   const t0 = await chrome.tabs.get(tabId).catch(() => null);
-  if (t0?.discarded) await chrome.tabs.reload(tabId, { bypassCache: false }).catch(() => {});
+  if (t0?.discarded || t0?.frozen) {
+    await chrome.tabs.reload(tabId, { bypassCache: false }).catch(() => {});
+  }
 
   await waitForTabLoad(tabId, LOAD_TIMEOUT_MS);
 
@@ -615,16 +622,29 @@ async function findOrOpenReportTab() {
   const all = await chrome.tabs.query({ url: TAB_PATTERN });
   const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
   if (existing.length) {
-    // Chrome discards background tabs under memory pressure. A discarded tab
-    // still reports status "complete" and still matches this query, but it has
-    // no document — so prefer a live one when there is a choice, and tell the
-    // caller when the only candidate needs waking.
-    const live = existing.find((t) => !t.discarded) || existing[0];
-    return { tab: live, didOpen: false, discarded: !!live.discarded };
+    // Chrome reclaims background tabs two different ways, and only one of them
+    // is obvious:
+    //
+    //   discarded — the document is gone; the tab is a placeholder.
+    //   frozen    — the document is intact but its event loop is SUSPENDED.
+    //
+    // Frozen is the nastier one. The tab still reports status "complete", still
+    // matches this query and looks entirely healthy — but nothing runs in it,
+    // so the viz never finishes rendering and injected polls never execute.
+    // Waiting on it just burns the whole readiness budget.
+    //
+    // Observed in the field 2026-08-16: a tab left open by a failed run was
+    // frozen by Memory Saver, and every capture afterwards reused it and failed
+    // identically, forever. The user's diagnostics showed the Details tab
+    // frozen:true while the Yesterday tab — used minutes earlier — was not,
+    // which is exactly why Yesterday kept working and Today never did.
+    const live = existing.find((t) => !t.discarded && !t.frozen) || existing[0];
+    return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
   }
   // active:false — the capture runs entirely in the background and must
   // never pull the user off the page they are on.
   const tab = await chrome.tabs.create({ url: DETAILS_URL, active: false });
+  if (tab) await keepAwake(tab.id);
   return tab ? { tab, didOpen: true } : null;
 }
 
@@ -682,9 +702,11 @@ async function diagnoseUnrenderedTab(tabId, stageReason) {
 
   let errorClass = "SESSION";
   let message;
-  if (tab?.discarded) {
-    errorClass = "DISCARDED";
-    message = "Chrome had discarded the Tableau tab to save memory and it did not come back in time. Try Refresh again.";
+  if (tab?.discarded || tab?.frozen) {
+    errorClass = tab.frozen ? "FROZEN" : "DISCARDED";
+    message = tab.frozen
+      ? "Chrome had frozen the Tableau tab to save memory — its scripts were suspended, so the viz could not render. Try Refresh again; if this keeps happening, exclude stores.tableau.wal-mart.com from Memory Saver in edge://settings/system."
+      : "Chrome had discarded the Tableau tab to save memory and it did not come back in time. Try Refresh again.";
   } else if (page?.hasPasswordField || page?.signInish) {
     errorClass = "AUTH";
     message = "Tableau is showing a sign-in / SSO page, so no data could be read. Sign in on the opened tab, then Refresh again.";
