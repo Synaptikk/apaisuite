@@ -179,9 +179,51 @@ open question in the original brief:
 > settings of one source. History is preserved by keeping the snapshot the
 > summary view displaces (`previous`), keyed on Tableau's own update stamp.
 
-Because Today is one export *per store*, a whole market costs N sequential
-export cycles (~10 stores ≈ 4 minutes). It is therefore loaded on an explicit
-"Load today's data" button, not automatically.
+Because Today is one export *per store*, a whole market costs N export
+cycles. It is therefore loaded on an explicit "Load today's data" button,
+not automatically.
+
+**Why Today is so much more fragile than Yesterday.** Yesterday is *one*
+export from a view that needs no interaction: open tab → wait for the viz →
+one crosstab → done (~8s on a warm tab). Today, per store, must type into a
+Tableau parameter, wait for the viz to re-query, export sheet A, wait for the
+toolbar to come back after the dialog tears down, then export sheet B. For a
+10-store market that is ~21 export cycles and ~10 parameter drives against
+Tableau's React UI, each with its own timing window — versus Yesterday's one.
+The per-step failure rate isn't higher; there are just ~30× more steps.
+
+**Parallel lanes (2026-08-16).** The crawl runs across up to
+`MAX_TABS = 3` background tabs draining a shared queue by index (not static
+slices, so a lane that draws a slow store doesn't strand the others).
+Measured with `dev/test-vizpick-lanes.mjs` against live Tableau, market 323:
+
+| stores | 1 lane | 3 lanes | |
+|---|---|---|---|
+| 3 | 73.8s | 55.8s | 1.32× — startup-dominated |
+| 6 | 218.7s | 77.1s | **2.84×**, 6/6 captured |
+
+At a real market size (9–11 stores) that is roughly 2 minutes instead of 6.
+
+Two bugs this work uncovered, both of which were also hurting the serial
+crawl:
+- **The toolbar is not a readiness signal for this view.** Tableau paints the
+  download button *before* the parameter controls render. The serial crawl
+  only got away with driving the Store box immediately because the
+  source-stamp export runs first and buys ~20s of slack; the moment extra
+  lanes skipped that, 2 of 3 stores died with "no Store parameter input in
+  this frame". `prepareTab()` now waits for the Store control itself, and the
+  SESSION error names the stage that failed instead of always blaming SSO.
+- **A no-op parameter set fires no query.** Setting Store to the value it
+  already holds produces no vizql traffic, so waiting for a re-query burned
+  the full 25s timeout and then discarded a store whose data was on screen
+  the whole time. This killed the *first* store of every crawl whenever the
+  view's default matched it. `captureStore()` now skips the wait when
+  `set.before` already equals the requested store.
+
+`onStore` persistence is serialised behind a promise chain: `mergeToday` is a
+read-modify-write on `chrome.storage.local`, so concurrent lanes would each
+read the same snapshot and the later write would silently drop the earlier
+lane's row. The lanes stay parallel; only the persist is one-at-a-time.
 
 **Field definitions — verified, and one of them refutes the obvious guess.**
 The Details export exposes the real numerators/denominators:
