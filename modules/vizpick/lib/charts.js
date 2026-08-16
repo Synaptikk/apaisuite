@@ -21,43 +21,45 @@ const WM = {
   muted: "#6b7280",
 };
 
-// Goal-relative colour scale, matching how the Tableau VizPick dashboard
-// itself colours its rings (green/blue at goal, black below) and the reporting
-// convention Shane uses:
+// Goal-relative colour scale.
 //
-//   YESTERDAY (a closed day, so the number is final and can be judged)
-//     value >= goal            → blue   "met the goal"
-//     goal-5 < value < goal    → orange "missed, but close"
-//     value <= goal - 5        → black  "missed by 5 points or more"
+//   YESTERDAY (closed day — the number is final, so it can be judged)
+//     >= goal                  blue    met the goal
+//     within 5 pts below       orange  missed, but close
+//     5+ pts below             RED     clear miss
 //
-//   TODAY (still accumulating through the business day, so being under goal
-//   at 11am means nothing)
-//     value >= goal            → blue   "already met the goal"
-//     anything below           → black  — deliberately NOT orange/red, because
-//                                        colouring an in-progress number as a
-//                                        miss would be actively misleading
+//   TODAY (still accumulating — being under goal at 11am means nothing)
+//     >= goal                  blue    already met the goal
+//     anything below           black   deliberately NOT judged
 //
-// A metric with no published goal (Pallets %, and the VizPick composite) gets
-// no judgement at all.
+//   NO PUBLISHED GOAL (Total Picked, Pallets %, the VizPick composite)
+//     never judged — plain ink as text, neutral blue as a ring
+//
+// Why red rather than black for a clear miss: black is also the default text
+// colour of an un-judged value, so using it for the worst numbers made a 56%
+// Pick read exactly like a plain count and vanish into the card. Red is the
+// only band that reads as a problem at a glance, and moving it there leaves
+// black to mean one thing only — "not judged".
 //
 // Values are ROUNDED before comparison, because every surface that shows one
-// rounds it to a whole percent — banding the raw value let 95.4 print as "95"
+// rounds it to a whole percent; banding the raw value let 95.4 print as "95"
 // while being coloured as though it were above 95.
 export const BANDS = {
   met:     { cls: "vizpick-met",     color: "#0053e2" },  // Walmart blue
   near:    { cls: "vizpick-near",    color: "#e07b00" },  // orange
-  missed:  { cls: "vizpick-missed",  color: "#1a1a1a" },  // black
-  neutral: { cls: "vizpick-neutral", color: "#0053e2" },  // no goal to judge
+  missed:  { cls: "vizpick-missed",  color: "#c53030" },  // red
+  pending: { cls: "vizpick-pending", color: "#1a1a1a" },  // black — mid-day, unjudged
+  neutral: { cls: "vizpick-neutral", color: "#0053e2" },  // no goal exists
 };
 
-// Points below goal at which "close" becomes "missed".
+// Points below goal at which "close" becomes a clear miss.
 export const NEAR_BAND = 5;
 
 /**
  * @param {number} value
  * @param {number|null|undefined} goal  Omit for a metric with no published goal.
  * @param {object} [opts]
- * @param {boolean} [opts.live]  True for current-day data still accumulating.
+ * @param {boolean} [opts.live]  Current-day data still accumulating.
  * @returns {{cls:string,color:string}|null}  null when there is no number.
  */
 export function bandFor(value, goal, opts = {}) {
@@ -65,8 +67,9 @@ export function bandFor(value, goal, opts = {}) {
   if (goal == null || !Number.isFinite(goal)) return BANDS.neutral;
   const v = Math.round(value);
   if (v >= goal) return BANDS.met;
-  // Mid-day figures are incomplete by definition — no "how badly" gradation.
-  if (opts.live) return BANDS.missed;
+  // A mid-day figure is incomplete by definition, so it is reported, not
+  // graded — never orange, never red.
+  if (opts.live) return BANDS.pending;
   if (v > goal - NEAR_BAND) return BANDS.near;
   return BANDS.missed;
 }

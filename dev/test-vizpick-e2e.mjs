@@ -108,13 +108,14 @@ const ui = await page.evaluate(() => {
   const cols = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 0;
 
   // Colour-class census across all metric values.
-  const census = { met: 0, near: 0, missed: 0, neutral: 0, none: 0 };
+  const census = { met: 0, near: 0, missed: 0, pending: 0, neutral: 0, none: 0 };
   const colours = {};
   for (const s of document.querySelectorAll(".vizpick-store-card-metric strong")) {
     const c = s.className || "";
     const key = c.includes("vizpick-met") ? "met"
       : c.includes("vizpick-near") ? "near"
       : c.includes("vizpick-missed") ? "missed"
+      : c.includes("vizpick-pending") ? "pending"
       : c.includes("vizpick-neutral") ? "neutral" : "none";
     census[key]++;
     if (key !== "none" && !colours[key]) colours[key] = getComputedStyle(s).color;
