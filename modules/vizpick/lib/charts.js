@@ -224,9 +224,12 @@ export function gaugeSvg(value, opts = {}) {
 
   const track =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${WM.grid}" stroke-width="${thickness}"/>`;
+  // Butt caps (the SVG default), not round: Tableau's own VizPick rings have
+  // square ends, and a rounded cap also overstates a small value by half the
+  // stroke width at each end.
   const arc =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${thickness}" ` +
-    `stroke-linecap="round" stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" ` +
+    `stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" ` +
     `transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${esc(fmt(v))}${goal != null ? ` (goal ${esc(fmt(goal))})` : ""}</title></circle>`;
   const center =
     `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" ` +

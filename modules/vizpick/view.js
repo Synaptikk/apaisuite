@@ -655,6 +655,28 @@ export async function mount(host, container) {
     // figure derived by dividing a rounded percentage. See the note at the top
     // of lib/parse_vizpick_stores_csv.js.
     const live = activeTab === "today";
+
+    // The four goal metrics, rendered BOTH as small rings beside the composite
+    // (mirroring the VizPick dashboard's own layout) and as the text rows
+    // below, which are the only place the raw x/y ratios fit.
+    const rings = [
+      { label: "Cases",     value: r.casesSeenPct, goal: GOALS.casesSeenPct },
+      { label: "Locations", value: r.locationPct,  goal: GOALS.locationPct },
+      { label: "Picks",     value: r.pickPct,      goal: GOALS.pickPct },
+      { label: "Overstock", value: r.overstockPct, goal: GOALS.overstockPct },
+    ];
+    const ringsHtml = rings
+      .map((g) => (Number.isFinite(g.value)
+        ? gaugeSvg(g.value, {
+            size: 62, thickness: 8, goal: g.goal, label: g.label, live,
+            fmt: (v) => `${Math.round(v)}%`,
+          })
+        : `<div class="vizpick-gauge">
+             <div class="vizpick-minigauge-na">—</div>
+             <div class="vizpick-gauge-label">${escapeHtml(g.label)}</div>
+           </div>`))
+      .join("");
+
     const metrics = [
       { label: "Cases Seen %", value: r.casesSeenPct, goal: GOALS.casesSeenPct, fmt: fmtPct, ratio: ratio(r.casesSeen, r.casesExpected) },
       { label: "Location %",   value: r.locationPct,  goal: GOALS.locationPct,  fmt: fmtPct },
@@ -693,6 +715,7 @@ export async function mount(host, container) {
           </div>
           <span class="vizpick-store-card-grip" aria-hidden="true" title="Drag to rearrange">⠿</span>
         </header>
+        <div class="vizpick-store-card-rings">${ringsHtml}</div>
         <div class="vizpick-store-card-details">${metricsHtml}</div>
       </article>`;
   }

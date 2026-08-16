@@ -267,6 +267,34 @@
   letter-spacing: -2px;
 }
 .vizpick-store-card:hover .vizpick-store-card-grip { color: var(--apai-muted); }
+.vizpick-store-card-rings {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  justify-items: center;
+}
+/* The small rings carry their own value, so their goal caption would just be
+   noise at this size — the text rows below still show it on hover. */
+.vizpick-store-card-rings .vizpick-gauge-goal { display: none; }
+.vizpick-store-card-rings .vizpick-gauge-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+}
+.vizpick-store-card-rings .vizpick-gauge { gap: 2px; }
+.vizpick-minigauge-na {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+
 .vizpick-store-card-details {
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);

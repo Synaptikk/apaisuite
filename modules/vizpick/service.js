@@ -21,7 +21,33 @@ import { fetchVizpickTodayTableau } from "./lib/sources/vizpick_today_tableau.js
 const K = {
   debug:      "vizpick.debug.stores",
   debugToday: "vizpick.debug.today",
+  auto:       "vizpick.auto.v1",
+  lastAuto:   "vizpick.auto.lastRun",
 };
+
+// Auto-check cadence. The check itself is cheap — it exports only Tableau's
+// tiny "Last update" sheet and returns unchanged:true without touching the
+// stored snapshot — so polling costs seconds, and the expensive export only
+// happens on a run where the stamp actually moved.
+export const ALARM_NAMES = { autocheck: "vizpick.autocheck" };
+const AUTO_PERIOD_MIN = 30;
+
+// Don't re-check on every service-worker wake. MV3 boots the SW for all sorts
+// of reasons; without this a busy browser would drive Tableau constantly.
+const BOOTSTRAP_MIN_GAP_MS = 10 * 60_000;
+
+const AUTO_DEFAULTS = {
+  // Yesterday is one cheap export, so following it automatically is free.
+  stores: true,
+  // Today is two exports PER STORE — minutes for a market — so it stays
+  // opt-in rather than something the browser does to you in the background.
+  today: false,
+};
+
+async function readAuto() {
+  const got = await chrome.storage.local.get(K.auto);
+  return { ...AUTO_DEFAULTS, ...(got[K.auto] || {}) };
+}
 
 // Stamped into every capture envelope. A stored error outlives the code that
 // produced it, and we have twice been misled by an old envelope's wording
@@ -64,6 +90,7 @@ async function getState() {
     debug:      got[K.debug] || null,
     debugToday: got[K.debugToday] || null,
     captureBuild: CAPTURE_BUILD,
+    auto:       await readAuto(),
   };
 }
 
@@ -120,7 +147,7 @@ async function pullStores(msg) {
     });
 
     await freshness.markSuccess("stores");
-    broadcast("source_complete", { sourceId: "stores", ok: true, rolled });
+    broadcast("source_complete", { sourceId: "stores", ok: true, rolled, auto: !!msg?.auto });
     return { ok: true, sourceId: "stores", storeCount: result.rows.length, rolled, rollReason: reason };
   } catch (e) {
     const err = String(e?.message ?? e);
@@ -255,9 +282,85 @@ function cancelToday() {
   return { ok: true };
 }
 
+/**
+ * Periodic + on-boot check. Deliberately reuses the ordinary pull paths: both
+ * already read Tableau's "Last update" stamp first and return unchanged:true
+ * without re-exporting, so "poll for a new timestamp and only then update" is
+ * exactly what calling them does. Nothing new to keep in sync.
+ */
+async function autoCheck(reason) {
+  const auto = await readAuto();
+  if (!auto.stores && !auto.today) return { ok: true, skipped: "auto-refresh off" };
+
+  // Stamp the attempt BEFORE doing the work, not after. A capture can run for
+  // a minute or fail outright; recording it only on success meant a slow or
+  // erroring run left the rate-limit unset, so every subsequent SW wake would
+  // start another one.
+  await chrome.storage.local.set({ [K.lastAuto]: Date.now() });
+
+  const out = { reason, stores: null, today: null };
+
+  if (auto.stores) {
+    out.stores = await pullStores({ auto: true });
+  }
+
+  if (auto.today) {
+    // Only ever re-crawl a market we already hold, and take its store list
+    // from the yesterday roster — the same list the UI would send.
+    const store = await snapshots.read();
+    const market = store.today?.market ?? null;
+    if (market) {
+      const roster = (store.yesterday?.rows || [])
+        .filter((r) => String(r.market) === String(market))
+        .map((r) => r.store);
+      if (roster.length) out.today = await pullToday({ stores: roster, market, auto: true });
+    }
+  }
+
+  return { ok: true, ...out };
+}
+
+/** Registered from module.js at top level — MV3 requires that for SW wake. */
+export async function onAlarm(alarm) {
+  if (alarm?.name !== ALARM_NAMES.autocheck) return;
+  try { await autoCheck("alarm"); }
+  catch (e) { console.warn("[vizpick] auto-check failed:", e?.message ?? e); }
+}
+
+/** Idempotent — safe to call on every SW boot. */
+export async function installAlarms() {
+  await chrome.alarms.create(ALARM_NAMES.autocheck, { periodInMinutes: AUTO_PERIOD_MIN });
+}
+
+/**
+ * Runs when the service worker boots, which includes every browser start —
+ * so the cards are already current by the time the module is opened, instead
+ * of showing yesterday's capture until someone clicks Refresh. Rate-limited
+ * because the SW wakes for many reasons besides a browser start.
+ */
+export async function bootstrapIfNeeded() {
+  try {
+    const got = await chrome.storage.local.get(K.lastAuto);
+    const last = got[K.lastAuto] || 0;
+    if (Date.now() - last < BOOTSTRAP_MIN_GAP_MS) return { ok: true, skipped: "checked recently" };
+    return await autoCheck("bootstrap");
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
 export const handlers = {
   async "get_state"(_msg)    { return await getState(); },
   // Clear a stored capture error without running anything.
+  async "set_auto"(msg) {
+    const auto = { ...(await readAuto()), ...(msg?.auto || {}) };
+    await chrome.storage.local.set({ [K.auto]: auto });
+    // Turning Today's auto-refresh on shouldn't wait up to 30 minutes to do
+    // anything, so kick a check immediately.
+    if (msg?.checkNow) autoCheck("toggled").catch(() => {});
+    return { ok: true, auto };
+  },
+  async "auto_check_now"(_msg) { return await autoCheck("manual"); },
   async "dismiss_error"(msg) {
     await chrome.storage.local.remove(msg?.sourceId === "today" ? K.debugToday : K.debug);
     return { ok: true };
