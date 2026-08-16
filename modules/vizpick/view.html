@@ -25,17 +25,51 @@
     <span class="vizpick-picker-meta" data-picker-meta></span>
   </section>
 
+  <!-- Period tabs. Yesterday and Today come from two DIFFERENT Tableau
+       views with different shapes — see lib/sources/vizpick_today_tableau.js -->
+  <div class="vizpick-tabs" role="tablist" aria-label="Reporting period">
+    <button class="vizpick-tab" role="tab" data-tab="yesterday" aria-selected="true">
+      <span class="vizpick-tab-name">Yesterday</span>
+      <span class="vizpick-tab-date" data-tab-date="yesterday">—</span>
+    </button>
+    <button class="vizpick-tab" role="tab" data-tab="today" aria-selected="false">
+      <span class="vizpick-tab-name">Today — Live</span>
+      <span class="vizpick-tab-date" data-tab-date="today">—</span>
+    </button>
+  </div>
+
+  <!-- Absolute source timestamp for the active tab. This is Tableau's own
+       "Last update" value, NOT when the browser last refreshed. -->
+  <section class="vizpick-updated" data-updated-bar>
+    <div class="vizpick-updated-main">
+      <span class="vizpick-updated-label">Last updated</span>
+      <strong class="vizpick-updated-value" data-updated-abs>—</strong>
+      <span class="vizpick-updated-rel" data-updated-rel></span>
+    </div>
+    <p class="vizpick-updated-note" data-updated-note></p>
+  </section>
+
+  <!-- Today needs one Tableau export per store, so it is loaded on demand. -->
+  <section class="vizpick-today-bar" data-today-bar hidden>
+    <div class="vizpick-today-bar-text" data-today-status></div>
+    <div class="vizpick-today-bar-actions">
+      <button class="btn btn-primary" data-action="load-today">Load today's data</button>
+      <button class="btn" data-action="cancel-today" hidden>Cancel</button>
+    </div>
+  </section>
+
   <!-- Market-average gauges (VizPick's own single-value ring style) -->
   <section class="vizpick-gauges" data-gauges>
     <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
   </section>
 
   <!-- Per-store cards for the selected market — each shows its own VizPick
-       Health gauge; click a card to expand the rest of its metrics. -->
+       Health gauge. Cards start expanded; the caret collapses one. -->
   <section class="vizpick-stores">
     <div class="vizpick-family-head">
       <h2>Stores in Market</h2>
       <span class="vizpick-store-count" data-store-count></span>
+      <button class="vizpick-linkbtn" data-action="toggle-all" hidden>Collapse all</button>
     </div>
     <div class="vizpick-store-grid" data-store-cards>
       <p class="vizpick-empty">Click Refresh to capture VizPick store data.</p>
@@ -47,7 +81,8 @@
     <h2 class="vizpick-section-heading">Last capture details</h2>
     <div class="vizpick-debug-body" data-debug-body></div>
     <p class="vizpick-debug-hint">
-      Details persist to <code>chrome.storage.local["vizpick.debug.stores"]</code>.
+      Details persist to <code>chrome.storage.local["vizpick.debug.stores"]</code>
+      and <code>["vizpick.debug.today"]</code>.
       Open DevTools → Application → Storage to inspect the raw ring summary.
     </p>
   </section>

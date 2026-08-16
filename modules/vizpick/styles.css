@@ -3,11 +3,27 @@
    spacing / typography changes in styles/tokens.css propagate automatically.
    All selectors scoped under .module-vizpick per MODULE_CONTRACT.md §8. */
 
+/* The shell caps every module root at 1400px
+   (styles/layout.css: `.shell-viewport > main > [class*="module-"]`).
+   VizPick is a wide grid of small cards and benefits from the full window,
+   so it opts out — scoped to this module only, with one extra class of
+   specificity so it wins without an !important and without touching the
+   shared rule other modules rely on. */
+.shell-viewport > main > [class*="module-"].module-vizpick {
+  max-width: none;
+}
+
 .module-vizpick .vizpick {
-  padding: var(--sp-6);
+  padding: var(--sp-5) var(--sp-6);
   display: grid;
   gap: var(--sp-5);
-  max-width: 1400px;
+  /* Stay full-width up to a genuinely wide desktop, then stop growing so
+     text lines and the header don't stretch absurdly on ultrawides. The
+     card grid below is what actually consumes the extra width, by adding
+     columns rather than widening cards. */
+  width: 100%;
+  max-width: 2400px;
+  margin: 0 auto;
 }
 
 .vizpick-header {
@@ -153,11 +169,18 @@
 }
 .vizpick-store-count { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
 
-/* Per-store card grid */
+/* Per-store card grid.
+   Cards are expanded by default, so each one needs room for a "label …
+   1,234 / 5,678  95%" row without wrapping. 300px is the measured comfortable
+   minimum; auto-fill then packs as many columns as the window allows —
+   roughly 3 at 1080p, 5 at 1440p, 7+ on an ultrawide — instead of stretching
+   a fixed number of cards ever wider. min() keeps it from overflowing on
+   narrow windows. */
 .vizpick-store-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--sp-3);
+  align-items: start;
 }
 .vizpick-store-card {
   background: var(--apai-bg-soft);
@@ -198,13 +221,151 @@
   font-size: var(--fs-sm);
 }
 .vizpick-store-card-metric-label { color: var(--apai-muted); }
+.vizpick-store-card-metric-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+/* NOTE: deliberately no `color` here. An earlier version set
+   `color: var(--apai-ink)` on this selector, which at (0,1,1) outranked the
+   (0,1,0) .vizpick-good/.vizpick-warn/.vizpick-bad classes and flattened
+   every metric to neutral ink — the traffic lights silently stopped working.
+   Keep this rule to typography only. */
 .vizpick-store-card-metric strong { font-variant-numeric: tabular-nums; }
+
+/* The real numerator/denominator behind a percentage, e.g. "10,658 / 11,164".
+   Muted and smaller so the percentage stays the headline. */
+.vizpick-ratio {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Traffic-light value coloring. Bare (goal-less) metrics like Total Picked
    get no class here and just inherit the surrounding text color. */
 .vizpick-good { color: var(--apai-success); font-weight: var(--fw-medium); }
 .vizpick-warn { color: var(--apai-warn);    font-weight: var(--fw-medium); }
 .vizpick-bad  { color: var(--apai-error);   font-weight: var(--fw-medium); }
+.vizpick-muted { color: var(--apai-muted); }
+
+/* ── Period tabs (Yesterday / Today) ─────────────────────────── */
+.vizpick-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--apai-border);
+}
+.vizpick-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-4);
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  color: var(--apai-muted);
+  font: inherit;
+  text-align: left;
+}
+.vizpick-tab:hover { color: var(--apai-ink); }
+.vizpick-tab[aria-selected="true"] {
+  color: var(--apai-blue-dark);
+  border-bottom-color: var(--apai-blue);
+}
+.vizpick-tab-name { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.vizpick-tab-date { font-size: var(--fs-xs); color: var(--apai-muted); }
+
+/* ── Absolute source timestamp ───────────────────────────────── */
+.vizpick-updated {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.vizpick-updated-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.vizpick-updated-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--apai-muted);
+}
+.vizpick-updated-value { font-size: var(--fs-lg); color: var(--apai-ink); }
+.vizpick-updated-rel   { font-size: var(--fs-sm); color: var(--apai-muted); }
+.vizpick-updated-note  { font-size: var(--fs-xs); color: var(--apai-muted); margin: var(--sp-2) 0 0; max-width: 90ch; }
+
+/* ── Today on-demand loader ──────────────────────────────────── */
+.vizpick-today-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  background: var(--apai-info-bg, var(--apai-bg-soft));
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+.vizpick-today-bar[hidden] { display: none; }
+.vizpick-today-bar-text { font-size: var(--fs-sm); color: var(--apai-ink); flex: 1; min-width: 260px; }
+.vizpick-today-bar-actions { display: flex; gap: var(--sp-2); }
+.vizpick-progress {
+  margin-top: var(--sp-2);
+  height: 6px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-border-soft);
+  overflow: hidden;
+}
+.vizpick-progress-fill {
+  height: 100%;
+  background: var(--apai-blue);
+  transition: width 200ms ease;
+}
+
+/* Metric absent from the current-day view — shown as an explicit "n/a"
+   placeholder rather than a zeroed ring that would read as real data. */
+.vizpick-gauge-na-box {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+.vizpick-card-nohealth {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+}
+
+.vizpick-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--apai-blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.vizpick-linkbtn[hidden] { display: none; }
 
 .vizpick-empty {
   font-size: var(--fs-sm);
