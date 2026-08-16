@@ -31,7 +31,7 @@
 // a view is per-session unless explicitly saved as a custom view, which we
 // never do).
 
-import { parseDeptBreakout, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
+import { parseDeptBreakout, parseDonutHealth, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
 
 const DETAILS_URL = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
 // See the note in vizpick_stores_tableau.js: Tableau's view name lives in the
@@ -45,15 +45,22 @@ const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;
 const REQUERY_WAIT_MS   = 25_000;  // how long to wait for the viz to re-query after a store change
 const SETTLE_MS         = 1_500;   // extra beat after the last vizql response lands
+const DIALOG_SETTLE_MS  = 20_000;  // wait for the viz toolbar to reappear after a dialog closes
 const POLL_MS           = 700;
 const INSTALL_GRACE_MS  = 3_000;
 
 const DEPT_SHEET   = { match: "download department breakout (current day)", fallbackIndex: 3 };
+// The department breakout has no Location %, Overstock % or VizPick composite —
+// only this sheet carries the current-day equivalents of the dashboard rings,
+// which is why each store costs two exports rather than one.
+const DONUT_SHEET  = { match: "vizpick donut health", fallbackIndex: 11 };
 const UPDATE_SHEET = { match: "last update",                                fallbackIndex: 6 };
 
 // Header unique to the department-breakout export; "Suggested Picks" does not
 // appear in the Summary-by-Store crosstab, so it cannot cross-match.
 const DEPT_CSV_NEEDLE = "Suggested Picks";
+// Unique to the donut-health sheet.
+const DONUT_CSV_NEEDLE = "New VizPick";
 
 /**
  * Capture current-day figures for a list of stores.
@@ -70,13 +77,16 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     return { ok: false, errorClass: "INPUT", error: "No stores requested for the Today capture." };
   }
 
-  const prevActive = await getActiveTab();
   const opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open the Tableau VizPick Details tab." };
   }
   const { tab, didOpen } = opened;
-  await focusTab(tab.id).catch(() => {});
+
+  // Background tab, never focused — see the note in vizpick_stores_tableau.js.
+  // It matters far more here: this loop runs one export per store, so
+  // foregrounding would yank the user out of whatever they're doing once per
+  // store for several minutes.
 
   let succeeded = false;
   const rows = [];
@@ -100,6 +110,10 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         keptTabOpen: true,
       };
     }
+
+    // One export per store would mean one downloaded file per store on every
+    // refresh. We already hold the bytes from the Blob, so suppress the write.
+    await setSuppressDownloads(tab.id, true);
 
     // ── Source timestamp. On this view it is a FULL timestamp
     // ("2026-08-16 10:26:07"), which is what makes an honest absolute
@@ -151,7 +165,46 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         const parsed = parseDeptBreakout(csv.respBody);
         if (!parsed.ok) { failures.push({ store, reason: `parse: ${parsed.reason}` }); continue; }
 
-        rows.push({ store, ...parsed.total, deptCount: parsed.deptCount });
+        // Second export for this same store: the donut-health sheet, which is
+        // the only current-day source of Location %, Overstock % and the
+        // VizPick composite. The viz is already showing this store, so no
+        // re-query is needed — just re-open the dialog on a different sheet.
+        // Non-fatal: without it the card still renders its picks/cases
+        // numbers, just without those three rings.
+        let health = null;
+        try {
+          // The crosstab dialog from the export above is still tearing down,
+          // and while it is up Tableau removes the viz toolbar from the DOM —
+          // so firing the next export immediately finds no Download button and
+          // silently does nothing. Wait for the toolbar to come back first.
+          await sleep(SETTLE_MS);
+          const toolbarBack = await waitForVizReady(tab.id, DIALOG_SETTLE_MS);
+          if (!toolbarBack) {
+            failures.push({ store, reason: "toolbar did not return after the first export", soft: true });
+          } else {
+            await clearRing(tab.id);
+            const dt = await triggerCrosstabExport(tab.id, DONUT_SHEET);
+            if (!dt.ok) {
+              // Previously this branch was silent, so a failed second export
+              // looked like a clean run that just happened to have no health
+              // data. Always record it.
+              failures.push({ store, reason: `donut export UI: ${dt.reason}`, soft: true });
+            } else {
+              const dcsv = await pollForCsv(tab.id, EXPORT_WAIT_MS, DONUT_CSV_NEEDLE);
+              if (dcsv) {
+                const dh = parseDonutHealth(dcsv.respBody);
+                if (dh.ok) health = dh.health;
+                else failures.push({ store, reason: `donut parse: ${dh.reason}`, soft: true });
+              } else {
+                failures.push({ store, reason: "no donut-health CSV captured", soft: true });
+              }
+            }
+          }
+        } catch (e) {
+          failures.push({ store, reason: `donut: ${String(e?.message ?? e)}`, soft: true });
+        }
+
+        rows.push({ store, ...parsed.total, ...(health || {}), deptCount: parsed.deptCount, hasHealth: !!health });
       } catch (e) {
         failures.push({ store, reason: String(e?.message ?? e) });
       }
@@ -177,11 +230,16 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
       // Partial success is normal here: a market can contain a store the
       // user's Tableau row-level security doesn't cover.
       partial: failures.length > 0,
-      debug: { requested: wanted.length, captured: rows.length, failures },
+      debug: {
+        requested: wanted.length,
+        captured: rows.length,
+        withHealth: rows.filter((r) => r.hasHealth).length,
+        failures,
+      },
     };
   } finally {
+    await setSuppressDownloads(tab.id, false);
     if (didOpen && succeeded) chrome.tabs.remove(tab.id).catch(() => {});
-    if (prevActive?.id && prevActive.id !== tab.id) focusTab(prevActive.id).catch(() => {});
   }
 }
 
@@ -257,23 +315,13 @@ async function findOrOpenReportTab() {
   const all = await chrome.tabs.query({ url: TAB_PATTERN });
   const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
   if (existing.length) return { tab: existing[0], didOpen: false };
-  const tab = await chrome.tabs.create({ url: DETAILS_URL, active: true });
+  // active:false — the capture runs entirely in the background and must
+  // never pull the user off the page they are on.
+  const tab = await chrome.tabs.create({ url: DETAILS_URL, active: false });
   return tab ? { tab, didOpen: true } : null;
 }
 
-async function getActiveTab() {
-  try {
-    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    return t || null;
-  } catch { return null; }
-}
 
-async function focusTab(tabId) {
-  const t = await chrome.tabs.get(tabId).catch(() => null);
-  if (!t) return;
-  if (t.windowId != null) await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
-  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
-}
 
 async function waitForTabLoad(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -316,6 +364,17 @@ async function waitForVizReady(tabId, timeoutMs) {
     await sleep(POLL_MS);
   }
   return false;
+}
+
+async function setSuppressDownloads(tabId, on) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world:  "MAIN",
+      args:   [!!on],
+      func:   (v) => { window.__APAISUITE_VIZPICK_TABLEAU_CAP?.setSuppressDownloads?.(v); },
+    });
+  } catch {}
 }
 
 async function clearRing(tabId) {

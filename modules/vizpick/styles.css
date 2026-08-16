@@ -107,18 +107,53 @@
 .vizpick-market-select:disabled { color: var(--apai-muted); }
 .vizpick-picker-meta { font-size: var(--fs-sm); color: var(--apai-muted); }
 
-/* Gauges */
-.vizpick-gauges {
+/* Market-average gauges.
+   A grid rather than a flex row: auto-fit + minmax means the tracks always
+   divide the available width evenly and wrap to a second row when they no
+   longer fit, so a gauge can never be clipped off the right edge at an
+   awkward window size. minmax(0,...) lets a track shrink below the SVG's
+   intrinsic width instead of forcing an overflow. */
+.vizpick-panel {
   background: var(--apai-bg-elev);
   border: 1px solid var(--apai-border);
   border-radius: var(--rad-md);
   padding: var(--sp-4);
   box-shadow: var(--shadow-1);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-5);
-  justify-content: space-around;
 }
+.vizpick-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+}
+.vizpick-panel-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.vizpick-panel-sub { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+/* Tableau's own last-update stamp, sitting beside the panel title. */
+.vizpick-panel-stamp {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-blue-dark);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-pill);
+  padding: 2px var(--sp-3);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.vizpick-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--sp-4);
+  justify-items: center;
+}
+/* Let the ring scale down with its track on narrow windows. */
+.vizpick-gauge svg { max-width: 100%; height: auto; }
 .vizpick-gauge {
   display: flex;
   flex-direction: column;
@@ -168,6 +203,21 @@
   margin: 0;
 }
 .vizpick-store-count { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+.vizpick-sort-label { font-size: var(--fs-sm); color: var(--apai-muted); }
+.vizpick-sort {
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+}
+.vizpick-draghint {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin: calc(-1 * var(--sp-2)) 0 0;
+}
+.vizpick-draghint[hidden] { display: none; }
 
 /* Per-store card grid.
    Cards are expanded by default, so each one needs room for a "label …
@@ -182,31 +232,41 @@
   gap: var(--sp-3);
   align-items: start;
 }
+/* Cards are always fully expanded — every metric is visible at all times.
+   They are draggable instead of collapsible. */
 .vizpick-store-card {
   background: var(--apai-bg-soft);
   border: 1px solid var(--apai-border-soft);
   border-radius: var(--rad-md);
   padding: var(--sp-3);
+  cursor: grab;
+  transition: box-shadow 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
-.vizpick-store-card[open] { border-color: var(--apai-blue); }
+.vizpick-store-card:hover { border-color: var(--apai-blue); box-shadow: var(--shadow-1); }
+.vizpick-store-card:active { cursor: grabbing; }
+/* The card being dragged. */
+.vizpick-store-card.is-dragging { opacity: 0.4; }
+/* The card it would be dropped onto. */
+.vizpick-store-card.is-drop-target {
+  border-color: var(--apai-blue);
+  box-shadow: 0 0 0 2px var(--apai-blue) inset;
+}
 .vizpick-store-card-summary {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  cursor: pointer;
-  list-style: none;
 }
-.vizpick-store-card-summary::-webkit-details-marker { display: none; }
 .vizpick-store-card-gauge svg { display: block; }
 .vizpick-store-card-id { flex: 1; min-width: 0; }
 .vizpick-store-card-num { font-size: var(--fs-md); font-weight: var(--fw-bold, 800); color: var(--apai-ink); }
 .vizpick-store-card-sub { font-size: var(--fs-xs); color: var(--apai-muted); }
-.vizpick-store-card-caret {
+/* Drag grip. Purely an affordance — the whole card is draggable. */
+.vizpick-store-card-grip {
   font-size: var(--fs-lg);
-  color: var(--apai-muted);
-  transition: transform 150ms ease;
+  color: var(--apai-border);
+  letter-spacing: -2px;
 }
-.vizpick-store-card[open] .vizpick-store-card-caret { transform: rotate(90deg); }
+.vizpick-store-card:hover .vizpick-store-card-grip { color: var(--apai-muted); }
 .vizpick-store-card-details {
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
@@ -242,11 +302,33 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Traffic-light value coloring. Bare (goal-less) metrics like Total Picked
-   get no class here and just inherit the surrounding text color. */
-.vizpick-good { color: var(--apai-success); font-weight: var(--fw-medium); }
-.vizpick-warn { color: var(--apai-warn);    font-weight: var(--fw-medium); }
-.vizpick-bad  { color: var(--apai-error);   font-weight: var(--fw-medium); }
+/* Four-band value coloring:
+     >= 98%          green
+     > 95%  to < 98% yellow
+     > 90%  to <= 95% orange
+     <= 90%          red
+   The shared token palette only has success/warn/error, so the yellow band
+   needs one module-local variable. It is deliberately gold rather than a
+   bright yellow: a true yellow fails contrast as text on the light theme,
+   and it has to stay clearly distinguishable from the orange band next to
+   it. Bare (goal-less) metrics like Total Picked get no class and inherit
+   the surrounding text color. */
+.module-vizpick {
+  /* Walmart Spark yellow (#ffc220) is what the gauge RINGS use — a thick arc
+     carries it fine. As small text on the light theme it only reaches ~1.7:1
+     contrast, which is unreadable, so the text band uses the same hue pushed
+     down to a legible tone. On the dark theme Spark yellow reads well as-is,
+     so it is used unmodified there. */
+  --vizpick-caution: #C08A00;
+}
+[data-theme="dark"] .module-vizpick {
+  --vizpick-caution: #FFC220;
+}
+
+.vizpick-good    { color: var(--apai-success);    font-weight: var(--fw-medium); }
+.vizpick-caution { color: var(--vizpick-caution); font-weight: var(--fw-medium); }
+.vizpick-warn    { color: var(--apai-warn);       font-weight: var(--fw-medium); }
+.vizpick-bad     { color: var(--apai-error);      font-weight: var(--fw-medium); }
 .vizpick-muted { color: var(--apai-muted); }
 
 /* ── Period tabs (Yesterday / Today) ─────────────────────────── */
@@ -278,30 +360,6 @@
 .vizpick-tab-name { font-size: var(--fs-md); font-weight: var(--fw-semi); }
 .vizpick-tab-date { font-size: var(--fs-xs); color: var(--apai-muted); }
 
-/* ── Absolute source timestamp ───────────────────────────────── */
-.vizpick-updated {
-  background: var(--apai-bg-elev);
-  border: 1px solid var(--apai-border);
-  border-left: 4px solid var(--apai-blue);
-  border-radius: var(--rad-md);
-  padding: var(--sp-3) var(--sp-4);
-  box-shadow: var(--shadow-1);
-}
-.vizpick-updated-main {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-.vizpick-updated-label {
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--apai-muted);
-}
-.vizpick-updated-value { font-size: var(--fs-lg); color: var(--apai-ink); }
-.vizpick-updated-rel   { font-size: var(--fs-sm); color: var(--apai-muted); }
-.vizpick-updated-note  { font-size: var(--fs-xs); color: var(--apai-muted); margin: var(--sp-2) 0 0; max-width: 90ch; }
 
 /* ── Today on-demand loader ──────────────────────────────────── */
 .vizpick-today-bar {

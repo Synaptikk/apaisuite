@@ -7,12 +7,13 @@
 // side, instead of typing store numbers one at a time into Tableau's VizPick
 // Details search box.
 
-import { gaugeSvg } from "./lib/charts.js";
+import { gaugeSvg, bandFor } from "./lib/charts.js";
 import { getUserHomeMarket, onUserMarketChange } from "../../shared/userStore.js";
 
-// Goal thresholds observed live in the Tableau VizPick dashboard
-// (Cases/Locations goal 95%, Picks/Overstock goal 90%). VizPick Health
-// itself has no published goal ring in Tableau, so it renders neutral blue.
+// Goals published on the Tableau VizPick dashboard. These are shown as the
+// caption under each gauge so the official target stays visible — they do NOT
+// drive the colour. Colour uses the absolute 98/95/90 bands in
+// lib/charts.js::bandFor, which apply to every percentage alike.
 const GOALS = {
   casesSeenPct: 95,
   locationPct:  95,
@@ -57,6 +58,28 @@ const FIXES = {
   PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
 };
 
+// Card order / sort preferences. Versioned so a future shape change can be
+// discarded rather than half-read, same rule as the snapshot store.
+const UI_PREFS_KEY = "vizpick.ui.v1";
+
+const SORTS = {
+  "store-asc":  { label: "Store number — low to high",  cmp: (a, b) => storeNum(a) - storeNum(b) },
+  "store-desc": { label: "Store number — high to low",  cmp: (a, b) => storeNum(b) - storeNum(a) },
+  "score-desc": { label: "Total score — high to low",   cmp: (a, b) => score(b) - score(a) },
+  "score-asc":  { label: "Total score — low to high",   cmp: (a, b) => score(a) - score(b) },
+};
+
+function storeNum(r) {
+  const n = Number(r.store);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+// "Total score" is the VizPick composite. Stores missing it (a Today card
+// whose donut-health export failed) sort last in both directions rather than
+// being treated as a 0, which would fake a terrible score.
+function score(r) {
+  return Number.isFinite(r.vizpick) ? r.vizpick : -Infinity;
+}
+
 export async function mount(host, container) {
   // 1. Inject module CSS (removed on unmount).
   const link = document.createElement("link");
@@ -73,27 +96,41 @@ export async function mount(host, container) {
   const btnRefresh   = container.querySelector('[data-action="refresh"]');
   const btnLoadToday = container.querySelector('[data-action="load-today"]');
   const btnCancel    = container.querySelector('[data-action="cancel-today"]');
-  const btnToggleAll = container.querySelector('[data-action="toggle-all"]');
+  const btnResetOrder = container.querySelector('[data-action="reset-order"]');
+  const sortSelect    = container.querySelector("[data-sort-select]");
   const marketSelect = container.querySelector("[data-market-select]");
 
   let state = null;
   let selectedMarket = null;
   let marketIsUserSet = false;
   let activeTab = "yesterday";
-  // Per-store collapse state, so a background re-render doesn't re-open a
-  // card the user deliberately collapsed. Cards default to OPEN.
-  const collapsed = new Set();
+  // Card ordering. `sortMode` is one of the SORTS keys; `customOrder` maps a
+  // market to the store order the user dragged into place. Both persist so an
+  // arrangement survives closing the module.
+  let sortMode = "store-asc";
+  let customOrder = {};
+  let dragStore = null;
 
   let homeMarket = await getUserHomeMarket();
+
+  // Restore saved sort/order before the first paint so cards never flash in
+  // one order and then jump to another.
+  await loadUiPrefs();
 
   // 4. Wire handlers.
   btnRefresh.addEventListener("click", runRefresh);
   btnLoadToday.addEventListener("click", runToday);
   btnCancel.addEventListener("click", () => host.messaging.send("cancel_today").catch(() => {}));
-  btnToggleAll.addEventListener("click", () => {
-    const rows = rowsForActiveTab();
-    const anyOpen = rows.some((r) => !collapsed.has(r.store));
-    rows.forEach((r) => (anyOpen ? collapsed.add(r.store) : collapsed.delete(r.store)));
+  btnResetOrder.addEventListener("click", async () => {
+    if (selectedMarket) delete customOrder[selectedMarket];
+    sortMode = "store-asc";
+    await saveUiPrefs();
+    render();
+  });
+
+  sortSelect.addEventListener("change", async () => {
+    sortMode = sortSelect.value;
+    await saveUiPrefs();
     render();
   });
 
@@ -110,14 +147,56 @@ export async function mount(host, container) {
     });
   });
 
-  // Track collapse state from the user's own clicks on the native <details>.
-  container.addEventListener("toggle", (e) => {
-    const d = e.target;
-    if (!(d instanceof HTMLElement) || !d.matches(".vizpick-store-card")) return;
-    const store = d.dataset.store;
-    if (!store) return;
-    if (d.open) collapsed.delete(store); else collapsed.add(store);
-  }, true);
+  // ── Drag to rearrange ────────────────────────────────────────────
+  // Uses native HTML5 drag-and-drop on the cards. Dropping commits the new
+  // order, switches the sort control to "custom", and persists it.
+  const grid = container.querySelector("[data-store-cards]");
+
+  grid.addEventListener("dragstart", (e) => {
+    const card = e.target?.closest?.(".vizpick-store-card");
+    if (!card) return;
+    dragStore = card.dataset.store;
+    card.classList.add("is-dragging");
+    e.dataTransfer.effectAllowed = "move";
+    // Firefox refuses to start a drag without payload.
+    try { e.dataTransfer.setData("text/plain", dragStore); } catch {}
+  });
+
+  grid.addEventListener("dragend", () => {
+    dragStore = null;
+    grid.querySelectorAll(".is-dragging,.is-drop-target")
+        .forEach((el) => el.classList.remove("is-dragging", "is-drop-target"));
+  });
+
+  grid.addEventListener("dragover", (e) => {
+    if (dragStore == null) return;
+    e.preventDefault();               // required to allow a drop
+    e.dataTransfer.dropEffect = "move";
+    const over = e.target?.closest?.(".vizpick-store-card");
+    grid.querySelectorAll(".is-drop-target").forEach((el) => el.classList.remove("is-drop-target"));
+    if (over && over.dataset.store !== dragStore) over.classList.add("is-drop-target");
+  });
+
+  grid.addEventListener("drop", async (e) => {
+    if (dragStore == null) return;
+    e.preventDefault();
+    const over = e.target?.closest?.(".vizpick-store-card");
+    if (!over || over.dataset.store === dragStore) return;
+
+    // Start from whatever order is currently on screen, then move the dragged
+    // card to the target's slot.
+    const order = [...grid.querySelectorAll(".vizpick-store-card")].map((el) => el.dataset.store);
+    const from = order.indexOf(dragStore);
+    const to   = order.indexOf(over.dataset.store);
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, ...order.splice(from, 1));
+
+    if (selectedMarket) customOrder[selectedMarket] = order;
+    sortMode = "custom";
+    dragStore = null;
+    await saveUiPrefs();
+    render();
+  });
 
   // 5. Initial paint from persisted state.
   await paint();
@@ -198,19 +277,29 @@ export async function mount(host, container) {
     const roster = new Map(yesterdayRows().map((r) => [r.store, r]));
     return today
       .filter((t) => roster.has(t.store))
-      .map((t) => ({ ...roster.get(t.store), ...projectTodayRow(t) }));
+      .map((t) => {
+        // Take ONLY identity from the yesterday roster. Spreading the whole
+        // row used to leak yesterday's metrics (Pallets % in particular) onto
+        // Today cards, where they read as current-day figures.
+        const { bu, region, market } = roster.get(t.store);
+        return { bu, region, market, ...projectTodayRow(t) };
+      });
   }
 
   // Map the Details/current-day fields onto the same shape the cards render.
   // Location % and the VizPick composite have no current-day equivalent in
   // the Details export, so they are explicitly absent rather than faked.
   function projectTodayRow(t) {
+    // Location %, Overstock % and the VizPick composite come from the
+    // donut-health sheet (t.locationPct / t.overstockPct / t.vizpick). If that
+    // second export failed for this store they stay undefined, and the card
+    // simply omits those rows rather than showing a fake 0.
     return {
       store:           t.store,
-      vizpick:         NaN,
+      vizpick:         t.vizpick,
       casesSeenPct:    t.casesSeenPct,
-      locationPct:     NaN,
-      overstockPct:    NaN,
+      locationPct:     t.locationPct,
+      overstockPct:    t.overstockPct,
       pickPct:         t.pickPct,
       totalPicked:     t.totalPicked,
       casesSeen:       t.casesSeen,
@@ -218,8 +307,6 @@ export async function mount(host, container) {
       picksCompleted:  t.suggestedPicksCompleted,
       picksSuggested:  t.suggestedPicks,
       overstockExceptions: t.overstockExceptions,
-      palletsSeen:     NaN,
-      palletsExpected: NaN,
       isToday:         true,
     };
   }
@@ -295,34 +382,39 @@ export async function mount(host, container) {
     return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
   }
 
+  // Tableau's own "Last update" stamp, rendered in the Market Average header.
+  // Format follows the source's precision: the Details view publishes a full
+  // timestamp, the summary view only a date — we never invent a clock time to
+  // fill the gap. The source note and relative age move to the tooltip so the
+  // header stays a single scannable line.
   function paintUpdatedBar() {
-    const absEl  = container.querySelector("[data-updated-abs]");
-    const relEl  = container.querySelector("[data-updated-rel]");
-    const noteEl = container.querySelector("[data-updated-note]");
+    const absEl   = container.querySelector("[data-updated-abs]");
     const freshEl = container.querySelector('[data-freshness="stores"]');
+    if (absEl) {
+      const snap = activeSnapshot();
+      const su = snap?.sourceUpdate;
+      const note = TABS[activeTab].note;
 
-    const snap = activeSnapshot();
-    const su = snap?.sourceUpdate;
-
-    if (!snap) {
-      absEl.textContent = "—";
-      relEl.textContent = "";
-      noteEl.textContent = TABS[activeTab].note;
-    } else if (su?.iso) {
-      const d = new Date(su.iso);
-      // Only show a clock time when the source actually carries one. The
-      // Yesterday view publishes a bare date; inventing 00:00 would be a lie.
-      absEl.textContent = su.hasTime
-        ? d.toLocaleString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-        : d.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
-      relEl.textContent = su.hasTime ? `(${humanAge(Date.now() - d.getTime())} ago)` : "";
-      noteEl.textContent = TABS[activeTab].note + (su.hasTime ? "" : " This view publishes a date with no clock time.");
-    } else {
-      // No source stamp — say so rather than passing our capture time off as
-      // the source's update time.
-      absEl.textContent = "unknown";
-      relEl.textContent = snap.capturedAt ? `(captured ${humanAge(Date.now() - new Date(snap.capturedAt).getTime())} ago)` : "";
-      noteEl.textContent = TABS[activeTab].note + " Tableau's own update stamp could not be read for this capture.";
+      if (!snap) {
+        absEl.textContent = "—";
+        absEl.title = note;
+      } else if (su?.iso) {
+        const d = new Date(su.iso);
+        const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+        if (su.hasTime) {
+          const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+          absEl.textContent = `${day} — ${time}`;
+          absEl.title = `Tableau last updated ${d.toLocaleString()} (${humanAge(Date.now() - d.getTime())} ago). ${note}`;
+        } else {
+          absEl.textContent = day;
+          absEl.title = `Tableau last updated ${day}. This view publishes a date with no clock time. ${note}`;
+        }
+      } else {
+        absEl.textContent = "date unknown";
+        absEl.title = snap.capturedAt
+          ? `Tableau's update stamp could not be read. Captured ${humanAge(Date.now() - new Date(snap.capturedAt).getTime())} ago. ${note}`
+          : note;
+      }
     }
 
     if (freshEl) {
@@ -376,6 +468,12 @@ export async function mount(host, container) {
 
   function renderGauges(rows) {
     const wrap = container.querySelector("[data-gauges]");
+    const sub  = container.querySelector("[data-gauges-sub]");
+    if (sub) {
+      sub.textContent = rows.length
+        ? `${TABS[activeTab].label} · Market ${selectedMarket ?? "—"} · mean of ${rows.length} store${rows.length === 1 ? "" : "s"}`
+        : "";
+    }
     if (!wrap) return;
     if (!rows.length) {
       wrap.innerHTML = `<p class="vizpick-empty">${
@@ -394,7 +492,8 @@ export async function mount(host, container) {
     };
 
     const gauges = [
-      { key: "vizpick",      label: "VizPick Health", goal: undefined },
+      // The composite is a 0-100 score, not a percentage, so it stays neutral.
+      { key: "vizpick",      label: "VizPick Health", goal: undefined, neutral: true },
       { key: "casesSeenPct", label: "Cases Seen %",   goal: GOALS.casesSeenPct },
       { key: "locationPct",  label: "Location %",     goal: GOALS.locationPct },
       { key: "pickPct",      label: "Pick %",         goal: GOALS.pickPct },
@@ -410,7 +509,7 @@ export async function mount(host, container) {
               <div class="vizpick-gauge-label">${escapeHtml(g.label)}<span class="vizpick-gauge-goal">not in this view</span></div>
             </div>`;
         }
-        return gaugeSvg(v, { goal: g.goal, label: g.label, fmt: (x) => Math.round(x).toString() });
+        return gaugeSvg(v, { goal: g.goal, label: g.label, neutral: g.neutral, fmt: (x) => Math.round(x).toString() });
       })
       .join("");
   }
@@ -418,14 +517,17 @@ export async function mount(host, container) {
   function renderStoreCards(rows) {
     const wrap  = container.querySelector("[data-store-cards]");
     const count = container.querySelector("[data-store-count]");
+    const hint  = container.querySelector(".vizpick-draghint");
     if (!wrap) return;
 
     if (count) count.textContent = rows.length ? `${rows.length} stores` : "";
-    btnToggleAll.hidden = !rows.length;
-    if (rows.length) {
-      const anyOpen = rows.some((r) => !collapsed.has(r.store));
-      btnToggleAll.textContent = anyOpen ? "Collapse all" : "Expand all";
-    }
+    if (hint) hint.hidden = !rows.length;
+
+    sortSelect.value = sortMode;
+    // "Custom" is only meaningful once an arrangement exists for this market.
+    const hasCustom = !!(selectedMarket && customOrder[selectedMarket]?.length);
+    sortSelect.querySelector('option[value="custom"]').disabled = !hasCustom;
+    btnResetOrder.hidden = !hasCustom;
 
     if (!rows.length) {
       wrap.innerHTML = `<p class="vizpick-empty">${
@@ -436,29 +538,26 @@ export async function mount(host, container) {
       return;
     }
 
-    const sorted = [...rows].sort((a, b) => Number(a.store) - Number(b.store) || a.store.localeCompare(b.store));
-    wrap.innerHTML = sorted.map((r) => storeCardHtml(r)).join("");
+    wrap.innerHTML = sortRows(rows).map((r) => storeCardHtml(r)).join("");
   }
 
   function storeCardHtml(r) {
-    const hasHealth = Number.isFinite(r.vizpick);
-    const gauge = hasHealth
-      ? gaugeSvg(r.vizpick, { size: 96, thickness: 10, label: "", fmt: (v) => Math.round(v).toString() })
-      : `<div class="vizpick-card-nohealth" title="The current-day view has no VizPick composite score">—</div>`;
+    // The VizPick composite is a 0-100 score, not a percentage against the
+    // 98/95/90 bands, so its ring stays neutral blue.
+    const gauge = Number.isFinite(r.vizpick)
+      ? gaugeSvg(r.vizpick, { size: 96, thickness: 10, label: "", neutral: true, fmt: (v) => Math.round(v).toString() })
+      : `<div class="vizpick-card-nohealth" title="No VizPick composite score for this store">—</div>`;
 
-    // Metric rows. `ratio` is a REAL numerator/denominator pair taken from the
-    // export — never a figure derived by dividing a rounded percentage. See
-    // the note at the top of lib/parse_vizpick_stores_csv.js.
+    // `ratio` is a REAL numerator/denominator pair from the export — never a
+    // figure derived by dividing a rounded percentage. See the note at the top
+    // of lib/parse_vizpick_stores_csv.js.
     const metrics = [
-      { label: "Cases Seen %", value: r.casesSeenPct, goal: GOALS.casesSeenPct, fmt: fmtPct,
-        ratio: ratio(r.casesSeen, r.casesExpected) },
-      { label: "Location %",   value: r.locationPct,  goal: GOALS.locationPct,  fmt: fmtPct },
-      { label: "Pick %",       value: r.pickPct,      goal: GOALS.pickPct,      fmt: fmtPct,
-        ratio: ratio(r.picksCompleted, r.picksSuggested) },
-      { label: "Total Picked", value: r.totalPicked,  goal: null,               fmt: fmtInt },
-      { label: "Overstock %",  value: r.overstockPct, goal: GOALS.overstockPct, fmt: fmtPct },
-      { label: "Pallets %",    value: r.palletsPct,   goal: null,               fmt: fmtPct,
-        ratio: ratio(r.palletsSeen, r.palletsExpected) },
+      { label: "Cases Seen %", value: r.casesSeenPct, pct: true, fmt: fmtPct, ratio: ratio(r.casesSeen, r.casesExpected) },
+      { label: "Location %",   value: r.locationPct,  pct: true, fmt: fmtPct },
+      { label: "Pick %",       value: r.pickPct,      pct: true, fmt: fmtPct, ratio: ratio(r.picksCompleted, r.picksSuggested) },
+      { label: "Total Picked", value: r.totalPicked,  pct: false, fmt: fmtInt },
+      { label: "Overstock %",  value: r.overstockPct, pct: true, fmt: fmtPct },
+      { label: "Pallets %",    value: r.palletsPct,   pct: true, fmt: fmtPct, ratio: ratio(r.palletsSeen, r.palletsExpected) },
     ];
 
     const metricsHtml = metrics
@@ -468,31 +567,28 @@ export async function mount(host, container) {
           <span class="vizpick-store-card-metric-label">${escapeHtml(m.label)}</span>
           <span class="vizpick-store-card-metric-value">
             ${m.ratio ? `<span class="vizpick-ratio">${escapeHtml(m.ratio)}</span>` : ""}
-            <strong class="${m.goal != null ? pctClass(m.value, m.goal) : ""}">${escapeHtml(m.fmt(m.value))}</strong>
+            <strong class="${m.pct ? pctClass(m.value) : ""}">${escapeHtml(m.fmt(m.value))}</strong>
           </span>
         </div>`)
       .join("");
 
-    const sub = r.isToday
-      ? `${escapeHtml(r.bu ?? "")}${r.bu ? " · " : ""}Region ${escapeHtml(r.region ?? "")}`
-      : `${escapeHtml(r.bu)} · Region ${escapeHtml(r.region)}`;
+    const sub = `${escapeHtml(r.bu ?? "")}${r.bu ? " · " : ""}${r.region != null && r.region !== "" ? `Region ${escapeHtml(r.region)}` : ""}`;
 
-    // Cards render EXPANDED by default; `collapsed` only holds stores the
-    // user has explicitly closed this session.
-    const open = collapsed.has(r.store) ? "" : " open";
-
+    // Always expanded — every metric is visible at all times. The card is
+    // draggable instead of collapsible.
     return `
-      <details class="vizpick-store-card" data-store="${escapeHtml(r.store)}"${open}>
-        <summary class="vizpick-store-card-summary">
+      <article class="vizpick-store-card" data-store="${escapeHtml(r.store)}" draggable="true"
+               aria-label="Store ${escapeHtml(r.store)} — drag to rearrange">
+        <header class="vizpick-store-card-summary">
           <div class="vizpick-store-card-gauge">${gauge}</div>
           <div class="vizpick-store-card-id">
             <div class="vizpick-store-card-num">#${escapeHtml(r.store)}</div>
             <div class="vizpick-store-card-sub">${sub}</div>
           </div>
-          <span class="vizpick-store-card-caret" aria-hidden="true">›</span>
-        </summary>
+          <span class="vizpick-store-card-grip" aria-hidden="true" title="Drag to rearrange">⠿</span>
+        </header>
         <div class="vizpick-store-card-details">${metricsHtml}</div>
-      </details>`;
+      </article>`;
   }
 
   function paintDebug() {
@@ -517,6 +613,45 @@ export async function mount(host, container) {
     return parts.join("");
   }
 
+  // ── UI preference persistence ──────────────────────────────
+  // Read/written straight from the view: this is presentation state, not
+  // captured data, so it does not belong in the service's snapshot store.
+  async function loadUiPrefs() {
+    try {
+      const got = await chrome.storage.local.get(UI_PREFS_KEY);
+      const p = got[UI_PREFS_KEY];
+      if (!p || p.v !== 1) return;
+      if (typeof p.sortMode === "string" && (SORTS[p.sortMode] || p.sortMode === "custom")) sortMode = p.sortMode;
+      if (p.customOrder && typeof p.customOrder === "object") customOrder = p.customOrder;
+    } catch { /* prefs are best-effort */ }
+  }
+
+  async function saveUiPrefs() {
+    try {
+      await chrome.storage.local.set({ [UI_PREFS_KEY]: { v: 1, sortMode, customOrder } });
+    } catch { /* best-effort */ }
+  }
+
+  // Apply the active sort. "custom" falls back to store order for any store
+  // the saved arrangement doesn't mention (e.g. a store added since), which
+  // keeps a stale arrangement from hiding or duplicating cards.
+  function sortRows(rows) {
+    const list = [...rows];
+    if (sortMode === "custom") {
+      const order = customOrder[selectedMarket];
+      if (Array.isArray(order) && order.length) {
+        const rank = new Map(order.map((sNum, i) => [sNum, i]));
+        return list.sort((a, b) => {
+          const ra = rank.has(a.store) ? rank.get(a.store) : Number.MAX_SAFE_INTEGER;
+          const rb = rank.has(b.store) ? rank.get(b.store) : Number.MAX_SAFE_INTEGER;
+          return ra - rb || storeNum(a) - storeNum(b);
+        });
+      }
+      return list.sort(SORTS["store-asc"].cmp);
+    }
+    return list.sort((SORTS[sortMode] || SORTS["store-asc"]).cmp);
+  }
+
   // ── Formatting helpers ─────────────────────────────────
   function fmtPct(n) { return Number.isFinite(n) ? `${Math.round(n)}%` : "—"; }
   function fmtInt(n) { return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—"; }
@@ -530,11 +665,10 @@ export async function mount(host, container) {
     return `${Math.round(num).toLocaleString("en-US")} / ${Math.round(den).toLocaleString("en-US")}`;
   }
 
-  function pctClass(value, goal) {
-    if (!Number.isFinite(value)) return "";
-    if (value >= goal) return "vizpick-good";
-    if (value >= goal - 5) return "vizpick-warn";
-    return "vizpick-bad";
+  // Colour band for a percentage. Absolute thresholds shared with the gauge
+  // rings (lib/charts.js::bandFor), so text and rings can never disagree.
+  function pctClass(value) {
+    return bandFor(value)?.cls ?? "";
   }
 
   function renderFreshness(f) {

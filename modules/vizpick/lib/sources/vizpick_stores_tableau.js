@@ -57,20 +57,19 @@ const UPDATE_SHEET  = { match: "last update",              fallbackIndex: 4 };
 const STORE_CSV_NEEDLE = "Cases Seen %";
 
 export async function fetchVizpickStoresTableau() {
-  // Remember what was focused so we can politely restore it afterward.
-  const prevActive = await getActiveTab();
-
   const opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open Tableau VizPick tab." };
   }
   const { tab, didOpen } = opened;
 
-  // Tableau renders its viz almost entirely through requestAnimationFrame,
-  // which Chrome throttles hard in background tabs. Foreground the capture
-  // tab so it renders at full speed; we restore the user's previous tab in
-  // the finally block.
-  await focusTab(tab.id).catch(() => {});
+  // The capture tab is opened in the BACKGROUND and never focused. An earlier
+  // version foregrounded it on the theory that Tableau's rAF-driven render is
+  // throttled in background tabs — but everything this capture touches is
+  // DOM, not canvas: we wait for the toolbar button to exist, click through
+  // the crosstab dialog, and read the CSV out of a Blob. None of that needs
+  // painted pixels. Stealing focus mid-task is worse than a slower render,
+  // and the viz-ready budget is generous enough to absorb it.
 
   // Only close the tab we opened when the capture actually SUCCEEDS. On any
   // failure (session/SSO, render timeout, export UI), leave it open so the
@@ -108,6 +107,10 @@ export async function fetchVizpickStoresTableau() {
     // this view it is a DATE only ("8/16/2026"); VizPickDetails carries a
     // full timestamp. A miss here is non-fatal — the store data is the
     // point, the stamp is metadata.
+    // Everything from here on drives Tableau's own export, so the file write
+    // is ours to suppress. Disarmed again in the finally block.
+    await setSuppressDownloads(tab.id, true);
+
     let sourceUpdate = null;
     try {
       await clearRing(tab.id);
@@ -174,14 +177,14 @@ export async function fetchVizpickStoresTableau() {
       },
     };
   } finally {
+    // Never leave the interceptor armed — a user-initiated download in this
+    // tab afterwards must behave normally.
+    await setSuppressDownloads(tab.id, false);
     // Close the tab only if we opened it AND the capture succeeded. Leaving
-    // a failed tab open lets the user re-auth / inspect. Restore focus to
-    // the tab the user was on before we hijacked the foreground.
+    // a failed tab open lets the user re-auth / inspect. No focus restore is
+    // needed: we never took focus in the first place.
     if (didOpen && succeeded) {
       chrome.tabs.remove(tab.id).catch(() => {});
-    }
-    if (prevActive?.id && prevActive.id !== tab.id) {
-      focusTab(prevActive.id).catch(() => {});
     }
   }
 }
@@ -193,23 +196,13 @@ async function findOrOpenReportTab() {
   if (existing.length) return { tab: existing[0], didOpen: false };
   // Open ACTIVE: Tableau's rAF-driven render is throttled in background tabs.
   // We restore the user's previous tab afterward.
-  const tab = await chrome.tabs.create({ url: REPORT_URL, active: true });
+  // active:false — the capture runs entirely in the background and must
+  // never pull the user off the page they are on.
+  const tab = await chrome.tabs.create({ url: REPORT_URL, active: false });
   return tab ? { tab, didOpen: true } : null;
 }
 
-async function getActiveTab() {
-  try {
-    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    return t || null;
-  } catch { return null; }
-}
 
-async function focusTab(tabId) {
-  const t = await chrome.tabs.get(tabId).catch(() => null);
-  if (!t) return;
-  if (t.windowId != null) await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
-  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
-}
 
 async function waitForCaptureInstalled(tabId, graceMs) {
   const deadline = Date.now() + graceMs;
@@ -252,6 +245,21 @@ async function waitForVizReady(tabId, timeoutMs) {
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return false;
+}
+
+// Arm/disarm the content script's download interceptor. We already hold the
+// CSV bytes from the Blob, so the file write is pure noise — but it must only
+// be suppressed while OUR export is running, never for a download the user
+// starts by hand.
+async function setSuppressDownloads(tabId, on) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world:  "MAIN",
+      args:   [!!on],
+      func:   (v) => { window.__APAISUITE_VIZPICK_TABLEAU_CAP?.setSuppressDownloads?.(v); },
+    });
+  } catch {}
 }
 
 async function clearRing(tabId) {

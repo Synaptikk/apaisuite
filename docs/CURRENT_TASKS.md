@@ -216,11 +216,21 @@ timeout). Both sources now query the host (`".../*"`) and disambiguate the
 view with a regex in JS. Reuse of an already-rendered tab takes a capture from
 ~60s to ~8s, and a pre-existing user tab is never closed.
 
+**Colour bands are absolute, not goal-relative.** >= 98 green, > 95 Walmart
+Spark yellow, > 90 orange, <= 90 red — boundaries belong to the LOWER band.
+One scale (`lib/charts.js::bandFor`) drives both the gauge rings and the card
+text so they cannot drift. The Tableau goals (95/95/90/90) are still shown as
+gauge captions but no longer colour anything. Spark yellow `#ffc220` is used
+neat for the rings; as small text on the light theme it only reaches ~1.7:1
+contrast, so `--vizpick-caution` darkens the same hue to `#C08A00` there and
+uses `#FFC220` unmodified in dark mode.
+
 **Known gaps / next steps:**
-- `Location %`, `Overstock %` and the `VizPick` composite have **no
-  current-day equivalent** in the Details export, so the Today tab renders
-  them as an explicit "n/a" placeholder rather than a zeroed ring. If those
-  are wanted for Today, a different Details sheet would have to supply them.
+- Today needs TWO exports per store: the department breakout (picks/cases +
+  the raw ratios) and "VizPick Donut Health" (Location %, Overstock % and the
+  composite — the breakout has none of those). Between them the viz toolbar is
+  removed from the DOM while the first dialog tears down, so the second export
+  must wait for it to reappear or it silently finds no Download button.
 - The Today crawl reuses one Tableau tab and sets the Store parameter in a
   loop. It waits for a fresh vizql response (via the capture ring) before
   each export, which is what stops it exporting the *previous* store's

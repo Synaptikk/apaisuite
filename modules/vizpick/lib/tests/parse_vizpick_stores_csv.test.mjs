@@ -16,7 +16,9 @@ import {
   parseGrandTotal,
   parseLastUpdate,
   parseDeptBreakout,
+  parseDonutHealth,
 } from "../parse_vizpick_stores_csv.js";
+import { bandFor } from "../charts.js";
 
 // ── Fixtures (real rows, tab-separated) ───────────────────────────────────
 const STORES_HEADERS = [
@@ -205,4 +207,60 @@ test("blank and malformed numeric cells coerce to 0 rather than NaN", () => {
   for (const [k, v] of Object.entries(rows[0])) {
     if (typeof v === "number") assert.ok(Number.isFinite(v), `${k} became ${v}`);
   }
+});
+
+// ── parseDonutHealth ──────────────────────────────────────────────────────
+// Real shape from VizPickDetails "VizPick Donut Health" (2026-08-16). The
+// first row is a spacer: its percentage cells are blank and only the
+// composite/remaining columns are filled.
+const DONUT_CSV = [
+  ["Cases Seen %","New Location %","New Overstock %","New Pick %","New VizPick","New VizPick Remaining"].join("\t"),
+  ["","","","","73","26.522104830"].join("\t"),
+  ["59%","73%","87%","66%","73",""].join("\t"),
+].join("\r\n");
+
+test("donut health: skips the spacer row and reads the populated one", () => {
+  const r = parseDonutHealth(DONUT_CSV);
+  assert.equal(r.ok, true);
+  assert.equal(r.health.casesSeenPct, 59);
+  assert.equal(r.health.locationPct, 73);
+  assert.equal(r.health.overstockPct, 87);
+  assert.equal(r.health.pickPct, 66);
+  assert.equal(r.health.vizpick, 73);
+});
+
+test("donut health: wrong sheet / empty input rejected, never thrown", () => {
+  assert.equal(parseDonutHealth(STORES_CSV).ok, false);
+  assert.equal(parseDonutHealth(DEPT_CSV).ok, false);
+  assert.equal(parseDonutHealth("").ok, false);
+  assert.equal(parseDonutHealth(null).ok, false);
+});
+
+test("donut health: header-only or all-spacer input is rejected", () => {
+  const headerOnly = DONUT_CSV.split("\r\n")[0];
+  assert.equal(parseDonutHealth(headerOnly).ok, false);
+  const allSpacer = [DONUT_CSV.split("\r\n")[0], ["","","","","73","26.5"].join("\t")].join("\r\n");
+  const r = parseDonutHealth(allSpacer);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /no populated/);
+});
+
+// ── bandFor: the 98 / 95 / 90 colour scale ────────────────────────────────
+test("bandFor: boundaries belong to the LOWER band", () => {
+  const cls = (v) => bandFor(v)?.cls ?? null;
+  // >= 98 green
+  assert.equal(cls(100), "vizpick-good");
+  assert.equal(cls(98), "vizpick-good");
+  // under 98 -> yellow
+  assert.equal(cls(97.9), "vizpick-caution");
+  assert.equal(cls(95.1), "vizpick-caution");
+  // 95 and under -> orange
+  assert.equal(cls(95), "vizpick-warn");
+  assert.equal(cls(90.1), "vizpick-warn");
+  // 90 and under -> red
+  assert.equal(cls(90), "vizpick-bad");
+  assert.equal(cls(0), "vizpick-bad");
+  // non-finite has no band at all, so callers can show "no data"
+  assert.equal(cls(NaN), null);
+  assert.equal(cls(undefined), null);
 });
