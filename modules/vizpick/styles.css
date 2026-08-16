@@ -360,7 +360,6 @@
 .vizpick-met     { color: var(--apai-blue);  font-weight: var(--fw-semi); }
 .vizpick-near    { color: #E07B00;           font-weight: var(--fw-semi); }
 .vizpick-missed  { color: var(--apai-error); font-weight: var(--fw-semi); }
-.vizpick-pending { color: var(--apai-ink);   font-weight: var(--fw-semi); }
 .vizpick-neutral { color: var(--apai-blue);  font-weight: var(--fw-medium); }
 
 [data-theme="dark"] .module-vizpick .vizpick-near { color: #FBBF24; }

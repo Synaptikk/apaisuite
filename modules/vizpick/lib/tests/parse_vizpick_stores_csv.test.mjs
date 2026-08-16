@@ -273,13 +273,34 @@ test("bandFor: a clear miss is NOT the same colour as an un-judged value", () =>
   assert.notEqual(miss.color, noGoal.color);
 });
 
-test("bandFor: current-day figures are reported, not graded", () => {
-  const cls = (v, g) => bandFor(v, g, { live: true })?.cls ?? null;
-  assert.equal(cls(96, 95), "vizpick-met");     // already met -> still blue
-  // Below goal mid-day is black: never orange, never red.
-  assert.equal(cls(94, 95), "vizpick-pending");
-  assert.equal(cls(56, 90), "vizpick-pending");
-  assert.equal(bandFor(56, 90, { live: true }).color, "#1a1a1a");
+test("bandFor: current-day figures are graded exactly like closed ones", () => {
+  // Live data was briefly shown black-and-unjudged on the grounds that a
+  // mid-day number is incomplete. That made the live tab unreadable — a wall
+  // of black says nothing, and the point of the rollup is to see who needs
+  // help NOW. A store at 65% against a 90% goal is behind whether or not the
+  // day is over. There is no longer a live/closed distinction at all, so the
+  // two tabs cannot drift apart again.
+  assert.equal(bandFor.length, 2, "bandFor should take only (value, goal)");
+  const cls = (v, g) => bandFor(v, g)?.cls ?? null;
+  assert.equal(cls(96, 95), "vizpick-met");
+  assert.equal(cls(94, 95), "vizpick-near");     // was pending/black
+  assert.equal(cls(56, 90), "vizpick-missed");   // was pending/black
+  assert.equal(bandFor(56, 90).color, "#c53030");
+});
+
+test("Total Picked carries no derived denominator", () => {
+  // Store 5151 (2026-08-16): Total Picked 611, Pick % 392/603 = 65%.
+  // Total Picked is NOT the Pick % numerator, so 611 / 0.65 = 940 is a
+  // "total" that describes nothing — yet it was rendered as "611 / ≈940".
+  // The real ratio is published on the Pick % row and needs no derivation.
+  const picked = 611, pickPct = 65, realNumerator = 392, realDenominator = 603;
+  assert.notEqual(picked, realNumerator, "Total Picked is a different measure");
+  const bogus = Math.round(picked / (pickPct / 100) / 10) * 10;
+  assert.equal(bogus, 940);
+  assert.ok(
+    (bogus - realDenominator) / realDenominator > 0.5,
+    `deriving from Total Picked overstates the true denominator ${realDenominator} by ${bogus - realDenominator}`
+  );
 });
 
 test("bandFor: a metric with no goal is never judged", () => {
