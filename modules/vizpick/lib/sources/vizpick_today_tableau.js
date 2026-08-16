@@ -100,6 +100,15 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
   // foregrounding would yank the user out of whatever they're doing once per
   // store for several minutes.
 
+  // A run the USER started leaves a failed tab open so they can look at it.
+  // A background auto-check must not: the user never asked for a tab, so an
+  // orphan is litter — and if it is later closed, an error still telling them
+  // to "confirm data renders there" points at nothing.
+  const keepFailedTab = !opts.auto;
+  const tabHint = keepFailedTab
+    ? " The tab was left open — confirm data renders there, then Refresh again."
+    : " This ran automatically in the background; its tab was closed. Open the module and click Refresh to see the failure live.";
+
   let succeeded = false;
   const rows = [];
   const failures = [];
@@ -117,9 +126,8 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
       return {
         ok: false,
         errorClass: "SESSION",
-        error: "VizPick Details did not render in time (session may need SSO re-auth). " +
-               "The tab was left open — confirm data renders there, then try again.",
-        keptTabOpen: true,
+        error: "VizPick Details did not render in time (session may need SSO re-auth)." + tabHint,
+        keptTabOpen: keepFailedTab,
       };
     }
 
@@ -282,7 +290,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         errorClass: "NO_CAPTURE",
         error: `Captured no current-day data for any of the ${toVisit.length} stores attempted.`,
         debug: { failures },
-        keptTabOpen: true,
+        keptTabOpen: keepFailedTab,
       };
     }
 
@@ -309,7 +317,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     };
   } finally {
     await setSuppressDownloads(tab.id, false);
-    if (didOpen && succeeded) chrome.tabs.remove(tab.id).catch(() => {});
+    if (didOpen && (succeeded || !keepFailedTab)) chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
 

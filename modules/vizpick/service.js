@@ -106,6 +106,7 @@ async function pullStores(msg) {
     const result = await fetchVizpickStoresTableau({
       knownSourceKey: store.days?.[0]?.sourceKey ?? null,
       force: !!msg?.force,
+      auto: !!msg?.auto,
       onPhase: (p) => broadcast("capture_phase", { sourceId: "stores", phase: p }),
     });
 
@@ -195,6 +196,7 @@ async function pullToday(msg) {
       knownSourceKey,
       coveredStores,
       force: !!msg?.force,
+      auto: !!msg?.auto,
       onStore: async ({ row, sourceUpdate, topUp }) => {
         const payload = {
           rows: [row],
