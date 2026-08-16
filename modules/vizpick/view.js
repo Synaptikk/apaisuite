@@ -33,6 +33,30 @@ const TABS = {
   },
 };
 
+// What the user can actually do about each capture failure class, stated up
+// front — the raw envelope stays available underneath for diagnosis.
+//
+// MUST stay at module scope. This lived inside mount() next to renderDebug(),
+// which put it in the temporal dead zone: mount() calls paint() near the top,
+// paint() reaches renderDebug() whenever a stored capture error exists, and
+// the `const` further down had not initialised yet — so the module failed to
+// load with "Cannot access 'FIXES' before initialization", but ONLY for users
+// who already had a failed capture stored.
+const FIXES = {
+  // SESSION is the fallback when the page couldn't be classified, and is what
+  // the Today source reports for a render timeout. It must have a hint too.
+  SESSION:           "Open the Tableau tab that was left open and check what it is showing. If the viz renders there, click Refresh again — the capture will reuse that tab and finish in seconds.",
+  TAB:               "The Tableau tab could not be opened. Check that pop-ups/new tabs aren't blocked for stores.tableau.wal-mart.com, then Refresh.",
+  AUTH:              "Open the Tableau tab that was left open, complete the sign-in, then click Refresh again.",
+  SLOW_RENDER:       "Usually transient. Click Refresh again; if it keeps happening, open the Tableau tab first and let the viz finish loading, then Refresh.",
+  NO_CONTENT_SCRIPT: "Reload the extension at edge://extensions, close every open Tableau tab, then click Refresh.",
+  WRONG_VIEW:        "Close the stray Tableau tab so a fresh one can be opened on the right view, then Refresh.",
+  TABLEAU_ERROR:     "Tableau itself errored. Open the tab that was left open to see its message.",
+  EXPORT_UI:         "Tableau's Download → Crosstab dialog changed or did not open. Check the sheet list in the debug details below.",
+  NO_CAPTURE:        "The export was triggered but no CSV came back. Check the captured URLs in the debug details below.",
+  PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
+};
+
 export async function mount(host, container) {
   // 1. Inject module CSS (removed on unmount).
   const link = document.createElement("link");
@@ -480,19 +504,6 @@ export async function mount(host, container) {
     section.hidden = false;
     body.innerHTML = renderDebug(dbg);
   }
-
-  // What the user can actually do about each failure class, stated up front —
-  // the raw envelope stays available underneath for diagnosis.
-  const FIXES = {
-    AUTH:              "Open the Tableau tab that was left open, complete the sign-in, then click Refresh again.",
-    SLOW_RENDER:       "Usually transient. Click Refresh again; if it keeps happening, open the Tableau tab first and let the viz finish loading, then Refresh.",
-    NO_CONTENT_SCRIPT: "Reload the extension at edge://extensions, close every open Tableau tab, then click Refresh.",
-    WRONG_VIEW:        "Close the stray Tableau tab so a fresh one can be opened on the right view, then Refresh.",
-    TABLEAU_ERROR:     "Tableau itself errored. Open the tab that was left open to see its message.",
-    EXPORT_UI:         "Tableau's Download → Crosstab dialog changed or did not open. Check the sheet list in the debug details below.",
-    NO_CAPTURE:        "The export was triggered but no CSV came back. Check the captured URLs in the debug details below.",
-    PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
-  };
 
   function renderDebug(dbg) {
     const parts = [];
