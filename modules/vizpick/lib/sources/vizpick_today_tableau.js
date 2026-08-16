@@ -41,6 +41,10 @@ const VIEW_FRAGMENT = /\/views\/VizPick\/VizPickDetails(?:$|[?#])/i;
 
 const LOAD_TIMEOUT_MS   = 30_000;
 const VIZ_READY_WAIT_MS = 120_000;  // cold session + SSO redirect chain; see the stores source
+// A tab that is ALREADY open is warm — measured ~2s to render, hidden or
+// visible (dev/probe-vizpick-bgtab.mjs). If it has not come up in this long it
+// is not slow, it is broken, and reloading beats waiting.
+const REUSED_TAB_READY_MS = 30_000;
 const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;
 const REQUERY_WAIT_MS   = 25_000;  // how long to wait for the viz to re-query after a store change
@@ -137,16 +141,41 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     opts.onProgress?.({ stage: label, done: 0, total: wanted.length, store: null });
 
   try {
-    stage("Opening the VizPick Details tab");
-    const primaryReady = await prepareTab(primaryId);
+    stage(opened.didOpen ? "Opening the VizPick Details tab" : "Reusing the open VizPick Details tab");
+    // An already-open tab is either warm (renders in ~2s) or broken. The long
+    // cold-session budget only applies to a tab we just created; spending it
+    // on a reused one just delays the reload that actually fixes it.
+    let primaryReady = await prepareTab(primaryId, {
+      readyWaitMs: opened.didOpen ? VIZ_READY_WAIT_MS : REUSED_TAB_READY_MS,
+    });
+
+    // A REUSED tab is the dangerous case. A failed run deliberately leaves its
+    // tab open for the user to inspect — and findOrOpenReportTab then hands
+    // that same tab to the next run. If it is discarded, session-expired, or
+    // was left mid-teardown, every subsequent capture inherits the wreckage
+    // and fails identically, forever, while a freshly opened tab would have
+    // worked. (This is what "live data still not loading" looked like: the
+    // same SESSION error on repeat, on a view that renders in ~2s cold.)
+    //
+    // So: reload it once and try again before giving up. Only for reused tabs
+    // — a tab we just created has nothing stale to shed, and a second
+    // VIZ_READY_WAIT_MS would just double the wait before the real error.
+    if (!primaryReady.ok && !opened.didOpen) {
+      stage("Reloading a stale Tableau tab");
+      await chrome.tabs.reload(primaryId, { bypassCache: true }).catch(() => {});
+      primaryReady = await prepareTab(primaryId);
+    }
+
     if (!primaryReady.ok) {
+      // Name what actually went wrong. "session may need SSO re-auth" for a
+      // page that rendered fine but never produced the Store control sends the
+      // user off re-authenticating a session that was never the problem.
+      const diag = await diagnoseUnrenderedTab(primaryId, primaryReady.reason);
       return {
         ok: false,
-        errorClass: "SESSION",
-        // Name the stage that actually failed. "did not render in time" for a
-        // page that rendered fine but never produced the Store control sent
-        // the user off re-authenticating a session that was never the problem.
-        error: `VizPick Details was not usable in time — ${primaryReady.reason}.` + tabHint,
+        errorClass: diag.errorClass,
+        error: diag.message + tabHint,
+        debug: diag,
         keptTabOpen: keepFailedTab,
       };
     }
@@ -433,7 +462,14 @@ async function captureStore(tabId, store, failures) {
  * loaded, capture hook installed, viz rendered, file writes suppressed.
  * Every lane runs this, so it must be safe to call on several tabs at once.
  */
-async function prepareTab(tabId) {
+async function prepareTab(tabId, opts = {}) {
+  // A discarded tab (Chrome reclaiming memory from background tabs) still
+  // reports status "complete", so waitForTabLoad would return instantly on a
+  // tab that has no document at all. Wake it first or every check below fails
+  // for the wrong reason.
+  const t0 = await chrome.tabs.get(tabId).catch(() => null);
+  if (t0?.discarded) await chrome.tabs.reload(tabId, { bypassCache: false }).catch(() => {});
+
   await waitForTabLoad(tabId, LOAD_TIMEOUT_MS);
 
   if (!(await waitForCaptureInstalled(tabId, INSTALL_GRACE_MS))) {
@@ -442,8 +478,8 @@ async function prepareTab(tabId) {
     await waitForCaptureInstalled(tabId, INSTALL_GRACE_MS);
   }
 
-  if (!(await waitForVizReady(tabId, VIZ_READY_WAIT_MS))) {
-    return { ok: false, reason: "viz did not render (session may need SSO re-auth)" };
+  if (!(await waitForVizReady(tabId, opts.readyWaitMs ?? VIZ_READY_WAIT_MS))) {
+    return { ok: false, reason: "the viz never rendered" };
   }
 
   // The toolbar is NOT a sufficient readiness signal for THIS view. Tableau
@@ -578,11 +614,100 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function findOrOpenReportTab() {
   const all = await chrome.tabs.query({ url: TAB_PATTERN });
   const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
-  if (existing.length) return { tab: existing[0], didOpen: false };
+  if (existing.length) {
+    // Chrome discards background tabs under memory pressure. A discarded tab
+    // still reports status "complete" and still matches this query, but it has
+    // no document — so prefer a live one when there is a choice, and tell the
+    // caller when the only candidate needs waking.
+    const live = existing.find((t) => !t.discarded) || existing[0];
+    return { tab: live, didOpen: false, discarded: !!live.discarded };
+  }
   // active:false — the capture runs entirely in the background and must
   // never pull the user off the page they are on.
   const tab = await chrome.tabs.create({ url: DETAILS_URL, active: false });
   return tab ? { tab, didOpen: true } : null;
+}
+
+/**
+ * Why did the viz never appear? Distinguishing these matters because the
+ * remedies are opposites: an SSO wall needs the user, a slow render needs
+ * patience, a stale tab needs reloading. A single "session may need SSO
+ * re-auth" for all of them sends people to re-authenticate a healthy session.
+ *
+ * Mirrors diagnoseUnrenderedTab() in vizpick_stores_tableau.js, against this
+ * view's fragment.
+ */
+async function diagnoseUnrenderedTab(tabId, stageReason) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const url = tab?.url || "(unknown)";
+
+  let page = null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world:  "MAIN",
+      func:   () => {
+        const txt = (document.body?.innerText || "").slice(0, 4000);
+        return {
+          url: location.href,
+          title: document.title,
+          installed: !!window.__APAISUITE_VIZPICK_TABLEAU_CAP,
+          hasToolbar: !!document.querySelector('[data-tb-test-id="viz-viewer-toolbar-button-download"]'),
+          // The Store parameter is this view's other hard requirement.
+          hasStoreParam: !!(
+            document.querySelector('textarea[aria-label="Store"], input[aria-label="Store"]') ||
+            [...document.querySelectorAll("textarea,input")].find(
+              (n) => (n.getAttribute("aria-label") || "").trim().toLowerCase() === "store"
+            )
+          ),
+          loading: !!document.querySelector('[class*="tb-loading" i], [class*="LoadingSpinner" i], [class*="loading-indicator" i]'),
+          hasPasswordField: !!document.querySelector('input[type="password"]'),
+          signInish: /sign in|log in|password|authenticat|session (has )?expired|access denied|not authorized/i.test(txt),
+          tableauError: /an unexpected error occurred|unable to (load|connect)|permission/i.test(txt),
+          testIdCount: document.querySelectorAll("[data-tb-test-id]").length,
+          textSample: txt.replace(/\s+/g, " ").slice(0, 400),
+        };
+      },
+    });
+    // The viz — and the toolbar — live in an embedded iframe, not the top
+    // document (established 2026-08-16, dev/probe-vizpick-stuck.mjs). Prefer
+    // whichever frame looks most like the real viz frame.
+    const frames = (results || []).map((r) => r?.result).filter(Boolean);
+    page = frames.find((f) => f.hasToolbar || f.hasStoreParam)
+        || frames.find((f) => f.testIdCount > 0)
+        || frames[0] || null;
+  } catch (e) {
+    page = { evalError: String(e?.message ?? e) };
+  }
+
+  let errorClass = "SESSION";
+  let message;
+  if (tab?.discarded) {
+    errorClass = "DISCARDED";
+    message = "Chrome had discarded the Tableau tab to save memory and it did not come back in time. Try Refresh again.";
+  } else if (page?.hasPasswordField || page?.signInish) {
+    errorClass = "AUTH";
+    message = "Tableau is showing a sign-in / SSO page, so no data could be read. Sign in on the opened tab, then Refresh again.";
+  } else if (!VIEW_FRAGMENT.test(url) && !VIEW_FRAGMENT.test(page?.url || "")) {
+    errorClass = "WRONG_VIEW";
+    message = `The Tableau tab is on "${url}", not the VizPick Details view.`;
+  } else if (page?.hasToolbar && !page?.hasStoreParam) {
+    errorClass = "NO_PARAM";
+    message = "The viz rendered but its Store parameter box never appeared, so no store could be selected. Check that the VizPick Details view still exposes a \"Store\" parameter.";
+  } else if (page?.loading || page?.testIdCount > 0) {
+    errorClass = "SLOW_RENDER";
+    message = `Tableau was still rendering after ${Math.round(VIZ_READY_WAIT_MS / 1000)}s (the page shell loaded but the viz never finished). Usually a cold session or a slow upstream — retrying often works.`;
+  } else if (page?.installed === false) {
+    errorClass = "NO_CONTENT_SCRIPT";
+    message = "The capture content script was not present on the Tableau tab. Reload the extension at edge://extensions, close any open Tableau tabs, then Refresh again.";
+  } else if (page?.tableauError) {
+    errorClass = "TABLEAU_ERROR";
+    message = "Tableau reported an error on the page instead of rendering the viz.";
+  } else {
+    message = `VizPick Details was not usable within ${Math.round(VIZ_READY_WAIT_MS / 1000)}s — ${stageReason}.`;
+  }
+
+  return { errorClass, message, tabUrl: url, stageReason, discarded: !!tab?.discarded, page };
 }
 
 
