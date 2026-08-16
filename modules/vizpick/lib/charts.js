@@ -48,7 +48,6 @@ export const BANDS = {
   met:     { cls: "vizpick-met",     color: "#0053e2" },  // Walmart blue
   near:    { cls: "vizpick-near",    color: "#e07b00" },  // orange
   missed:  { cls: "vizpick-missed",  color: "#c53030" },  // red
-  pending: { cls: "vizpick-pending", color: "#1a1a1a" },  // black — mid-day, unjudged
   neutral: { cls: "vizpick-neutral", color: "#0053e2" },  // no goal exists
 };
 
@@ -58,18 +57,20 @@ export const NEAR_BAND = 5;
 /**
  * @param {number} value
  * @param {number|null|undefined} goal  Omit for a metric with no published goal.
- * @param {object} [opts]
- * @param {boolean} [opts.live]  Current-day data still accumulating.
  * @returns {{cls:string,color:string}|null}  null when there is no number.
+ *
+ * Current-day figures are graded exactly like closed ones. They were briefly
+ * shown black-and-unjudged on the grounds that a mid-day number is incomplete,
+ * but in practice that made the live tab unreadable at a glance — the whole
+ * point of the rollup is to see who needs help NOW, and a wall of black says
+ * nothing. A store at 65% against a 90% goal is behind whether or not the day
+ * is over.
  */
-export function bandFor(value, goal, opts = {}) {
+export function bandFor(value, goal) {
   if (!Number.isFinite(value)) return null;
   if (goal == null || !Number.isFinite(goal)) return BANDS.neutral;
   const v = Math.round(value);
   if (v >= goal) return BANDS.met;
-  // A mid-day figure is incomplete by definition, so it is reported, not
-  // graded — never orange, never red.
-  if (opts.live) return BANDS.pending;
   if (v > goal - NEAR_BAND) return BANDS.near;
   return BANDS.missed;
 }
@@ -194,7 +195,6 @@ export function donutSvg(data, opts = {}) {
  * @param {object} [opts]
  * @param {number} [opts.max=100]
  * @param {number} [opts.goal]        Caption AND colour threshold.
- * @param {boolean} [opts.live]       Current-day data (no orange band).
  * @param {string} [opts.label]       Small caption under the ring (e.g. "VizPick Health").
  * @param {string} [opts.title]       Tooltip name; defaults to `label`. Set it
  *   explicitly when the ring shows no caption but still needs a named tooltip.
@@ -224,7 +224,7 @@ export function gaugeSvg(value, opts = {}) {
 
   // Same scale as the card metric text, so a ring and its number can never
   // disagree about whether the goal was met.
-  const color = bandFor(v, goal, { live: opts.live })?.color ?? WM.blue;
+  const color = bandFor(v, goal)?.color ?? WM.blue;
 
   const track =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${WM.grid}" stroke-width="${thickness}"/>`;

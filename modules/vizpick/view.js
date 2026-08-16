@@ -744,7 +744,7 @@ export async function mount(host, container) {
               <div class="vizpick-gauge-label">${escapeHtml(g.label)}<span class="vizpick-gauge-goal">not in this view</span></div>
             </div>`;
         }
-        return gaugeSvg(v, { goal: g.goal, label: g.label, live: activeTab === "today", fmt: (x) => Math.round(x).toString() });
+        return gaugeSvg(v, { goal: g.goal, label: g.label, fmt: (x) => Math.round(x).toString() });
       })
       .join("");
   }
@@ -786,7 +786,6 @@ export async function mount(host, container) {
     // `ratio` is a REAL numerator/denominator pair from the export — never a
     // figure derived by dividing a rounded percentage. See the note at the top
     // of lib/parse_vizpick_stores_csv.js.
-    const live = activeTab === "today";
 
     // The composite is judged on the same scale as the rings around it: it is
     // the mean attainment against those very goals, so 100 is "every component
@@ -796,7 +795,7 @@ export async function mount(host, container) {
           // No caption under this one — the store number already labels the
           // card — but the tooltip still names it.
           size: 96, thickness: 10, label: "", title: "VizPick Health",
-          goal: GOALS.vizpick, live,
+          goal: GOALS.vizpick,
           fmt: (v) => Math.round(v).toString(),
         })
       : `<div class="vizpick-card-nohealth" title="No VizPick composite score for this store">—</div>`;
@@ -813,7 +812,7 @@ export async function mount(host, container) {
     const ringsHtml = rings
       .map((g) => (Number.isFinite(g.value)
         ? gaugeSvg(g.value, {
-            size: 62, thickness: 8, goal: g.goal, label: g.label, live,
+            size: 62, thickness: 8, goal: g.goal, label: g.label,
             fmt: (v) => `${Math.round(v)}%`,
           })
         : `<div class="vizpick-gauge">
@@ -826,8 +825,12 @@ export async function mount(host, container) {
       { label: "Cases Seen %", value: r.casesSeenPct, goal: GOALS.casesSeenPct, fmt: fmtPct, ratio: ratio(r.casesSeen, r.casesExpected) },
       { label: "Location %",   value: r.locationPct,  goal: GOALS.locationPct,  fmt: fmtPct },
       { label: "Pick %",       value: r.pickPct,      goal: GOALS.pickPct,      fmt: fmtPct, ratio: ratio(r.picksCompleted, r.picksSuggested) },
-      { label: "Total Picked", value: r.totalPicked,  goal: null,               fmt: fmtInt,
-        ratio: pickedOfTotal(r), ratioTitle: pickedOfTotalTitle(r) },
+      // A COUNT, with no denominator — deliberately. `Total Picked` is not the
+      // numerator of Pick %: store 5151 reported Total Picked 611 against a
+      // Pick % of 392/603, so dividing 611 by 65% invents a "total" of 940 that
+      // describes nothing. The real picks ratio is already on the Pick % row
+      // right above it, which is where that question is actually answered.
+      { label: "Total Picked", value: r.totalPicked,  goal: null,               fmt: fmtInt },
       { label: "Overstock %",  value: r.overstockPct, goal: GOALS.overstockPct, fmt: fmtPct },
       // No published goal for Pallets %, so it is shown but never judged.
       { label: "Pallets %",    value: r.palletsPct,   goal: null,               fmt: fmtPct, ratio: ratio(r.palletsSeen, r.palletsExpected) },
@@ -840,7 +843,7 @@ export async function mount(host, container) {
           <span class="vizpick-store-card-metric-label">${escapeHtml(m.label)}</span>
           <span class="vizpick-store-card-metric-value">
             ${m.ratio ? `<span class="vizpick-ratio"${m.ratioTitle ? ` title="${escapeHtml(m.ratioTitle)}"` : ""}>${escapeHtml(m.ratio)}</span>` : ""}
-            <strong class="${m.goal != null ? pctClass(m.value, m.goal, live) : ""}"
+            <strong class="${m.goal != null ? pctClass(m.value, m.goal) : ""}"
                     title="${m.goal != null ? `Goal ${m.goal}%` : ""}">${escapeHtml(m.fmt(m.value))}</strong>
           </span>
         </div>`)
@@ -983,38 +986,8 @@ export async function mount(host, container) {
 
   // Colour band for a percentage, shared with the gauge rings
   // (lib/charts.js::bandFor) so text and rings can never disagree.
-  // How many picks the store was asked for, alongside how many it made.
-  //
-  // The summary export does not carry that denominator, so it is DERIVED from
-  // the completion rate: total = Total Picked / (Pick % / 100). Tableau rounds
-  // Pick % to whole percent, so the answer is only good to roughly +/-1%, and
-  // it is rounded to the nearest ten and prefixed "≈" rather than dressed up
-  // as exact. Suppressed entirely when the percentage is too small to divide
-  // by safely (under 5%, where a half-point of rounding swings the result by
-  // more than 10%).
-  //
-  // The Today view is different: it exports Suggested Picks and Suggested
-  // Picks Completed directly, so its Pick % row shows a REAL ratio and this
-  // derivation is not used there.
-  function pickedOfTotal(r) {
-    const picked = r.totalPicked;
-    const pct = r.pickPct;
-    if (!Number.isFinite(picked) || !Number.isFinite(pct)) return null;
-    if (pct < 5 || pct > 100) return null;
-    const est = Math.round(picked / (pct / 100) / 10) * 10;
-    if (!Number.isFinite(est) || est < picked) return null;
-    return `${Math.round(picked).toLocaleString("en-US")} / ≈${est.toLocaleString("en-US")}`;
-  }
-  function pickedOfTotalTitle(r) {
-    if (!pickedOfTotal(r)) return null;
-    const missed = Math.round(r.totalPicked / (r.pickPct / 100) - r.totalPicked);
-    return `Derived from Pick % (${Math.round(r.pickPct)}%), which Tableau rounds to a whole percent — ` +
-           `approximately ${missed.toLocaleString("en-US")} picks not completed. ` +
-           `The summary export does not publish the true denominator.`;
-  }
-
-  function pctClass(value, goal, live) {
-    return bandFor(value, goal, { live })?.cls ?? "";
+  function pctClass(value, goal) {
+    return bandFor(value, goal)?.cls ?? "";
   }
 
   function renderFreshness(f) {
