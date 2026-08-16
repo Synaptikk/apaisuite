@@ -302,33 +302,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Four-band value coloring:
-     >= 98%          green
-     > 95%  to < 98% yellow
-     > 90%  to <= 95% orange
-     <= 90%          red
-   The shared token palette only has success/warn/error, so the yellow band
-   needs one module-local variable. It is deliberately gold rather than a
-   bright yellow: a true yellow fails contrast as text on the light theme,
-   and it has to stay clearly distinguishable from the orange band next to
-   it. Bare (goal-less) metrics like Total Picked get no class and inherit
-   the surrounding text color. */
-.module-vizpick {
-  /* Walmart Spark yellow (#ffc220) is what the gauge RINGS use — a thick arc
-     carries it fine. As small text on the light theme it only reaches ~1.7:1
-     contrast, which is unreadable, so the text band uses the same hue pushed
-     down to a legible tone. On the dark theme Spark yellow reads well as-is,
-     so it is used unmodified there. */
-  --vizpick-caution: #C08A00;
-}
-[data-theme="dark"] .module-vizpick {
-  --vizpick-caution: #FFC220;
-}
+/* Goal-relative value colouring — see lib/charts.js::bandFor.
+     blue   at or above goal
+     orange below goal but within 5 points, on a CLOSED day only
+     black  a clear miss, and every below-goal current-day figure
+   Metrics with no published goal (Total Picked, Pallets %) get no class and
+   inherit the surrounding ink. */
+.vizpick-met     { color: var(--apai-blue);  font-weight: var(--fw-semi); }
+.vizpick-near    { color: #E07B00;           font-weight: var(--fw-semi); }
+.vizpick-missed  { color: var(--apai-ink);   font-weight: var(--fw-semi); }
+.vizpick-neutral { color: var(--apai-blue);  font-weight: var(--fw-medium); }
 
-.vizpick-good    { color: var(--apai-success);    font-weight: var(--fw-medium); }
-.vizpick-caution { color: var(--vizpick-caution); font-weight: var(--fw-medium); }
-.vizpick-warn    { color: var(--apai-warn);       font-weight: var(--fw-medium); }
-.vizpick-bad     { color: var(--apai-error);      font-weight: var(--fw-medium); }
+[data-theme="dark"] .module-vizpick .vizpick-near   { color: #FBBF24; }
+/* "Black" has to become the theme's brightest ink in dark mode or it vanishes. */
+[data-theme="dark"] .module-vizpick .vizpick-missed { color: var(--apai-ink); }
+
 .vizpick-muted { color: var(--apai-muted); }
 
 /* ── Period tabs (Yesterday / Today) ─────────────────────────── */
@@ -477,3 +465,12 @@
   color: var(--apai-muted);
   margin: var(--sp-3) 0 0;
 }
+
+/* Outcome line for the last capture — in particular the "nothing changed,
+   nothing re-downloaded" case, which would otherwise look like a no-op. */
+.vizpick-runnote {
+  margin: calc(-1 * var(--sp-3)) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+.vizpick-runnote[hidden] { display: none; }
