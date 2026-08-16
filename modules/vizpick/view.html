@@ -63,9 +63,10 @@
     </div>
   </section>
 
-  <!-- Per-store cards for the selected market — each shows its own VizPick
-       Health gauge and every metric at once. Cards are draggable, not
-       collapsible; the Sort control sets the order until one is dragged. -->
+  <!-- Per-store cards for the selected market. Graphs only by default — the
+       store number and its overall score lead, then the four goal rings; the
+       numeric rows are behind a per-card toggle. Cards are draggable; the Sort
+       control sets the order until one is dragged. -->
   <section class="vizpick-stores">
     <div class="vizpick-family-head">
       <h2>Stores in Market</h2>
@@ -78,6 +79,7 @@
         <option value="store-desc">Store number — high to low</option>
         <option value="custom">Custom (drag to arrange)</option>
       </select>
+      <button class="vizpick-linkbtn" data-action="toggle-all" hidden>Show all numbers</button>
       <button class="vizpick-linkbtn" data-action="reset-order" hidden>Reset order</button>
     </div>
     <p class="vizpick-draghint">Drag a card to rearrange.</p>
