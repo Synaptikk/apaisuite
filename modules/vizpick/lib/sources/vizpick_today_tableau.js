@@ -34,10 +34,13 @@
 import { parseDeptBreakout, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
 
 const DETAILS_URL = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
-const TAB_PATTERN = "https://stores.tableau.wal-mart.com/*VizPickDetails*";
+// See the note in vizpick_stores_tableau.js: Tableau's view name lives in the
+// URL fragment, which chrome.tabs.query match patterns cannot see.
+const TAB_PATTERN   = "https://stores.tableau.wal-mart.com/*";
+const VIEW_FRAGMENT = /\/views\/VizPick\/VizPickDetails(?:$|[?#])/i;
 
 const LOAD_TIMEOUT_MS   = 30_000;
-const VIZ_READY_WAIT_MS = 60_000;
+const VIZ_READY_WAIT_MS = 120_000;  // cold session + SSO redirect chain; see the stores source
 const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;
 const REQUERY_WAIT_MS   = 25_000;  // how long to wait for the viz to re-query after a store change
@@ -251,7 +254,8 @@ async function waitForRequery(tabId, timeoutMs) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function findOrOpenReportTab() {
-  const existing = await chrome.tabs.query({ url: TAB_PATTERN });
+  const all = await chrome.tabs.query({ url: TAB_PATTERN });
+  const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
   if (existing.length) return { tab: existing[0], didOpen: false };
   const tab = await chrome.tabs.create({ url: DETAILS_URL, active: true });
   return tab ? { tab, didOpen: true } : null;

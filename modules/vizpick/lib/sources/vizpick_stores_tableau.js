@@ -20,10 +20,24 @@
 import { parseVizpickStoresCsv, parseGrandTotal, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
 
 const REPORT_URL  = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=1&:linktarget=_self";
-const TAB_PATTERN = "https://stores.tableau.wal-mart.com/*VizPick*";
+// Tableau is a hash-router: the view name lives entirely in the URL FRAGMENT
+// ("…/#/site/OnlineGrocery/views/VizPick/VizPick"). chrome.tabs.query match
+// patterns are matched against the URL *without* its fragment, so a pattern
+// like ".../*VizPick*" matches nothing at all — verified live. Query the host
+// and disambiguate the view ourselves.
+const TAB_PATTERN  = "https://stores.tableau.wal-mart.com/*";
+// Must not also match "…/VizPickDetails", which is a different view with a
+// different set of sheets — exporting "Download Summary by Store" from it
+// would fail.
+const VIEW_FRAGMENT = /\/views\/VizPick\/VizPick(?:$|[?#])/i;
 
 const LOAD_TIMEOUT_MS   = 30_000;
-const VIZ_READY_WAIT_MS = 60_000;   // Tableau initial render can be slow, even foregrounded
+// Tableau's initial render can be slow even foregrounded, and a cold session
+// adds an SSO redirect chain before the viz starts at all. 60s was observed
+// timing out on a first Refresh after an extension reload; 2 minutes covers a
+// cold start without making a genuine failure feel hung (the tab stays open
+// and the error now says which kind of failure it was).
+const VIZ_READY_WAIT_MS = 120_000;
 const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;   // the tiny "Last update" sheet exports fast
 const POLL_MS           = 800;
@@ -74,11 +88,15 @@ export async function fetchVizpickStoresTableau() {
 
     const ready = await waitForVizReady(tab.id, VIZ_READY_WAIT_MS);
     if (!ready) {
+      // A bare "did not render in time" is unactionable — it can mean SSO,
+      // a slow cold render, a Tableau error dialog, or the tab having been
+      // navigated somewhere else entirely. Look at the page and say which.
+      const diag = await diagnoseUnrenderedTab(tab.id);
       return {
         ok: false,
-        errorClass: "SESSION",
-        error: "Tableau viz did not render in time (session may need SSO re-auth or a store filter). " +
-               "The tab was left open — confirm data renders there, then Refresh again.",
+        errorClass: diag.errorClass,
+        error: diag.message + " The tab was left open — confirm data renders there, then Refresh again.",
+        debug: diag,
         keptTabOpen: true,
       };
     }
@@ -170,7 +188,8 @@ export async function fetchVizpickStoresTableau() {
 
 // ── Tab management (same lifecycle as market120's clearance_stores_tableau.js) ──
 async function findOrOpenReportTab() {
-  const existing = await chrome.tabs.query({ url: TAB_PATTERN });
+  const all = await chrome.tabs.query({ url: TAB_PATTERN });
+  const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
   if (existing.length) return { tab: existing[0], didOpen: false };
   // Open ACTIVE: Tableau's rAF-driven render is throttled in background tabs.
   // We restore the user's previous tab afterward.
@@ -282,6 +301,67 @@ async function findCsvInRing(tabId, needle = STORE_CSV_NEEDLE) {
     for (const r of (results || [])) if (r?.result) return r.result;
     return null;
   } catch { return null; }
+}
+
+// Work out WHY the viz never produced a toolbar, so the UI can tell the user
+// what to actually do about it instead of "session may need re-auth".
+async function diagnoseUnrenderedTab(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const url = tab?.url || "(unknown)";
+
+  let page = null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world:  "MAIN",
+      func:   () => {
+        const txt = (document.body?.innerText || "").slice(0, 4000);
+        return {
+          url: location.href,
+          title: document.title,
+          installed: !!window.__APAISUITE_VIZPICK_TABLEAU_CAP,
+          hasToolbar: !!document.querySelector('[data-tb-test-id="viz-viewer-toolbar-button-download"]'),
+          // Tableau paints a spinner/loading zone while a viz is still coming up.
+          loading: !!document.querySelector('[class*="tb-loading" i], [class*="LoadingSpinner" i], [class*="loading-indicator" i]'),
+          // SSO / login walls
+          hasPasswordField: !!document.querySelector('input[type="password"]'),
+          signInish: /sign in|log in|password|authenticat|session (has )?expired|access denied|not authorized/i.test(txt),
+          // Tableau's own error surface
+          tableauError: /an unexpected error occurred|unable to (load|connect)|no data|permission/i.test(txt),
+          testIdCount: document.querySelectorAll("[data-tb-test-id]").length,
+          textSample: txt.replace(/\s+/g, " ").slice(0, 400),
+        };
+      },
+    });
+    // Prefer whichever frame looks most like the real viz frame.
+    const frames = (results || []).map((r) => r?.result).filter(Boolean);
+    page = frames.find((f) => f.testIdCount > 0) || frames[0] || null;
+  } catch (e) {
+    page = { evalError: String(e?.message ?? e) };
+  }
+
+  let errorClass = "SESSION";
+  let message;
+  if (page?.hasPasswordField || page?.signInish) {
+    errorClass = "AUTH";
+    message = "Tableau is showing a sign-in / SSO page, so no data could be read. Sign in on the opened tab, then Refresh again.";
+  } else if (!VIEW_FRAGMENT.test(url) && !VIEW_FRAGMENT.test(page?.url || "")) {
+    errorClass = "WRONG_VIEW";
+    message = `The Tableau tab is on "${url}", not the VizPick summary view.`;
+  } else if (page?.loading || page?.testIdCount > 0) {
+    errorClass = "SLOW_RENDER";
+    message = `Tableau was still rendering after ${Math.round(VIZ_READY_WAIT_MS / 1000)}s (the viz shell loaded but the toolbar never appeared). This is usually a cold session or a slow upstream — retrying often works.`;
+  } else if (page?.installed === false) {
+    errorClass = "NO_CONTENT_SCRIPT";
+    message = "The capture content script was not present on the Tableau tab. Reload the extension at edge://extensions, close any open Tableau tabs, then Refresh again.";
+  } else if (page?.tableauError) {
+    errorClass = "TABLEAU_ERROR";
+    message = "Tableau reported an error on the page instead of rendering the viz.";
+  } else {
+    message = `Tableau viz did not render within ${Math.round(VIZ_READY_WAIT_MS / 1000)}s.`;
+  }
+
+  return { errorClass, message, tabUrl: url, page };
 }
 
 async function dumpRingSummary(tabId) {
