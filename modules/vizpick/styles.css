@@ -429,6 +429,20 @@
   background: var(--apai-blue);
   transition: width 200ms ease;
 }
+/* Setup phase: the viz is rendering and no store has completed, so there is
+   no percentage to show. A 0%-wide bar looks stalled — sweep instead. */
+.vizpick-progress-indeterminate {
+  width: 35%;
+  transition: none;
+  animation: vizpick-sweep 1.4s ease-in-out infinite;
+}
+@keyframes vizpick-sweep {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vizpick-progress-indeterminate { animation: none; width: 100%; opacity: 0.4; }
+}
 
 /* Metric absent from the current-day view — shown as an explicit "n/a"
    placeholder rather than a zeroed ring that would read as real data. */

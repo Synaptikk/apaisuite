@@ -196,6 +196,8 @@ export function donutSvg(data, opts = {}) {
  * @param {number} [opts.goal]        Caption AND colour threshold.
  * @param {boolean} [opts.live]       Current-day data (no orange band).
  * @param {string} [opts.label]       Small caption under the ring (e.g. "VizPick Health").
+ * @param {string} [opts.title]       Tooltip name; defaults to `label`. Set it
+ *   explicitly when the ring shows no caption but still needs a named tooltip.
  * @param {number} [opts.size=140]
  * @param {number} [opts.thickness=14]
  * @param {(v:number)=>string} [opts.fmt]  Center text formatter; defaults to the raw value.
@@ -205,6 +207,8 @@ export function gaugeSvg(value, opts = {}) {
     max = 100,
     goal,
     label = "",
+    // Tooltip name, for a gauge that deliberately renders no visible caption.
+    title = label,
     size = 140,
     thickness = 14,
     fmt = (v) => String(Math.round(v)),
@@ -230,7 +234,9 @@ export function gaugeSvg(value, opts = {}) {
   const arc =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${thickness}" ` +
     `stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" ` +
-    `transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${esc(fmt(v))}${goal != null ? ` (goal ${esc(fmt(goal))})` : ""}</title></circle>`;
+    // A gauge with no visible caption (the big composite ring on a store card)
+    // still needs a readable tooltip — "": 97" reads as a bug.
+    `transform="rotate(-90 ${cx} ${cy})"><title>${title ? `${esc(title)}: ` : ""}${esc(fmt(v))}${goal != null ? ` (goal ${esc(fmt(goal))})` : ""}</title></circle>`;
   const center =
     `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" ` +
     `font-size="${Math.round(size * 0.22)}" font-weight="700" fill="${WM.ink}">${esc(fmt(v))}</text>`;
