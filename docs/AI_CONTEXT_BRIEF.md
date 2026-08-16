@@ -36,6 +36,8 @@ through `qrcallbox.com` (Chrome Web Store path is deferred — see
 | Workvivo | `workvivo` | live | QRCallBox ↔ Workvivo token-heartbeat: reads `window.v2.chatConfig.access_token` hourly and POSTs it to QRCallBox. |
 | ClosingList | `closinglist` | live | Closing-shift email draft from CaseVisibility + IVR call-offs |
 | StockingPlan | `stockingplan` | live | Overnight stocking plan: freight from CaseVisibility → labour hours → associate assignments. |
+| MetricShot | `metricshot` | beta | Scheduled screenshots of internal metric dashboards (Tableau, etc.) posted to Workvivo channels via the user's live Sendbird SDK session. Seed metric: VizPick Score → "1458 Leadership" at 10:00/14:00/20:00 daily. |
+| VizPick Market Rollup | `vizpick` | alpha | Every store's VizPick backroom health (Cases Seen/Location/Pick/Overstock %) for one chosen market, side by side — Tableau crosstab capture (`OnlineGrocery/VizPick`, "Download Summary by Store" sheet), same pattern as `market120`'s store capture. Gauge-ring UI matches VizPick's own visual style. |
 | AssocPurchases | `assocpurchases` | **WIP, disabled** in `_registry.js` | Markdown ↔ associate-discount-card cross-reference (self-purchase + friend/family fraud). |
 | ClaimsBuddy | `claimsbuddy` | **WIP, disabled** in `_registry.js` | Clearsight claims helper. Has `native_host/` (native messaging). Re-enable by uncommenting the import + array entry. |
 

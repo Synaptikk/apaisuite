@@ -245,14 +245,14 @@
     },
     {
       "matches": [
-        "https://workvivo.walmart.com/*"
+        "https://stores.tableau.wal-mart.com/*"
       ],
       "js": [
-        "modules/metricshot/content/wv_session_sniffer.js"
+        "modules/vizpick/content/tableau_capture.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [

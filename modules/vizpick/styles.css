@@ -1,0 +1,252 @@
+/* modules/vizpick/styles.css
+   Uses APAISuite design tokens exclusively (var(--apai-*)) so palette /
+   spacing / typography changes in styles/tokens.css propagate automatically.
+   All selectors scoped under .module-vizpick per MODULE_CONTRACT.md §8. */
+
+.module-vizpick .vizpick {
+  padding: var(--sp-6);
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 1400px;
+}
+
+.vizpick-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.vizpick-title h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-blue-dark);
+  margin: 0;
+}
+.vizpick-subtitle {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: var(--sp-1) 0 0;
+  max-width: 60ch;
+  line-height: var(--lh-base);
+}
+.vizpick-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.vizpick-toolbar .btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: var(--sp-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: vizpick-spin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes vizpick-spin { to { transform: rotate(360deg); } }
+
+.vizpick-freshness {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+}
+.vizpick-freshness[data-state="ok"]      { color: var(--apai-success); background: var(--apai-success-bg); border-color: var(--apai-success); }
+.vizpick-freshness[data-state="stale"]   { color: var(--apai-warn);    background: var(--apai-warn-bg);    border-color: var(--apai-warn); }
+.vizpick-freshness[data-state="error"]   { color: var(--apai-error);   background: var(--apai-error-bg);   border-color: var(--apai-error); }
+.vizpick-freshness[data-state="pending"] { color: var(--apai-info);    background: var(--apai-info-bg);    border-color: var(--apai-info); }
+
+/* Market picker */
+.vizpick-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.vizpick-picker-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+}
+.vizpick-market-select {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+  min-width: 160px;
+}
+.vizpick-market-select:disabled { color: var(--apai-muted); }
+.vizpick-picker-meta { font-size: var(--fs-sm); color: var(--apai-muted); }
+
+/* Gauges */
+.vizpick-gauges {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  justify-content: space-around;
+}
+.vizpick-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.vizpick-gauge svg { display: block; }
+.vizpick-gauge-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  text-align: center;
+}
+.vizpick-gauge-goal {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+}
+
+/* Donut (reserved for future proportional charts, kept for parity with market120) */
+.vizpick-donut-wrap { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.vizpick-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); font-size: var(--fs-sm); }
+.vizpick-legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+
+/* Store table */
+.vizpick-stores {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+  display: grid;
+  gap: var(--sp-3);
+}
+.vizpick-family-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.vizpick-family-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.vizpick-store-count { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+
+/* Per-store card grid */
+.vizpick-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-3);
+}
+.vizpick-store-card {
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3);
+}
+.vizpick-store-card[open] { border-color: var(--apai-blue); }
+.vizpick-store-card-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+.vizpick-store-card-summary::-webkit-details-marker { display: none; }
+.vizpick-store-card-gauge svg { display: block; }
+.vizpick-store-card-id { flex: 1; min-width: 0; }
+.vizpick-store-card-num { font-size: var(--fs-md); font-weight: var(--fw-bold, 800); color: var(--apai-ink); }
+.vizpick-store-card-sub { font-size: var(--fs-xs); color: var(--apai-muted); }
+.vizpick-store-card-caret {
+  font-size: var(--fs-lg);
+  color: var(--apai-muted);
+  transition: transform 150ms ease;
+}
+.vizpick-store-card[open] .vizpick-store-card-caret { transform: rotate(90deg); }
+.vizpick-store-card-details {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--apai-border-soft);
+  display: grid;
+  gap: var(--sp-2);
+}
+.vizpick-store-card-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.vizpick-store-card-metric-label { color: var(--apai-muted); }
+.vizpick-store-card-metric strong { font-variant-numeric: tabular-nums; }
+
+/* Traffic-light value coloring. Bare (goal-less) metrics like Total Picked
+   get no class here and just inherit the surrounding text color. */
+.vizpick-good { color: var(--apai-success); font-weight: var(--fw-medium); }
+.vizpick-warn { color: var(--apai-warn);    font-weight: var(--fw-medium); }
+.vizpick-bad  { color: var(--apai-error);   font-weight: var(--fw-medium); }
+
+.vizpick-empty {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: 0;
+}
+
+.vizpick-section-heading {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0 0 var(--sp-3);
+}
+
+.vizpick-debug {
+  background: var(--apai-error-bg);
+  border: 1px solid var(--apai-error);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink);
+}
+.vizpick-debug[hidden] { display: none; }
+.vizpick-debug-body { margin-bottom: var(--sp-3); }
+.vizpick-debug code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--apai-bg-elev);
+  padding: 0 4px;
+  border-radius: var(--rad-sm);
+}
+.vizpick-debug pre {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  padding: var(--sp-2);
+  font-size: var(--fs-xs);
+  overflow: auto;
+  max-height: 300px;
+}
+.vizpick-debug-hint {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin: var(--sp-3) 0 0;
+}
