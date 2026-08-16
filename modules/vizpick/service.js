@@ -23,6 +23,11 @@ const K = {
   debugToday: "vizpick.debug.today",
 };
 
+// Stamped into every capture envelope. A stored error outlives the code that
+// produced it, and we have twice been misled by an old envelope's wording
+// after the extension was reloaded — this makes the provenance explicit.
+const CAPTURE_BUILD = "2026-08-16c";
+
 function broadcast(type, payload) {
   chrome.runtime.sendMessage({ module: "vizpick", type, payload }).catch(() => {});
 }
@@ -58,6 +63,7 @@ async function getState() {
 
     debug:      got[K.debug] || null,
     debugToday: got[K.debugToday] || null,
+    captureBuild: CAPTURE_BUILD,
   };
 }
 
@@ -75,6 +81,7 @@ async function pullStores(msg) {
 
     await chrome.storage.local.set({
       [K.debug]: {
+        build:      CAPTURE_BUILD,
         ok:         result.ok,
         errorClass: result.errorClass || null,
         error:      result.error || null,
@@ -159,6 +166,7 @@ async function pullToday(msg) {
 
     await chrome.storage.local.set({
       [K.debugToday]: {
+        build:      CAPTURE_BUILD,
         ok:         result.ok,
         errorClass: result.errorClass || null,
         error:      result.error || null,
@@ -220,6 +228,11 @@ function cancelToday() {
 
 export const handlers = {
   async "get_state"(_msg)    { return await getState(); },
+  // Clear a stored capture error without running anything.
+  async "dismiss_error"(msg) {
+    await chrome.storage.local.remove(msg?.sourceId === "today" ? K.debugToday : K.debug);
+    return { ok: true };
+  },
   async "pull_stores"(msg)   { return await pullStores(msg); },
   async "pull_today"(msg)    { return await pullToday(msg); },
   async "cancel_today"(_msg) { return cancelToday(); },
