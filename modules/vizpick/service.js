@@ -197,6 +197,9 @@ async function pullToday(msg) {
       coveredStores,
       force: !!msg?.force,
       auto: !!msg?.auto,
+      // Only ever set by dev/test-vizpick-lanes.mjs, which measures the crawl
+      // at 1 lane vs 3. Unset in normal use, so the source picks its default.
+      concurrency: msg?.concurrency,
       onStore: async ({ row, sourceUpdate, topUp }) => {
         const payload = {
           rows: [row],
@@ -270,6 +273,11 @@ async function pullToday(msg) {
       requested: stores.length,
       toppedUp: !!result.topUp,
       partial: result.partial,
+      // A PARTIAL success is the interesting case here: ok:true with fewer
+      // rows than stores asked for. Without the per-store reasons that reads
+      // as a silent shortfall — the caller (and the debug panel) can't tell a
+      // row-level-security gap from a broken export.
+      debug: result.debug ?? null,
     };
   } catch (e) {
     const err = String(e?.message ?? e);
