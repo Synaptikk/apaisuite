@@ -69,6 +69,9 @@ const DONUT_CSV_NEEDLE = "New VizPick";
  * @param {object}   [opts]
  * @param {(p:{done:number,total:number,store:string})=>void} [opts.onProgress]
  * @param {() => boolean} [opts.isCancelled]  Polled between stores.
+ * @param {string|null} [opts.knownSourceKey]  Stamp of the data already stored
+ *   for this same market; when it matches, the whole crawl is skipped.
+ * @param {boolean} [opts.force]  Crawl even if the stamp is unchanged.
  * @returns {Promise<object>}
  */
 export async function fetchVizpickTodayTableau(stores, opts = {}) {
@@ -130,6 +133,20 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         }
       }
     } catch { /* metadata only */ }
+
+    // ── Skip the crawl when nothing has been republished ───────────────
+    // This matters far more here than on the yesterday capture: the crawl is
+    // two exports per store and takes minutes. If Tableau's current-day stamp
+    // is the one we already have for this market, there is nothing to fetch.
+    if (!opts.force && opts.knownSourceKey && sourceUpdate?.raw && sourceUpdate.raw === opts.knownSourceKey) {
+      succeeded = true;
+      return {
+        ok: true,
+        unchanged: true,
+        sourceUpdate,
+        checkedAt: new Date().toISOString(),
+      };
+    }
 
     // ── Per-store loop ─────────────────────────────────────────────────
     for (let i = 0; i < wanted.length; i++) {

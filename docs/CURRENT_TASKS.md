@@ -216,14 +216,32 @@ timeout). Both sources now query the host (`".../*"`) and disambiguate the
 view with a regex in JS. Reuse of an already-rendered tab takes a capture from
 ~60s to ~8s, and a pre-existing user tab is never closed.
 
-**Colour bands are absolute, not goal-relative.** >= 98 green, > 95 Walmart
-Spark yellow, > 90 orange, <= 90 red — boundaries belong to the LOWER band.
-One scale (`lib/charts.js::bandFor`) drives both the gauge rings and the card
-text so they cannot drift. The Tableau goals (95/95/90/90) are still shown as
-gauge captions but no longer colour anything. Spark yellow `#ffc220` is used
-neat for the rings; as small text on the light theme it only reaches ~1.7:1
-contrast, so `--vizpick-caution` darkens the same hue to `#C08A00` there and
-uses `#FFC220` unmodified in dark mode.
+**Colour is goal-relative, and the current day is deliberately not judged.**
+Matching the Tableau dashboard's own rings and Shane's reporting convention
+(`lib/charts.js::bandFor`):
+
+| | Yesterday (closed day) | Today (still accumulating) |
+|---|---|---|
+| at/above goal | blue | blue |
+| within 5 pts below | orange | **black** |
+| 5+ pts below | black | black |
+
+Being under goal at 11am is meaningless, so a current-day miss is never
+coloured as a near-miss. Goals are Cases 95, Locations 95, Picks 90,
+Overstock 90; `Pallets %`, `Total Picked` and the `VizPick` composite have no
+published goal and are therefore never judged — the composite ring stays
+neutral blue exactly as Tableau renders it. One scale drives both the rings
+and the card text so they cannot disagree, and it bands the ROUNDED value
+because every surface prints whole percents (banding raw let 95.4 show as
+"95" while being coloured as though above 95).
+
+**Refreshing checks the timestamp before doing any work.** Both captures read
+the cheap "Last update" sheet first and, if it matches what is already stored,
+return `unchanged: true` without exporting anything — the stored snapshot and
+its previous-day history are left completely untouched. For Today this skips a
+multi-minute per-store crawl (measured 3s instead of minutes); the stored
+market must also match, since a different market needs different stores
+regardless of freshness. A "Re-capture anyway" link appears after a skip.
 
 **Known gaps / next steps:**
 - Today needs TWO exports per store: the department breakout (picks/cases +

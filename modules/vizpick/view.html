@@ -9,6 +9,8 @@
         <span class="btn-label">Refresh</span>
         <span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
+      <!-- Shown only after a refresh found nothing new upstream. -->
+      <button class="vizpick-linkbtn" data-action="force-refresh" hidden>Re-capture anyway</button>
     </div>
   </header>
 
@@ -20,6 +22,9 @@
     </select>
     <span class="vizpick-picker-meta" data-picker-meta></span>
   </section>
+
+  <!-- Outcome of the last capture (including "nothing changed"). -->
+  <p class="vizpick-runnote" data-run-note hidden></p>
 
   <!-- Period tabs. Yesterday and Today come from two DIFFERENT Tableau
        views with different shapes — see lib/sources/vizpick_today_tableau.js -->
@@ -39,6 +44,7 @@
     <div class="vizpick-today-bar-text" data-today-status></div>
     <div class="vizpick-today-bar-actions">
       <button class="btn btn-primary" data-action="load-today">Load today's data</button>
+      <button class="vizpick-linkbtn" data-action="force-today" hidden>Re-capture anyway</button>
       <button class="btn" data-action="cancel-today" hidden>Cancel</button>
     </div>
   </section>
@@ -66,10 +72,10 @@
       <span class="vizpick-store-count" data-store-count></span>
       <label class="vizpick-sort-label" for="vizpick-sort">Sort</label>
       <select class="vizpick-sort" id="vizpick-sort" data-sort-select>
+        <option value="score-asc">Total score — low to high</option>
+        <option value="score-desc">Total score — high to low</option>
         <option value="store-asc">Store number — low to high</option>
         <option value="store-desc">Store number — high to low</option>
-        <option value="score-desc">Total score — high to low</option>
-        <option value="score-asc">Total score — low to high</option>
         <option value="custom">Custom (drag to arrange)</option>
       </select>
       <button class="vizpick-linkbtn" data-action="reset-order" hidden>Reset order</button>

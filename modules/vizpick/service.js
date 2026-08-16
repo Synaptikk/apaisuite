@@ -61,10 +61,16 @@ async function getState() {
   };
 }
 
-async function pullStores() {
+async function pullStores(msg) {
   await freshness.startAttempt("stores");
   try {
-    const result = await fetchVizpickStoresTableau();
+    // Hand the capture the stamp we already hold so it can skip the export
+    // entirely when Tableau has not republished. `force` bypasses the check.
+    const store = await snapshots.read();
+    const result = await fetchVizpickStoresTableau({
+      knownSourceKey: store.yesterday?.sourceKey ?? null,
+      force: !!msg?.force,
+    });
 
     await chrome.storage.local.set({
       [K.debug]: {
@@ -83,6 +89,19 @@ async function pullStores() {
       await freshness.markError("stores", `${result.errorClass}: ${result.error}`);
       broadcast("source_complete", { sourceId: "stores", ok: false, error: result.error });
       return { ok: false, sourceId: "stores", errorClass: result.errorClass, error: result.error };
+    }
+
+    // Nothing new upstream: leave the stored snapshot completely untouched
+    // (rows, grandTotal and the previous-day history all stay as they are) and
+    // only record that we checked.
+    if (result.unchanged) {
+      await freshness.markSuccess("stores");
+      broadcast("source_complete", { sourceId: "stores", ok: true, unchanged: true });
+      return {
+        ok: true, sourceId: "stores", unchanged: true,
+        sourceUpdate: result.sourceUpdate ?? null,
+        storeCount: store.yesterday?.rows?.length ?? 0,
+      };
     }
 
     const { rolled, reason } = await snapshots.recordYesterday({
@@ -114,11 +133,21 @@ async function pullToday(msg) {
     return { ok: false, errorClass: "INPUT", error: "No stores supplied for the Today capture." };
   }
 
+  // Only reuse the stored stamp when it belongs to the SAME market — a
+  // different market needs a different set of stores regardless of how fresh
+  // the timestamp is. todayIsCurrent() enforces that.
+  const snapStore = await snapshots.read();
+  const knownSourceKey = snapshots.todayIsCurrent(snapStore, snapStore.today?.sourceKey, market)
+    ? snapStore.today.sourceKey
+    : null;
+
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
   await freshness.startAttempt("today");
 
   try {
     const result = await fetchVizpickTodayTableau(stores, {
+      knownSourceKey,
+      force: !!msg?.force,
       onProgress: (p) => {
         if (!todayRun) return;
         todayRun.progress = p;
@@ -141,6 +170,18 @@ async function pullToday(msg) {
       await freshness.markError("today", `${result.errorClass}: ${result.error}`);
       broadcast("source_complete", { sourceId: "today", ok: false, error: result.error });
       return { ok: false, sourceId: "today", errorClass: result.errorClass, error: result.error };
+    }
+
+    // Upstream hasn't republished since this market's stored crawl — skip the
+    // multi-minute walk and keep what we have.
+    if (result.unchanged) {
+      await freshness.markSuccess("today");
+      broadcast("source_complete", { sourceId: "today", ok: true, unchanged: true });
+      return {
+        ok: true, sourceId: "today", unchanged: true,
+        sourceUpdate: result.sourceUpdate ?? null,
+        storeCount: snapStore.today?.rows?.length ?? 0,
+      };
     }
 
     await snapshots.recordToday({
@@ -178,7 +219,7 @@ function cancelToday() {
 
 export const handlers = {
   async "get_state"(_msg)    { return await getState(); },
-  async "pull_stores"(_msg)  { return await pullStores(); },
+  async "pull_stores"(msg)   { return await pullStores(msg); },
   async "pull_today"(msg)    { return await pullToday(msg); },
   async "cancel_today"(_msg) { return cancelToday(); },
 };

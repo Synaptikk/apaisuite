@@ -56,7 +56,12 @@ const UPDATE_SHEET  = { match: "last update",              fallbackIndex: 4 };
 // export (as opposed to any other sheet's crosstab).
 const STORE_CSV_NEEDLE = "Cases Seen %";
 
-export async function fetchVizpickStoresTableau() {
+/**
+ * @param {object} [opts]
+ * @param {string|null} [opts.knownSourceKey]  Stamp of the data already stored.
+ * @param {boolean} [opts.force]  Re-export even if the stamp is unchanged.
+ */
+export async function fetchVizpickStoresTableau(opts = {}) {
   const opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open Tableau VizPick tab." };
@@ -123,6 +128,20 @@ export async function fetchVizpickStoresTableau() {
         }
       }
     } catch { /* metadata only — never fail the run for it */ }
+
+    // ── Skip the expensive export when nothing has been republished ─────
+    // The store crosstab is ~4,600 rows; re-exporting it when Tableau has not
+    // refreshed just burns time and re-writes identical data. The "Last
+    // update" stamp read above is the cheap way to know.
+    if (!opts.force && opts.knownSourceKey && sourceUpdate?.raw && sourceUpdate.raw === opts.knownSourceKey) {
+      succeeded = true;   // nothing failed — let the finally block tidy the tab
+      return {
+        ok: true,
+        unchanged: true,
+        sourceUpdate,
+        checkedAt: new Date().toISOString(),
+      };
+    }
 
     // Clear the ring so we only match the CSV from *this* export, not a stale one.
     await clearRing(tab.id);

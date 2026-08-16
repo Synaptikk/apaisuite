@@ -21,33 +21,54 @@ const WM = {
   muted: "#6b7280",
 };
 
-// Shared four-band scale for every VizPick percentage. These are ABSOLUTE
-// thresholds, not offsets from each metric's goal:
-//   >= 98            green
-//   > 95  and < 98   yellow
-//   > 90  and <= 95  orange
-//   <= 90            red
-// Exported so the gauge rings and the card metric text can never drift apart.
+// Goal-relative colour scale, matching how the Tableau VizPick dashboard
+// itself colours its rings (green/blue at goal, black below) and the reporting
+// convention Shane uses:
+//
+//   YESTERDAY (a closed day, so the number is final and can be judged)
+//     value >= goal            → blue   "met the goal"
+//     goal-5 < value < goal    → orange "missed, but close"
+//     value <= goal - 5        → black  "missed by 5 points or more"
+//
+//   TODAY (still accumulating through the business day, so being under goal
+//   at 11am means nothing)
+//     value >= goal            → blue   "already met the goal"
+//     anything below           → black  — deliberately NOT orange/red, because
+//                                        colouring an in-progress number as a
+//                                        miss would be actively misleading
+//
+// A metric with no published goal (Pallets %, and the VizPick composite) gets
+// no judgement at all.
+//
+// Values are ROUNDED before comparison, because every surface that shows one
+// rounds it to a whole percent — banding the raw value let 95.4 print as "95"
+// while being coloured as though it were above 95.
 export const BANDS = {
-  good:    { cls: "vizpick-good",    color: WM.green  },
-  caution: { cls: "vizpick-caution", color: WM.yellow },
-  warn:    { cls: "vizpick-warn",    color: WM.amber  },
-  bad:     { cls: "vizpick-bad",     color: WM.red    },
+  met:     { cls: "vizpick-met",     color: "#0053e2" },  // Walmart blue
+  near:    { cls: "vizpick-near",    color: "#e07b00" },  // orange
+  missed:  { cls: "vizpick-missed",  color: "#1a1a1a" },  // black
+  neutral: { cls: "vizpick-neutral", color: "#0053e2" },  // no goal to judge
 };
 
+// Points below goal at which "close" becomes "missed".
+export const NEAR_BAND = 5;
+
 /**
- * Band a percentage. Returns { cls, color }, or null for a non-finite value
- * so callers can render an explicit "no data" state instead of a false zero.
- *
- * The boundaries belong to the LOWER band — "95% and under" is orange and
- * "90% and under" is red — hence the strict `>` comparisons.
+ * @param {number} value
+ * @param {number|null|undefined} goal  Omit for a metric with no published goal.
+ * @param {object} [opts]
+ * @param {boolean} [opts.live]  True for current-day data still accumulating.
+ * @returns {{cls:string,color:string}|null}  null when there is no number.
  */
-export function bandFor(value) {
+export function bandFor(value, goal, opts = {}) {
   if (!Number.isFinite(value)) return null;
-  if (value >= 98) return BANDS.good;
-  if (value > 95)  return BANDS.caution;
-  if (value > 90)  return BANDS.warn;
-  return BANDS.bad;
+  if (goal == null || !Number.isFinite(goal)) return BANDS.neutral;
+  const v = Math.round(value);
+  if (v >= goal) return BANDS.met;
+  // Mid-day figures are incomplete by definition — no "how badly" gradation.
+  if (opts.live) return BANDS.missed;
+  if (v > goal - NEAR_BAND) return BANDS.near;
+  return BANDS.missed;
 }
 
 const esc = (s) =>
@@ -160,18 +181,17 @@ export function donutSvg(data, opts = {}) {
  * style donuts: one colored arc for `value` out of `max`, a light-gray
  * track for the remainder, and a bold centered number.
  *
- * Colour comes from the shared absolute four-band scale (see bandFor):
- *   >= 98 green · > 95 yellow · > 90 orange · <= 90 red
- * `goal` is no longer what colours the ring — it is still rendered as the
- * caption so Tableau's own target stays visible. Pass `neutral: true` for a
- * value that isn't a percentage (the VizPick composite), which keeps the ring
- * blue because the bands don't apply to it.
+ * Colour comes from the shared goal-relative scale (see bandFor): blue at or
+ * above goal, orange just below on a closed day, black for a clear miss or for
+ * any below-goal current-day figure. `goal` is both the caption and what
+ * drives the colour; omit it for a metric with no published target and the
+ * ring stays neutral blue, which is what Tableau does for VizPick Health.
  *
  * @param {number} value
  * @param {object} [opts]
  * @param {number} [opts.max=100]
- * @param {number} [opts.goal]        Shown as a caption; does not affect colour.
- * @param {boolean} [opts.neutral]    Render a blue ring (non-percentage value).
+ * @param {number} [opts.goal]        Caption AND colour threshold.
+ * @param {boolean} [opts.live]       Current-day data (no orange band).
  * @param {string} [opts.label]       Small caption under the ring (e.g. "VizPick Health").
  * @param {number} [opts.size=140]
  * @param {number} [opts.thickness=14]
@@ -195,13 +215,9 @@ export function gaugeSvg(value, opts = {}) {
   const circ = 2 * Math.PI * r;
   const len = frac * circ;
 
-  // Ring colour uses the same absolute four-band scale as the card metrics
-  // (bandFor). `goal` no longer drives the colour — it is still shown as the
-  // caption so the Tableau target stays visible — because the bands are
-  // absolute percentages, not offsets from each metric's own goal.
-  // `neutral: true` keeps the ring blue for values that aren't percentages
-  // (e.g. the VizPick composite score).
-  const color = opts.neutral ? WM.blue : (bandFor(v)?.color ?? WM.blue);
+  // Same scale as the card metric text, so a ring and its number can never
+  // disagree about whether the goal was met.
+  const color = bandFor(v, goal, { live: opts.live })?.color ?? WM.blue;
 
   const track =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${WM.grid}" stroke-width="${thickness}"/>`;
