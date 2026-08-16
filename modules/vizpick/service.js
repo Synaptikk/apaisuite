@@ -382,6 +382,84 @@ export const handlers = {
     return { ok: true, auto };
   },
   async "auto_check_now"(_msg) { return await autoCheck("manual"); },
+
+  // Everything needed to diagnose a failing capture WITHOUT asking the user to
+  // open DevTools and read raw storage. Three rounds of this bug were spent
+  // guessing at a profile we cannot see; one paste of this ends that.
+  //
+  // Deliberately carries no store-level business data — counts, stamps, error
+  // classes and the state of the Tableau tabs, nothing more.
+  async "diagnostics"(msg) {
+    const [got, store, auto, lastAuto] = await Promise.all([
+      chrome.storage.local.get([K.debug, K.debugToday]),
+      snapshots.read(),
+      readAuto(),
+      chrome.storage.local.get(K.lastAuto),
+    ]);
+
+    // The tabs the capture would find and reuse. A stale or discarded one here
+    // is the single most common cause of a capture that fails identically on
+    // every retry.
+    let tabs = [];
+    try {
+      tabs = (await chrome.tabs.query({ url: "https://stores.tableau.wal-mart.com/*" }))
+        .map((t) => ({
+          view: /\/views\/VizPick\/(\w+)/i.exec(t.url || "")?.[1] ?? "(none)",
+          status: t.status, discarded: !!t.discarded, active: !!t.active,
+          frozen: !!t.frozen, audible: !!t.audible,
+        }));
+    } catch (e) { tabs = [{ error: String(e?.message ?? e) }]; }
+
+    const market = msg?.market != null ? String(msg.market) : null;
+    const roster = store.days?.[0]?.rows || [];
+    const inMarket = market ? roster.filter((r) => String(r.market) === market) : [];
+
+    return {
+      ok: true,
+      build: CAPTURE_BUILD,
+      generatedAt: new Date().toISOString(),
+      schemaVersion: snapshots.SCHEMA_VERSION,
+      // Only what this module needs — the full grant list runs to ~50 hosts
+      // and buries the answer in whatever gets pasted.
+      permissions: await (async () => {
+        const p = await chrome.permissions.getAll().catch(() => null);
+        if (!p) return null;
+        const need = ["storage", "tabs", "scripting", "alarms"];
+        return {
+          tableauHost: (p.origins || []).includes("https://stores.tableau.wal-mart.com/*"),
+          missing: need.filter((n) => !(p.permissions || []).includes(n)),
+        };
+      })(),
+
+      // What the UI thinks it is asking for. A market whose type or value does
+      // not match the roster yields an empty store list and a capture that
+      // "does nothing" with no error at all.
+      request: {
+        market,
+        marketType: typeof msg?.market,
+        storesInMarket: inMarket.length,
+        sampleStores: inMarket.slice(0, 5).map((r) => r.store),
+        rosterMarketSample: [...new Set(roster.slice(0, 400).map((r) => typeof r.market))],
+      },
+
+      stored: {
+        days: (store.days || []).map((d) => ({ dataDate: d.dataDate, rows: d.rows?.length ?? 0, sourceKey: d.sourceKey })),
+        today: store.today ? {
+          rows: store.today.rows?.length ?? 0, market: store.today.market,
+          sourceKey: store.today.sourceKey, partial: !!store.today.partial,
+          capturedAt: store.today.capturedAt,
+        } : null,
+      },
+
+      auto: { ...auto, lastRun: lastAuto?.[K.lastAuto] ?? null },
+      tableauTabs: tabs,
+      lastError: { stores: got[K.debug] ?? null, today: got[K.debugToday] ?? null },
+      freshness: {
+        stores: await freshness.read("stores").catch(() => null),
+        today:  await freshness.read("today").catch(() => null),
+      },
+    };
+  },
   async "dismiss_error"(msg) {
     await chrome.storage.local.remove(msg?.sourceId === "today" ? K.debugToday : K.debug);
     return { ok: true };

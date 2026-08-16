@@ -200,6 +200,20 @@ export async function mount(host, container) {
   btnLoadToday.addEventListener("click", () => runToday(false));
   btnForceToday.addEventListener("click", () => runToday(true));
   container.querySelector('[data-action="dismiss-error"]')?.addEventListener("click", dismissError);
+  container.querySelector('[data-action="copy-diagnostics"]')?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const was = btn.textContent;
+    try {
+      // The market matters: a capture that silently does nothing is usually a
+      // market whose value doesn't match the roster, so send what the UI has.
+      const diag = await host.messaging.send("diagnostics", { market: selectedMarket });
+      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+      btn.textContent = "Copied ✓";
+    } catch (err) {
+      btn.textContent = `Failed: ${String(err?.message ?? err).slice(0, 40)}`;
+    }
+    setTimeout(() => { btn.textContent = was; }, 2500);
+  });
   btnCancel.addEventListener("click", () => host.messaging.send("cancel_today").catch(() => {}));
   container.querySelector('[data-action="toggle-all"]')?.addEventListener("click", async () => {
     const rows = rowsForActiveTab();
@@ -861,9 +875,19 @@ export async function mount(host, container) {
     const body    = container.querySelector("[data-debug-body]");
     if (!section || !body) return;
     const dbg = activeTab === "today" ? state?.debugToday : state?.debug;
-    if (!dbg || dbg.ok) { section.hidden = true; body.innerHTML = ""; return; }
+    const clean = !dbg || dbg.ok;
+
+    // Always reachable, even with nothing wrong on record. The failure that
+    // most needs diagnosing is a capture that does nothing and stores no
+    // error — which, when this section only appeared on error, left no way to
+    // get at the state at all.
     section.hidden = false;
-    body.innerHTML = renderDebug(dbg);
+    body.innerHTML = clean ? "" : renderDebug(dbg);
+
+    const heading = section.querySelector(".vizpick-section-heading");
+    if (heading) heading.textContent = clean ? "Diagnostics" : "Last capture details";
+    const dismiss = section.querySelector('[data-action="dismiss-error"]');
+    if (dismiss) dismiss.hidden = clean;
   }
 
   async function dismissError() {
