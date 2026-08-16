@@ -85,13 +85,15 @@
   <section class="vizpick-debug" data-debug-section hidden>
     <div class="vizpick-debug-head">
       <h2 class="vizpick-section-heading">Last capture details</h2>
+      <button class="vizpick-linkbtn" data-action="copy-diagnostics">Copy diagnostics</button>
       <button class="vizpick-linkbtn" data-action="dismiss-error">Dismiss</button>
     </div>
     <div class="vizpick-debug-body" data-debug-body></div>
     <p class="vizpick-debug-hint">
-      Details persist to <code>chrome.storage.local["vizpick.debug.stores"]</code>
-      and <code>["vizpick.debug.today"]</code>.
-      Open DevTools → Application → Storage to inspect the raw ring summary.
+      <strong>Copy diagnostics</strong> puts the full capture state on your
+      clipboard — error class, stored snapshot counts, and the state of every
+      open Tableau tab. Paste it when reporting a capture that will not load.
+      It contains counts and timestamps only, no store-level figures.
     </p>
   </section>
 </section>
