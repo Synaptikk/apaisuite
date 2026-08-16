@@ -108,16 +108,27 @@ const ui = await page.evaluate(() => {
   const cols = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 0;
 
   // Colour-class census across all metric values.
-  const census = { good: 0, warn: 0, bad: 0, neutral: 0 };
+  const census = { good: 0, caution: 0, warn: 0, bad: 0, neutral: 0 };
   const colours = {};
   for (const s of document.querySelectorAll(".vizpick-store-card-metric strong")) {
     const c = s.className || "";
-    const key = c.includes("vizpick-good") ? "good" : c.includes("vizpick-warn") ? "warn" : c.includes("vizpick-bad") ? "bad" : "neutral";
+    const key = c.includes("vizpick-good") ? "good"
+      : c.includes("vizpick-caution") ? "caution"
+      : c.includes("vizpick-warn") ? "warn"
+      : c.includes("vizpick-bad") ? "bad" : "neutral";
     census[key]++;
     if (key !== "neutral" && !colours[key]) colours[key] = getComputedStyle(s).color;
   }
 
+  const cards2 = [...document.querySelectorAll(".vizpick-store-card")];
   return {
+    cardTag: cards2[0]?.tagName || null,
+    draggable: cards2.every((c) => c.getAttribute("draggable") === "true"),
+    detailsCount: document.querySelectorAll("details.vizpick-store-card").length,
+    metricRowsFirstCard: cards2[0]?.querySelectorAll(".vizpick-store-card-metric").length || 0,
+    sortValue: q("[data-sort-select]")?.value,
+    sortOptions: [...document.querySelectorAll("[data-sort-select] option")].map((o) => o.value),
+    storeOrder: cards2.map((c) => c.dataset.store),
     market: q("[data-market-select]")?.value,
     marketOptions: document.querySelectorAll("[data-market-select] option").length,
     storeCount: cards.length,
@@ -153,18 +164,43 @@ console.log(`  freshness            : ${ui.freshness}`);
 console.log(`  sample card          : ${ui.sampleCard}`);
 save();
 
-// ── 6. Collapse / expand behaviour ────────────────────────────────────────
-const collapse = await page.evaluate(async () => {
-  const card = document.querySelector(".vizpick-store-card");
-  if (!card) return null;
-  const before = card.open;
-  card.querySelector("summary").click();
-  await new Promise((r) => setTimeout(r, 300));
-  const after = card.open;
-  return { before, after, store: card.dataset.store };
-});
-out.steps.collapse = collapse;
-console.log(`\n  collapse test        : store ${collapse?.store} open ${collapse?.before} → ${collapse?.after}`);
+// ── 6. Cards are always expanded, draggable, and sortable ────────────────
+console.log(`
+  card element         : <${ui.cardTag?.toLowerCase()}>  draggable=${ui.draggable}  legacy <details>=${ui.detailsCount}`);
+console.log(`  metric rows / card   : ${ui.metricRowsFirstCard}`);
+console.log(`  sort control         : ${ui.sortValue}  options=${JSON.stringify(ui.sortOptions)}`);
+console.log(`  store order (asc)    : ${JSON.stringify(ui.storeOrder)}`);
+
+const sorted = {};
+for (const mode of ["store-desc", "score-desc", "score-asc", "store-asc"]) {
+  sorted[mode] = await page.evaluate(async (m) => {
+    const sel = document.querySelector("[data-sort-select]");
+    sel.value = m;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    return [...document.querySelectorAll(".vizpick-store-card")].map((c) => ({
+      store: c.dataset.store,
+      score: c.querySelector(".vizpick-store-card-gauge text")?.textContent?.trim() || null,
+    }));
+  }, mode);
+  console.log(`  ${mode.padEnd(11)}: ${sorted[mode].map((x) => `${x.store}(${x.score})`).join(" ")}`);
+}
+out.steps.sorted = sorted;
+
+// Sort correctness, checked on the values actually rendered.
+const asc = sorted["store-asc"].map((x) => Number(x.store));
+const desc = sorted["store-desc"].map((x) => Number(x.store));
+const scoreDesc = sorted["score-desc"].map((x) => Number(x.score));
+const scoreAsc = sorted["score-asc"].map((x) => Number(x.score));
+const isSorted = (a, dir) => a.every((v, i) => i === 0 || (dir > 0 ? a[i - 1] <= v : a[i - 1] >= v));
+console.log(`  ✔ store asc sorted   : ${isSorted(asc, 1)}`);
+console.log(`  ✔ store desc sorted  : ${isSorted(desc, -1)}`);
+console.log(`  ✔ score desc sorted  : ${isSorted(scoreDesc, -1)}`);
+console.log(`  ✔ score asc sorted   : ${isSorted(scoreAsc, 1)}`);
+out.steps.sortChecks = {
+  storeAsc: isSorted(asc, 1), storeDesc: isSorted(desc, -1),
+  scoreDesc: isSorted(scoreDesc, -1), scoreAsc: isSorted(scoreAsc, 1),
+};
 
 // ── 7. Tab switch ─────────────────────────────────────────────────────────
 await page.click('[data-tab="today"]');

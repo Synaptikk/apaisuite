@@ -13,12 +13,42 @@ const WM = {
   blue:  "#0053e2",
   spark: "#ffc220",
   green: "#2a8703",
-  amber: "#b06f00",
+  yellow:"#ffc220",   // Walmart Spark yellow
+  amber: "#e07b00",
   red:   "#c53030",
   ink:   "#1a1a1a",
   grid:  "#e2e5e9",
   muted: "#6b7280",
 };
+
+// Shared four-band scale for every VizPick percentage. These are ABSOLUTE
+// thresholds, not offsets from each metric's goal:
+//   >= 98            green
+//   > 95  and < 98   yellow
+//   > 90  and <= 95  orange
+//   <= 90            red
+// Exported so the gauge rings and the card metric text can never drift apart.
+export const BANDS = {
+  good:    { cls: "vizpick-good",    color: WM.green  },
+  caution: { cls: "vizpick-caution", color: WM.yellow },
+  warn:    { cls: "vizpick-warn",    color: WM.amber  },
+  bad:     { cls: "vizpick-bad",     color: WM.red    },
+};
+
+/**
+ * Band a percentage. Returns { cls, color }, or null for a non-finite value
+ * so callers can render an explicit "no data" state instead of a false zero.
+ *
+ * The boundaries belong to the LOWER band — "95% and under" is orange and
+ * "90% and under" is red — hence the strict `>` comparisons.
+ */
+export function bandFor(value) {
+  if (!Number.isFinite(value)) return null;
+  if (value >= 98) return BANDS.good;
+  if (value > 95)  return BANDS.caution;
+  if (value > 90)  return BANDS.warn;
+  return BANDS.bad;
+}
 
 const esc = (s) =>
   String(s ?? "")
@@ -130,20 +160,18 @@ export function donutSvg(data, opts = {}) {
  * style donuts: one colored arc for `value` out of `max`, a light-gray
  * track for the remainder, and a bold centered number.
  *
- * Color is goal-driven (traffic-light), matching what we observed live in
- * Tableau (green when at/above goal, red when clearly under, amber in the
- * narrow band just below goal):
- *   value >= goal            → green
- *   value >= goal - warnBand → amber
- *   else                     → red
- * If no goal is given, the ring is always blue (neutral — no threshold to
- * judge against).
+ * Colour comes from the shared absolute four-band scale (see bandFor):
+ *   >= 98 green · > 95 yellow · > 90 orange · <= 90 red
+ * `goal` is no longer what colours the ring — it is still rendered as the
+ * caption so Tableau's own target stays visible. Pass `neutral: true` for a
+ * value that isn't a percentage (the VizPick composite), which keeps the ring
+ * blue because the bands don't apply to it.
  *
  * @param {number} value
  * @param {object} [opts]
  * @param {number} [opts.max=100]
- * @param {number} [opts.goal]        Threshold for green; omit for neutral blue.
- * @param {number} [opts.warnBand=5]  Percentage points below goal that count as amber.
+ * @param {number} [opts.goal]        Shown as a caption; does not affect colour.
+ * @param {boolean} [opts.neutral]    Render a blue ring (non-percentage value).
  * @param {string} [opts.label]       Small caption under the ring (e.g. "VizPick Health").
  * @param {number} [opts.size=140]
  * @param {number} [opts.thickness=14]
@@ -153,7 +181,6 @@ export function gaugeSvg(value, opts = {}) {
   const {
     max = 100,
     goal,
-    warnBand = 5,
     label = "",
     size = 140,
     thickness = 14,
@@ -168,10 +195,13 @@ export function gaugeSvg(value, opts = {}) {
   const circ = 2 * Math.PI * r;
   const len = frac * circ;
 
-  let color = WM.blue;
-  if (goal != null) {
-    color = v >= goal ? WM.green : v >= goal - warnBand ? WM.amber : WM.red;
-  }
+  // Ring colour uses the same absolute four-band scale as the card metrics
+  // (bandFor). `goal` no longer drives the colour — it is still shown as the
+  // caption so the Tableau target stays visible — because the bands are
+  // absolute percentages, not offsets from each metric's own goal.
+  // `neutral: true` keeps the ring blue for values that aren't percentages
+  // (e.g. the VizPick composite score).
+  const color = opts.neutral ? WM.blue : (bandFor(v)?.color ?? WM.blue);
 
   const track =
     `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${WM.grid}" stroke-width="${thickness}"/>`;

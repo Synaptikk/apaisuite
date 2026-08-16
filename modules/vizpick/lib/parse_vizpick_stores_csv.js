@@ -327,6 +327,61 @@ export function parseDeptBreakout(text) {
   return { ok: true, total, deptCount };
 }
 
+/**
+ * Parse the VizPickDetails "VizPick Donut Health" crosstab — the current-day
+ * equivalents of the dashboard's five rings for the ONE store the Store
+ * parameter is set to. This is the only place the current-day Location %,
+ * Overstock % and VizPick composite are exportable; the department breakout
+ * carries neither.
+ *
+ * Columns (verified live 2026-08-16):
+ *   Cases Seen % · New Location % · New Overstock % · New Pick % ·
+ *   New VizPick · New VizPick Remaining
+ *
+ * The sheet emits a spacer row whose percentage cells are blank and only
+ * "New VizPick"/"Remaining" are filled, so we take the first row that
+ * actually has a Location % value.
+ *
+ * @param {string} text
+ * @returns {{ok:boolean, health?:object, reason?:string}}
+ */
+export function parseDonutHealth(text) {
+  if (!text || typeof text !== "string") return { ok: false, reason: "empty body" };
+  const clean = text.replace(/^﻿/, "");
+  const lines = clean.split(/\r?\n/).filter((l) => l.length);
+  if (lines.length < 2) return { ok: false, reason: "no data rows" };
+
+  const headers = lines[0].split("\t").map((h) => h.trim());
+  const col = (n) => headers.indexOf(n);
+  const idx = {
+    cases:     col("Cases Seen %"),
+    location:  col("New Location %"),
+    overstock: col("New Overstock %"),
+    pick:      col("New Pick %"),
+    vizpick:   col("New VizPick"),
+  };
+  if (idx.location < 0 || idx.vizpick < 0) {
+    return { ok: false, reason: `unexpected columns; got: ${headers.join(", ")}` };
+  }
+
+  for (const line of lines.slice(1)) {
+    const c = line.split("\t");
+    const loc = (c[idx.location] ?? "").trim();
+    if (!loc) continue; // spacer row
+    return {
+      ok: true,
+      health: {
+        casesSeenPct: num(c[idx.cases]),
+        locationPct:  num(c[idx.location]),
+        overstockPct: num(c[idx.overstock]),
+        pickPct:      num(c[idx.pick]),
+        vizpick:      num(c[idx.vizpick]),
+      },
+    };
+  }
+  return { ok: false, reason: "no populated donut-health row" };
+}
+
 // Build an ISO-8601 string in LOCAL time (Tableau reports store-local wall
 // clock; treating it as UTC would shift the displayed time by the offset).
 function localIso(y, mo, d, h, mi, s) {

@@ -2,10 +2,6 @@
   <header class="vizpick-header">
     <div class="vizpick-title">
       <h1>VizPick Market Rollup</h1>
-      <p class="vizpick-subtitle">
-        Every store's VizPick backroom health for one market, side by side —
-        pulled from Tableau via a background tab. No per-store search.
-      </p>
     </div>
     <div class="vizpick-toolbar">
       <span class="vizpick-freshness" data-freshness="stores">no capture yet</span>
@@ -38,17 +34,6 @@
     </button>
   </div>
 
-  <!-- Absolute source timestamp for the active tab. This is Tableau's own
-       "Last update" value, NOT when the browser last refreshed. -->
-  <section class="vizpick-updated" data-updated-bar>
-    <div class="vizpick-updated-main">
-      <span class="vizpick-updated-label">Last updated</span>
-      <strong class="vizpick-updated-value" data-updated-abs>—</strong>
-      <span class="vizpick-updated-rel" data-updated-rel></span>
-    </div>
-    <p class="vizpick-updated-note" data-updated-note></p>
-  </section>
-
   <!-- Today needs one Tableau export per store, so it is loaded on demand. -->
   <section class="vizpick-today-bar" data-today-bar hidden>
     <div class="vizpick-today-bar-text" data-today-status></div>
@@ -59,18 +44,37 @@
   </section>
 
   <!-- Market-average gauges (VizPick's own single-value ring style) -->
-  <section class="vizpick-gauges" data-gauges>
-    <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
+  <section class="vizpick-panel">
+    <div class="vizpick-panel-head">
+      <h2>Market Average</h2>
+      <!-- Tableau's own "Last update" stamp for the active tab — NOT when the
+           browser last refreshed. Hover for the source note + relative age. -->
+      <span class="vizpick-panel-stamp" data-updated-abs>—</span>
+      <span class="vizpick-panel-sub" data-gauges-sub></span>
+    </div>
+    <div class="vizpick-gauges" data-gauges>
+      <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
+    </div>
   </section>
 
   <!-- Per-store cards for the selected market — each shows its own VizPick
-       Health gauge. Cards start expanded; the caret collapses one. -->
+       Health gauge and every metric at once. Cards are draggable, not
+       collapsible; the Sort control sets the order until one is dragged. -->
   <section class="vizpick-stores">
     <div class="vizpick-family-head">
       <h2>Stores in Market</h2>
       <span class="vizpick-store-count" data-store-count></span>
-      <button class="vizpick-linkbtn" data-action="toggle-all" hidden>Collapse all</button>
+      <label class="vizpick-sort-label" for="vizpick-sort">Sort</label>
+      <select class="vizpick-sort" id="vizpick-sort" data-sort-select>
+        <option value="store-asc">Store number — low to high</option>
+        <option value="store-desc">Store number — high to low</option>
+        <option value="score-desc">Total score — high to low</option>
+        <option value="score-asc">Total score — low to high</option>
+        <option value="custom">Custom (drag to arrange)</option>
+      </select>
+      <button class="vizpick-linkbtn" data-action="reset-order" hidden>Reset order</button>
     </div>
+    <p class="vizpick-draghint">Drag a card to rearrange.</p>
     <div class="vizpick-store-grid" data-store-cards>
       <p class="vizpick-empty">Click Refresh to capture VizPick store data.</p>
     </div>

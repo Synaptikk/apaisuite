@@ -80,11 +80,16 @@
   // we read the Blob's content in-page, at the moment it's created — before
   // it ever becomes a file. This is the only path that actually captures
   // crosstab CSV exports (fetch/XHR patches above never see them).
+  // Blob URLs this script has seen created. Used to suppress the file write
+  // that would otherwise follow (see the click interceptor below).
+  const ourBlobUrls = new Set();
+
   const origCreateObjectURL = URL.createObjectURL.bind(URL);
   URL.createObjectURL = function (blob) {
     const url = origCreateObjectURL(blob);
     try {
       if (blob instanceof Blob) {
+        ourBlobUrls.add(url);
         blob.text().then((text) => {
           record({ via: "blob", method: "BLOB", url, reqBody: null, status: 200, respBody: text });
         }).catch(() => {});
@@ -92,6 +97,35 @@
     } catch {}
     return url;
   };
+
+  // Download suppression.
+  //
+  // We already have the CSV's bytes from the Blob above, so letting the
+  // synthetic <a download> click proceed only writes a file we don't need.
+  // That matters for the Today capture, which exports once PER STORE and
+  // would otherwise litter the Downloads folder with a file per store on
+  // every refresh (and give Forcepoint DLP a pile of files to chew on).
+  //
+  // Cancelling the click's default action stops the write while leaving
+  // Tableau's own code path untouched — it creates the anchor, clicks it and
+  // revokes the URL, and never checks whether the download actually started.
+  //
+  // Gated on an explicit flag the service worker sets around its own export,
+  // so a download the USER starts by hand in their own Tableau tab is never
+  // interfered with.
+  let suppressDownloads = false;
+  let suppressedCount = 0;
+
+  document.addEventListener("click", (e) => {
+    if (!suppressDownloads) return;
+    const a = e.target?.closest?.("a[download]");
+    if (!a) return;
+    if (!ourBlobUrls.has(a.href)) return;
+    // Cancel only the file write. No stopPropagation — Tableau's own
+    // listeners, if any, still run.
+    e.preventDefault();
+    suppressedCount++;
+  }, true);
 
   // XHR patch (Tableau's server can use XHR under some proxies).
   const OrigXHR = window.XMLHttpRequest;
@@ -156,6 +190,10 @@
     findBySubstr,
     findBlobBySubstr,
     clear:       () => { ring.length = 0; },
+    // Only the SW's own export runs with this on — see the comment above the
+    // click interceptor.
+    setSuppressDownloads: (on) => { suppressDownloads = !!on; return suppressDownloads; },
+    suppressedCount:      () => suppressedCount,
   };
 
   console.log("[vizpick tableau_capture] installed on", location.host);
