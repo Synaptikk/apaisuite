@@ -52,7 +52,7 @@ async function readAuto() {
 // Stamped into every capture envelope. A stored error outlives the code that
 // produced it, and we have twice been misled by an old envelope's wording
 // after the extension was reloaded — this makes the provenance explicit.
-const CAPTURE_BUILD = "2026-08-16c";
+const CAPTURE_BUILD = "2026-08-16d";
 
 // Payload is SPREAD, not nested under a `payload` key. shared/messaging.js's
 // on(type, handler) hands the whole flat message to the handler, so nesting
