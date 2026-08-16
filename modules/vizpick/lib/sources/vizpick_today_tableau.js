@@ -649,6 +649,15 @@ async function findOrOpenReportTab() {
 }
 
 /**
+ * Ask Chrome not to reclaim a tab we are about to drive for minutes. The crawl
+ * runs unfocused for the whole of a market, which is exactly what Memory Saver
+ * targets — and losing a lane mid-crawl kills every store queued behind it.
+ */
+async function keepAwake(tabId) {
+  try { await chrome.tabs.update(tabId, { autoDiscardable: false }); } catch {}
+}
+
+/**
  * Why did the viz never appear? Distinguishing these matters because the
  * remedies are opposites: an SSO wall needs the user, a slow render needs
  * patience, a stale tab needs reloading. A single "session may need SSO
