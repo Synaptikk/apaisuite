@@ -7,9 +7,12 @@
 const KEY_PREFIX = "vizpick.freshness.";
 
 const STALE_DEFAULT_MS = {
-  // The VizPick "Updated" timestamp we observed refreshes daily (current-day
-  // data); consider stale after 26h to allow a bit of drift.
+  // The VizPick summary view is "refreshed daily for the day prior" — allow
+  // 26h so a slightly late upstream job doesn't read as stale.
   stores: 26 * 60 * 60 * 1000,
+  // VizPickDetails is "refreshed frequently for the current business day,
+  // 1-2 hours behind" — a Today capture older than 3h is worth re-pulling.
+  today: 3 * 60 * 60 * 1000,
 };
 
 export async function read(sourceId) {
@@ -24,7 +27,7 @@ export async function read(sourceId) {
   return { ...f, sourceId, staleAfterMs, isStale };
 }
 
-export async function readAll(sourceIds = ["stores"]) {
+export async function readAll(sourceIds = ["stores", "today"]) {
   const out = {};
   for (const id of sourceIds) out[id] = await read(id);
   return out;

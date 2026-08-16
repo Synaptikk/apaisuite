@@ -157,47 +157,78 @@ Load-bearing details that are easy to break — read before touching capture:
   `onUserMarketChange()` from `shared/userStore.js`. A manual pick must stay
   sticky (`marketIsUserSet`).
 
-**Next concrete steps** (in order):
+**Source layout — established live 2026-08-16, don't re-derive it.**
+The workbook splits the data across two views with *different shapes*:
 
-1. **Expand cards by default.** `<details open>` on every store card;
-   individual collapse must still work.
-2. **Use the available screen width.** `.module-vizpick .vizpick` is capped
-   at `max-width: 1400px` and the card grid is `minmax(220px, 1fr)`. Check
-   the parent shell/content container too. Goal is a sensible number of
-   readable cards per row across resolutions — not maximally wide cards.
-3. **Orange/red problem highlighting.** `.vizpick-store-card-metric strong`
-   used to hardcode `color: var(--apai-ink)`, which beat `.vizpick-good` /
-   `.vizpick-warn` / `.vizpick-bad` on specificity. The hardcoded colour is
-   removed; the result has not been verified in the user's own view yet.
-   Reuse `pctClass()`; goals observed live in Tableau are Cases Seen 95,
-   Location 95, Pick 90, Overstock 90. Metrics with no goal (Total Picked)
-   stay neutral.
-4. **Explicit last-updated timestamp.** Show the real *source* update
-   date/time prominently, not only a relative age. Use Tableau's own
-   timestamp when it can be captured; do not substitute the browser refresh
-   time when a real source timestamp exists. Relative age stays as
-   secondary info.
-5. **Today / Yesterday tabs.** "Today – Live" and "Yesterday". Inspect the
-   Tableau workbook's date/period filter first rather than guessing field
-   names. Storage rules: cache today per-day and only re-pull when the
-   source upload timestamp changes (reopening the module must not
-   overwrite); cache yesterday for the whole day and roll it when the
-   calendar advances; show which date each tab represents; degrade
-   gracefully when yesterday is missing; version the stored schema so
-   future changes can't silently corrupt it. Decide and document whether
-   yesterday comes from driving Tableau's period filter or from rolling the
-   last cached today snapshot — prefer whichever matches Tableau's
-   source-of-truth values.
-6. **Picked / Total as `x / y`.** Confirm Tableau's field definitions
-   first. If the denominator has to be derived
-   (`totalPicked / (pickPct / 100)`), guard against rounded percentages,
-   zero, missing and non-finite values, and label it as derived. Keep the
-   existing percentage unless the new presentation shows both clearly.
+| | `views/VizPick/VizPick` | `views/VizPick/VizPickDetails` |
+|---|---|---|
+| Period | "refreshed daily for the day prior" | "refreshed frequently for the current business day… 1-2 Hours behind" |
+| Scope | **all stores, all markets** in one crosstab | **one store**, chosen by a Tableau *parameter* (`aria-label="Store"`, commit with ENTER) |
+| Store rollup sheet | "Download Summary by Store" (17 cols) | "Download Department Breakout (Current Day)", `Total` row |
+| "Last update" sheet | `8/16/2026` — **date only** | `2026-08-16 10:26:07` — **full timestamp** |
+
+The summary view's date filter offers only `1. Yesterday`, `2. Week to Date`,
+`3. Last WM Week`, `4. Last 7 Days`, `5. Last 30 Days` — there is **no Today
+bucket and no way to ask it for a single prior day**. That settles the
+open question in the original brief:
+
+> **Decision — Yesterday is not obtained by driving the period filter, and
+> "previous day" is not obtained by rolling a Today snapshot forward.**
+> Yesterday comes straight from the summary view (its native period), and
+> Today comes from the Details view. The two are different sources, not two
+> settings of one source. History is preserved by keeping the snapshot the
+> summary view displaces (`previous`), keyed on Tableau's own update stamp.
+
+Because Today is one export *per store*, a whole market costs N sequential
+export cycles (~10 stores ≈ 4 minutes). It is therefore loaded on an explicit
+"Load today's data" button, not automatically.
+
+**Field definitions — verified, and one of them refutes the obvious guess.**
+The Details export exposes the real numerators/denominators:
+- `Cases Seen % = Cases Seen / Cases Expected` (5,953/10,816 = 55% ✓)
+- `Pick % = Suggested Picks Completed / Suggested Picks` (343/739 = 46% ✓)
+- `Pallets % = pallets_seen / pallets_expected` (282/294 = 95.92% ✓)
+
+So **`Total Picked` is NOT the Pick % numerator** — in the same row it reads
+452 against a numerator of 343. Deriving a denominator as
+`Total Picked / (Pick % / 100)` yields 982 against a true 739, a 33% error.
+The UI therefore renders only *real* `x / y` pairs and never a derived one;
+`modules/vizpick/lib/tests/parse_vizpick_stores_csv.test.mjs` has a test that
+fails if anyone reintroduces the derivation.
+
+**Shipped 2026-08-16** — all six items from the original brief are done and
+verified end-to-end in the Edge debug profile against live Tableau data
+(Market 120, 10 stores):
+cards expanded by default with per-card collapse and a Collapse/Expand all;
+full-width responsive grid (5 columns × 1552px at 1920px wide, achieved by
+opting this module out of the shell's 1400px cap); orange/red highlighting
+confirmed rendering `#D97706` / `#B91C1C`; absolute source timestamp with
+relative age as secondary; Yesterday/Today tabs each labelled with the
+calendar date they describe; real `x / y` ratios.
+
+**Known gaps / next steps:**
+- `Location %`, `Overstock %` and the `VizPick` composite have **no
+  current-day equivalent** in the Details export, so the Today tab renders
+  them as an explicit "n/a" placeholder rather than a zeroed ring. If those
+  are wanted for Today, a different Details sheet would have to supply them.
+- The Today crawl reuses one Tableau tab and sets the Store parameter in a
+  loop. It waits for a fresh vizql response (via the capture ring) before
+  each export, which is what stops it exporting the *previous* store's
+  numbers — the one failure mode that would look like valid data. Worth
+  re-checking if Tableau changes its request pattern.
+- Today is captured for the market that was selected when the button was
+  pressed; switching market does not invalidate it (the snapshot records
+  `market`, and `todayIsCurrent()` compares it), but there is no automatic
+  re-pull on market switch.
+- No alarm/scheduled pull yet — both captures are manual.
 
 **Testing notes:** Edge does not hot-reload extension source — reload at
 `edge://extensions` and close stale Tableau tabs so a fresh content script
-is injected. The Playwright debug profile is a separate Edge profile from
-the user's normal window. A one-off `SESSION` render timeout resolved on
+is injected. `dev/test-vizpick-e2e.mjs` does both automatically and drives
+the whole UI (`--today` also runs the per-store crawl);
+`dev/test-vizpick-cache.mjs` verifies the snapshot roll rules against the
+live extension. The Playwright/CDP debug profile is a separate Edge profile
+from the user's normal window. A one-off `SESSION` render timeout resolved on
 retry; don't add speculative focus-management complexity unless it repeats.
 
 ---

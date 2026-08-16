@@ -17,7 +17,7 @@
 // Read-only: export ≠ mutation (a crosstab download is a GET/POST that
 // renders existing data).
 
-import { parseVizpickStoresCsv, parseGrandTotal } from "../parse_vizpick_stores_csv.js";
+import { parseVizpickStoresCsv, parseGrandTotal, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
 
 const REPORT_URL  = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=1&:linktarget=_self";
 const TAB_PATTERN = "https://stores.tableau.wal-mart.com/*VizPick*";
@@ -25,13 +25,18 @@ const TAB_PATTERN = "https://stores.tableau.wal-mart.com/*VizPick*";
 const LOAD_TIMEOUT_MS   = 30_000;
 const VIZ_READY_WAIT_MS = 60_000;   // Tableau initial render can be slow, even foregrounded
 const EXPORT_WAIT_MS    = 45_000;
+const UPDATE_WAIT_MS    = 20_000;   // the tiny "Last update" sheet exports fast
 const POLL_MS           = 800;
 const INSTALL_GRACE_MS  = 3_000;    // give the document_start script a beat before assuming it's missing
 
-// The "Download Summary by Store" sheet thumbnail index in the crosstab
-// dialog — verified live via chrome devtools against the real dialog's
-// data-tb-test-id="sheet-thumbnail-N" list on the VizPick workbook.
-const STORE_SHEET_INDEX = 2;
+// Sheets are selected by NAME, not by a hardcoded thumbnail index. The
+// crosstab dialog lists every worksheet in the workbook alphabetically, so
+// an index shifts the moment someone adds a sheet — and the VizPick and
+// VizPickDetails views have completely different orderings. Matching on the
+// thumbnail's own label is stable across both. Indices below are the values
+// observed on 2026-08-16 and are used only as a last-resort fallback.
+const STORE_SHEET   = { match: "download summary by store", fallbackIndex: 2 };
+const UPDATE_SHEET  = { match: "last update",              fallbackIndex: 4 };
 
 // Identifying header the CSV body must contain to be the Summary-by-Store
 // export (as opposed to any other sheet's crosstab).
@@ -78,10 +83,30 @@ export async function fetchVizpickStoresTableau() {
       };
     }
 
+    // ── Source timestamp first ──────────────────────────────────────────
+    // The workbook's own "Last update" sheet is the authoritative refresh
+    // stamp. Capture it before the big export so that even a later parse
+    // failure still tells the UI how fresh Tableau's data actually is. On
+    // this view it is a DATE only ("8/16/2026"); VizPickDetails carries a
+    // full timestamp. A miss here is non-fatal — the store data is the
+    // point, the stamp is metadata.
+    let sourceUpdate = null;
+    try {
+      await clearRing(tab.id);
+      const t = await triggerCrosstabExport(tab.id, UPDATE_SHEET);
+      if (t.ok) {
+        const luCsv = await pollForCsv(tab.id, UPDATE_WAIT_MS, POLL_MS, "\t");
+        if (luCsv) {
+          const lu = parseLastUpdate(luCsv.respBody);
+          if (lu.ok) sourceUpdate = { raw: lu.raw, iso: lu.iso, hasTime: lu.hasTime };
+        }
+      }
+    } catch { /* metadata only — never fail the run for it */ }
+
     // Clear the ring so we only match the CSV from *this* export, not a stale one.
     await clearRing(tab.id);
 
-    const triggered = await triggerCrosstabExport(tab.id, STORE_SHEET_INDEX);
+    const triggered = await triggerCrosstabExport(tab.id, STORE_SHEET);
     if (!triggered.ok) {
       return { ok: false, errorClass: "EXPORT_UI", error: `Could not drive crosstab export: ${triggered.reason}`, debug: triggered, keptTabOpen: true };
     }
@@ -116,8 +141,19 @@ export async function fetchVizpickStoresTableau() {
       ok: true,
       rows: parsed.rows,
       grandTotal: gt.ok ? gt.national : null,
+      // Tableau's own refresh stamp (null if the Last update sheet couldn't
+      // be read). The UI must prefer this over capturedAt — capturedAt is
+      // just when *we* looked, not when the data changed.
+      sourceUpdate,
       capturedAt: new Date().toISOString(),
-      debug: { capturedUrl: csv.url, storeCount: parsed.rows.length, hasGrandTotal: gt.ok },
+      debug: {
+        capturedUrl: csv.url,
+        storeCount: parsed.rows.length,
+        hasGrandTotal: gt.ok,
+        sourceUpdate,
+        sheetNames: triggered.steps?.sheetNames || null,
+        sheetPickedBy: triggered.steps?.sheetPickedBy || null,
+      },
     };
   } finally {
     // Close the tab only if we opened it AND the capture succeeded. Leaving
@@ -212,11 +248,11 @@ async function clearRing(tabId) {
 // Drive the crosstab export dialog. Runs entirely inside the viz frame's
 // MAIN world with realistic pointer events (Tableau ignores synthetic
 // .click() on its toolbar). Returns {ok, reason?}.
-async function triggerCrosstabExport(tabId, sheetIndex) {
+async function triggerCrosstabExport(tabId, sheet) {
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     world:  "MAIN",
-    args:   [sheetIndex],
+    args:   [sheet.match, sheet.fallbackIndex],
     func:   exportDriverFn,
   });
   for (const r of (results || [])) {
@@ -225,23 +261,23 @@ async function triggerCrosstabExport(tabId, sheetIndex) {
   return { ok: false, reason: "viz frame with toolbar not found" };
 }
 
-async function pollForCsv(tabId, timeoutMs, pollMs) {
+async function pollForCsv(tabId, timeoutMs, pollMs, needle = STORE_CSV_NEEDLE) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const hit = await findCsvInRing(tabId);
+    const hit = await findCsvInRing(tabId, needle);
     if (hit) return hit;
     await new Promise((r) => setTimeout(r, pollMs));
   }
   return null;
 }
 
-async function findCsvInRing(tabId) {
+async function findCsvInRing(tabId, needle = STORE_CSV_NEEDLE) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       world:  "MAIN",
-      args:   [STORE_CSV_NEEDLE],
-      func:   (needle) => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.findBlobBySubstr?.(needle) || null,
+      args:   [needle],
+      func:   (n) => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.findBlobBySubstr?.(n) || null,
     });
     for (const r of (results || [])) if (r?.result) return r.result;
     return null;
@@ -282,8 +318,11 @@ function VIZ_READY_FN() {
 
 // Full export driver injected into the viz frame. Clicks
 // Download → Crosstab → select sheet → CSV radio → Export, using realistic
-// pointer event sequences. Returns { ran, ok, reason, steps }.
-function exportDriverFn(sheetIndex) {
+// pointer event sequences. The sheet is located by matching `sheetMatch`
+// (lower-cased substring) against each thumbnail's own label, falling back
+// to `fallbackIndex` only if no label matches. Returns
+// { ran, ok, reason, steps, sheetNames }.
+function exportDriverFn(sheetMatch, fallbackIndex) {
   const steps = {};
   const rc = (el) => {
     if (!el) return false;
@@ -303,10 +342,28 @@ function exportDriverFn(sheetIndex) {
   // Tableau's flyout + dialog open asynchronously and each stage can lag on
   // a cold viz. Run a self-scheduling state machine that advances only when
   // the next element actually exists, retrying every 400ms for up to ~24s.
+  // Resolve the sheet thumbnail by its visible label, remembering what the
+  // dialog offered so a miss can be diagnosed from the debug envelope.
+  const findSheet = () => {
+    const thumbs = [...document.querySelectorAll('[data-tb-test-id^="sheet-thumbnail-"]')];
+    if (!thumbs.length) return null;
+    steps.sheetNames = thumbs.map((el, i) => `${i}: ${(el.textContent || "").trim().slice(0, 60)}`);
+    const needle = String(sheetMatch || "").toLowerCase();
+    const byName = needle
+      ? thumbs.find((el) => (el.textContent || "").toLowerCase().includes(needle))
+      : null;
+    if (byName) {
+      steps.sheetPickedBy = "name";
+      return byName;
+    }
+    steps.sheetPickedBy = "fallbackIndex";
+    return tid(`sheet-thumbnail-${fallbackIndex}`);
+  };
+
   const stages = [
     { name: "download",  find: () => tid("viz-viewer-toolbar-button-download") },
     { name: "crosstab",  find: () => tid("download-flyout-download-crosstab-MenuItem") },
-    { name: "sheet",     find: () => tid(`sheet-thumbnail-${sheetIndex}`), pick: (el) => el.querySelector("img,[role=button],button,div") || el },
+    { name: "sheet",     find: findSheet, pick: (el) => el.querySelector("img,[role=button],button,div") || el },
     { name: "csv",       find: () => tid("crosstab-options-dialog-radio-csv-RadioButton"), pick: (el) => el.querySelector("input") || el },
     { name: "export",    find: () => tid("export-crosstab-export-Button"), ready: (el) => !el.disabled },
   ];
