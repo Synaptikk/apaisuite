@@ -44,10 +44,13 @@ const VIZ_READY_WAIT_MS = 120_000;  // cold session + SSO redirect chain; see th
 const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;
 const REQUERY_WAIT_MS   = 25_000;  // how long to wait for the viz to re-query after a store change
-const SETTLE_MS         = 1_500;   // extra beat after the last vizql response lands
+const SETTLE_MS         = 700;     // extra beat after the last vizql response lands
 const DIALOG_SETTLE_MS  = 20_000;  // wait for the viz toolbar to reappear after a dialog closes
-const POLL_MS           = 700;
+const POLL_MS           = 300;
 const INSTALL_GRACE_MS  = 3_000;
+// Whole-crawl ceiling. Each store costs two export cycles, so a large market
+// legitimately runs for minutes — but it must still be guaranteed to end.
+const OVERALL_BUDGET_MS = 25 * 60_000;
 
 const DEPT_SHEET   = { match: "download department breakout (current day)", fallbackIndex: 3 };
 // The department breakout has no Location %, Overstock % or VizPick composite —
@@ -69,8 +72,14 @@ const DONUT_CSV_NEEDLE = "New VizPick";
  * @param {object}   [opts]
  * @param {(p:{done:number,total:number,store:string})=>void} [opts.onProgress]
  * @param {() => boolean} [opts.isCancelled]  Polled between stores.
+ * @param {(info:{row:object,sourceUpdate:object|null,topUp:boolean,index:number})=>Promise<void>} [opts.onStore]
+ *   Called as soon as each store is parsed, so the caller can persist and
+ *   display it immediately instead of the UI sitting empty for the whole
+ *   multi-minute crawl.
  * @param {string|null} [opts.knownSourceKey]  Stamp of the data already stored
  *   for this same market; when it matches, the whole crawl is skipped.
+ * @param {string[]} [opts.coveredStores]  Stores already held at that stamp;
+ *   when the stamp matches, only stores NOT in this list are visited.
  * @param {boolean} [opts.force]  Crawl even if the stamp is unchanged.
  * @returns {Promise<object>}
  */
@@ -138,23 +147,54 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // This matters far more here than on the yesterday capture: the crawl is
     // two exports per store and takes minutes. If Tableau's current-day stamp
     // is the one we already have for this market, there is nothing to fetch.
-    if (!opts.force && opts.knownSourceKey && sourceUpdate?.raw && sourceUpdate.raw === opts.knownSourceKey) {
-      succeeded = true;
-      return {
-        ok: true,
-        unchanged: true,
-        sourceUpdate,
-        checkedAt: new Date().toISOString(),
-      };
+    // An unchanged stamp means the stored rows are still valid — but ONLY for
+    // the stores they actually contain. Comparing the stamp alone was a bug: a
+    // partial snapshot (3 of 10 stores, say, because a previous run was
+    // cancelled or scoped to fewer stores) looked "current", so the missing 7
+    // were never fetched and the tab silently stayed short.
+    //
+    // Full coverage  -> skip entirely.
+    // Partial        -> visit only the gaps; the caller MERGES the result.
+    // Changed stamp  -> everything is stale, crawl the lot.
+    let toVisit = wanted;
+    let topUp = false;
+    const stampUnchanged =
+      !opts.force && opts.knownSourceKey && sourceUpdate?.raw && sourceUpdate.raw === opts.knownSourceKey;
+
+    if (stampUnchanged) {
+      const covered = new Set((opts.coveredStores || []).map((x) => String(x).trim()));
+      const missing = wanted.filter((st) => !covered.has(st));
+      if (!missing.length) {
+        succeeded = true;
+        return { ok: true, unchanged: true, sourceUpdate, checkedAt: new Date().toISOString() };
+      }
+      toVisit = missing;
+      topUp = true;
     }
 
     // ── Per-store loop ─────────────────────────────────────────────────
-    for (let i = 0; i < wanted.length; i++) {
+    const startedAt = Date.now();
+    const deadline  = startedAt + OVERALL_BUDGET_MS;
+    for (let i = 0; i < toVisit.length; i++) {
       if (opts.isCancelled?.()) {
         return { ok: false, errorClass: "CANCELLED", error: "Today capture cancelled.", rows, sourceUpdate, keptTabOpen: true };
       }
-      const store = wanted[i];
-      opts.onProgress?.({ done: i, total: wanted.length, store });
+      if (Date.now() > deadline) {
+        failures.push({ store: "(remaining)", reason: `overall ${Math.round(OVERALL_BUDGET_MS / 60000)}min budget exhausted after ${i} of ${toVisit.length} stores` });
+        break;
+      }
+      const store = toVisit[i];
+      // Report an ETA from the stores done so far. A four-minute crawl with a
+      // bare "2 of 10" reads as a hang; with "~3m left" it reads as progress.
+      const elapsed = Date.now() - startedAt;
+      const perStore = i > 0 ? elapsed / i : 0;
+      opts.onProgress?.({
+        done: i,
+        total: toVisit.length,
+        store,
+        elapsedMs: elapsed,
+        etaMs: perStore ? Math.round(perStore * (toVisit.length - i)) : null,
+      });
 
       try {
         // Clear first so "a new vizql response arrived" is an unambiguous
@@ -221,18 +261,26 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           failures.push({ store, reason: `donut: ${String(e?.message ?? e)}`, soft: true });
         }
 
-        rows.push({ store, ...parsed.total, ...(health || {}), deptCount: parsed.deptCount, hasHealth: !!health });
+        const row = { store, ...parsed.total, ...(health || {}), deptCount: parsed.deptCount, hasHealth: !!health };
+        rows.push(row);
+
+        // Publish this store straight away. Persisting per store also means a
+        // crawl that dies at store 7 keeps those 7 — and because the skip logic
+        // is coverage-aware, the next run tops up only the remainder.
+        try {
+          await opts.onStore?.({ row, sourceUpdate, topUp, index: i });
+        } catch { /* never let a display concern break the capture */ }
       } catch (e) {
         failures.push({ store, reason: String(e?.message ?? e) });
       }
     }
-    opts.onProgress?.({ done: wanted.length, total: wanted.length, store: null });
+    opts.onProgress?.({ done: toVisit.length, total: toVisit.length, store: null });
 
     if (!rows.length) {
       return {
         ok: false,
         errorClass: "NO_CAPTURE",
-        error: `Captured no current-day data for any of the ${wanted.length} requested stores.`,
+        error: `Captured no current-day data for any of the ${toVisit.length} stores attempted.`,
         debug: { failures },
         keptTabOpen: true,
       };
@@ -247,8 +295,13 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
       // Partial success is normal here: a market can contain a store the
       // user's Tableau row-level security doesn't cover.
       partial: failures.length > 0,
+      // The caller must MERGE rather than replace when this is a top-up, or it
+      // throws away the stores it already had.
+      topUp,
       debug: {
         requested: wanted.length,
+        visited: toVisit.length,
+        topUp,
         captured: rows.length,
         withHealth: rows.filter((r) => r.hasHealth).length,
         failures,
@@ -470,7 +523,7 @@ function exportDriverFn(sheetMatch, fallbackIndex) {
   ];
 
   let i = 0, ticks = 0;
-  const MAX_TICKS = 60;
+  const MAX_TICKS = 120;   // 120 * 200ms = 24s, same ceiling at twice the resolution
   steps.reached = {};
   const advance = () => {
     if (i >= stages.length) return;
@@ -482,7 +535,7 @@ function exportDriverFn(sheetMatch, fallbackIndex) {
       steps.reached[st.name] = true;
       i++;
     }
-    if (i < stages.length) setTimeout(advance, 400);
+    if (i < stages.length) setTimeout(advance, 200);
   };
   advance();
   return { ran: true, ok: true, steps };

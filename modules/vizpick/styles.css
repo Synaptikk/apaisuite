@@ -304,18 +304,19 @@
 
 /* Goal-relative value colouring — see lib/charts.js::bandFor.
      blue   at or above goal
-     orange below goal but within 5 points, on a CLOSED day only
-     black  a clear miss, and every below-goal current-day figure
-   Metrics with no published goal (Total Picked, Pallets %) get no class and
-   inherit the surrounding ink. */
+     orange below goal but within 5 points  (closed day only)
+     red    5+ points below goal            (closed day only)
+     black  current-day figure under goal — reported, not graded
+   Metrics with no published goal (Total Picked, Pallets %) get no class at
+   all and inherit the surrounding ink, so black means exactly one thing:
+   "not judged". */
 .vizpick-met     { color: var(--apai-blue);  font-weight: var(--fw-semi); }
 .vizpick-near    { color: #E07B00;           font-weight: var(--fw-semi); }
-.vizpick-missed  { color: var(--apai-ink);   font-weight: var(--fw-semi); }
+.vizpick-missed  { color: var(--apai-error); font-weight: var(--fw-semi); }
+.vizpick-pending { color: var(--apai-ink);   font-weight: var(--fw-semi); }
 .vizpick-neutral { color: var(--apai-blue);  font-weight: var(--fw-medium); }
 
-[data-theme="dark"] .module-vizpick .vizpick-near   { color: #FBBF24; }
-/* "Black" has to become the theme's brightest ink in dark mode or it vanishes. */
-[data-theme="dark"] .module-vizpick .vizpick-missed { color: var(--apai-ink); }
+[data-theme="dark"] .module-vizpick .vizpick-near { color: #FBBF24; }
 
 .vizpick-muted { color: var(--apai-muted); }
 

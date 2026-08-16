@@ -246,6 +246,9 @@ export async function mount(host, container) {
   const unsubPhase = host.messaging.on("capture_phase", (p) => {
     if (p?.phase) { lastRunNote = p.phase; paintRunNote(); }
   });
+  // Each store of the Today crawl is persisted as it lands, so repaint to show
+  // its card rather than leaving the tab empty until the whole crawl ends.
+  const unsubRows = host.messaging.on("today_rows", () => { paint(); });
 
   // 7. Follow the Settings → Defaults home market unless the user picked one.
   const unsubMarket = onUserMarketChange((m) => {
@@ -548,10 +551,13 @@ export async function mount(host, container) {
     const statusEl = container.querySelector("[data-today-status]");
     if (!statusEl) return;
     if (progress && progress.total) {
-      const { done, total, store } = progress;
+      const { done, total, store, etaMs } = progress;
+      // Today is captured one store at a time and a full market runs for
+      // minutes. Without an ETA the progress bar reads as a hang.
+      const eta = Number.isFinite(etaMs) && etaMs > 0 ? ` · about ${humanAge(etaMs)} left` : "";
       statusEl.innerHTML =
         `<strong>Capturing today — ${done} of ${total} stores</strong>` +
-        (store ? ` <span class="vizpick-muted">(store ${escapeHtml(store)})</span>` : "") +
+        (store ? ` <span class="vizpick-muted">(store ${escapeHtml(store)}${escapeHtml(eta)})</span>` : "") +
         `<div class="vizpick-progress"><div class="vizpick-progress-fill" style="width:${Math.round((done / total) * 100)}%"></div></div>`;
       btnLoadToday.disabled = true;
       btnCancel.hidden = false;
@@ -832,6 +838,7 @@ export async function mount(host, container) {
     unsub();
     unsubProgress();
     unsubPhase();
+    unsubRows();
     unsubMarket();
     link.remove();
   };

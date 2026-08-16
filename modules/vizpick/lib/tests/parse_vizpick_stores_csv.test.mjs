@@ -246,29 +246,40 @@ test("donut health: header-only or all-spacer input is rejected", () => {
 });
 
 // ── bandFor: goal-relative colour scale ───────────────────────────────────
-test("bandFor: blue at or above goal, orange just below, black for a clear miss", () => {
+test("bandFor: blue at/above goal, orange within 5, RED for a clear miss", () => {
   const cls = (v, g) => bandFor(v, g)?.cls ?? null;
-  // Cases/Locations goal 95
+  // Cases / Locations goal 95
   assert.equal(cls(96, 95), "vizpick-met");
-  assert.equal(cls(95, 95), "vizpick-met");     // exactly at goal counts as met
+  assert.equal(cls(95, 95), "vizpick-met");      // exactly at goal counts as met
   assert.equal(cls(94, 95), "vizpick-near");
   assert.equal(cls(91, 95), "vizpick-near");
-  assert.equal(cls(90, 95), "vizpick-missed");  // 5 points under -> missed
+  assert.equal(cls(90, 95), "vizpick-missed");   // 5 under -> clear miss
   assert.equal(cls(78, 95), "vizpick-missed");
-  // Picks/Overstock goal 90
+  // Picks / Overstock goal 90
   assert.equal(cls(91, 90), "vizpick-met");
   assert.equal(cls(86, 90), "vizpick-near");
   assert.equal(cls(85, 90), "vizpick-missed");
-  assert.equal(cls(58, 90), "vizpick-missed");
+  assert.equal(cls(56, 90), "vizpick-missed");
 });
 
-test("bandFor: current-day data is never orange — met or black only", () => {
+test("bandFor: a clear miss is NOT the same colour as an un-judged value", () => {
+  // The whole point of moving misses to red: black is the default ink of a
+  // metric with no goal, so a 56% Pick used to vanish into the card next to a
+  // plain count. These must never resolve to the same colour.
+  const miss = bandFor(56, 90);
+  const noGoal = bandFor(858, null);
+  assert.equal(miss.cls, "vizpick-missed");
+  assert.notEqual(miss.color, "#1a1a1a");
+  assert.notEqual(miss.color, noGoal.color);
+});
+
+test("bandFor: current-day figures are reported, not graded", () => {
   const cls = (v, g) => bandFor(v, g, { live: true })?.cls ?? null;
-  assert.equal(cls(96, 95), "vizpick-met");
-  // Mid-day and under goal: black, NOT orange. Being below goal at 11am is
-  // meaningless, so it must not be coloured as a near-miss.
-  assert.equal(cls(94, 95), "vizpick-missed");
-  assert.equal(cls(78, 95), "vizpick-missed");
+  assert.equal(cls(96, 95), "vizpick-met");     // already met -> still blue
+  // Below goal mid-day is black: never orange, never red.
+  assert.equal(cls(94, 95), "vizpick-pending");
+  assert.equal(cls(56, 90), "vizpick-pending");
+  assert.equal(bandFor(56, 90, { live: true }).color, "#1a1a1a");
 });
 
 test("bandFor: a metric with no goal is never judged", () => {
@@ -285,10 +296,7 @@ test("bandFor: no value at all has no band, so callers can show 'no data'", () =
 
 test("bandFor: bands the ROUNDED value so colour matches the digits shown", () => {
   const cls = (v, g) => bandFor(v, g)?.cls ?? null;
-  // 94.6 prints as "95" and so must read as having met a goal of 95.
-  assert.equal(cls(94.6, 95), "vizpick-met");
-  // 94.4 prints as "94" -> a near miss.
-  assert.equal(cls(94.4, 95), "vizpick-near");
-  // 90.4 prints as "90", which is a full 5 under a goal of 95 -> missed.
-  assert.equal(cls(90.4, 95), "vizpick-missed");
+  assert.equal(cls(94.6, 95), "vizpick-met");     // prints "95"
+  assert.equal(cls(94.4, 95), "vizpick-near");    // prints "94"
+  assert.equal(cls(90.4, 95), "vizpick-missed");  // prints "90" -> 5 under
 });

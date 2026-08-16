@@ -141,6 +141,36 @@ export function todayIsCurrent(store, sourceKey, market) {
   return t.sourceKey === sourceKey;
 }
 
+/** Stores held by the current Today snapshot, for this market only. */
+export function todayCoveredStores(store, market) {
+  const t = store?.today;
+  if (!t?.rows?.length) return [];
+  if (market != null && t.market != null && String(t.market) !== String(market)) return [];
+  return t.rows.map((r) => String(r.store));
+}
+
+/**
+ * Merge a top-up crawl into the existing Today snapshot: same stamp, extra
+ * stores. Replacing outright would discard the stores already captured, which
+ * is the entire point of only visiting the gaps.
+ */
+export async function mergeToday({ rows, sourceUpdate, capturedAt, partial, market }) {
+  const store = await read();
+  const byStore = new Map((store.today?.rows || []).map((r) => [String(r.store), r]));
+  for (const r of rows) byStore.set(String(r.store), r);
+
+  store.today = {
+    sourceKey:    sourceUpdate?.raw ?? store.today?.sourceKey ?? null,
+    sourceUpdate: sourceUpdate || store.today?.sourceUpdate || null,
+    rows:         [...byStore.values()],
+    capturedAt,
+    partial:      !!partial,
+    market:       market ?? store.today?.market ?? null,
+  };
+  await write(store);
+  return store;
+}
+
 export async function clearAll() {
   await chrome.storage.local.remove([KEY, LEGACY_ROWS, LEGACY_GT]);
 }

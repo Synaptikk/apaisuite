@@ -148,14 +148,40 @@ async function pullToday(msg) {
   const knownSourceKey = snapshots.todayIsCurrent(snapStore, snapStore.today?.sourceKey, market)
     ? snapStore.today.sourceKey
     : null;
+  // Which stores that stamp actually covers. Without this the capture treats a
+  // partial snapshot as complete and never fetches the stores it is missing.
+  const coveredStores = knownSourceKey ? snapshots.todayCoveredStores(snapStore, market) : [];
 
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
   await freshness.startAttempt("today");
 
   try {
+    // A full crawl (changed stamp) must REPLACE the stale rows on its first
+    // write; every later write merges. A top-up merges from the start, since
+    // the rows it is adding to are still valid at the same stamp.
+    let replacedOnce = false;
+
     const result = await fetchVizpickTodayTableau(stores, {
       knownSourceKey,
+      coveredStores,
       force: !!msg?.force,
+      onStore: async ({ row, sourceUpdate, topUp }) => {
+        const payload = {
+          rows: [row],
+          sourceUpdate,
+          capturedAt: new Date().toISOString(),
+          partial: true,            // still mid-crawl
+          market,
+        };
+        if (!topUp && !replacedOnce) {
+          await snapshots.recordToday(payload);
+          replacedOnce = true;
+        } else {
+          await snapshots.mergeToday(payload);
+        }
+        // Tells the view to re-read state and paint the card now.
+        broadcast("today_rows", { store: row.store });
+      },
       onProgress: (p) => {
         if (!todayRun) return;
         todayRun.progress = p;
@@ -193,7 +219,9 @@ async function pullToday(msg) {
       };
     }
 
-    await snapshots.recordToday({
+    // A top-up visited only the missing stores, so merge rather than replace.
+    const persist = result.topUp ? snapshots.mergeToday : snapshots.recordToday;
+    await persist({
       rows:         result.rows,
       sourceUpdate: result.sourceUpdate,
       capturedAt:   result.capturedAt,
@@ -208,6 +236,7 @@ async function pullToday(msg) {
       sourceId: "today",
       storeCount: result.rows.length,
       requested: stores.length,
+      toppedUp: !!result.topUp,
       partial: result.partial,
     };
   } catch (e) {
