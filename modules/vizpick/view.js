@@ -146,6 +146,10 @@ export async function mount(host, container) {
   let customOrder = {};
   let dragStore = null;
   let lastRunNote = null;
+  // Cards show only their graphs by default; the text rows are opt-in per
+  // card. Keyed by market so expanding a store in one market doesn't expand a
+  // same-numbered store elsewhere.
+  let expanded = {};
 
   let homeMarket = await getUserHomeMarket();
 
@@ -160,6 +164,15 @@ export async function mount(host, container) {
   btnForceToday.addEventListener("click", () => runToday(true));
   container.querySelector('[data-action="dismiss-error"]')?.addEventListener("click", dismissError);
   btnCancel.addEventListener("click", () => host.messaging.send("cancel_today").catch(() => {}));
+  container.querySelector('[data-action="toggle-all"]')?.addEventListener("click", async () => {
+    const rows = rowsForActiveTab();
+    const key = selectedMarket ?? "_";
+    const anyOpen = rows.some((r) => isExpanded(r.store));
+    expanded[key] = anyOpen ? [] : rows.map((r) => String(r.store));
+    await saveUiPrefs();
+    render();
+  });
+
   btnResetOrder.addEventListener("click", async () => {
     if (selectedMarket) delete customOrder[selectedMarket];
     sortMode = DEFAULT_SORT;
@@ -186,10 +199,34 @@ export async function mount(host, container) {
     });
   });
 
+  function expandedSet() {
+    const key = selectedMarket ?? "_";
+    if (!Array.isArray(expanded[key])) expanded[key] = [];
+    return expanded[key];
+  }
+  function isExpanded(store) { return expandedSet().includes(String(store)); }
+  async function toggleStore(store) {
+    const list = expandedSet();
+    const i = list.indexOf(String(store));
+    if (i >= 0) list.splice(i, 1); else list.push(String(store));
+    await saveUiPrefs();
+    render();
+  }
+
   // ── Drag to rearrange ────────────────────────────────────────────
   // Uses native HTML5 drag-and-drop on the cards. Dropping commits the new
   // order, switches the sort control to "custom", and persists it.
   const grid = container.querySelector("[data-store-cards]");
+
+  // Toggle a single card's text rows. Registered before the drag handlers and
+  // stops propagation so pressing the toggle never begins a drag.
+  grid.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("[data-toggle-store]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleStore(btn.dataset.toggleStore);
+  });
 
   grid.addEventListener("dragstart", (e) => {
     const card = e.target?.closest?.(".vizpick-store-card");
@@ -625,6 +662,12 @@ export async function mount(host, container) {
     if (count) count.textContent = rows.length ? `${rows.length} stores` : "";
     if (hint) hint.hidden = !rows.length;
 
+    const btnAll = container.querySelector('[data-action="toggle-all"]');
+    if (btnAll) {
+      btnAll.hidden = !rows.length;
+      btnAll.textContent = rows.some((r) => isExpanded(r.store)) ? "Hide all numbers" : "Show all numbers";
+    }
+
     sortSelect.value = sortMode;
     // "Custom" is only meaningful once an arrangement exists for this market.
     const hasCustom = !!(selectedMarket && customOrder[selectedMarket]?.length);
@@ -701,22 +744,26 @@ export async function mount(host, container) {
       .join("");
 
     const sub = `${escapeHtml(r.bu ?? "")}${r.bu ? " · " : ""}${r.region != null && r.region !== "" ? `Region ${escapeHtml(r.region)}` : ""}`;
+    const open = isExpanded(r.store);
 
-    // Always expanded — every metric is visible at all times. The card is
-    // draggable instead of collapsible.
+    // Store number leads at the top LEFT, with the overall score ring to its
+    // right. Only the graphs show by default — the numeric rows are behind a
+    // per-card toggle, so a market reads as a wall of rings at a glance.
     return `
       <article class="vizpick-store-card" data-store="${escapeHtml(r.store)}" draggable="true"
                aria-label="Store ${escapeHtml(r.store)} — drag to rearrange">
         <header class="vizpick-store-card-summary">
-          <div class="vizpick-store-card-gauge">${gauge}</div>
           <div class="vizpick-store-card-id">
             <div class="vizpick-store-card-num">#${escapeHtml(r.store)}</div>
             <div class="vizpick-store-card-sub">${sub}</div>
           </div>
+          <div class="vizpick-store-card-gauge">${gauge}</div>
           <span class="vizpick-store-card-grip" aria-hidden="true" title="Drag to rearrange">⠿</span>
         </header>
         <div class="vizpick-store-card-rings">${ringsHtml}</div>
-        <div class="vizpick-store-card-details">${metricsHtml}</div>
+        <button class="vizpick-card-toggle" data-toggle-store="${escapeHtml(r.store)}"
+                aria-expanded="${open}">${open ? "Hide numbers" : "Show numbers"}</button>
+        <div class="vizpick-store-card-details"${open ? "" : " hidden"}>${metricsHtml}</div>
       </article>`;
   }
 
@@ -778,12 +825,13 @@ export async function mount(host, container) {
       if (!p || p.v !== 2) return;
       if (typeof p.sortMode === "string" && (SORTS[p.sortMode] || p.sortMode === "custom")) sortMode = p.sortMode;
       if (p.customOrder && typeof p.customOrder === "object") customOrder = p.customOrder;
+      if (p.expanded && typeof p.expanded === "object") expanded = p.expanded;
     } catch { /* prefs are best-effort */ }
   }
 
   async function saveUiPrefs() {
     try {
-      await chrome.storage.local.set({ [UI_PREFS_KEY]: { v: 2, sortMode, customOrder } });
+      await chrome.storage.local.set({ [UI_PREFS_KEY]: { v: 2, sortMode, customOrder, expanded } });
     } catch { /* best-effort */ }
   }
 
