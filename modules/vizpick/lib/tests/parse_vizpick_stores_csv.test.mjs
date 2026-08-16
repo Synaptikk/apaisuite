@@ -300,3 +300,57 @@ test("bandFor: bands the ROUNDED value so colour matches the digits shown", () =
   assert.equal(cls(94.4, 95), "vizpick-near");    // prints "94"
   assert.equal(cls(90.4, 95), "vizpick-missed");  // prints "90" -> 5 under
 });
+
+// ── The VizPick composite, and why its goal is 100 ───────────────────────
+//
+// view.js judges the centre ring against GOALS.vizpick = 100. That is a
+// derivation, not a guess, and this pins it: the composite is the mean
+// ATTAINMENT of each component against its own published goal, capped at
+// 100%. It follows that a store at or above all four goals scores exactly
+// 100, which is what makes 100 the right threshold.
+//
+// Established 2026-08-16 over the full stored roster (4,598 stores): median
+// error 0.28pp, p95 1.74pp. The residual is the components being published
+// rounded to whole percents while Tableau computes from unrounded values,
+// which is why the tolerance below is 1.5pp rather than exact.
+const COMPOSITE_GOALS = { cases: 95, location: 95, pick: 90, overstock: 90 };
+const composite = (r) => {
+  const att = (v, g) => Math.min(100, (v / g) * 100);
+  return (att(r.cases, COMPOSITE_GOALS.cases) + att(r.location, COMPOSITE_GOALS.location)
+        + att(r.pick, COMPOSITE_GOALS.pick) + att(r.overstock, COMPOSITE_GOALS.overstock)) / 4;
+};
+
+test("VizPick composite is mean attainment vs each goal, capped at 100", () => {
+  // Real rows from the 2026-08-16 summary capture, observed composite included.
+  const observed = [
+    { store: 1, cases: 95, location: 98, pick: 84, overstock: 95, vizpick: 98.14 },
+    { store: 2, cases: 95, location: 97, pick: 80, overstock: 91, vizpick: 96.52 },
+    { store: 3, cases: 97, location: 99, pick: 86, overstock: 92, vizpick: 98.72 },
+    { store: 4, cases: 95, location: 97, pick: 83, overstock: 95, vizpick: 97.70 },
+    { store: 5, cases: 97, location: 100, pick: 69, overstock: 93, vizpick: 92.85 },
+    { store: 7, cases: 95, location: 97, pick: 80, overstock: 87, vizpick: 95.93 },
+  ];
+  for (const r of observed) {
+    assert.ok(
+      Math.abs(composite(r) - r.vizpick) <= 1.5,
+      `store ${r.store}: predicted ${composite(r).toFixed(2)} vs observed ${r.vizpick}`
+    );
+  }
+});
+
+test("VizPick composite: no plain average of the components can produce it", () => {
+  // The finding that ruled out the obvious model. Store 1 scores 98.14 while
+  // its best component is 98, so the composite exceeds max(components) — no
+  // mean, weighted or not, can do that.
+  const r = { cases: 95, location: 98, pick: 84, overstock: 95, vizpick: 98.14 };
+  assert.ok(r.vizpick > Math.max(r.cases, r.location, r.pick, r.overstock));
+});
+
+test("VizPick composite: hitting every goal scores exactly 100", () => {
+  // This is the whole justification for GOALS.vizpick = 100.
+  assert.equal(composite({ cases: 95, location: 95, pick: 90, overstock: 90 }), 100);
+  // And exceeding them cannot push it past 100 — the caps bind.
+  assert.equal(composite({ cases: 100, location: 100, pick: 100, overstock: 100 }), 100);
+  // One metric short of goal drags it below, so the ring stops being blue.
+  assert.ok(composite({ cases: 95, location: 95, pick: 72, overstock: 90 }) < 100);
+});

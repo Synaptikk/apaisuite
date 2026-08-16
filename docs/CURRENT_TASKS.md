@@ -231,6 +231,25 @@ The Details export exposes the real numerators/denominators:
 - `Pick % = Suggested Picks Completed / Suggested Picks` (343/739 = 46% ✓)
 - `Pallets % = pallets_seen / pallets_expected` (282/294 = 95.92% ✓)
 
+**VizPick Health is mean attainment, not a mean.** Established 2026-08-16
+over the full stored roster (4,598 stores). It is *not* an average of the
+four component rings — store 1 scores 98.14 with a best component of 98, so
+the composite exceeds `max(components)` and no mean, weighted or not, can
+produce it. A least-squares fit of the four raw percentages was poor
+(max error 8.9pp) and extrapolated above 100, which gave away the real shape:
+
+```
+VizPick Health = mean( min(100, cases/95), min(100, location/95),
+                       min(100, pick/90),  min(100, overstock/90) ) × 100
+```
+
+median error 0.28pp, p95 1.74pp — the residual is the components being
+published rounded to whole percents while Tableau computes from unrounded
+values. **Therefore the composite's goal is 100, by construction**, not an
+invented threshold: a store at or above every component goal scores exactly
+100, and 809 of the 4,598 stores do. `GOALS.vizpick = 100` in `view.js`, and
+three tests in `parse_vizpick_stores_csv.test.mjs` pin the derivation.
+
 So **`Total Picked` is NOT the Pick % numerator** — in the same row it reads
 452 against a numerator of 343. Deriving a denominator as
 `Total Picked / (Pick % / 100)` yields 982 against a true 739, a 33% error.

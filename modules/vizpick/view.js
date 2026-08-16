@@ -12,13 +12,31 @@ import { getUserHomeMarket, onUserMarketChange } from "../../shared/userStore.js
 
 // Goals published on the Tableau VizPick dashboard. These are both the gauge
 // captions AND the colour thresholds — see lib/charts.js::bandFor. Metrics
-// absent from this map (Pallets %, the VizPick composite) have no published
-// target and are therefore never judged.
+// absent from this map (Pallets %) have no published target and are therefore
+// never judged.
 const GOALS = {
   casesSeenPct: 95,
   locationPct:  95,
   pickPct:      90,
   overstockPct: 90,
+
+  // VizPick Health is NOT an average of the four rings — store 1 scores 98.14
+  // with a best component of 98, so no mean of them can produce it. Fitted
+  // against the full roster (4,598 stores, 2026-08-16) it is the mean
+  // ATTAINMENT of each component against its own goal, capped at 100%:
+  //
+  //   mean( min(100, cases/95), min(100, location/95),
+  //         min(100, pick/90),  min(100, overstock/90) ) × 100
+  //
+  // median error 0.28pp, p95 1.74pp. The residual is the components being
+  // published rounded to whole percents while the composite is computed from
+  // unrounded values. (A least-squares fit of the four raw percentages was far
+  // worse and extrapolated above 100 — which is what gave the capping away.)
+  //
+  // So the composite's goal is not invented: it is 100 by construction. A
+  // store at or above every component goal scores exactly 100, and 809 of the
+  // 4,598 stores do.
+  vizpick: 100,
 };
 
 // Tab ids are "today" or "day:<YYYY-MM-DD>". Today is always leftmost and
@@ -610,8 +628,11 @@ export async function mount(host, container) {
     if (activeTab !== "today") { bar.hidden = true; return; }
     bar.hidden = false;
 
+    // A crawl may have been started from another window, or before this page
+    // was opened — the service worker holds the progress, so reopening the
+    // module picks it up mid-flight rather than showing "not loaded".
     const inFlight = state?.todayProgress;
-    if (inFlight && inFlight.total) { renderTodayBar(inFlight); return; }
+    if (inFlight && (inFlight.total || inFlight.stage)) { renderTodayBar(inFlight); return; }
 
     const n = todayRows().length;
     const roster = rosterRows().length;
@@ -621,24 +642,41 @@ export async function mount(host, container) {
       n
         ? `Showing ${n} of ${roster} stores in this market.` +
           (partial ? " Some stores could not be captured — see the capture details below." : "") +
-          " Today is captured one store at a time, so reloading takes a few minutes."
+          " Today is captured one store at a time, so reloading takes a couple of minutes."
         : `Today's numbers come from Tableau's VizPick Details view, which reports one store at a time. ` +
-          `Loading this market means ${roster} sequential exports — expect a few minutes.`
+          `Loading this market means ${roster} exports, spread across 3 background tabs — about two minutes.`
     );
   }
 
   function renderTodayBar(progress, message) {
     const statusEl = container.querySelector("[data-today-status]");
     if (!statusEl) return;
-    if (progress && progress.total) {
-      const { done, total, store, etaMs } = progress;
+
+    if (progress && (progress.total || progress.stage)) {
+      const { done = 0, total = 0, store, etaMs, stage, lanes } = progress;
+
+      // Before the first store lands there is over a minute of setup — cold
+      // viz render, the source-stamp export, opening the lanes. Naming the
+      // step keeps the bar honest instead of sitting on "0 of 10".
+      const headline = done === 0 && stage
+        ? `${escapeHtml(stage)}…`
+        : `Capturing today — store ${Math.min(done + 1, total)} of ${total}`;
+
       // Today is captured one store at a time and a full market runs for
       // minutes. Without an ETA the progress bar reads as a hang.
       const eta = Number.isFinite(etaMs) && etaMs > 0 ? ` · about ${humanAge(etaMs)} left` : "";
+      const detail = store
+        ? ` <span class="vizpick-muted">(store ${escapeHtml(store)}${escapeHtml(eta)})</span>`
+        : (lanes > 1 ? ` <span class="vizpick-muted">(${lanes} tabs)</span>` : "");
+
+      // An indeterminate bar during setup — a 0%-wide bar looks stalled.
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      const fill = done === 0 && stage
+        ? `<div class="vizpick-progress-fill vizpick-progress-indeterminate"></div>`
+        : `<div class="vizpick-progress-fill" style="width:${pct}%"></div>`;
+
       statusEl.innerHTML =
-        `<strong>Capturing today — ${done} of ${total} stores</strong>` +
-        (store ? ` <span class="vizpick-muted">(store ${escapeHtml(store)}${escapeHtml(eta)})</span>` : "") +
-        `<div class="vizpick-progress"><div class="vizpick-progress-fill" style="width:${Math.round((done / total) * 100)}%"></div></div>`;
+        `<strong>${headline}</strong>${detail}<div class="vizpick-progress">${fill}</div>`;
       btnLoadToday.disabled = true;
       btnCancel.hidden = false;
     } else {
@@ -674,8 +712,9 @@ export async function mount(host, container) {
     };
 
     const gauges = [
-      // No published goal — stays neutral blue, as in Tableau.
-      { key: "vizpick",      label: "VizPick Health", goal: undefined },
+      // Judged on the same goals as the four beside it — the composite IS
+      // their mean attainment, so 100 means all four at target.
+      { key: "vizpick",      label: "VizPick Health", goal: GOALS.vizpick },
       { key: "casesSeenPct", label: "Cases Seen %",   goal: GOALS.casesSeenPct },
       { key: "locationPct",  label: "Location %",     goal: GOALS.locationPct },
       { key: "pickPct",      label: "Pick %",         goal: GOALS.pickPct },
@@ -730,17 +769,23 @@ export async function mount(host, container) {
   }
 
   function storeCardHtml(r) {
-    // VizPick Health has no published goal, so — exactly as the Tableau
-    // dashboard does — its ring stays neutral blue rather than being judged
-    // against an invented threshold.
-    const gauge = Number.isFinite(r.vizpick)
-      ? gaugeSvg(r.vizpick, { size: 96, thickness: 10, label: "", fmt: (v) => Math.round(v).toString() })
-      : `<div class="vizpick-card-nohealth" title="No VizPick composite score for this store">—</div>`;
-
     // `ratio` is a REAL numerator/denominator pair from the export — never a
     // figure derived by dividing a rounded percentage. See the note at the top
     // of lib/parse_vizpick_stores_csv.js.
     const live = activeTab === "today";
+
+    // The composite is judged on the same scale as the rings around it: it is
+    // the mean attainment against those very goals, so 100 is "every component
+    // at or above target". See the note on GOALS.vizpick.
+    const gauge = Number.isFinite(r.vizpick)
+      ? gaugeSvg(r.vizpick, {
+          // No caption under this one — the store number already labels the
+          // card — but the tooltip still names it.
+          size: 96, thickness: 10, label: "", title: "VizPick Health",
+          goal: GOALS.vizpick, live,
+          fmt: (v) => Math.round(v).toString(),
+        })
+      : `<div class="vizpick-card-nohealth" title="No VizPick composite score for this store">—</div>`;
 
     // The four goal metrics, rendered BOTH as small rings beside the composite
     // (mirroring the VizPick dashboard's own layout) and as the text rows

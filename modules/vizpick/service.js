@@ -54,8 +54,16 @@ async function readAuto() {
 // after the extension was reloaded — this makes the provenance explicit.
 const CAPTURE_BUILD = "2026-08-16c";
 
-function broadcast(type, payload) {
-  chrome.runtime.sendMessage({ module: "vizpick", type, payload }).catch(() => {});
+// Payload is SPREAD, not nested under a `payload` key. shared/messaging.js's
+// on(type, handler) hands the whole flat message to the handler, so nesting
+// meant every subscriber received {module, type, payload} and read undefined
+// off it. That is why the Today progress bar stayed blank for the first
+// minute of a crawl: the today_progress events arrived and rendered nothing,
+// and the bar only ever caught up when a today_rows event triggered a full
+// repaint that re-read the state from storage. Matches the shared helper and
+// every other module.
+function broadcast(type, payload = {}) {
+  chrome.runtime.sendMessage({ module: "vizpick", type, ...payload }).catch(() => {});
 }
 
 // Guards against two overlapping Today crawls (each drives a shared Tableau

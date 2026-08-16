@@ -129,7 +129,15 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
   const rows = [];
   const failures = [];
 
+  // Getting to the first store takes a while — cold viz render, then the
+  // source-stamp export, then opening and preparing the extra lanes. Left
+  // silent, that is over a minute of a UI that says nothing, which reads as a
+  // hang. Report the staging steps by name so there is always something moving.
+  const stage = (label) =>
+    opts.onProgress?.({ stage: label, done: 0, total: wanted.length, store: null });
+
   try {
+    stage("Opening the VizPick Details tab");
     const primaryReady = await prepareTab(primaryId);
     if (!primaryReady.ok) {
       return {
@@ -150,6 +158,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // Read on the primary tab BEFORE fanning out: it is one export, every lane
     // would return the same answer, and the skip decision below may mean no
     // extra tabs need opening at all.
+    stage("Reading Tableau's last-update time");
     const sourceUpdate = await readSourceStamp(primaryId);
 
     // ── Skip the crawl when nothing has been republished ───────────────
@@ -185,7 +194,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // Only now, once we know there is real work: an unchanged stamp with full
     // coverage returns above without ever creating a second tab.
     const laneTarget = Math.max(1, Math.min(MAX_TABS, Number(opts.concurrency) || MAX_TABS));
-    for (let i = 1; i < Math.min(laneTarget, toVisit.length); i++) {
+    const laneCount = Math.min(laneTarget, toVisit.length);
+    if (laneCount > 1) stage(`Opening ${laneCount} background tabs`);
+    for (let i = 1; i < laneCount; i++) {
       const t = await chrome.tabs.create({ url: DETAILS_URL, active: false }).catch(() => null);
       if (t) tabs.push({ tab: t, didOpen: true });
     }
@@ -238,13 +249,19 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         // from one lane's pace — otherwise three tabs would still quote the
         // serial estimate. A four-minute crawl with a bare "2 of 10" reads as
         // a hang; with "~1m left" it reads as progress.
+        //
+        // Withheld until every lane has finished something. With L lanes in
+        // flight, the first completion has L stores' worth of work behind it
+        // but only 1 counted, so elapsed/done overstates the per-store cost by
+        // ~L× — observed quoting "about 2m left" on a crawl that had 48s to
+        // run. No number beats a wrong one.
         const elapsed = Date.now() - startedAt;
         opts.onProgress?.({
           done,
           total: toVisit.length,
           store,
           elapsedMs: elapsed,
-          etaMs: done > 0 ? Math.round((elapsed / done) * (toVisit.length - done)) : null,
+          etaMs: done >= lanes.length ? Math.round((elapsed / done) * (toVisit.length - done)) : null,
           lanes: lanes.length,
         });
 
