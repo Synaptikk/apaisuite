@@ -21,18 +21,35 @@ const GOALS = {
   overstockPct: 90,
 };
 
-// The two tabs are backed by two different Tableau views with different
-// capabilities — see lib/sources/vizpick_today_tableau.js.
-const TABS = {
-  yesterday: {
-    label: "Yesterday",
-    note: "Source: the VizPick summary view, which Tableau refreshes once daily for the day prior.",
-  },
-  today: {
-    label: "Today — Live",
-    note: "Source: the VizPick Details view, refreshed through the current business day. Tableau warns it can run 1–2 hours behind upstream systems.",
-  },
-};
+// Tab ids are "today" or "day:<YYYY-MM-DD>". Today is always leftmost and
+// first; the closed days follow, newest to oldest, out of the rolling history.
+const TODAY_NOTE =
+  "Source: the VizPick Details view, refreshed through the current business day. Tableau warns it can run 1–2 hours behind upstream systems.";
+const DAY_NOTE =
+  "Source: the VizPick summary view, which Tableau refreshes once daily for the day prior.";
+
+/** Local YYYY-MM-DD, so day keys never shift across a UTC boundary. */
+function localDayKey(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Name a stored day relative to now: the most recent closed day reads
+ * "Yesterday", the one before it "2 days ago" is unhelpful — a weekday name is
+ * what people actually navigate by — so anything older is shown as its day
+ * name, with the date underneath in every case.
+ */
+function dayTabLabel(dataDate) {
+  if (!dataDate) return { name: "Unknown day", date: "—" };
+  const [y, m, d] = dataDate.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const today = new Date();
+  const diff = Math.round((new Date(localDayKey(today)) - new Date(dataDate)) / 86_400_000);
+  const date = dt.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  if (diff === 1) return { name: "Yesterday", date: `${dt.toLocaleDateString(undefined, { weekday: "short" })} ${date}` };
+  return { name: dt.toLocaleDateString(undefined, { weekday: "long" }), date };
+}
 
 // What the user can actually do about each capture failure class, stated up
 // front — the raw envelope stays available underneath for diagnosis.
@@ -138,7 +155,9 @@ export async function mount(host, container) {
   let state = null;
   let selectedMarket = null;
   let marketIsUserSet = false;
-  let activeTab = "yesterday";
+  // "today" or "day:<YYYY-MM-DD>". Resolved on first paint once the stored
+  // history is known — Today leads, but only when it actually has data.
+  let activeTab = null;
   // Card ordering. `sortMode` is one of the SORTS keys; `customOrder` maps a
   // market to the store order the user dragged into place. Both persist so an
   // arrangement survives closing the module.
@@ -192,11 +211,12 @@ export async function mount(host, container) {
     render();
   });
 
-  container.querySelectorAll("[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      activeTab = btn.dataset.tab;
-      render();
-    });
+  // Delegated: the strip is rebuilt on every paint as the history grows.
+  container.querySelector("[data-tabs]")?.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("[data-tab]");
+    if (!btn) return;
+    activeTab = btn.dataset.tab;
+    render();
   });
 
   function expandedSet() {
@@ -329,7 +349,7 @@ export async function mount(host, container) {
   }
 
   async function runToday(force) {
-    const stores = yesterdayRows().map((r) => r.store);
+    const stores = rosterRows().map((r) => r.store);
     if (!stores.length) {
       renderTodayBar(null, "Refresh the Yesterday tab first — it supplies the store list for this market.");
       return;
@@ -398,8 +418,22 @@ export async function mount(host, container) {
     render();
   }
 
-  function yesterdayRows() {
-    const all = state?.yesterday?.rows || state?.rows || [];
+  function dayList() { return state?.days || []; }
+  function activeDayKey() {
+    return typeof activeTab === "string" && activeTab.startsWith("day:") ? activeTab.slice(4) : null;
+  }
+  function activeDay() {
+    const k = activeDayKey();
+    return k ? dayList().find((d) => d.dataDate === k) || null : null;
+  }
+  /** Newest closed day — the roster every other view is keyed against. */
+  function rosterRows() {
+    const all = dayList()[0]?.rows || state?.rows || [];
+    return selectedMarket ? all.filter((r) => r.market === selectedMarket) : [];
+  }
+  /** Rows of whichever closed day is selected. */
+  function dayRows() {
+    const all = activeDay()?.rows || [];
     return selectedMarket ? all.filter((r) => r.market === selectedMarket) : [];
   }
 
@@ -409,7 +443,7 @@ export async function mount(host, container) {
     // by store number — which is also what scoped the capture.
     const today = state?.today?.rows || [];
     if (!today.length) return [];
-    const roster = new Map(yesterdayRows().map((r) => [r.store, r]));
+    const roster = new Map(rosterRows().map((r) => [r.store, r]));
     return today
       .filter((t) => roster.has(t.store))
       .map((t) => {
@@ -447,11 +481,17 @@ export async function mount(host, container) {
   }
 
   function rowsForActiveTab() {
-    return activeTab === "today" ? todayRows() : yesterdayRows();
+    return activeTab === "today" ? todayRows() : dayRows();
   }
 
   function activeSnapshot() {
-    return activeTab === "today" ? state?.today : (state?.yesterday || null);
+    return activeTab === "today" ? state?.today : activeDay();
+  }
+  function activeNote() { return activeTab === "today" ? TODAY_NOTE : DAY_NOTE; }
+  function activeTabLabel() {
+    if (activeTab === "today") return "Today — Live";
+    const { name, date } = dayTabLabel(activeDayKey());
+    return `${name} ${date}`.trim();
   }
 
   function render() {
@@ -472,7 +512,7 @@ export async function mount(host, container) {
   }
 
   function paintMarketOptions() {
-    const all = state?.yesterday?.rows || state?.rows || [];
+    const all = dayList()[0]?.rows || state?.rows || [];
     const markets = [...new Set(all.map((r) => r.market))].sort(
       (a, b) => Number(a) - Number(b) || a.localeCompare(b)
     );
@@ -495,41 +535,44 @@ export async function mount(host, container) {
   }
 
   function paintTabs() {
-    for (const key of Object.keys(TABS)) {
-      const btn = container.querySelector(`[data-tab="${key}"]`);
-      if (btn) btn.setAttribute("aria-selected", String(key === activeTab));
-      const dateEl = container.querySelector(`[data-tab-date="${key}"]`);
-      if (dateEl) {
-        const snap = key === "today" ? state?.today : state?.yesterday;
-        dateEl.textContent = snap ? dataDateLabel(key, snap) : "no data";
-      }
+    const strip = container.querySelector("[data-tabs]");
+    if (!strip) return;
+    const days = dayList();
+
+    // Today first and leftmost, then the closed days newest -> oldest.
+    const tabs = [{
+      id: "today",
+      name: "Today — Live",
+      date: state?.today?.sourceUpdate?.iso
+        ? new Date(state.today.sourceUpdate.iso).toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" })
+        : (state?.today?.rows?.length ? "loaded" : "not loaded"),
+    }];
+    for (const d of days) {
+      const { name, date } = dayTabLabel(d.dataDate);
+      tabs.push({ id: `day:${d.dataDate}`, name, date });
     }
+
+    // Resolve the default once the history is known: Today when it has data,
+    // otherwise the newest closed day.
+    if (!activeTab || !tabs.some((t) => t.id === activeTab)) {
+      activeTab = state?.today?.rows?.length ? "today" : (tabs[1]?.id ?? "today");
+    }
+
+    strip.innerHTML = tabs.map((t) => `
+      <button class="vizpick-tab" role="tab" data-tab="${escapeHtml(t.id)}"
+              aria-selected="${t.id === activeTab}">
+        <span class="vizpick-tab-name">${escapeHtml(t.name)}</span>
+        <span class="vizpick-tab-date">${escapeHtml(t.date)}</span>
+      </button>`).join("");
   }
 
-  // What calendar day does each tab's data actually describe?
-  //   Today     → the source stamp's own day.
-  //   Yesterday → the day BEFORE the source stamp, because that view is
-  //               "refreshed daily for the day prior".
-  function dataDateLabel(key, snap) {
-    const iso = snap?.sourceUpdate?.iso;
-    if (!iso) return snap?.capturedAt ? "date unknown" : "no data";
-    const d = new Date(iso);
-    if (key === "yesterday") d.setDate(d.getDate() - 1);
-    return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
-  }
-
-  // Tableau's own "Last update" stamp, rendered in the Market Average header.
-  // Format follows the source's precision: the Details view publishes a full
-  // timestamp, the summary view only a date — we never invent a clock time to
-  // fill the gap. The source note and relative age move to the tooltip so the
-  // header stays a single scannable line.
   function paintUpdatedBar() {
     const absEl   = container.querySelector("[data-updated-abs]");
     const freshEl = container.querySelector('[data-freshness="stores"]');
     if (absEl) {
       const snap = activeSnapshot();
       const su = snap?.sourceUpdate;
-      const note = TABS[activeTab].note;
+      const note = activeNote();
 
       if (!snap) {
         absEl.textContent = "—";
@@ -571,7 +614,7 @@ export async function mount(host, container) {
     if (inFlight && inFlight.total) { renderTodayBar(inFlight); return; }
 
     const n = todayRows().length;
-    const roster = yesterdayRows().length;
+    const roster = rosterRows().length;
     const partial = state?.today?.partial;
     renderTodayBar(
       null,
@@ -610,7 +653,7 @@ export async function mount(host, container) {
     const sub  = container.querySelector("[data-gauges-sub]");
     if (sub) {
       sub.textContent = rows.length
-        ? `${TABS[activeTab].label} · Market ${selectedMarket ?? "—"} · mean of ${rows.length} store${rows.length === 1 ? "" : "s"}`
+        ? `${activeTabLabel()} · Market ${selectedMarket ?? "—"} · mean of ${rows.length} store${rows.length === 1 ? "" : "s"}`
         : "";
     }
     if (!wrap) return;
@@ -724,7 +767,8 @@ export async function mount(host, container) {
       { label: "Cases Seen %", value: r.casesSeenPct, goal: GOALS.casesSeenPct, fmt: fmtPct, ratio: ratio(r.casesSeen, r.casesExpected) },
       { label: "Location %",   value: r.locationPct,  goal: GOALS.locationPct,  fmt: fmtPct },
       { label: "Pick %",       value: r.pickPct,      goal: GOALS.pickPct,      fmt: fmtPct, ratio: ratio(r.picksCompleted, r.picksSuggested) },
-      { label: "Total Picked", value: r.totalPicked,  goal: null,               fmt: fmtInt },
+      { label: "Total Picked", value: r.totalPicked,  goal: null,               fmt: fmtInt,
+        ratio: pickedOfTotal(r), ratioTitle: pickedOfTotalTitle(r) },
       { label: "Overstock %",  value: r.overstockPct, goal: GOALS.overstockPct, fmt: fmtPct },
       // No published goal for Pallets %, so it is shown but never judged.
       { label: "Pallets %",    value: r.palletsPct,   goal: null,               fmt: fmtPct, ratio: ratio(r.palletsSeen, r.palletsExpected) },
@@ -736,7 +780,7 @@ export async function mount(host, container) {
         <div class="vizpick-store-card-metric">
           <span class="vizpick-store-card-metric-label">${escapeHtml(m.label)}</span>
           <span class="vizpick-store-card-metric-value">
-            ${m.ratio ? `<span class="vizpick-ratio">${escapeHtml(m.ratio)}</span>` : ""}
+            ${m.ratio ? `<span class="vizpick-ratio"${m.ratioTitle ? ` title="${escapeHtml(m.ratioTitle)}"` : ""}>${escapeHtml(m.ratio)}</span>` : ""}
             <strong class="${m.goal != null ? pctClass(m.value, m.goal, live) : ""}"
                     title="${m.goal != null ? `Goal ${m.goal}%` : ""}">${escapeHtml(m.fmt(m.value))}</strong>
           </span>
@@ -870,6 +914,36 @@ export async function mount(host, container) {
 
   // Colour band for a percentage, shared with the gauge rings
   // (lib/charts.js::bandFor) so text and rings can never disagree.
+  // How many picks the store was asked for, alongside how many it made.
+  //
+  // The summary export does not carry that denominator, so it is DERIVED from
+  // the completion rate: total = Total Picked / (Pick % / 100). Tableau rounds
+  // Pick % to whole percent, so the answer is only good to roughly +/-1%, and
+  // it is rounded to the nearest ten and prefixed "≈" rather than dressed up
+  // as exact. Suppressed entirely when the percentage is too small to divide
+  // by safely (under 5%, where a half-point of rounding swings the result by
+  // more than 10%).
+  //
+  // The Today view is different: it exports Suggested Picks and Suggested
+  // Picks Completed directly, so its Pick % row shows a REAL ratio and this
+  // derivation is not used there.
+  function pickedOfTotal(r) {
+    const picked = r.totalPicked;
+    const pct = r.pickPct;
+    if (!Number.isFinite(picked) || !Number.isFinite(pct)) return null;
+    if (pct < 5 || pct > 100) return null;
+    const est = Math.round(picked / (pct / 100) / 10) * 10;
+    if (!Number.isFinite(est) || est < picked) return null;
+    return `${Math.round(picked).toLocaleString("en-US")} / ≈${est.toLocaleString("en-US")}`;
+  }
+  function pickedOfTotalTitle(r) {
+    if (!pickedOfTotal(r)) return null;
+    const missed = Math.round(r.totalPicked / (r.pickPct / 100) - r.totalPicked);
+    return `Derived from Pick % (${Math.round(r.pickPct)}%), which Tableau rounds to a whole percent — ` +
+           `approximately ${missed.toLocaleString("en-US")} picks not completed. ` +
+           `The summary export does not publish the true denominator.`;
+  }
+
   function pctClass(value, goal, live) {
     return bandFor(value, goal, { live })?.cls ?? "";
   }

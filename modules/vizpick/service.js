@@ -70,17 +70,20 @@ async function getState() {
     snapshots.read(),
   ]);
 
-  const y = store.yesterday;
+  const y = store.days[0] || null;   // newest closed day
   return {
     ok: true,
     schemaVersion: snapshots.SCHEMA_VERSION,
+    maxDays: snapshots.MAX_DAYS,
 
     // Back-compat: the pre-tabs view read state.rows / state.grandTotal.
     rows:       y?.rows || [],
     grandTotal: y?.grandTotal || null,
 
+    // Rolling history, newest first. `yesterday` stays as an alias for the
+    // newest closed day so nothing that reads it has to change.
+    days:      store.days || [],
     yesterday: y || null,
-    previous:  store.previous || null,
     today:     store.today || null,
 
     freshness:      freshStores,
@@ -101,7 +104,7 @@ async function pullStores(msg) {
     // entirely when Tableau has not republished. `force` bypasses the check.
     const store = await snapshots.read();
     const result = await fetchVizpickStoresTableau({
-      knownSourceKey: store.yesterday?.sourceKey ?? null,
+      knownSourceKey: store.days?.[0]?.sourceKey ?? null,
       force: !!msg?.force,
       onPhase: (p) => broadcast("capture_phase", { sourceId: "stores", phase: p }),
     });
@@ -135,11 +138,11 @@ async function pullStores(msg) {
       return {
         ok: true, sourceId: "stores", unchanged: true,
         sourceUpdate: result.sourceUpdate ?? null,
-        storeCount: store.yesterday?.rows?.length ?? 0,
+        storeCount: store.days?.[0]?.rows?.length ?? 0,
       };
     }
 
-    const { rolled, reason } = await snapshots.recordYesterday({
+    const { rolled, reason, dayCount } = await snapshots.recordYesterday({
       rows:         result.rows,
       grandTotal:   result.grandTotal,
       sourceUpdate: result.sourceUpdate,
@@ -148,7 +151,7 @@ async function pullStores(msg) {
 
     await freshness.markSuccess("stores");
     broadcast("source_complete", { sourceId: "stores", ok: true, rolled, auto: !!msg?.auto });
-    return { ok: true, sourceId: "stores", storeCount: result.rows.length, rolled, rollReason: reason };
+    return { ok: true, sourceId: "stores", storeCount: result.rows.length, rolled, rollReason: reason, dayCount };
   } catch (e) {
     const err = String(e?.message ?? e);
     await freshness.markError("stores", err);
@@ -310,7 +313,7 @@ async function autoCheck(reason) {
     const store = await snapshots.read();
     const market = store.today?.market ?? null;
     if (market) {
-      const roster = (store.yesterday?.rows || [])
+      const roster = (store.days?.[0]?.rows || [])
         .filter((r) => String(r.market) === String(market))
         .map((r) => r.store);
       if (roster.length) out.today = await pullToday({ stores: roster, market, auto: true });
