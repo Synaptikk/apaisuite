@@ -91,6 +91,15 @@ export async function fetchVizpickStoresTableau(opts = {}) {
   // Only close the tab we opened when the capture actually SUCCEEDS. On any
   // failure (session/SSO, render timeout, export UI), leave it open so the
   // user can see what happened and re-auth if needed.
+  // A run the USER started leaves a failed tab open so they can look at it.
+  // A background auto-check must not: the user never asked for a tab, so an
+  // orphan is litter — and if it is later closed, an error still telling them
+  // to "confirm data renders there" points at nothing.
+  const keepFailedTab = !opts.auto;
+  const tabHint = keepFailedTab
+    ? " The tab was left open — confirm data renders there, then Refresh again."
+    : " This ran automatically in the background; its tab was closed. Open the module and click Refresh to see the failure live.";
+
   let succeeded = false;
 
   try {
@@ -114,9 +123,9 @@ export async function fetchVizpickStoresTableau(opts = {}) {
       return {
         ok: false,
         errorClass: diag.errorClass,
-        error: diag.message + " The tab was left open — confirm data renders there, then Refresh again.",
+        error: diag.message + tabHint,
         debug: diag,
-        keptTabOpen: true,
+        keptTabOpen: keepFailedTab,
       };
     }
 
@@ -168,7 +177,7 @@ export async function fetchVizpickStoresTableau(opts = {}) {
         ok: false,
         errorClass: "TIMEOUT",
         error: `Gave up after ${Math.round(OVERALL_BUDGET_MS / 1000)}s. The tab was left open — check whether Tableau is responding there.`,
-        keptTabOpen: true,
+        keptTabOpen: keepFailedTab,
       };
     }
 
@@ -185,7 +194,7 @@ export async function fetchVizpickStoresTableau(opts = {}) {
         errorClass: "NO_CAPTURE",
         error: `No CSV containing "${STORE_CSV_NEEDLE}" captured within ${EXPORT_WAIT_MS}ms.`,
         debug: ring,
-        keptTabOpen: true,
+        keptTabOpen: keepFailedTab,
       };
     }
 
@@ -229,7 +238,7 @@ export async function fetchVizpickStoresTableau(opts = {}) {
     // Close the tab only if we opened it AND the capture succeeded. Leaving
     // a failed tab open lets the user re-auth / inspect. No focus restore is
     // needed: we never took focus in the first place.
-    if (didOpen && succeeded) {
+    if (didOpen && (succeeded || !keepFailedTab)) {
       chrome.tabs.remove(tab.id).catch(() => {});
     }
   }
