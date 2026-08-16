@@ -28,16 +28,9 @@
 
   <!-- Period tabs. Yesterday and Today come from two DIFFERENT Tableau
        views with different shapes — see lib/sources/vizpick_today_tableau.js -->
-  <div class="vizpick-tabs" role="tablist" aria-label="Reporting period">
-    <button class="vizpick-tab" role="tab" data-tab="yesterday" aria-selected="true">
-      <span class="vizpick-tab-name">Yesterday</span>
-      <span class="vizpick-tab-date" data-tab-date="yesterday">—</span>
-    </button>
-    <button class="vizpick-tab" role="tab" data-tab="today" aria-selected="false">
-      <span class="vizpick-tab-name">Today — Live</span>
-      <span class="vizpick-tab-date" data-tab-date="today">—</span>
-    </button>
-  </div>
+  <!-- Today first and leftmost, then a rolling week of closed days, newest to
+       oldest. Built in view.js because the set grows as history accumulates. -->
+  <div class="vizpick-tabs" role="tablist" aria-label="Reporting period" data-tabs></div>
 
   <!-- Today needs one Tableau export per store, so it is loaded on demand. -->
   <section class="vizpick-today-bar" data-today-bar hidden>

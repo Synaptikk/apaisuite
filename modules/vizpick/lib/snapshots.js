@@ -15,24 +15,63 @@
 //
 // Layout under chrome.storage.local["vizpick.snapshots.v2"]:
 //   {
-//     v: 2,
-//     yesterday: { sourceKey, sourceUpdate, rows, grandTotal, capturedAt },
-//     previous:  { ...same shape, the snapshot yesterday displaced },
-//     today:     { sourceKey, sourceUpdate, rows, capturedAt, partial, market }
+//     v: 3,
+//     days:  [ { dataDate, sourceKey, sourceUpdate, rows, grandTotal, capturedAt } ],
+//            // newest first, capped at MAX_DAYS
+//     today: { sourceKey, sourceUpdate, rows, capturedAt, partial, market }
 //   }
+//
+// `dataDate` is the day the numbers DESCRIBE, not the day they were published:
+// the summary view is "refreshed daily for the day prior", so it is the source
+// stamp minus one day. Keying on it is what makes the history idempotent — a
+// second capture of the same day updates that entry instead of appending a
+// duplicate.
 //
 // `sourceKey` is the raw Tableau stamp string; it is the identity of a
 // dataset. Two captures with the same sourceKey are the same data.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+
+// How many closed days to keep. Each day is one crosstab of every store in
+// every market (~4,600 rows), so seven is a few MB — comfortably inside the
+// unlimitedStorage the suite already requests.
+export const MAX_DAYS = 7;
 export const KEY = `vizpick.snapshots.v${SCHEMA_VERSION}`;
 
 // Legacy flat keys written by v0.1.0 before snapshots existed.
 const LEGACY_ROWS = "vizpick.rows";
 const LEGACY_GT   = "vizpick.grandTotal";
+// The store key embeds the schema version, so bumping the version also changes
+// the key — a v2 store is invisible to a v3 read unless we ask for it by name.
+const V2_KEY = "vizpick.snapshots.v2";
 
 function emptyStore() {
-  return { v: SCHEMA_VERSION, yesterday: null, previous: null, today: null };
+  return { v: SCHEMA_VERSION, days: [], today: null };
+}
+
+/**
+ * Enforce the history invariants on the way OUT, not just on the way in:
+ * newest first, and never more than MAX_DAYS. Doing it only in
+ * recordYesterday() left the cap unenforced for any store written by another
+ * path (a migration, a hand-edit, a future importer), so the cap was a
+ * convention rather than a guarantee.
+ */
+function normalise(store) {
+  const days = [...(store.days || [])]
+    .sort((a, b) => String(b.dataDate ?? "").localeCompare(String(a.dataDate ?? "")))
+    .slice(0, MAX_DAYS);
+  return { ...store, days };
+}
+
+/** YYYY-MM-DD in local time — the calendar day these numbers describe. */
+export function deriveDataDate(sourceUpdate, capturedAt) {
+  const iso = sourceUpdate?.iso || capturedAt;
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() - 1);   // "refreshed daily for the day prior"
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 /**
@@ -41,27 +80,46 @@ function emptyStore() {
  * half-read — that is the point of versioning the key.
  */
 export async function read() {
-  const got = await chrome.storage.local.get([KEY, LEGACY_ROWS, LEGACY_GT]);
+  const got = await chrome.storage.local.get([KEY, V2_KEY, LEGACY_ROWS, LEGACY_GT]);
   const store = got[KEY];
 
-  if (store && store.v === SCHEMA_VERSION) return { ...emptyStore(), ...store };
+  if (store && store.v === SCHEMA_VERSION) return normalise({ ...emptyStore(), ...store });
+
+  // v2 kept exactly two closed days as `yesterday` + `previous`. Carry both
+  // forward as the first two entries of the new history rather than dropping
+  // them — they are real captures the user has already paid for.
+  const v2 = got[V2_KEY];
+  if (v2 && v2.v === 2) {
+    const days = [v2.yesterday, v2.previous]
+      .filter(Boolean)
+      .map((d) => ({ ...d, dataDate: d.dataDate || deriveDataDate(d.sourceUpdate, d.capturedAt) }));
+    const migrated = normalise({ ...emptyStore(), days, today: v2.today || null });
+    // Persist immediately. A purely in-memory migration would be re-derived on
+    // every read and, more importantly, would leave the v3 key empty until the
+    // next capture — so anything inspecting storage sees no history at all.
+    await write(migrated);
+    return migrated;
+  }
 
   // Migrate: treat pre-snapshot rows as the current Yesterday, with an
   // unknown source stamp so the very next capture is free to replace it
   // without displacing anything into `previous`.
   const legacyRows = got[LEGACY_ROWS];
   if (Array.isArray(legacyRows) && legacyRows.length) {
-    return {
+    const migrated = {
       ...emptyStore(),
-      yesterday: {
+      days: [{
+        dataDate:     null,
         sourceKey:    null,
         sourceUpdate: null,
         rows:         legacyRows,
         grandTotal:   got[LEGACY_GT] || null,
         capturedAt:   null,
         migrated:     true,
-      },
+      }],
     };
+    await write(migrated);
+    return migrated;
   }
   return emptyStore();
 }
@@ -87,29 +145,34 @@ async function write(store) {
 export async function recordYesterday({ rows, grandTotal, sourceUpdate, capturedAt }) {
   const store = await read();
   const sourceKey = sourceUpdate?.raw ?? null;
-  const prev = store.yesterday;
+  const dataDate  = deriveDataDate(sourceUpdate, capturedAt);
+  const prev = store.days[0] || null;
 
-  const snapshot = { sourceKey, sourceUpdate: sourceUpdate || null, rows, grandTotal: grandTotal || null, capturedAt };
+  const entry = { dataDate, sourceKey, sourceUpdate: sourceUpdate || null, rows, grandTotal: grandTotal || null, capturedAt };
+
+  // Keyed by the day the data describes, so re-capturing the same day updates
+  // it in place. Only a genuinely new day extends the history.
+  const existingIdx = dataDate ? store.days.findIndex((d) => d.dataDate === dataDate) : -1;
 
   let rolled = false;
   let reason;
-  if (!prev) {
+  if (existingIdx >= 0) {
+    store.days[existingIdx] = entry;
+    reason = `refreshed the stored day ${dataDate}`;
+  } else if (!prev) {
+    store.days = [entry];
     reason = "first capture";
-  } else if (sourceKey && prev.sourceKey && sourceKey !== prev.sourceKey) {
-    store.previous = prev;
-    rolled = true;
-    reason = `source stamp advanced ${prev.sourceKey} → ${sourceKey}`;
-  } else if (sourceKey && !prev.sourceKey) {
-    // Previous snapshot predates stamp capture (or was migrated) — adopt the
-    // stamp without claiming the data rolled.
-    reason = "adopted first known source stamp";
   } else {
-    reason = "source stamp unchanged — refreshed in place";
+    store.days = [entry, ...store.days];
+    rolled = true;
+    reason = `new day ${dataDate} (previous newest was ${prev.dataDate ?? "unknown"})`;
   }
 
-  store.yesterday = snapshot;
-  await write(store);
-  return { store, rolled, reason };
+  // normalise() sorts newest-first and applies the cap, so a capture that
+  // arrives out of order (an older day fetched late) still lands correctly.
+  const trimmed = normalise(store);
+  await write(trimmed);
+  return { store: trimmed, rolled, reason, dataDate, dayCount: trimmed.days.length };
 }
 
 /**

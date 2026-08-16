@@ -372,7 +372,12 @@
   display: flex;
   gap: var(--sp-2);
   border-bottom: 1px solid var(--apai-border);
+  /* Up to eight tabs (Today + a week). Scroll instead of wrapping so the
+     strip stays one row and Today never moves off the left edge. */
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
+.vizpick-tab { flex: 0 0 auto; white-space: nowrap; }
 .vizpick-tab {
   display: flex;
   flex-direction: column;
