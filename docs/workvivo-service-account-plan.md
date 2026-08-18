@@ -52,8 +52,19 @@ channel-list call need the numeric user id, which the browser reads from
 the same pass. Otherwise store the service account's id as config once — it is
 stable per account.
 
-Also unmeasured: **Workvivo session cookie lifetime**, which decides how often
-hop 1 must re-run. Find it out; do not guess at it in the retry logic.
+**3. Whether MFA fires on login — CONTESTED, and it gates everything.** First
+recorded as "no MFA" from a live sign-in; the account holder then described a
+push approval to a phone or physical device between the username step and the
+password step. See the warning box in workvivo-auth.md. If the push is real,
+**no fully unattended login exists** and the operating model changes. Settle
+this before writing any login code.
+
+**Session cookie lifetime is measured:** `workvivo_session` and `laravel_token`
+are httpOnly/secure with a **24h** expiry counted from the latest request, not
+from login — the window rolls forward on activity. A server posting at least
+daily will almost never re-login. There is no PingFederate SSO cookie in the
+jar, so a lapsed session means replaying the full credential form; there is no
+silent re-auth to fall back on.
 
 ## Changes
 

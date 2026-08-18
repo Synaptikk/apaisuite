@@ -35,16 +35,48 @@ Each hop was executed end-to-end and returned 200.
 https://mtls.pfedprod.wal-mart.com/idp/<idpId>/resumeSAML20/idp/SSO.ping
 ```
 
-Observed on a clean browser profile with no prior trust:
+> ### ⚠️ CONTESTED — resolve before building anything
+>
+> This was first recorded as "no MFA" based on a live sign-in where the person
+> doing it reported no challenge and a 1–15 second sign-in. The account holder
+> has since described the flow as: **username + store number + site type → a
+> push approval to a phone or physical device → then the password**.
+>
+> Those cannot both be true, and the difference is decisive:
+>
+> - **No MFA** → a server logs in unattended. Everything below works as written.
+> - **Push approval** → **no unattended login is possible.** A human must
+>   approve a prompt on every fresh sign-in. That does not sink the design, but
+>   it changes the operating model — see "If MFA is real" below.
+>
+> Do not write the login code until this is settled. Settle it by signing in
+> once with the service account and watching what happens.
 
-- **No MFA challenge** — no push, no code, no security key.
-- **No "remember this device" / "stay signed in" prompt** — so there is no
-  device-trust artifact to seed, and none is needed.
-- Sign-in to loaded chat page: **1–15 seconds**.
+Sign-in to loaded chat page was **1–15 seconds**, and no "remember this device"
+/ "stay signed in" option was offered — so there is no device-trust artifact to
+seed even if one would help.
 
-Should be **re-verified for the service account specifically** — MFA policy can
-be set per-account or per-group, and `qrcallbox@walmart.com` may be enrolled
-differently from a store user.
+Must be confirmed **for the service account specifically** — MFA policy is
+commonly set per-account or per-group, so `qrcallbox@walmart.com` may well be
+enrolled differently from a store user account.
+
+### If MFA is real
+
+The 24h rolling session (measured below) is what makes this survivable. A
+server that posts at least once a day keeps the window alive indefinitely and
+only needs a human approval when the chain breaks — a quiet weekend, an
+outage, a credential change. Options, best first:
+
+1. **Ask the admins to exempt the service account from MFA.** They already
+   provisioned it for automated posting, so this is a narrow, coherent ask and
+   is the only option that yields a truly unattended system.
+2. **Accept an occasional human approval.** Store the session in Firestore,
+   alert when it lapses, and have someone approve a push to restore it. Works,
+   but it reintroduces exactly the human dependency this project set out to
+   remove — just far less often than the old hourly heartbeat did.
+3. **Seed the session by hand.** A person signs in somewhere once and the
+   cookies are loaded into the secret store. Same as (2) with more manual steps
+   and no alerting; only worth it as a stopgap.
 
 ### The redirect chain
 
