@@ -276,3 +276,27 @@ Hops 2–4 are plain HTTP and one short-lived websocket — all cheap and script
 in Cloud Functions. Hop 1 is the only piece that touches a login form, and if it
 proves awkward to script directly against PingFederate, it is the one place a
 headless browser would earn its keep.
+
+---
+
+## Write path verified end to end (2026-08-18)
+
+A text message was posted through the exact server chain and **appeared in the
+channel** — not just a 200, a real delivered message:
+
+```
+session cookies -> GET /api/chat/config -> access_token
+  -> websocket LOGI -> session key
+  -> resolve "QR testing" -> POST /v3/group_channels/{url}/messages  [200]
+```
+
+- Channel: `QR testing` (`sendbird_group_channel_450471571_...`), 3 members.
+- Result: `200`, `message_id` returned, delivered.
+- **Posted under the logged-in user's identity** (the session owner), which is
+  why the service account matters: production posts must read as
+  `qrcallbox@walmart.com`, not a person.
+- Text only. Image upload remains blocked by the app-level
+  `File-messages via SDK are disabled` setting — unchanged by any of this.
+
+Nothing in the posting path is now unproven. The only open items are
+operational: the service account's own login (MFA/seed) and the image route.
