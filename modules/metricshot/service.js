@@ -384,7 +384,9 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
         path: post.path,
         ...(post.debug ? { sdkProbe: post.debug } : {}),
       });
-      // AUTH failures won't recover on retry — the Sendbird session is stale.
+      // AUTH failures won't recover on retry — sendbird.js already replayed
+      // once with a refreshed Session-key, so reaching here means the whole
+      // session is stale, not just the key.
       if (post.errorClass === "AUTH") break;
       // NOT_FOUND won't self-heal within a tick either.
       if (post.errorClass === "NOT_FOUND") break;
