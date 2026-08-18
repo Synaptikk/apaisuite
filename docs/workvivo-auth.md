@@ -279,24 +279,41 @@ headless browser would earn its keep.
 
 ---
 
-## Write path verified end to end (2026-08-18)
+## Posting confirmed by delivery — browser and Node (2026-08-18)
 
-A text message was posted through the exact server chain and **appeared in the
-channel** — not just a 200, a real delivered message:
+Two text messages were posted through the chain and **appeared in the channel**
+— real delivered messages, not just 200s. The wording here is deliberately
+scoped: this proves the posting API sequence (hops 2→4), not unattended
+operation.
 
 ```
-session cookies -> GET /api/chat/config -> access_token
+[valid session cookie]
+  -> GET /api/chat/config -> access_token
   -> websocket LOGI -> session key
-  -> resolve "QR testing" -> POST /v3/group_channels/{url}/messages  [200]
+  -> resolve "QR testing" -> POST /v3/group_channels/{url}/messages  [200, delivered]
 ```
 
 - Channel: `QR testing` (`sendbird_group_channel_450471571_...`), 3 members.
-- Result: `200`, `message_id` returned, delivered.
-- **Posted under the logged-in user's identity** (the session owner), which is
-  why the service account matters: production posts must read as
-  `qrcallbox@walmart.com`, not a person.
-- Text only. Image upload remains blocked by the app-level
-  `File-messages via SDK are disabled` setting — unchanged by any of this.
+- **Test 1** ran inside the browser page (`page.evaluate`), reusing cookies from
+  a human's manual login.
+- **Test 2** ran from a **standalone Node process** (node v24, global
+  `fetch` + `WebSocket`, cross-origin requests with explicit `Cookie` and
+  `Session-Key` headers) — i.e. the Cloud Functions runtime, no browser. Same
+  result, delivered.
+- Both **posted under the session owner's identity**, because both used that
+  human's session. Production posts must run under the store's own account —
+  which is what the cookie-courier onboarding provides.
+- Text only. Image upload stays blocked by the app-level
+  `File-messages via SDK are disabled` setting.
 
-Nothing in the posting path is now unproven. The only open items are
-operational: the service account's own login (MFA/seed) and the image route.
+### What this does and does not establish
+- **Established:** hops 2–4 work, and work from a real server process, not just
+  a browser. Given a valid session cookie, a Node backend delivers a message.
+- **Not established:** hop 1 — a server, or the extension, obtaining that cookie
+  for the *service* account. In both tests the cookie came from a human login.
+  The onboarding design (docs/qrcallbox-store-onboarding.md) closes this by
+  capturing the cookie in the extension after a guided browser login, rather
+  than logging in server-side.
+- **Not yet measured:** how long a captured session survives under a periodic
+  keep-alive, and whether a hard SSO backstop caps it. ~18h of survival observed
+  so far. Only a multi-day keep-alive run answers this.
