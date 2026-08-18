@@ -35,9 +35,6 @@ Each hop was executed end-to-end and returned 200.
 https://mtls.pfedprod.wal-mart.com/idp/<idpId>/resumeSAML20/idp/SSO.ping
 ```
 
-Two-step form: **User ID**, **Country/Region**, **Location** (`Homeoffice` /
-`Store/Club` / …), then password on the following screen.
-
 Observed on a clean browser profile with no prior trust:
 
 - **No MFA challenge** — no push, no code, no security key.
@@ -45,10 +42,85 @@ Observed on a clean browser profile with no prior trust:
   device-trust artifact to seed, and none is needed.
 - Sign-in to loaded chat page: **1–15 seconds**.
 
-This is the finding that makes a headless server login viable. It should be
-**re-verified for the service account specifically** — MFA policy can be set
-per-account or per-group, and `qrcallbox@walmart.com` may be enrolled
+Should be **re-verified for the service account specifically** — MFA policy can
+be set per-account or per-group, and `qrcallbox@walmart.com` may be enrolled
 differently from a store user.
+
+### The redirect chain
+
+All plain `302 GET`s, no JS involved in getting to the form:
+
+```
+GET workvivo.walmart.com/chat
+ -> GET workvivo.walmart.com/login
+ -> GET workvivo.walmart.com/saml/sso
+ -> GET pfedprod.wal-mart.com/idp/SSO.saml2
+ -> GET mtls.pfedprod.wal-mart.com/idp/{adapterPath}/resumeSAML20/idp/SSO.ping   [200, the form]
+```
+
+`{adapterPath}` is **per-session** — observed as `XA56VpjABn` on one run and
+`AUic0FsAvM` on another. It must be parsed from the landing URL, never
+hardcoded.
+
+### The form
+
+Single form, `method="POST"`, action = the same `resumeSAML20/idp/SSO.ping`
+path (relative). Fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `username1` | text | the visible User ID box |
+| `pf.username` | hidden | JS copies `username1` into this on submit |
+| `pf.pass` | hidden | the password slot — present on page 1 |
+| `domainName` | select | Country/Region, prefilled (`US`) |
+| `BU` | select | Location — `Homeoffice` / `Store/Club` / … |
+| `$store` | text | store number |
+| `pf.adapterId` | hidden | prefilled, 14 chars |
+| `pf.ok` / `pf.cancel` | hidden | which button was pressed |
+
+### It is scriptable with plain HTTP — no browser required
+
+This is the important finding. The login page has:
+
+- **No external scripts at all** (`script[src]` is empty).
+- **One inline script**, ~12 KB, which only shuffles fields
+  (`updateDomainAndBU()`, copying `username1` into `pf.username`) and calls
+  `document.forms[0].submit()`. The submit button is `onclick="postOk();"`.
+- **CAPTCHA compiled out.** Both reCAPTCHA call sites are dead branches —
+  literally `if (false) { grecaptcha.execute(); }` and
+  `if(false) { grecaptcha.reset(); }`. `window.grecaptcha` is `undefined`,
+  there are no captcha elements, and no sitekey anywhere in the page.
+- No iframes, no meta-refresh, no CSP header on the SSO response, and the SSO
+  page sets no cookies of its own.
+
+So the earlier suggestion to drive hop 1 with headless Chrome is **not
+needed**. A cookie-jar HTTP client can do it: follow the redirects, parse the
+form action and `pf.adapterId` out of the HTML, POST the fields, then handle
+the SAMLResponse auto-post back to the Workvivo ACS.
+
+**Still unverified:** whether the password can go in the same POST as the
+username (`pf.pass` is present on page 1, which suggests yes) or whether
+PingFederate insists on the two-screen sequence. Confirming needs one real
+submit, so do it with the test account rather than a fabricated user id —
+failed logins against a real IdP are worth avoiding.
+
+### Session cookies (measured)
+
+| Cookie | Domain | Flags | Lifetime |
+|---|---|---|---|
+| `workvivo_session` | workvivo.walmart.com | httpOnly, secure | **24h** |
+| `laravel_token` | workvivo.walmart.com | httpOnly, secure | **24h** |
+| `XSRF-TOKEN` | workvivo.walmart.com | secure, readable | **24h** |
+| `pf.chosenBU`, `pf.chosenDomain` | mtls.pfedprod.wal-mart.com | — | 30d, UI prefs only |
+| `AMP_*` | .walmart.com | — | 1y, analytics |
+
+The 24h expiry is measured **from the current request, not from login** — the
+window rolls forward on activity. A server posting at least daily will rarely
+re-login; one going quiet for over a day must redo hop 1.
+
+Note there is **no PingFederate SSO session cookie** in the jar — only the two
+`pf.chosen*` UI preferences. So there is no silent re-auth to lean on: once the
+Workvivo session lapses, the credential form must be replayed in full.
 
 ## (2) `GET /api/chat/config` → the Sendbird access token
 

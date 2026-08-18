@@ -21,15 +21,29 @@ it. There is nothing live to cut over from.
 
 ## Two open unknowns
 
-**1. Hop 1 (the SSO login) is unverified.** The capture had a human typing into
-the PingFederate form. Server-side means POSTing the form and following the SAML
-redirect chain to collect cookies.
+**1. Hop 1 (the SSO login) is partially verified — and needs no browser.**
+The login page was dissected on 2026-08-18 (see workvivo-auth.md for the full
+detail). It is a plain HTML form POST with **no external scripts**, **no
+CAPTCHA** (the reCAPTCHA calls are dead `if (false)` branches), no iframes and
+no CSP. A cookie-jar HTTP client can drive it:
 
-`puppeteer-core` and `@sparticuz/chromium` are **already in
-`functions/package.json` and imported nowhere**. Headless Chrome is therefore
-already provisioned. Doing hop 1 in that browser and handing the cookies to
-plain `fetch` for hops 2-4 is far less brittle than reversing the SSO form, and
-adds no dependency.
+1. GET `workvivo.walmart.com/chat`, follow the 302 chain to the SSO form.
+2. Parse the form action and `pf.adapterId` out of the HTML. The adapter path
+   is **per-session** — seen as both `XA56VpjABn` and `AUic0FsAvM` — so it must
+   be read from the landing URL, never hardcoded.
+3. POST `pf.username`, `pf.pass`, `domainName`, `BU`, `$store`, `pf.adapterId`,
+   `pf.ok`.
+4. Handle the SAMLResponse auto-post back to the Workvivo ACS, then keep the
+   `workvivo_session` / `laravel_token` / `XSRF-TOKEN` cookies.
+
+The earlier recommendation to use the already-installed `puppeteer-core` +
+`@sparticuz/chromium` for this is **withdrawn** — it would work, but it is not
+necessary and costs a cold-start Chrome launch per login.
+
+The one piece still unverified: whether username and password can go in a
+single POST (`pf.pass` is present on page 1, which suggests yes) or whether
+PingFederate insists on its two-screen sequence. Confirm with the test account,
+not a fabricated user id.
 
 **2. The Sendbird user id is not available server-side.** `/api/chat/config`
 returns only `app_id` and `access_token`. Both the websocket handshake and the
