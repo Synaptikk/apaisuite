@@ -36,7 +36,7 @@
   cursor: pointer;
   padding: var(--sp-3) var(--sp-5);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   user-select: none;
   list-style: none;
   font-size: var(--fs-md);
@@ -103,7 +103,7 @@
   margin: var(--sp-3) 0 var(--sp-1);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
 }
 .module-closinglist .cl-email {
   width: 100%;

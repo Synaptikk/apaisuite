@@ -334,3 +334,65 @@ Need a module-local tweak? Three options, in order of preference:
 3. **Propose a new shared component variant** — open an issue against `DESIGN_SYSTEM.md`, add the variant to `components.css`, document here
 
 Modules must not redefine `--apai-*` tokens. They may set new `--module-*` tokens locally.
+
+
+---
+
+## Dark theme — Foundry
+
+The dark theme uses the **Foundry** palette, from `Synaptikk/Foundry`
+(`docs/design/FOUNDRY_GUI_STYLE_GUIDE.md` + `desktop/renderer/tokens.css`,
+themselves derived from `Foundry_Brand_Brief.pdf`, July 2026, page 4). The
+light theme keeps the Walmart-blue palette described above — Foundry is a dark
+system by design and does not have a light counterpart.
+
+| Name | Hex | Role here |
+|---|---|---|
+| Forge Black | `#111820` | `--apai-bg`; the two raised tiers mix Workshop White into it |
+| Molten Ember | `#FF7A1A` | `--apai-link`, `--module-accent`, `--apai-error` — the single action accent |
+| Heat Gold | `#F5B642` | `--apai-warn`, `--apai-info`, AurorBuddy's accent |
+| Steel | `#63717C` | rules, `--apai-muted`/`--apai-ink-soft` mixes, `--apai-success` |
+| Workshop White | `#F7F8F6` | `--apai-ink`, `--apai-heading` |
+
+Every other dark value is a `color-mix()` against Forge Black or Workshop
+White. No arbitrary greys, per the brief.
+
+### Two deliberate deviations
+
+**Success is Steel, not Heat Gold.** The brief maps "positive" to Heat Gold —
+the same hue as warning. This suite is a triage tool, and "posted" reading
+identically to "needs attention" costs more than palette purity buys. Steel is
+the brief's own neutral and reads as "done, nothing to do", so the five-colour
+rule still holds; no sixth hue was introduced.
+
+**Headings are Workshop White, not ember.** `--apai-heading` exists so headings
+and actions can differ per theme. The brief reserves the ember hue for things
+you can act on and gives headings a white treatment with an ember tick beneath,
+so pointing section titles at the action colour would have inverted its most
+identifiable mark. In the light theme both tokens are brand blue, preserving
+the existing look.
+
+### What the palette does not reach
+
+`modules/vizpick/lib/charts.js` and `modules/metricshot/lib/render_card.js`
+build SVG in JavaScript with their own hardcoded Walmart hexes. They are not
+themed and do not follow Foundry:
+
+- The **metric card** is correct as-is — it is posted into Workvivo, where
+  Walmart colours are what the audience expects, and it renders on white
+  regardless of the viewer's theme.
+- The **VizPick gauges** do follow the app's theme visually and currently do
+  not. They are the main visual of that module, so this is the obvious next
+  step if Foundry should apply throughout.
+
+### Enforcement
+
+Foundry's own repo has a drift test refusing new hex literals outside
+`tokens.css`. This repo has no equivalent yet; the closest thing is
+`dev/audit-contrast.mjs`, which renders every module view plus Settings in both
+themes and measures WCAG contrast for every visible text node. Both themes
+currently report zero failures. Run it after any palette change:
+
+    python3 -m http.server 8755 &
+    node dev/audit-contrast.mjs           # dark
+    node dev/audit-contrast.mjs --light   # light

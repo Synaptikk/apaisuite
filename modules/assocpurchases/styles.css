@@ -106,7 +106,7 @@
 
 .module-assocpurchases .ap-btn-primary {
   background: var(--ap-accent);
-  color: #fff;
+  color: var(--module-accent-ink);
 }
 
 .module-assocpurchases .ap-btn-primary:hover:not(:disabled) { opacity: 0.85; }
@@ -184,7 +184,7 @@
   font-size: 0.78rem;
   font-weight: 700;
   background: var(--ap-accent);
-  color: #fff;
+  color: var(--module-accent-ink);
   min-width: 22px;
   text-align: center;
 }

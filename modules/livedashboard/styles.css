@@ -102,7 +102,7 @@
 .module-livedashboard .btn:disabled { opacity: 0.6; cursor: wait; }
 .module-livedashboard .btn-primary {
   background: var(--module-accent);
-  color: white;
+  color: var(--module-accent-ink);
   border-color: var(--module-accent-dark);
 }
 .module-livedashboard .btn-primary:hover { background: var(--module-accent-dark); }

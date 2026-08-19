@@ -54,7 +54,7 @@
 .module-metricshot .ms-table th {
   background: var(--apai-bg-soft);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-muted);
   font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -198,7 +198,7 @@
 .module-metricshot .ms-section-title {
   font-size: var(--fs-md);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   margin: 0;
 }
 
@@ -208,7 +208,7 @@
   cursor: pointer;
   padding: var(--sp-3) var(--sp-5);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   user-select: none;
   list-style: none;
   font-size: var(--fs-md);

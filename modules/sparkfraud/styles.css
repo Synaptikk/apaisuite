@@ -34,7 +34,7 @@
 .module-sparkfraud .sf-help-body h3 {
   margin: var(--sp-4) 0 var(--sp-2);
   font-size: var(--fs-base);
-  color: var(--apai-link);
+  color: var(--apai-heading);
 }
 .module-sparkfraud .sf-help-body h3:first-child { margin-top: 0; }
 .module-sparkfraud .sf-help-body p,
@@ -224,7 +224,7 @@
   cursor: pointer;
   padding: var(--sp-3) var(--sp-4);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   list-style: none;
   user-select: none;
 }

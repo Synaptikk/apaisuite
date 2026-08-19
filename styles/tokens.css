@@ -37,6 +37,13 @@
      Verified against all three dark surfaces at >= 4.5:1. */
   --apai-link:         #005AA8;
 
+  /* Section titles, kept separate from --apai-link so a theme can colour
+     headings and actions differently. In the light theme both are brand blue,
+     which is the look this suite already had. Foundry overrides only this one:
+     the brief puts headings in Workshop White with an ember tick beneath, and
+     reserves the ember hue itself for things you can act on. */
+  --apai-heading:      #005AA8;
+
   /* Ink for text sitting ON an accent fill. Paired with --module-accent so a
      module that overrides the accent must also state what is legible on it.
      Default white suits the blue accent (4.6:1). AurorBuddy's accent is
@@ -141,28 +148,89 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --apai-ink:          #F1F5F9;
-  --apai-ink-soft:     #CBD5E1;
-  --apai-muted:        #94A3B8;
-  --apai-border:       #334155;
-  --apai-border-soft:  #1E293B;
-  --apai-bg:           #0F172A;
-  --apai-bg-elev:      #1E293B;
-  --apai-bg-soft:      #172033;
+  /* ── Foundry palette ──────────────────────────────────────────
+     From Synaptikk/Foundry — docs/design/FOUNDRY_GUI_STYLE_GUIDE.md and
+     desktop/renderer/tokens.css, themselves derived from
+     Foundry_Brand_Brief.pdf (July 2026), page 4.
 
-  /* Semantic backgrounds — darker tint, lighter text */
-  --apai-success:      #4ADE80;
-  --apai-success-bg:   #14532D;
-  --apai-warn:         #FBBF24;
-  --apai-warn-bg:      #78350F;
-  --apai-error:        #F87171;
-  /* #7F1D1D put the error foreground at 3.62:1 against its OWN background —
-     the semantic pair failed itself, so every "error text on error panel" in
-     the suite was unreadable regardless of what module CSS did. 4.85:1 here. */
-  --apai-error-bg:     #5C1414;
-  --apai-info:         #7CC4FF;   /* 6.13:1 on the info background below */
-  --apai-info-bg:      #1E3A5F;
+     These five hexes are the entire palette. Every other colour below is a
+     colour-mix() against Forge Black (surface tiers) or Workshop White
+     (subdued type) — no arbitrary greys, per the brief. Foundry is a dark
+     system by design, so it lands on the dark theme; the light theme keeps
+     the existing Walmart-blue palette. */
+  --forge-black:       #111820;
+  --molten-ember:      #FF7A1A;
+  --heat-gold:         #F5B642;
+  --steel:             #63717C;
+  --workshop-white:    #F7F8F6;
 
-  /* 5.38:1 on --apai-bg-elev, 6.56:1 on --apai-bg. */
-  --apai-link:         #4DA3E8;
+  /* Structural fields: three tiers off Forge Black. */
+  --apai-bg:           var(--forge-black);
+  --apai-bg-elev:      color-mix(in srgb, var(--forge-black) 92%, var(--workshop-white));
+  --apai-bg-soft:      color-mix(in srgb, var(--forge-black) 86%, var(--workshop-white));
+
+  /* Type. Workshop White carries the load; Steel mixes carry the rest. */
+  --apai-ink:          var(--workshop-white);
+  --apai-ink-soft:     color-mix(in srgb, var(--workshop-white) 78%, var(--steel));
+  --apai-muted:        color-mix(in srgb, var(--workshop-white) 55%, var(--steel));
+
+  /* Thin engineered rules, mixed from Steel. */
+  --apai-border:       color-mix(in srgb, var(--steel) 44%, transparent);
+  --apai-border-soft:  color-mix(in srgb, var(--steel) 22%, transparent);
+
+  /* Molten Ember is the single action accent — links, CTAs, focus.
+     Ember is a light hue, so text ON an ember fill is Forge Black. */
+  --apai-link:            var(--molten-ember);
+  --apai-heading:         var(--workshop-white);
+  --apai-blue:            var(--molten-ember);
+  --apai-blue-dark:       color-mix(in srgb, var(--molten-ember) 88%, #000);
+  --apai-blue-darker:     color-mix(in srgb, var(--molten-ember) 76%, #000);
+  --module-accent:        var(--molten-ember);
+  --module-accent-dark:   color-mix(in srgb, var(--molten-ember) 88%, #000);
+  --module-accent-darker: color-mix(in srgb, var(--molten-ember) 76%, #000);
+  --module-accent-bg:     color-mix(in srgb, var(--molten-ember) 14%, var(--forge-black));
+  --module-accent-ink:    var(--forge-black);
+
+  /* Semantic states, kept inside the five-colour palette:
+       attention / warning → Heat Gold   (per the brief)
+       error / destructive → Molten Ember (the brief names no red)
+       success / done      → Steel        (see the deviation note below)
+
+     DEVIATION, flagged deliberately: the brief maps "positive" to Heat Gold,
+     the same hue as warning. This suite is a triage tool — "posted" and
+     "needs attention" appearing in the same colour would cost more than
+     palette purity buys. Steel is the brief's own neutral, reads as "done,
+     nothing to do", and keeps the five-colour rule intact rather than
+     reintroducing a sixth green. */
+  --apai-success:      color-mix(in srgb, var(--workshop-white) 62%, var(--steel));
+  --apai-success-bg:   color-mix(in srgb, var(--forge-black) 84%, var(--steel));
+  --apai-warn:         var(--heat-gold);
+  --apai-warn-bg:      color-mix(in srgb, var(--forge-black) 82%, var(--heat-gold));
+  --apai-error:        var(--molten-ember);
+  --apai-error-bg:     color-mix(in srgb, var(--forge-black) 84%, var(--molten-ember));
+  --apai-info:         var(--heat-gold);
+  --apai-info-bg:      color-mix(in srgb, var(--forge-black) 88%, var(--steel));
+}
+
+/* Modules define their own --module-accent, and a module element is a closer
+   ancestor than <html>, so those definitions win over the theme block above no
+   matter what it says. Re-point them here, at higher specificity, on the module
+   element itself. Foundry has ONE action accent; per-module brand hues are a
+   light-theme idea and do not survive into it. */
+[data-theme="dark"] [class*="module-"] {
+  --module-accent:        var(--molten-ember);
+  --module-accent-dark:   color-mix(in srgb, var(--molten-ember) 88%, #000);
+  --module-accent-darker: color-mix(in srgb, var(--molten-ember) 76%, #000);
+  --module-accent-bg:     color-mix(in srgb, var(--molten-ember) 14%, var(--forge-black));
+  --module-accent-ink:    var(--forge-black);
+}
+
+/* AurorBuddy's yellow accent becomes Heat Gold under Foundry — the brief's
+   reserved attention hue, which is what that accent was already doing. */
+[data-theme="dark"] .module-aurorbuddy {
+  --module-accent:        var(--heat-gold);
+  --module-accent-dark:   color-mix(in srgb, var(--heat-gold) 88%, #000);
+  --module-accent-darker: color-mix(in srgb, var(--heat-gold) 76%, #000);
+  --module-accent-bg:     color-mix(in srgb, var(--heat-gold) 14%, var(--forge-black));
+  --module-accent-ink:    var(--forge-black);
 }

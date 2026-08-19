@@ -36,7 +36,7 @@
 .vizpick-title h1 {
   font-size: var(--fs-2xl);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   margin: 0;
 }
 .vizpick-subtitle {
@@ -137,7 +137,7 @@
 .vizpick-panel-stamp {
   font-size: var(--fs-sm);
   font-weight: var(--fw-semi);
-  color: var(--apai-link);
+  color: var(--apai-heading);
   background: var(--apai-bg-soft);
   border: 1px solid var(--apai-border-soft);
   border-radius: var(--rad-pill);
