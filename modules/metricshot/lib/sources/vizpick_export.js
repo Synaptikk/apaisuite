@@ -21,7 +21,8 @@
 // parse_vizpick_export.js. Single responsibility, per SOLID.
 
 import { parseXlsx } from "./xlsx_min.js";
-import { mapLocationDetails, mapDepartmentBreakout } from "./parse_vizpick_export.js";
+import { mapLocationDetails, mapDepartmentBreakout,
+         mapDonutHealth, mapDepartmentGroups } from "./parse_vizpick_export.js";
 
 // The two worksheets that back the follow-up text, with the sheetdocId GUIDs
 // captured from the export dialog response. If Tableau republishes the
@@ -35,6 +36,19 @@ const SHEETS = {
   departmentBreakout: {
     name: "Download Department Breakout (Current Day)",
     sheetdocId: "{95A7AC48-BC4F-432B-9590-5A424FF72939}",
+  },
+  // The two sheets behind the eight dashboard rings. Names are confirmed from a
+  // live export (docs/vizpick-headline-data-findings.md) but their GUIDs have
+  // never been captured, so these depend entirely on _resolveSheetIds()
+  // succeeding. sheetdocId:null means "live-resolve or skip" — a null must
+  // never be sent to the export endpoint as if it were a GUID.
+  donutHealth: {
+    name: "VizPick Donut Health",
+    sheetdocId: null,
+  },
+  departmentGroups: {
+    name: "Department Groups Donuts Health",
+    sheetdocId: null,
   },
 };
 
@@ -72,6 +86,12 @@ export async function exportVizPickSheets(opts = {}) {
     const def = SHEETS[key];
     if (!def) { errors.push(`unknown sheet key ${key}`); continue; }
     const sheetdocId = (liveIds && liveIds[def.name]) || def.sheetdocId;
+    if (!sheetdocId) {
+      // Known sheet, unknown GUID, and no live resolution — skip rather than
+      // POST "null" and burn a request against a host that rate-limits.
+      errors.push(`${def.name}: no sheetdocId (live resolution unavailable)`);
+      continue;
+    }
     const one = await _exportOne(tabId, ctx, sheetdocId, format);
     if (!one.ok) { errors.push(`${key}: ${one.error}`); continue; }
 
@@ -114,18 +134,32 @@ export async function getVizPickFollowUpData(opts = {}) {
   if (!res.ok) {
     return { ok: false, errorClass: res.errorClass || "EXPORT_FAILED", error: res.error, debug: res.debug };
   }
-  const locRows  = res.sheets.locationDetails?.rows || [];
-  const deptRows = res.sheets.departmentBreakout?.rows || [];
+  const locRows   = res.sheets.locationDetails?.rows || [];
+  const deptRows  = res.sheets.departmentBreakout?.rows || [];
+  const donutRows = res.sheets.donutHealth?.rows || [];
+  const groupRows = res.sheets.departmentGroups?.rows || [];
+
   const locationDetails    = mapLocationDetails(locRows);
   const departmentBreakout = mapDepartmentBreakout(deptRows);
+  const { health, metrics } = mapDonutHealth(donutRows);
+  const deptRings          = mapDepartmentGroups(groupRows);
+
   return {
-    ok: locationDetails.length > 0 || departmentBreakout.length > 0,
+    // The card can render from the donut sheets alone, so having either the
+    // headline rings OR the detail sheets counts as a usable capture.
+    ok: locationDetails.length > 0 || departmentBreakout.length > 0
+        || metrics.length > 0 || deptRings.length > 0,
     locationDetails,
     departmentBreakout,
+    health,
+    metrics,
+    deptRings,
     debug: {
       ...res.debug,
       locRowCount: locRows.length,
       deptRowCount: deptRows.length,
+      donutRowCount: donutRows.length,
+      groupRowCount: groupRows.length,
     },
   };
 }
@@ -231,8 +265,18 @@ async function _resolveSheetIds(tabId, ctx) {
   const url = `${ctx.base}/sessions/${ctx.sessionId}/commands/tabsrv/export-crosstab-server-dialog`;
   const res = await _runInTab(tabId, async (u) => {
     const boundary = "----apaisuite" + Math.random().toString(36).slice(2);
-    const body = `--${boundary}\r\nContent-Disposition: form-data; name="telemetryCommandId"\r\n\r\n`
-      + `${Math.random().toString(36).slice(2)}$apai\r\n--${boundary}--\r\n`;
+    // This endpoint rejects a body carrying only telemetryCommandId with
+    // `missing: thumbnail-uris`, which is why live sheet-id resolution has
+    // never actually worked here — every call silently fell back to the two
+    // hard-coded GUIDs, which is why only two sheets were ever reachable.
+    // Sending the field empty is the obvious reading of that error and is
+    // UNVERIFIED against the live host; if it is still wrong, behaviour is
+    // unchanged from today (null → fall back / skip), not worse.
+    const part = (name, value) =>
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+    const body = part("telemetryCommandId", `${Math.random().toString(36).slice(2)}$apai`)
+      + part("thumbnail-uris", "[]")
+      + `--${boundary}--\r\n`;
     const r = await fetch(u, {
       method: "POST", credentials: "include",
       headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },

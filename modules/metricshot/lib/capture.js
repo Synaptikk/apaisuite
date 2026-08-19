@@ -218,11 +218,21 @@ export async function captureMetric(metric, opts = {}) {
     });
 
     step("render");
-    const card = renderMetricCard(data, {
-      metricName: metric.name,
+    // The card reproduces the Tableau dashboard, so it wants the eight ring
+    // values rather than the detail sheets. getVizPickFollowUpData now returns
+    // both; pass the rings through and let render_card fall back to its legacy
+    // path if the donut sheets were unavailable this run.
+    const card = renderMetricCard({
+      health:    data.health ?? null,
+      metrics:   data.metrics ?? [],
+      deptRings: data.deptRings ?? [],
+      // Kept so the legacy shape still resolves if the rings are missing.
+      departmentBreakout: data.departmentBreakout ?? [],
+      locationDetails:    data.locationDetails ?? [],
+    }, {
+      title: metric.name || "VizPick Backroom Health",
       store: metric.store ?? null,
       capturedAt: new Date(capturedAt).toLocaleString(),
-      pickGoal: cap.pickGoalPct ?? 80,
     });
 
     step("rasterize", { width: card.width, height: card.height });
