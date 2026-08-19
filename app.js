@@ -13,6 +13,14 @@ import { listModules, getModule }   from "./shared/registry.js";
 import { createHost }               from "./shared/host.js";
 import { $, $$, escapeHtml }        from "./shared/ui.js";
 import { mountUpdaterIndicator }    from "./shared/updater_ui.js";
+import {
+  getUserHomeStore, setUserHomeStoreOverride, clearUserHomeStoreOverride,
+  extractWidFromAurorSub, extractStoreFromWid,
+  getUserHomeMarket, setUserHomeMarket, clearUserHomeMarket,
+  getUserRole, setUserRole, clearUserRole, onUserRoleChange, USER_ROLES,
+  isHomeHeaderAllowedForRole,
+  OVERRIDE_KEY,
+} from "./shared/userStore.js";
 
 const $nav  = $("#shell-nav");
 const $main = $("#shell-main");
@@ -31,6 +39,39 @@ const FALLBACK_ROUTE = "#/home";
 //     "claimsdisposition", "sparkfraud", "aurorbuddy", ...
 //   ]
 const MODULE_ORDER_KEY = "shell.moduleOrder";
+
+// Modules the user has chosen not to see. Purely a display filter: hiding is
+// not disabling, so a deep link to #/<id> still mounts a hidden module and its
+// service keeps running. Anything else would make a hidden module's scheduled
+// captures silently stop, which is not what "I'm not interested in this one"
+// should mean.
+//
+// Storage shape: chrome.storage.sync["shell.hiddenModules"] = ["stockingplan", ...]
+const HIDDEN_MODULES_KEY = "shell.hiddenModules";
+let _cachedHidden = null;   // null until loaded; treat as "nothing hidden"
+
+async function loadHiddenModules() {
+  try {
+    const got = await chrome.storage.sync.get(HIDDEN_MODULES_KEY);
+    const v = got?.[HIDDEN_MODULES_KEY];
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveHiddenModules(ids) {
+  _cachedHidden = ids;
+  try {
+    await chrome.storage.sync.set({ [HIDDEN_MODULES_KEY]: ids });
+  } catch (e) {
+    console.warn("[shell] could not persist hidden modules:", e?.message);
+  }
+}
+
+function isHiddenModule(mod) {
+  return Array.isArray(_cachedHidden) && _cachedHidden.includes(mod?.manifest?.id);
+}
 const DRAG_MIME        = "application/x-apaisuite-module-id";
 let _cachedOrder = null;   // null until first load completes; treat as "no override"
 
@@ -77,10 +118,19 @@ function isSidebarModule(mod) {
   return (mod?.manifest?.ui?.kind ?? "fullpage") === "fullpage";
 }
 function getSidebarModules() {
-  return getOrderedModules().filter(isSidebarModule);
+  return getOrderedModules().filter((m) => isSidebarModule(m) && !isHiddenModule(m));
 }
+// Role gating. Cached because getHomeHeaderModule() is called synchronously
+// from render paths; null means "not loaded yet", which deliberately reads as
+// "no gating" so the header is never hidden by a slow storage read.
+let _cachedRole = null;
+
 function getHomeHeaderModule() {
-  return getOrderedModules().find((m) => m?.manifest?.ui?.kind === "home-header") || null;
+  // Policy lives in shared/userStore.js so it stays testable and so the
+  // module-level role gating still to come extends one table, not two.
+  if (!isHomeHeaderAllowedForRole(_cachedRole)) return null;
+  const mod = getOrderedModules().find((m) => m?.manifest?.ui?.kind === "home-header") || null;
+  return mod && !isHiddenModule(mod) ? mod : null;
 }
 
 // Wire an element as a drag source AND drop target for module reordering.
@@ -433,7 +483,32 @@ async function mountModule(id, restPath) {
   }
 }
 
-// ── Stub views ────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────
+//
+// The Defaults panel below is not cosmetic. Seven modules read the home store
+// through shared/userStore.js, and VizPick reads the home market; until this
+// existed there was no way to set either from the UI, so metricshot reported
+// "no store set - set your store in Settings > Defaults" pointing at a page
+// that had no such section.
+//
+// The store has an auto-detected source (the WIN ID in the cached Auror JWT);
+// the market has none, so it is manual-only.
+
+const AUROR_IDENTITY_KEY = "aurorbuddy.fb_aurorIdentity";
+
+// The store that WOULD be used if no manual override existed. Shown so the
+// user can tell "detected 1458" from "I typed 1458", which matters when
+// deciding whether clearing the override is safe.
+async function detectedHomeStore() {
+  try {
+    const got = await chrome.storage.local.get(AUROR_IDENTITY_KEY);
+    const sub = got?.[AUROR_IDENTITY_KEY]?.aurorUserId;
+    return extractStoreFromWid(extractWidFromAurorSub(sub)) || null;
+  } catch {
+    return null;
+  }
+}
+
 function renderSettings() {
   const current = localStorage.getItem("shell.theme") || "system";
   $main.innerHTML = `
@@ -457,7 +532,67 @@ function renderSettings() {
           </div>
         </div>
       </div>
-      <div class="state-empty">More suite-level + per-module settings will land in Phase 6.</div>
+      <div class="card" id="settings-modules">
+        <h2 class="card-title">Modules</h2>
+        <div class="stack stack-sm">
+          <p class="muted" style="margin:0">
+            Untick anything you don't use to take it out of the sidebar and the
+            home page. Hiding is not disabling — a hidden module keeps running
+            its scheduled work, and a direct link to it still opens.
+          </p>
+          <div class="stack stack-sm" id="set-modules-list"></div>
+        </div>
+      </div>
+
+      <div class="card" id="settings-defaults">
+        <h2 class="card-title">Defaults</h2>
+        <div class="stack stack-sm">
+          <p class="muted" style="margin:0">
+            Used across the suite — Metric Shots, VizPick, Live Dashboard,
+            Claims Disposition, StockingPlan and Digital Locks all read these
+            instead of asking every time. Saved to chrome.storage.sync.
+          </p>
+
+          <div class="field">
+            <label class="field-label" for="set-home-store">Home store number</label>
+            <div class="cluster">
+              <input class="input" id="set-home-store" inputmode="numeric"
+                     placeholder="e.g. 1458" style="max-width:180px">
+              <button class="btn btn-primary btn-sm" id="set-home-store-save">Save</button>
+              <button class="btn btn-secondary btn-sm" id="set-home-store-clear">Use detected</button>
+            </div>
+            <p class="muted tiny" id="set-home-store-note" style="margin:0"></p>
+          </div>
+
+          <div class="field">
+            <span class="field-label" id="set-role-label">Role</span>
+            <div class="cluster" role="radiogroup" aria-labelledby="set-role-label">
+              ${USER_ROLES.map((r) => `
+                <label class="check" title="${escapeHtml(r.hint)}">
+                  <input type="radio" name="apai-role" value="${escapeHtml(r.value)}">
+                  <span>${escapeHtml(r.label)}</span>
+                </label>
+              `).join("")}
+              <button class="btn btn-secondary btn-sm" id="set-role-clear">Clear</button>
+            </div>
+            <p class="muted tiny" id="set-role-note" style="margin:0"></p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="set-home-market">Home market</label>
+            <div class="cluster">
+              <input class="input" id="set-home-market" inputmode="numeric"
+                     placeholder="e.g. 120" style="max-width:180px">
+              <button class="btn btn-primary btn-sm" id="set-home-market-save">Save</button>
+              <button class="btn btn-secondary btn-sm" id="set-home-market-clear">Clear</button>
+            </div>
+            <p class="muted tiny" id="set-home-market-note" style="margin:0">
+              VizPick preselects this market in the rollup. Nothing in your
+              sign-in identifies a market, so it can't be detected for you.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   `;
   // Wire the radios to apply + persist.
@@ -467,6 +602,149 @@ function renderSettings() {
       localStorage.setItem("shell.theme", v);
       window.__apaiApplyTheme?.(v);
       chrome.storage.sync.set({ "shell.theme": v }).catch(() => {});
+    });
+  }
+
+  wireDefaults();
+}
+
+function wireDefaults() {
+  const storeInput  = $("#set-home-store");
+  const storeNote   = $("#set-home-store-note");
+  const marketInput = $("#set-home-market");
+  const marketNote  = $("#set-home-market-note");
+  if (!storeInput || !marketInput) return;   // settings route replaced mid-flight
+
+  const say = (el, msg, cls) => {
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `tiny ${cls || "muted"}`;
+  };
+
+  async function paintStore() {
+    const [effective, detected, override] = await Promise.all([
+      getUserHomeStore().catch(() => null),
+      detectedHomeStore(),
+      chrome.storage.sync.get(OVERRIDE_KEY).then((g) => g?.[OVERRIDE_KEY] ?? null).catch(() => null),
+    ]);
+    storeInput.value = effective || "";
+    if (override) {
+      say(storeNote, detected
+        ? `Set manually. Detected from your sign-in: ${detected}.`
+        : "Set manually. Nothing detected from your sign-in yet.");
+    } else if (detected) {
+      say(storeNote, `Detected from your sign-in. Type a different number to override.`);
+    } else {
+      say(storeNote, "Not set. Sign in to AurorBuddy once to detect it, or type it here.", "muted");
+    }
+  }
+
+  async function paintMarket() {
+    const m = await getUserHomeMarket().catch(() => null);
+    marketInput.value = m || "";
+  }
+
+  $("#set-home-store-save")?.addEventListener("click", async () => {
+    try {
+      await setUserHomeStoreOverride(storeInput.value);
+      await paintStore();
+      say(storeNote, `Saved. ${storeNote.textContent}`, "muted");
+    } catch {
+      say(storeNote, "Store number must be 1-5 digits.", "state-error");
+    }
+  });
+
+  $("#set-home-store-clear")?.addEventListener("click", async () => {
+    await clearUserHomeStoreOverride().catch(() => {});
+    await paintStore();
+  });
+
+  $("#set-home-market-save")?.addEventListener("click", async () => {
+    try {
+      await setUserHomeMarket(marketInput.value);
+      say(marketNote, "Saved. VizPick will preselect this market.", "muted");
+    } catch {
+      say(marketNote, "Market must be 1-8 letters or digits.", "state-error");
+    }
+  });
+
+  $("#set-home-market-clear")?.addEventListener("click", async () => {
+    await clearUserHomeMarket().catch(() => {});
+    marketInput.value = "";
+    say(marketNote, "Cleared. VizPick will use the first market in the capture.", "muted");
+  });
+
+  const roleNote = $("#set-role-note");
+
+  async function paintRole() {
+    const role = await getUserRole().catch(() => null);
+    for (const el of $main.querySelectorAll('input[name="apai-role"]')) {
+      el.checked = el.value === role;
+    }
+    say(roleNote, role === "market"
+      ? "Market: the Live Dashboard strip is hidden from the home page."
+      : role
+        ? "More modules will be filtered by role in a later release."
+        : "Not set — nothing is filtered.");
+  }
+
+  for (const el of $main.querySelectorAll('input[name="apai-role"]')) {
+    el.addEventListener("change", async () => {
+      if (!el.checked) return;
+      try {
+        await setUserRole(el.value);
+        // _cachedRole is refreshed by the onUserRoleChange subscription in the
+        // boot block, which also re-renders home if that is the current route.
+        await paintRole();
+      } catch {
+        say(roleNote, "Could not save that role.", "state-error");
+      }
+    });
+  }
+
+  $("#set-role-clear")?.addEventListener("click", async () => {
+    await clearUserRole().catch(() => {});
+    await paintRole();
+  });
+
+  wireModuleVisibility();
+
+  paintStore();
+  paintMarket();
+  paintRole();
+}
+
+// Checklist of every registered module. Built from the registry rather than
+// from the sidebar list, because the sidebar list is exactly what this filters
+// — reading it back would make hidden modules unrecoverable from the UI.
+function wireModuleVisibility() {
+  const list = $("#set-modules-list");
+  if (!list) return;
+
+  const all = getOrderedModules();
+  if (!all.length) {
+    list.innerHTML = `<p class="muted tiny" style="margin:0">No modules registered.</p>`;
+    return;
+  }
+
+  list.innerHTML = all.map((mod) => {
+    const m = mod.manifest;
+    const hidden = isHiddenModule(mod);
+    const isHeader = m?.ui?.kind === "home-header";
+    return `
+      <label class="check" title="${escapeHtml(m.description || "")}">
+        <input type="checkbox" data-module-id="${escapeHtml(m.id)}" ${hidden ? "" : "checked"}>
+        <span>${escapeHtml(m.name)}${isHeader ? ' <span class="muted tiny">(home page strip)</span>' : ""}</span>
+      </label>`;
+  }).join("");
+
+  for (const box of list.querySelectorAll("input[type=checkbox][data-module-id]")) {
+    box.addEventListener("change", async () => {
+      const id = box.dataset.moduleId;
+      const next = new Set(Array.isArray(_cachedHidden) ? _cachedHidden : []);
+      if (box.checked) next.delete(id); else next.add(id);
+      await saveHiddenModules([...next]);
+      renderSidebar();
     });
   }
 }
@@ -526,6 +804,27 @@ function iconModuleSvg() {
 // Same for home cards (handled in route() since renderHome reads the
 // cached order on every call).
 renderSidebar();
+
+// Role decides whether the home-header strip mounts at all, so load it before
+// home is likely to matter, and react if it changes on this or another device.
+getUserRole().then(async (role) => {
+  if (role === _cachedRole) return;
+  _cachedRole = role;
+  if ((location.hash || FALLBACK_ROUTE) === "#/home") await renderHome();
+}).catch(() => {});
+
+onUserRoleChange(async (role) => {
+  _cachedRole = role;
+  if ((location.hash || FALLBACK_ROUTE) === "#/home") await renderHome();
+});
+
+loadHiddenModules().then(async (hidden) => {
+  if (!hidden) return;
+  _cachedHidden = hidden;
+  renderSidebar();
+  if ((location.hash || FALLBACK_ROUTE) === "#/home") await renderHome();
+}).catch(() => {});
+
 loadModuleOrder().then(async (order) => {
   if (order) {
     _cachedOrder = order;

@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>settings harness</title>
+<!--
+  dev/settings-harness.html — boots the real shell (app.js + the real stylesheets)
+  against a stubbed chrome.* so the Settings page can be tested in a browser.
+
+  Serve from the REPO ROOT, not from dev/ — the script/style paths are absolute:
+      python3 -m http.server 8742
+      open http://127.0.0.1:8742/dev/settings-harness.html#/settings
+
+  #/settings only. Routing to #/home mounts livedashboard, whose bootstrap
+  hangs against a stub (it waits on a capture tab that never resolves), so the
+  home-header role gate is covered by a unit test on
+  isHomeHeaderAllowedForRole() in shared/tests/userStore.test.mjs instead.
+-->
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/layout.css"><link rel="stylesheet" href="/styles/components.css">
+</head><body>
+<script>
+// Stub enough of the extension APIs for the shell to boot in a plain page.
+const sync = { "apai.userHomeStoreOverride": "1458", "apai.userRole": "market" };
+const local = { "aurorbuddy.fb_aurorIdentity": { aurorUserId: "samlp|wm-us|ses008s.s01458" } };
+const mk = (bag) => ({
+  get: async (k) => {
+    if (k == null) return {...bag};
+    if (Array.isArray(k)) return Object.fromEntries(k.filter(x=>x in bag).map(x=>[x,bag[x]]));
+    return (k in bag) ? { [k]: bag[k] } : {};
+  },
+  set: async (o) => Object.assign(bag, o),
+  remove: async (k) => { delete bag[k]; },
+});
+window.chrome = {
+  runtime: { getManifest: () => ({ version: "0.9.3" }), getURL: (p) => "/" + p, id: "harness",
+             onMessage: { addListener(){} }, sendMessage: async () => ({}) },
+  storage: { sync: mk(sync), local: mk(local), session: mk({}),
+             onChanged: { addListener(){}, removeListener(){} } },
+  alarms: { create(){}, get: async()=>null, getAll: async()=>[], clear: async()=>{}, onAlarm:{addListener(){}} },
+  tabs: { query: async()=>[], create: async()=>({id:1}), update: async()=>({id:1}), remove: async()=>{},
+          sendMessage: async()=>({}), onUpdated:{addListener(){}}, onRemoved:{addListener(){}} },
+  scripting: { executeScript: async()=>[{result:null}] },
+  windows: { onRemoved:{addListener(){}} },
+  notifications: { onClicked:{addListener(){}}, onButtonClicked:{addListener(){}} },
+  action: { onClicked:{addListener(){}} },
+  webRequest: { onBeforeSendHeaders:{addListener(){}} },
+  debugger: { onDetach:{addListener(){}} },
+  cookies: { getAll: async()=>[] },
+  offscreen: {},
+};
+window.addEventListener("error", (e) => { window.__err = String(e.message); });
+</script>
+<div class="shell">
+  <header class="shell-header"><span class="pill" id="suite-version">…</span></header>
+  <div id="suite-update-banner" hidden></div>
+  <nav class="shell-sidebar"><div id="shell-nav"></div></nav>
+  <section class="shell-viewport"><main id="shell-main"></main></section>
+</div>
+<script type="module" src="/app.js"></script>
+</body></html>
