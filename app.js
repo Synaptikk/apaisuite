@@ -13,6 +13,7 @@ import { listModules, getModule }   from "./shared/registry.js";
 import { createHost }               from "./shared/host.js";
 import { $, $$, escapeHtml }        from "./shared/ui.js";
 import { mountUpdaterIndicator }    from "./shared/updater_ui.js";
+import { recordUsage }             from "./shared/usage_metrics.js";
 import {
   getUserHomeStore, setUserHomeStoreOverride, clearUserHomeStoreOverride,
   extractWidFromAurorSub, extractStoreFromWid,
@@ -287,7 +288,31 @@ async function route() {
   if (!head || head === "home")     return renderHome();
   if (head === "settings")          return renderSettings();
   if (head === "docs")              return renderDocs();
+
+  noteModuleOpened(head);
   return mountModule(head, rest);
+}
+
+// Usage telemetry: which tools are actually used, by which store and market.
+// Pseudonymous — see the header of shared/usage_metrics.js.
+//
+// Recorded here rather than per-module so all eleven are covered without each
+// one remembering to instrument itself, and so it cannot drift as modules are
+// added. Fire-and-forget: a telemetry failure must never stop a module
+// mounting, which is why nothing awaits this and every path swallows.
+let _lastOpened = { id: null, at: 0 };
+const REOPEN_DEDUPE_MS = 30_000;
+
+function noteModuleOpened(moduleId) {
+  if (!moduleId) return;
+  // Bouncing between two modules is real usage; re-entering the SAME one
+  // within half a minute is usually a back-button or a re-render, and
+  // counting it would inflate exactly the number this exists to inform.
+  const now = Date.now();
+  if (_lastOpened.id === moduleId && now - _lastOpened.at < REOPEN_DEDUPE_MS) return;
+  _lastOpened = { id: moduleId, at: now };
+
+  recordUsage({ moduleName: moduleId, actionName: "module_opened" }).catch(() => {});
 }
 
 window.addEventListener("hashchange", route);

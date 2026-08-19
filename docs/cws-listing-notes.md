@@ -96,6 +96,7 @@ version understated it badly, so treat the table below as the authority.
 | **Associate names, shift start/end, job label, called-off flag**, plus store number and business date | Firestore project `managerchecklist` (developer-controlled) | `modules/closinglist/lib/firebaseUpload.js` |
 | The user's live **Sendbird `access_token`** for Workvivo chat, plus store number and channel name | `qrcallbox.com/api/workvivo/token-heartbeat` | `modules/workvivo/service.js:38`, payload at `:87` |
 | The rendered metric card image | The Workvivo/Sendbird channel the user picks, at the moment they pick it | `modules/metricshot/lib/sendbird.js` |
+| **Pseudonymous usage analytics** — random installation id, store, market, role, module name, timestamp | Firestore collection `suite_usage_events` (developer-controlled) | `shared/usage_metrics.js`, recorded from the router at `app.js` |
 
 Everything else — captured dashboard rows, case notes, reports, settings — stays in
 `chrome.storage.local`.
@@ -115,6 +116,18 @@ Three boxes, not one:
   entire reason the module exists — `modules/workvivo/module.js:29` already says so
   in the description shown before the module is enabled.
 - **Personal communications, location, health, financial — no.**
+
+Usage analytics falls under **User activity**, which is already ticked. It adds
+no permission and no host. It deliberately carries no name or email — that is the
+difference between `suite_usage_events` and AurorBuddy's `tool_metric_events`,
+and the two collections are not joined. Asserted by a test rather than left as an
+intention: `shared/tests/usage_metrics.test.mjs` fails if a row ever serialises
+an email or a name field.
+
+The certification that matters here is "these disclosures reflect the most
+up-to-date content of your privacy policy". The policy was updated to describe
+usage analytics **before** the telemetry shipped; publishing in the other order
+would have made that certification false on day one.
 
 Certify Limited Use truthfully: used only to provide the features the user invokes,
 not sold, not used for advertising, not used to build profiles.

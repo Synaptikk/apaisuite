@@ -136,6 +136,17 @@ by the developer or by a service acting on the developer's behalf.</p>
           token to the server so QR scan alerts can be posted to your channel.</td>
     </tr>
     <tr>
+      <td><strong>Usage analytics</strong><br>which tools get used</td>
+      <td>A random installation identifier, your store number, market number and
+          role, the name of the module you opened, and when. No name, no email,
+          no WIN ID, and no case or investigation content.</td>
+      <td>A Google Firestore database operated by the developer
+          (collection <code>suite_usage_events</code>).</td>
+      <td>So development effort goes to the tools people actually use. The
+          identifier is random and is not derived from anything about you — it
+          identifies an installation, not a person.</td>
+    </tr>
+    <tr>
       <td><strong>MetricShot</strong><br>metric card posting</td>
       <td>An image of the store metric card the extension renders locally.</td>
       <td>The Workvivo channel you choose, at the moment you choose it.</td>
@@ -168,10 +179,20 @@ the QRCallBox module, no token is ever sent.</p>
 <p>This data is stored using the browser's local extension storage. It is removed
 when you uninstall the extension.</p>
 
+<h3>About usage analytics</h3>
+<p>This is deliberately kept separate from the AurorBuddy case records described
+above, and deliberately not linked to them. AurorBuddy rows identify you because
+a supervisor reads them as a record of case activity. Usage analytics rows do
+not, because counting which tools are popular does not require knowing who
+opened them. The two are written to different collections and are not joined.</p>
+
 <h2>What the extension never does</h2>
 <ul>
   <li>It does not collect your browsing history, and does not read pages other than
       the specific dashboards named in its permissions.</li>
+  <li>It does not record what you do <em>inside</em> a module — usage analytics
+      note that a module was opened, not what you searched for, viewed or
+      exported.</li>
   <li>It does not sell or rent data to anyone, and never has.</li>
   <li>It does not transfer data to third parties except as described in the table
       above.</li>

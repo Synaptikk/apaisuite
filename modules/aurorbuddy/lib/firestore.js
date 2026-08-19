@@ -285,7 +285,11 @@ function randomDocId() {
   return out;
 }
 
-async function commitCreateWithServerTimestamp(collection, docId, fields, timestampField) {
+// Exported for shared/usage_metrics.js, which writes the suite-wide usage
+// collection. Exporting the primitive rather than a second copy of the auth
+// dance keeps one anonymous-auth path and one token cache; see the note at the
+// top of shared/usage_metrics.js about the layering.
+export async function commitCreateWithServerTimestamp(collection, docId, fields, timestampField) {
   const docName = `projects/${projectId}/databases/(default)/documents/${collection}/${docId}`;
   const writes = [{
     update: {
