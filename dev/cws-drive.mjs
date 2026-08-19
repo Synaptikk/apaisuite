@@ -95,7 +95,7 @@ switch (cmd) {
   }
 
   case "shot":
-    await page.screenshot({ path: args[0] || "cws.png", fullPage: false });
+    await page.screenshot({ path: args[0] || "cws.png", fullPage: args.includes("--full") });
     process.stdout.write(`wrote ${args[0] || "cws.png"} — ${page.url()}\n`);
     break;
 
@@ -119,7 +119,13 @@ switch (cmd) {
   case "fill": {
     const [label, value] = args;
     if (!label || value === undefined) die('fill needs "<label>" "<value>"');
-    const box = page.getByLabel(label, { exact: false }).first();
+    // Several fields end in "justification", so a substring match on the
+    // remote-code field's bare "Justification" label is ambiguous. Try exact
+    // first and fall back to substring.
+    let box = page.getByLabel(label, { exact: true }).first();
+    if (!(await box.count().catch(() => 0))) {
+      box = page.getByLabel(label, { exact: false }).first();
+    }
     await box.fill(value, { timeout: 15000 });
     process.stdout.write(`filled ${label}\n`);
     break;
@@ -134,8 +140,64 @@ switch (cmd) {
     const n = await inputs.count();
     if (!n) die("no file input on this page");
     const idx = Number.isInteger(Number(near)) ? Number(near) : 0;
-    await inputs.nth(idx).setInputFiles(file);
-    process.stdout.write(`uploaded ${file} to file input #${idx}\n`);
+    // Screenshot slots take several files at once; setInputFiles REPLACES the
+    // selection, so they have to go in one call rather than one per file.
+    const files = args.slice(1);
+    await inputs.nth(idx).setInputFiles(files);
+    process.stdout.write(`uploaded ${files.length} file(s) to input #${idx}: ${files.join(", ")}\n`);
+    break;
+  }
+
+  case "radio": {
+    // Clicking the descriptive paragraph next to a radio does nothing — the
+    // Visibility setting silently stayed on Public that way. Target the
+    // control by role instead.
+    if (!args[0]) die("radio needs a name");
+    const r = page.getByRole("radio", { name: new RegExp(`^\\s*${args[0]}`, "i") }).first();
+    await r.click({ timeout: 15000 });
+    await page.waitForTimeout(500);
+    const on = await r.isChecked().catch(() => null);
+    process.stdout.write(`radio ${args[0]} -> checked=${on}\n`);
+    if (on === false) die("radio did not take", 3);
+    break;
+  }
+
+  case "scrollto": {
+    // fullPage screenshots are useless here — the dashboard scrolls an inner
+    // container, not the document — so bring the target into view first.
+    if (!args[0]) die("scrollto needs text");
+    await page.getByText(args[0], { exact: false }).first().scrollIntoViewIfNeeded({ timeout: 15000 });
+    await page.waitForTimeout(500);
+    process.stdout.write(`scrolled to ${args[0]}\n`);
+    break;
+  }
+
+  case "options": {
+    // Open a combobox and list what it offers. The dashboard's selects are
+    // custom elements, so the options only exist in the DOM once opened.
+    const name = args[0];
+    if (!name) die("options needs the combobox name");
+    await page.getByRole("combobox", { name: new RegExp(name, "i") }).first().click({ timeout: 15000 });
+    await page.waitForTimeout(800);
+    const opts = page.getByRole("option");
+    const n = await opts.count();
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = (await opts.nth(i).textContent().catch(() => "")) || "";
+      const label = t.replace(/\s+/g, " ").trim();
+      if (label) out.push(label);
+    }
+    process.stdout.write(out.join("\n") + "\n");
+    break;
+  }
+
+  case "select": {
+    const [name, option] = args;
+    if (!name || !option) die('select needs "<combobox>" "<option>"');
+    await page.getByRole("combobox", { name: new RegExp(name, "i") }).first().click({ timeout: 15000 });
+    await page.waitForTimeout(800);
+    await page.getByRole("option", { name: new RegExp(`^\\s*${option}\\s*$`, "i") }).first().click({ timeout: 15000 });
+    process.stdout.write(`selected ${option} for ${name}\n`);
     break;
   }
 
