@@ -1,9 +1,13 @@
 // modules/metricshot/lib/capture.js
 //
-// Screenshot capture using chrome.debugger (CDP). Mirrors the visibility-spoof
-// pattern in modules/sparkfraud/service.js:204-231 and the attach/detach
-// tracking in modules/aurorbuddy/lib/evidence_downloader.js:130-190. Runs in
-// the service worker.
+// Builds the posted image for a metric. Runs in the service worker.
+//
+// This used to screenshot the Tableau viz over CDP (chrome.debugger). It now
+// prepares the tab, reads VizPick's own VizQL rows via lib/sources/
+// vizpick_export.js, renders them with lib/render_card.js, and rasterises that
+// through lib/rasterize.js. Same {ok, pngBase64, ...} contract as before, so
+// service.js did not change — but no "debugger" permission, and no dependence
+// on where Tableau happens to draw a panel this week.
 //
 // Contract:
 //   captureMetric(metric) →
@@ -17,27 +21,22 @@
 //   - Only reads. No clicks, no form submits, no navigations other than the
 //     initial "open the URL" and (if the tab wandered) a re-navigation to
 //     the target URL.
-//   - Every attach is paired with a detach in `finally`. A tab-level Set
-//     tracks in-flight attaches so overlapping calls to the same tab don't
-//     collide with "another debugger is already attached".
-//   - Detects login/SSO landings and refuses to capture — no bad screenshot
-//     ever leaves this module.
+//   - Detects login/SSO landings and refuses to capture, so a login page can
+//     never be mistaken for data.
+//   - Only VizPick metrics can be rendered: the card is built from parsed
+//     VizPick rows. A metric pointing anywhere else fails with a clear reason
+//     rather than posting something wrong.
 
 import { looksLikeAuthWall } from "./validate.js";
 import { SSO_SELECTORS, createAuth } from "../../../shared/auth.js";
 import { getUserHomeStore } from "../../../shared/userStore.js";
+import { getVizPickFollowUpData } from "./sources/vizpick_export.js";
+import { renderMetricCard } from "./render_card.js";
+import { svgToPngBase64 } from "./rasterize.js";
 
 const _auth = createAuth("metricshot");
 
-const CDP_VERSION = "1.3";
 const TAG = "[metricshot capture]";
-
-// Tabs where we have CDP attached, tracked so we don't double-attach.
-const _attached = new Set();
-chrome.tabs?.onRemoved?.addListener?.((tabId) => _attached.delete(tabId));
-chrome.debugger?.onDetach?.addListener?.((source) => {
-  if (source?.tabId != null) _attached.delete(source.tabId);
-});
 
 /**
  * @param {object} metric  Metric config (see lib/metrics.js).
@@ -48,8 +47,6 @@ chrome.debugger?.onDetach?.addListener?.((source) => {
 export async function captureMetric(metric, opts = {}) {
   const capturedAt = Date.now();
   let tabId = null;
-  let attached = false;
-  let deviceOverridden = false;
 
   // Progress breadcrumb hook. Lets the caller trace exactly which phase a
   // capture stalls on (preview showed "start" then silence = a hung await).
@@ -82,65 +79,17 @@ export async function captureMetric(metric, opts = {}) {
     tabId = tab.id;
     step("tab-ready", { tabId, openedFresh });
 
-    // 2. Attach CDP + inject visibility spoof BEFORE navigation. This is
-    //    critical for Tableau / other viz that pause rendering on hidden
-    //    tabs — same rationale as sparkfraud/service.js:197-203.
-    attached = await _attach(tabId);
-    step("cdp-attached", { attached });
-    if (attached) {
-      await _sendCdp(tabId, "Page.enable", {}).catch(() => {});
-      await _sendCdp(tabId, "Page.addScriptToEvaluateOnNewDocument", {
-        source: `
-          Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-          Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-          document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
-        `,
-      }).catch((e) => console.warn(TAG, "spoof failed:", e?.message ?? e));
-    }
+    // 2. Keep the tab out of Chrome's discard path. Tableau stops painting in
+    //    a background tab; the visibility unblock that fixes that now lives in
+    //    content/tableau_capture.js (MAIN world, document_start), which the
+    //    manifest already declares for this host. It used to be injected from
+    //    here with CDP Page.addScriptToEvaluateOnNewDocument, which is what
+    //    cost the extension the "debugger" permission.
+    try { await chrome.tabs.update(tabId, { autoDiscardable: false }); } catch { /* best effort */ }
+    step("tab-kept-awake");
 
-    // 3. Optional viewport override — apply BEFORE we (possibly) reload so
-    //    the page lays out at the intended width from the start.
     const cap = metric.capture || {};
-    if (attached && (cap.viewportWidth || cap.viewportHeight || cap.zoom !== 1)) {
-      try {
-        await _sendCdp(tabId, "Emulation.setDeviceMetricsOverride", {
-          width: cap.viewportWidth || 1440,
-          height: cap.viewportHeight || 1000,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-        if (cap.zoom && cap.zoom !== 1) {
-          // NOTE: Emulation.setPageScaleFactor is pinch-zoom (compositor only)
-          // — it does NOT reflow layout, and Tableau ignores it, so content
-          // still overflowed and got clipped. Use CSS zoom on the root element
-          // instead: it actually shrinks + reflows the page so a zoom < 1 fits
-          // more of the report into the capture surface. Applied via
-          // addScriptToEvaluateOnNewDocument so it survives the upcoming reload.
-          const zoomJs = `try{document.documentElement.style.zoom='${cap.zoom}';}catch(e){}`;
-          await _sendCdp(tabId, "Page.addScriptToEvaluateOnNewDocument", { source: zoomJs }).catch(() => {});
-          await chrome.scripting.executeScript({
-            target: { tabId, allFrames: false },
-            func: (z) => { try { document.documentElement.style.zoom = String(z); } catch (e) {} },
-            args: [cap.zoom],
-          }).catch(() => {});
-        }
-        deviceOverridden = true;
-      } catch (e) {
-        console.warn(TAG, "device metrics override failed:", e?.message ?? e);
-      }
-    }
 
-    // 4. Ensure the tab is on the right URL AND that our visibility spoof
-    //    applies to the live document.
-    //    The spoof is registered via Page.addScriptToEvaluateOnNewDocument,
-    //    which only runs for a *new* document. So:
-    //      - Wrong URL       → navigate (loads a new doc, spoof applies).
-    //      - Freshly opened  → reload (spoof was registered after the initial
-    //                          navigation started).
-    //      - Reused + correct URL → reload anyway. Without a fresh document
-    //        the spoof never runs on THIS doc; a hidden/reused Tableau tab
-    //        then stays paused and renders blank — the classic "preview works
-    //        once, then never loads again" bug.
     const currentTab = await chrome.tabs.get(tabId);
     const urlOk = !!currentTab.url
       && new URL(currentTab.url).origin === target.origin
@@ -149,8 +98,10 @@ export async function captureMetric(metric, opts = {}) {
 
     if (needsNavigate) {
       await chrome.tabs.update(tabId, { url: resolvedUrl });
-    } else if (attached) {
-      // Correct URL already (fresh or reused) — reload so the spoof applies.
+    } else {
+      // Correct URL already (fresh or reused) — reload so the content script's
+      // fetch patch is installed before the viz issues its VizQL requests. A
+      // tab that was already open when the module loaded has an empty ring.
       await chrome.tabs.reload(tabId).catch(() => {});
     }
 
@@ -247,155 +198,64 @@ export async function captureMetric(metric, opts = {}) {
     await _waitForDomStable(tabId, 1000, Math.min(cap.timeoutMs ?? 60_000, 15_000)).catch(() => {});
     if (cap.settleDelayMs > 0) { step("settle-delay", { ms: cap.settleDelayMs }); await _delay(cap.settleDelayMs); }
 
-    // 10. Hide sticky headers / configured selectors.
-    let restoreHide = null;
-    if (Array.isArray(cap.hideSelectors) && cap.hideSelectors.length) {
-      restoreHide = await _hideSelectors(tabId, cap.hideSelectors).catch(() => null);
+    // 11. Render the card from VizPick's own numbers.
+    //
+    // This replaced a CDP Page.captureScreenshot of the Tableau viz. The old
+    // path had to find the panel by matching visible anchor strings, pad the
+    // crop so glyph tails weren't clipped, and wait for the viz to finish
+    // painting — all of which broke whenever Tableau reflowed. Reading the
+    // VizQL rows the page already fetched is both steadier and honest about
+    // what the numbers are.
+    step("scrape");
+    const data = await getVizPickFollowUpData({ tabId });
+    if (!data.ok) {
+      return _fail(tabId, capturedAt,
+        `no VizPick data in this capture (${data.errorClass || "NO_DATA"}): ${data.error || "no rows"}`);
     }
+    step("scraped", {
+      locations: data.locationDetails?.length ?? 0,
+      departments: data.departmentBreakout?.length ?? 0,
+    });
 
-    let pngBase64 = null;
-    let width = null;
-    let height = null;
-    let clipUsed = null;
-    let anchorRegion = null;
-    step("capture", { mode: cap.mode });
-    try {
-      // 11. Capture.
-      if (cap.mode === "selector" && cap.selector) {
-        const rect = await _selectorRect(tabId, cap.selector);
-        if (!rect) return _fail(tabId, capturedAt, `capture.selector not found: ${cap.selector}`);
-        const shot = await _sendCdp(tabId, "Page.captureScreenshot", {
-          format: "png",
-          clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
-        });
-        pngBase64 = shot?.data;
-        width = Math.round(rect.width);
-        height = Math.round(rect.height);
-      } else if (cap.mode === "region") {
-        let region = cap.clip;
-        if (!region && Array.isArray(cap.containText) && cap.containText.length) {
-          step("region-search", { anchors: cap.containText });
-          const res = await _regionForContainText(tabId, cap.containText, Math.min(cap.timeoutMs ?? 60_000, 30_000));
-          if (!res.region) {
-            return _fail(tabId, capturedAt,
-              `containText: missing anchors after ${res.waitedMs}ms — ${res.missing.map(m => `"${m}"`).join(", ")} (found: ${res.foundNames.join(", ") || "none"})`);
-          }
-          region = res.region;
-          step("region-found", { x: region.x, y: region.y, width: region.width, height: region.height, anchors: res.foundNames?.length });
-        }
-        if (!region) return _fail(tabId, capturedAt, "region mode requires clip or containText");
-        // Apply padding + clamp to viewport so we don't ask CDP for a clip
-        // that spills off the rendered surface.
-        let pad = cap.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-        const vw = cap.viewportWidth  || 1500;
-        const vh = cap.viewportHeight || 1000;
-        const MIN_DIM = 100;  // must clear validate.js's 100×100 floor
+    step("render");
+    const card = renderMetricCard(data, {
+      metricName: metric.name,
+      store: metric.store ?? null,
+      capturedAt: new Date(capturedAt).toLocaleString(),
+      pickGoal: cap.pickGoalPct ?? 80,
+    });
 
-        // Self-heal: if the saved padding (e.g. a too-aggressive crop) would
-        // collapse the region below the min capture size, drop the padding
-        // and use the raw anchor region. Prevents a bad crop from silently
-        // bricking every capture — the screenshot degrades to "uncropped"
-        // instead of "13×12 garbage".
-        const paddedW = region.width  + pad.left + pad.right;
-        const paddedH = region.height + pad.top  + pad.bottom;
-        if ((paddedW < MIN_DIM || paddedH < MIN_DIM) && region.width >= MIN_DIM && region.height >= MIN_DIM) {
-          step("padding-collapsed", { paddedW, paddedH, regionW: region.width, regionH: region.height });
-          pad = { top: 0, right: 0, bottom: 0, left: 0 };
-        }
+    step("rasterize", { width: card.width, height: card.height });
+    const raster = await svgToPngBase64(card.svg, {
+      width: card.width,
+      height: card.height,
+      scale: cap.rasterScale ?? 2,
+    });
+    if (!raster.ok) return _fail(tabId, capturedAt, `render failed: ${raster.reason}`);
 
-        const px = Math.max(0, region.x - pad.left);
-        const py = Math.max(0, region.y - pad.top);
-        // Guard against a bad saved crop: never ask CDP for a degenerate or
-        // off-surface clip (that returns no image). Clamp width/height to at
-        // least 1px and keep the box inside the viewport.
-        const pw = Math.max(1, Math.min(vw - px, region.width  + pad.left + pad.right));
-        const ph = Math.max(1, Math.min(vh - py, region.height + pad.top  + pad.bottom));
-        const shot = await _sendCdp(tabId, "Page.captureScreenshot", {
-          format: "png",
-          clip: { x: px, y: py, width: pw, height: ph, scale: 1 },
-        });
-        pngBase64 = shot?.data;
-        width  = Math.round(pw);
-        height = Math.round(ph);
-        // Expose the exact box we cropped + the anchor region before padding.
-        // The UI's crop tool maps a sub-rectangle drawn on the preview back to
-        // padding insets relative to `anchorRegion`.
-        clipUsed = { x: px, y: py, width: pw, height: ph };
-        anchorRegion = { x: region.x, y: region.y, width: region.width, height: region.height };
-      } else {
-        const shot = await _sendCdp(tabId, "Page.captureScreenshot", {
-          format: "png",
-          captureBeyondViewport: cap.mode === "fullpage",
-        });
-        pngBase64 = shot?.data;
-      }
-    } finally {
-      if (restoreHide) await restoreHide().catch(() => {});
-    }
-
-    if (!pngBase64) return _fail(tabId, capturedAt, "Page.captureScreenshot returned no data");
+    const pngBase64 = raster.pngBase64;
+    const width  = Math.round(card.width  * (cap.rasterScale ?? 2));
+    const height = Math.round(card.height * (cap.rasterScale ?? 2));
     step("captured", { width, height, bytes: pngBase64.length });
 
     return {
       ok: true,
       pngBase64,
       width, height,
-      clipUsed,
-      anchorRegion,
+      clipUsed: null,
+      anchorRegion: null,
+      rowCounts: {
+        locations: data.locationDetails?.length ?? 0,
+        departments: data.departmentBreakout?.length ?? 0,
+      },
       tabId,
       capturedAt,
     };
   } catch (err) {
     return _fail(tabId, capturedAt, String(err?.message ?? err));
-  } finally {
-    if (deviceOverridden) {
-      await _sendCdp(tabId, "Emulation.clearDeviceMetricsOverride", {}).catch(() => {});
-    }
-    if (attached) await _detach(tabId).catch(() => {});
   }
 }
 
-// ── CDP wrappers ──────────────────────────────────────────────────────────
-
-async function _attach(tabId) {
-  if (_attached.has(tabId)) return true;
-  try {
-    await chrome.debugger.attach({ tabId }, CDP_VERSION);
-    _attached.add(tabId);
-    return true;
-  } catch (e) {
-    // Common: another extension/DevTools already attached. We can still try
-    // to capture without the spoof — the page might just show a stale render.
-    console.warn(TAG, "attach failed:", e?.message ?? e);
-    return false;
-  }
-}
-
-async function _detach(tabId) {
-  try { await chrome.debugger.detach({ tabId }); } catch (_) {}
-  _attached.delete(tabId);
-}
-
-async function _sendCdp(tabId, method, params) {
-  // chrome.debugger.sendCommand has NO built-in timeout. Against a reused /
-  // wedged Tableau tab (openedFresh:false), commands like Page.enable or
-  // Emulation.setDeviceMetricsOverride can hang forever — and a trailing
-  // .catch() at the call site does nothing because the await never settles.
-  // Wrap every command so a stuck CDP call rejects fast and the capture
-  // pipeline can surface an error / retry instead of freezing at cdp-attached.
-  return _withTimeout(
-    chrome.debugger.sendCommand({ tabId }, method, params),
-    15_000,
-    `CDP ${method}`,
-  );
-}
-
-// Race a promise against a timeout. chrome.scripting.executeScript and
-// chrome.debugger.sendCommand have NO built-in timeout — against a wedged /
-// zombie tab (e.g. a reused Tableau session stuck mid-render) they never
-// resolve, and the only backstop was the blunt 90s capture watchdog. Wrapping
-// individual probes lets a stuck step fail fast so the capture can surface a
-// useful error (and the scheduler can retry) instead of hanging.
 function _withTimeout(promise, ms, label) {
   let t;
   const timeout = new Promise((_, rej) => {
@@ -579,40 +439,6 @@ async function _waitForDomStable(tabId, quietMs, maxMs) {
   }
 }
 
-async function _selectorRect(tabId, selector) {
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: false },
-      args: [selector],
-      func: (sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { x: Math.max(0, r.left), y: Math.max(0, r.top), width: r.width, height: r.height };
-      },
-    });
-    if (!result || result.width < 1 || result.height < 1) return null;
-    return result;
-  } catch (_) { return null; }
-}
-
-/**
- * Compute the smallest bounding rect that includes an element matching each
- * of the provided text strings. Polls up to `timeoutMs` because Tableau
- * viz zones render several seconds after the loading gate.
- *
- * Anchor matching is:
- *   1. exact-match on trimmed textContent (preferred)
- *   2. case-insensitive exact match
- *   3. case-insensitive substring match against a small-text leaf element
- *
- * Lenient behavior: as long as at least 2 anchors are found, returns the
- * bounding box of the found ones. Some Tableau text renders as image tiles
- * (no DOM text), so requiring 100% match would frequently fail. `missing` is
- * still populated so callers can log/warn.
- *
- * Walks same-origin iframes. Returns `{region, missing, foundNames, waitedMs}`.
- */
 async function _regionForContainText(tabId, texts, timeoutMs = 20_000) {
   const started = Date.now();
   const deadline = started + timeoutMs;
@@ -697,36 +523,6 @@ async function _regionForContainText(tabId, texts, timeoutMs = 20_000) {
     await _delay(500);
   }
   return last;
-}
-
-async function _hideSelectors(tabId, selectors) {  // Inject a style tag; return a restore fn that removes it.
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: false },
-      args: [selectors],
-      func: (sels) => {
-        const id = "__metricshot_hide__";
-        let tag = document.getElementById(id);
-        if (!tag) {
-          tag = document.createElement("style");
-          tag.id = id;
-          document.documentElement.appendChild(tag);
-        }
-        tag.textContent = sels.map((s) => `${s} { visibility: hidden !important; }`).join("\n");
-      },
-    });
-  } catch (_) { /* fall through */ }
-  return async () => {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId, allFrames: false },
-        func: () => {
-          const tag = document.getElementById("__metricshot_hide__");
-          if (tag) tag.remove();
-        },
-      });
-    } catch (_) {}
-  };
 }
 
 // ── Misc ─────────────────────────────────────────────────────────────────

@@ -73,6 +73,15 @@ export const SEED_METRICS = [
       timeoutMs: 60000,
       retries: 2,
       catchUpWindowMs: 60 * 60 * 1000,
+
+      // Card rendering. The posted image is now drawn from VizPick's own rows
+      // (lib/render_card.js) rather than screenshotted, so the crop fields
+      // above — mode, containText, padding, viewportWidth/Height, zoom,
+      // hideSelectors — are no longer read. They are left in place because
+      // SEED_URL_MIGRATIONS fingerprints stored configs on them, and because
+      // dropping keys from a stored metric is a migration in its own right.
+      pickGoalPct: 80,   // goal line on the department bars
+      rasterScale: 2,    // 2x for a crisp image in the Workvivo feed
     },
   },
 ];

@@ -1,5 +1,24 @@
 # Metric Shots (`modules/metricshot`)
 
+> **Capture changed in 0.9.2.** The posted image is no longer a screenshot.
+> `lib/capture.js` prepares the VizPick tab, reads the VizQL rows through
+> `lib/sources/vizpick_export.js`, renders them with `lib/render_card.js`, and
+> rasterises that SVG to PNG in an offscreen document (`lib/rasterize.js`).
+> The `{ ok, pngBase64, ... }` contract is unchanged, so `service.js` and the
+> Sendbird post path are untouched.
+>
+> Why: screenshotting needed `chrome.debugger` (CDP `Page.captureScreenshot`),
+> which is the permission most likely to sink a Chrome Web Store review. It
+> also meant locating the panel by matching visible anchor text and padding the
+> crop — both of which broke whenever Tableau reflowed.
+>
+> Consequence: **only VizPick metrics can be rendered.** A metric pointing at
+> any other dashboard has no parser and fails with a clear reason instead of
+> posting the wrong thing. The crop-related fields in a metric's `capture`
+> block (`mode`, `containText`, `padding`, `viewportWidth/Height`, `zoom`,
+> `hideSelectors`) are retained for config compatibility but no longer read.
+
+
 Scheduled screenshots of internal metric dashboards, posted into Workvivo channels using the user's already-authenticated tab. No credentials, tokens, or cookies leave the browser.
 
 **Status:** beta · **Version:** 0.1.0

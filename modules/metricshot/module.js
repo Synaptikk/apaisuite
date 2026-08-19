@@ -39,7 +39,10 @@ export default {
 
     // Informational — the actual grant comes from the top-level manifest.json.
     permissions: {
-      needs: ["alarms", "scripting", "tabs", "storage", "debugger"],
+      // "offscreen" replaced "debugger": the posted image is rendered from
+      // VizPick's own rows and rasterised in an offscreen document, instead of
+      // being screenshotted over CDP. See lib/capture.js.
+      needs: ["alarms", "scripting", "tabs", "storage", "offscreen"],
       hosts: [
         "https://stores.tableau.wal-mart.com/*",
         "https://workvivo.walmart.com/*",

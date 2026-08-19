@@ -36,6 +36,7 @@
     "downloads",
     "debugger",
     "browsingData",
+    "offscreen",
     "alarms",
     "notifications"
   ],

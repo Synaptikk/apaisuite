@@ -12,7 +12,7 @@
 //   - APPRISS cookie check → auth.hasSessionCookie(domain)
 //   - Tab helpers → shared/tabs.js equivalents inline where convenient
 //   - Nextiva HLS segment-header capture from the donor was DEAD CODE in
-//     the donor (evidence_downloader.js accepts but never reads the
+//     the donor (the removed evidence_downloader.js accepted but never read the
 //     getSegmentHeaders callback — the CDP-based capture made it
 //     unnecessary). Dropped in the migration.
 
@@ -22,7 +22,6 @@ import { searchPeople }  from "./lib/auror.js";
 import { apprissLookupAll, probeApprissApiAuth } from "./lib/appriss.js";
 import { findNearbyStores } from "./lib/stores.js";
 import { fillAurorEvent, fromTransaction as fromTransactionForEvent } from "./lib/auror_event.js";
-import { downloadEvidence } from "./lib/evidence_downloader.js";
 import { Timings } from "./lib/timings.js";
 import { suspectsFromRaws, suspectToWire } from "./lib/models.js";
 import { classifyAll } from "./lib/event_classifier.js";
@@ -647,34 +646,19 @@ export const handlers = {
     return { ok: true, matched: wire, errors, timings: t.toDict() };
   },
 
-  async download_evidence(msg) {
-    console.log("[AurorBuddy] download_evidence msg received", msg);
-    const t = new Timings();
-    const { transactionId, suspectName } = msg;
-    if (!transactionId) return { ok: false, error: "transactionId required" };
-    const onProgress = (evt) => broadcast("download_progress", evt);
-    try {
-      const result = await t.measure("download.total", () =>
-        downloadEvidence({
-          transactionId,
-          suspectName,
-          onProgress,
-          // Nextiva segment-header replay was dead code in the donor; pass
-          // an empty getter so any future revival is a one-line restore here.
-          getSegmentHeaders: () => [],
-        })
-      );
-      console.log("[AurorBuddy] download_evidence done", result);
-      return { ok: true, ...result, timings: t.toDict() };
-    } catch (err) {
-      console.error("[AurorBuddy] download_evidence threw:", err);
-      return {
-        ok: false,
-        error: String(err?.message ?? err),
-        stack: err?.stack ?? null,
-        timings: t.toDict(),
-      };
-    }
+  // CCTV evidence download was removed along with the "debugger" permission.
+  // It read m3u8 segment bodies via CDP Network.getResponseBody, and MV3 offers
+  // no other way to do that — webRequest cannot read response bodies. Kept as
+  // an explicit handler so the UI shows a real explanation rather than failing
+  // with a generic "unknown message type".
+  async download_evidence() {
+    return {
+      ok: false,
+      removed: true,
+      error: "Evidence download has been removed. It needed the debugger permission, " +
+             "which was dropped so the suite could ship through the Chrome Web Store. " +
+             "Download the clip from Auror directly.",
+    };
   },
 
   async create_event(msg) {

@@ -119,5 +119,36 @@
     clear:            () => { ring.length = 0; },
   };
 
+  // ── Background-tab render unblock ───────────────────────────────────────
+  //
+  // Tableau stops rendering in a background tab: Chrome clamps timers and
+  // defers rAF when document.visibilityState is "hidden", and VizQL's client
+  // waits on both. A scheduled capture opens the tab with active:false, so
+  // without this the viz never paints and the ring buffer stays empty.
+  //
+  // This used to be done from the service worker with CDP
+  // (Page.addScriptToEvaluateOnNewDocument via chrome.debugger), which cost
+  // the extension the "debugger" permission. A MAIN-world content script at
+  // document_start runs at the same point in the document's life and can
+  // define the same properties, with no permission at all.
+  //
+  // Scoped deliberately: this file is only declared for
+  // stores.tableau.wal-mart.com, so no other site sees a patched
+  // visibilityState. Paired with chrome.tabs.update({autoDiscardable:false})
+  // on the SW side, which stops Chrome from discarding the tab outright.
+  try {
+    Object.defineProperty(document, "visibilityState", {
+      get: () => "visible",
+      configurable: true,
+    });
+    Object.defineProperty(document, "hidden", { get: () => false, configurable: true });
+    // Tableau also listens for the event itself and pauses on "hidden";
+    // swallow it rather than let it undo the properties above.
+    document.addEventListener("visibilitychange", (e) => e.stopImmediatePropagation(), true);
+  } catch (e) {
+    // Non-fatal: capture still works if the tab happens to be foregrounded.
+    console.warn("[metricshot tableau_capture] visibility unblock failed:", e?.message ?? e);
+  }
+
   console.log("[metricshot tableau_capture] installed on", location.host);
 })();

@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>metricshot rasterizer</title>
+<!-- Offscreen document: exists only to rasterize an SVG string to PNG bytes.
+     A service worker has OffscreenCanvas but cannot decode SVG (createImageBitmap
+     rejects SVG blobs in a worker), and there is no DOM to measure text with.
+     This hidden document has both. See lib/rasterize.js for the protocol. -->
+<body><script src="offscreen.js"></script></body>

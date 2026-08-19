@@ -49,11 +49,11 @@ export default {
     },
 
     permissions: {
-      // `debugger` is REQUIRED for the CCTV download CDP capture path
-      // (lib/evidence_downloader.js uses Network.getResponseBody on the
-      // m3u8 playlist). The audit initially proposed dropping it; the
-      // user re-approved keeping it once evidence_downloader.js was read.
-      needs: ["storage", "webRequest", "scripting", "cookies", "downloads", "tabs", "debugger"],
+      // `debugger` was previously required for the CCTV download path
+      // (lib/evidence_downloader.js read the m3u8 segment bodies with CDP
+      // Network.getResponseBody). That feature was removed so the suite could
+      // drop the permission entirely; nothing here needs CDP any more.
+      needs: ["storage", "webRequest", "scripting", "cookies", "downloads", "tabs"],
       hosts: [
         "https://app.us.auror.co/*",
         "https://*.auror.co/*",

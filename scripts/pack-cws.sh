@@ -37,6 +37,9 @@ find "$EXT" -type d -name node_modules -prune -exec rm -rf {} +
 find "$EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 # Loose capture dumps at the repo root are dev scratch, not shipped code.
 find "$EXT" -maxdepth 1 -name 'digitallocks-*.json' -delete
+# Unit tests ship nothing useful to a user and are ~1% of the package.
+find "$EXT" -type d -name tests -prune -exec rm -rf {} +
+find "$EXT" \( -name '*.test.mjs' -o -name '*.test.js' \) -delete
 
 # Modules kept in git but excluded from the store build, with the host
 # permissions only they needed. assocpurchases is commented out of
