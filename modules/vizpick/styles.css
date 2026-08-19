@@ -36,7 +36,7 @@
 .vizpick-title h1 {
   font-size: var(--fs-2xl);
   font-weight: var(--fw-semi);
-  color: var(--apai-blue-dark);
+  color: var(--apai-link);
   margin: 0;
 }
 .vizpick-subtitle {
@@ -137,7 +137,7 @@
 .vizpick-panel-stamp {
   font-size: var(--fs-sm);
   font-weight: var(--fw-semi);
-  color: var(--apai-blue-dark);
+  color: var(--apai-link);
   background: var(--apai-bg-soft);
   border: 1px solid var(--apai-border-soft);
   border-radius: var(--rad-pill);
@@ -394,7 +394,7 @@
 }
 .vizpick-tab:hover { color: var(--apai-ink); }
 .vizpick-tab[aria-selected="true"] {
-  color: var(--apai-blue-dark);
+  color: var(--apai-link);
   border-bottom-color: var(--apai-blue);
 }
 .vizpick-tab-name { font-size: var(--fs-md); font-weight: var(--fw-semi); }
@@ -473,7 +473,7 @@
   padding: 0;
   font: inherit;
   font-size: var(--fs-sm);
-  color: var(--apai-blue);
+  color: var(--apai-link);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -544,6 +544,17 @@
 .vizpick-debug-head { display: flex; align-items: baseline; gap: var(--sp-3); }
 .vizpick-debug-head .vizpick-section-heading { margin: 0; }
 .vizpick-debug-head .vizpick-linkbtn { margin-left: auto; }
+/* Inside the diagnostics panel the surface is --apai-error-bg, not a
+   neutral, so the link token does not apply there. */
+.vizpick-debug .vizpick-linkbtn,
+.vizpick-debug .vizpick-debug-hint { color: var(--apai-error); }
+
+/* The freshness strip and today-bar sit on --apai-info-bg, where the neutral
+   link token is 4.23:1. --apai-info is paired with that surface (6.13:1), the
+   same way the warn and error foregrounds are paired with theirs. */
+.vizpick-today-bar .vizpick-linkbtn,
+.vizpick-freshness[data-state="info"] .vizpick-linkbtn,
+.vizpick-picker .vizpick-linkbtn { color: var(--apai-info); }
 /* Marks an error that was loaded from storage rather than just produced. */
 .vizpick-debug-stale {
   margin: 0 0 var(--sp-3);

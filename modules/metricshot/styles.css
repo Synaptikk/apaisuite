@@ -52,9 +52,9 @@
   text-align: left;
 }
 .module-metricshot .ms-table th {
-  background: var(--apai-surface-2, #f8fafc);
+  background: var(--apai-bg-soft);
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
   font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -76,7 +76,7 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: var(--fw-medium);
-  background: var(--apai-surface-2, #eef2f7);
+  background: var(--apai-bg-soft);
   color: var(--apai-ink, #1f2937);
   border: 1px solid var(--apai-border, #e5e7eb);
 }
@@ -109,7 +109,7 @@
   position: absolute;
   height: 16px; width: 16px;
   top: 2px; left: 2px;
-  background: #fff;
+  background: var(--apai-bg-elev);
   border-radius: 50%;
   transition: 0.15s;
 }
@@ -133,7 +133,7 @@
   border: 1px solid var(--apai-border, #e5e7eb);
   border-radius: var(--rad-md, 6px);
   overflow: auto;
-  background: #fafafa;
+  background: var(--apai-bg-soft);
   max-height: 720px;
 }
 .module-metricshot .ms-preview-body img {
@@ -174,7 +174,7 @@
   padding: var(--sp-3);
   border: 1px solid var(--apai-border, #e5e7eb);
   border-radius: var(--rad-md, 6px);
-  background: #fafafa;
+  background: var(--apai-bg-soft);
 }
 .module-metricshot .ms-followup-head {
   display: flex;
@@ -185,7 +185,7 @@
 .module-metricshot .ms-followup-pre {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
-  background: #fff;
+  background: var(--apai-bg-elev);
   border: 1px solid var(--apai-border, #e5e7eb);
   border-radius: var(--rad-sm, 4px);
   font-size: 12px;
@@ -198,7 +198,7 @@
 .module-metricshot .ms-section-title {
   font-size: var(--fs-md);
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
   margin: 0;
 }
 
@@ -208,7 +208,7 @@
   cursor: pointer;
   padding: var(--sp-3) var(--sp-5);
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
   user-select: none;
   list-style: none;
   font-size: var(--fs-md);
@@ -293,7 +293,7 @@
   align-items: center;
   gap: var(--sp-2);
 }
-.module-metricshot .ms-req { color: #dc2626; margin-left: 2px; }
+.module-metricshot .ms-req { color: var(--apai-error); margin-left: 2px; }
 .module-metricshot .ms-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -319,17 +319,17 @@
   border: 1px solid var(--apai-border, #e5e7eb);
   font-size: var(--fs-xs);
   cursor: pointer;
-  background: #fff;
+  background: var(--apai-bg-elev);
 }
 .module-metricshot .ms-day-chips label:has(input:checked) {
-  border-color: var(--module-accent);
+  border-color: var(--apai-link);
   background: rgba(0, 113, 206, 0.06);
 }
 
 .module-metricshot .ms-advanced summary {
   cursor: pointer;
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
   padding: var(--sp-2) 0;
 }
 .module-metricshot .ms-advanced-body {
@@ -369,6 +369,9 @@
   margin-bottom: var(--sp-4);
 }
 .module-metricshot .ms-store-nudge[hidden] { display: none !important; }
+/* The banner surface is --apai-warn-bg, so neutral muted text does not
+   carry on it; use the warn foreground, which is legible there by pairing. */
+.module-metricshot .ms-store-nudge .muted { color: var(--apai-warn); }
 .module-metricshot .ms-store-nudge-body {
   display: flex;
   align-items: center;

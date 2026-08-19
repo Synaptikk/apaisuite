@@ -189,8 +189,8 @@
 }
 .dl-tab:hover { color: var(--apai-ink); }
 .dl-tab.is-active {
-  color: var(--module-accent);
-  border-bottom-color: var(--module-accent);
+  color: var(--apai-link);
+  border-bottom-color: var(--apai-link);
 }
 
 /* ── Empty state ──────────────────────────────────────────────── */

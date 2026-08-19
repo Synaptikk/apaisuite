@@ -31,7 +31,7 @@
 
 .btn-primary {
   background: var(--module-accent);
-  color: white;
+  color: var(--module-accent-ink);
 }
 .btn-primary:hover { background: var(--module-accent-dark); }
 .btn-primary:active { background: var(--module-accent-darker); }
@@ -45,7 +45,7 @@
 
 .btn-ghost {
   background: transparent;
-  color: var(--module-accent);
+  color: var(--apai-link);
 }
 .btn-ghost:hover { background: var(--module-accent-bg); }
 
@@ -93,7 +93,7 @@
 .btn-group-item:hover { color: var(--apai-ink); }
 .btn-group-item.is-active {
   background: var(--module-accent);
-  color: white;
+  color: var(--module-accent-ink);
 }
 
 /* ── Cards ──────────────────────────────────────────────────── */
@@ -120,7 +120,7 @@
   width: 22px; height: 22px;
   border-radius: var(--rad-pill);
   background: var(--module-accent);
-  color: white;
+  color: var(--module-accent-ink);
   align-items: center; justify-content: center;
   font-size: var(--fs-sm); font-weight: var(--fw-semi);
 }
@@ -245,7 +245,7 @@
   font-size: var(--fs-md); color: var(--apai-ink);
   cursor: pointer; user-select: none;
 }
-.check input { accent-color: var(--module-accent); cursor: pointer; }
+.check input { accent-color: var(--apai-link); cursor: pointer; }
 
 /* ── Data tables ────────────────────────────────────────────── */
 .data-table {
@@ -314,7 +314,7 @@
   display: inline-block;
   width: 14px; height: 14px;
   border: 2px solid var(--apai-border);
-  border-top-color: var(--module-accent);
+  border-top-color: var(--apai-link);
   border-radius: var(--rad-pill);
   animation: apai-spin 0.6s linear infinite;
   vertical-align: text-bottom;

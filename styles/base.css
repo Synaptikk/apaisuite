@@ -34,11 +34,11 @@ p { margin: 0 0 var(--sp-3); }
 p:last-child { margin-bottom: 0; }
 
 a {
-  color: var(--module-accent);
+  color: var(--apai-link);
   text-decoration: none;
   transition: color var(--duration-fast) var(--ease-out);
 }
-a:hover { color: var(--module-accent-dark); text-decoration: underline; }
+a:hover { color: var(--apai-link); text-decoration: underline; }
 
 button { font: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; }

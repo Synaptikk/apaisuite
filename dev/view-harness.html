@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>view harness</title>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/layout.css"><link rel="stylesheet" href="/styles/components.css">
+</head><body>
+<!-- Mounts one module's static view.html inside the shell's viewport markup so
+     computed styles match production. Used by dev/audit-contrast.mjs. -->
+<div class="shell"><section class="shell-viewport"><main id="m"></main></section></div>
+<script>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const mod = q.get("m");
+  document.documentElement.setAttribute("data-theme", q.get("theme") || "dark");
+  const css = document.createElement("link");
+  css.rel = "stylesheet";
+  css.href = `/modules/${mod}/styles.css`;
+  document.head.appendChild(css);
+  const host = document.getElementById("m");
+  host.className = `module-${mod}`;
+  host.innerHTML = await (await fetch(`/modules/${mod}/view.html`)).text();
+  // [hidden] sections would otherwise hide most of a module's surface from the
+  // audit; reveal them so their text is measured too.
+  for (const el of host.querySelectorAll("[hidden]")) el.removeAttribute("hidden");
+  for (const el of host.querySelectorAll(".dl-hidden,.ms-hidden")) el.classList.remove("dl-hidden", "ms-hidden");
+  document.documentElement.dataset.ready = "1";
+})();
+</script>
+</body></html>

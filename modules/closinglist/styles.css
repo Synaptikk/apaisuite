@@ -36,7 +36,7 @@
   cursor: pointer;
   padding: var(--sp-3) var(--sp-5);
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
   user-select: none;
   list-style: none;
   font-size: var(--fs-md);
@@ -74,14 +74,14 @@
   background: none;
   border: 0;
   padding: 0;
-  color: var(--module-accent);
+  color: var(--apai-link);
   font-size: var(--fs-xs);
   cursor: pointer;
   text-decoration: underline;
   font-family: inherit;
   font-weight: var(--fw-medium);
 }
-.module-closinglist .cl-linkbtn:hover { color: var(--module-accent-dark); }
+.module-closinglist .cl-linkbtn:hover { color: var(--apai-link); }
 
 /* ---- Action row ------------------------------------------------------- */
 .module-closinglist .cl-action {
@@ -103,7 +103,7 @@
   margin: var(--sp-3) 0 var(--sp-1);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semi);
-  color: var(--module-accent-dark);
+  color: var(--apai-link);
 }
 .module-closinglist .cl-email {
   width: 100%;

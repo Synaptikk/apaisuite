@@ -87,7 +87,7 @@
 .om-ev-header   { font-size:9px; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; display:grid; grid-template-columns:1fr 80px 56px; gap:4px; }
 .om-ev-row      { display:grid; grid-template-columns:1fr 80px 56px; gap:4px; font-size:11px; padding:2px 0; border-bottom:1px solid var(--apai-border-soft,#F0F1F4); color:var(--apai-ink-soft,#374151); align-items:center; }
 .om-ev-row:last-child { border-bottom:none; }
-.om-ev-row span:nth-child(2) { color:#0071CE; white-space:nowrap; }   /* date column */
+.om-ev-row span:nth-child(2) { color:var(--apai-link); white-space:nowrap; }   /* date column */
 .om-ev-row span:nth-child(3) { text-align:right; white-space:nowrap; color:var(--apai-muted,#6B7280); }  /* dist column */
 .om-ev-target   { background:var(--apai-success-bg,#E3F5E8); border-radius:3px; padding:1px 4px; color:var(--apai-success,#1A7F37) !important; font-weight:var(--fw-semi,600); }
 

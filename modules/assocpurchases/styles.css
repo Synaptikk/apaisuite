@@ -189,8 +189,8 @@
   text-align: center;
 }
 
-.module-assocpurchases .ap-badge-pending { background: #aaa; }
-.module-assocpurchases .ap-badge-neutral { background: #5a7fa0; }
+.module-assocpurchases .ap-badge-pending { background: #5B6470; color: #FFFFFF; }
+.module-assocpurchases .ap-badge-neutral { background: #46617C; color: #FFFFFF; }
 .module-assocpurchases .ap-badge-zero    { background: #4caf50; }
 
 /* ── Table ────────────────────────────────────────────────────────────────── */

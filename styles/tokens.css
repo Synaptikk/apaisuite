@@ -3,6 +3,13 @@
    See docs/DESIGN_SYSTEM.md for the rationale behind each token. */
 
 :root {
+  /* Tells the UA which palette its own styling should use. Without this,
+     browser-styled surfaces — <dialog>, form controls, scrollbars — keep
+     painting CanvasText black while our CSS draws a dark background behind
+     them. That is the single largest source of unreadable text in dark mode:
+     the SparkFraud help dialog rendered black-on-slate at 1.29:1. */
+  color-scheme: light;
+
   /* ── Color: brand ───────────────────────────────────────────── */
   --apai-blue:         #0071CE;
   --apai-blue-dark:    #005AA8;
@@ -13,17 +20,36 @@
   /* ── Color: semantic ────────────────────────────────────────── */
   --apai-success:      #1A7F37;
   --apai-success-bg:   #E3F5E8;
-  --apai-warn:         #D97706;
+  /* #D97706 was 2.86:1 on its own --apai-warn-bg — the light warn pair failed
+     itself, the mirror of the dark error pair below. 4.83:1 here. */
+  --apai-warn:         #A2570A;
   --apai-warn-bg:      #FEF3C7;
   --apai-error:        #B91C1C;
   --apai-error-bg:     #FCEAEA;
-  --apai-info:         #0071CE;
+  /* Paired with --apai-info-bg, not with white: #0071CE on #E8EEF9 is 4.24:1. */
+  --apai-info:         #00559E;
   --apai-info-bg:      #E8EEF9;
+
+  /* Brand blue as FOREGROUND. Distinct from --apai-blue, which is a surface
+     colour with white text on it: lightening that would break every primary
+     button, and leaving it dark makes every link fail on a dark background
+     (#0071CE is 2.96:1 on --apai-bg-elev). Overridden in the dark block.
+     Verified against all three dark surfaces at >= 4.5:1. */
+  --apai-link:         #005AA8;
+
+  /* Ink for text sitting ON an accent fill. Paired with --module-accent so a
+     module that overrides the accent must also state what is legible on it.
+     Default white suits the blue accent (4.6:1). AurorBuddy's accent is
+     #FFC220, where white is 1.62:1 — a failure in the LIGHT theme too, so this
+     is not a dark-mode-only fix. Dark ink on that yellow is 10.77:1. */
+  --module-accent-ink: #FFFFFF;
 
   /* ── Color: neutral ─────────────────────────────────────────── */
   --apai-ink:          #1A1A1A;
   --apai-ink-soft:     #374151;
-  --apai-muted:        #6B7280;
+  /* 4.43:1 on the light greys modules use for stat panels — just under AA.
+     #5B6472 clears every light surface in the suite at >= 5.4:1. */
+  --apai-muted:        #5B6472;
   --apai-border:       #E5E7EB;
   --apai-border-soft:  #F0F1F4;
   --apai-bg:           #F6F7F9;
@@ -96,6 +122,7 @@
    that wants its own accent. See docs/DESIGN_SYSTEM.md::Tokens. */
 .module-aurorbuddy {
   --module-accent:        #FFC220;
+  --module-accent-ink:    #1A1A1A;   /* 10.77:1 on the yellow; white is 1.62:1 */
   --module-accent-dark:   #F5B800;
   --module-accent-darker: #B7860E;
   --module-accent-bg:     #FFF8E1;
@@ -112,6 +139,8 @@
    etc.) needs to be reviewed for dark legibility — search the codebase
    on theme bring-up and migrate as you find issues. */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --apai-ink:          #F1F5F9;
   --apai-ink-soft:     #CBD5E1;
   --apai-muted:        #94A3B8;
@@ -127,6 +156,13 @@
   --apai-warn:         #FBBF24;
   --apai-warn-bg:      #78350F;
   --apai-error:        #F87171;
-  --apai-error-bg:     #7F1D1D;
+  /* #7F1D1D put the error foreground at 3.62:1 against its OWN background —
+     the semantic pair failed itself, so every "error text on error panel" in
+     the suite was unreadable regardless of what module CSS did. 4.85:1 here. */
+  --apai-error-bg:     #5C1414;
+  --apai-info:         #7CC4FF;   /* 6.13:1 on the info background below */
   --apai-info-bg:      #1E3A5F;
+
+  /* 5.38:1 on --apai-bg-elev, 6.56:1 on --apai-bg. */
+  --apai-link:         #4DA3E8;
 }
