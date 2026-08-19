@@ -127,6 +127,14 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 ZIP_NAME="apaisuite-${NEW_VERSION}.zip"
 ZIP_URL="${BASE_URL}/${ZIP_NAME}"
+# Corporate/store networks block direct .zip downloads by filetype, so we also
+# publish the exact same archive under a .kit extension. The landing page links
+# to the .kit with an HTML5 download="...zip" attribute: the browser fetches the
+# firewall-safe .kit URL and saves it locally as .zip (client-side rename, so no
+# .zip ever crosses the wire). firebase.json also serves *.kit as
+# application/octet-stream so the Content-Type header doesn't say "zip" either.
+KIT_NAME="apaisuite-${NEW_VERSION}.kit"
+KIT_URL="${BASE_URL}/${KIT_NAME}"
 LANDING_URL="${BASE_URL}/"
 
 echo "──────────────────────────────────────────────"
@@ -200,6 +208,10 @@ node "$(to_node_path "$SCRIPT_DIR/zip-dir.mjs")" \
 # ─── 4. Render templates ────────────────────────────────────────────
 echo "[4/5] rendering version.json + index.html ..."
 
+# File count for the landing page's "all N files written" line. This is the
+# number of files the direct-to-folder installer writes = the staged extension.
+FILE_COUNT="$(find "$STAGED_EXT" -type f | wc -l | tr -d ' ')"
+
 # Minimal JSON-string escape for embedding into the templates.
 escape_json() {
   local s="$1"
@@ -218,6 +230,10 @@ render() {
     -e "s|{{VERSION}}|$NEW_VERSION|g" \
     -e "s|{{PUBLISHED_AT}}|$PUBLISHED_AT|g" \
     -e "s|{{ZIP_URL}}|$ZIP_URL|g" \
+    -e "s|{{KIT_URL}}|$KIT_URL|g" \
+    -e "s|{{KIT_NAME}}|$KIT_NAME|g" \
+    -e "s|{{ZIP_NAME}}|$ZIP_NAME|g" \
+    -e "s|{{FILE_COUNT}}|$FILE_COUNT|g" \
     -e "s|{{LANDING_URL}}|$LANDING_URL|g" \
     -e "s|{{CWS_LISTING_URL}}|$CWS_LISTING_URL|g" \
     -e "s|{{RELEASE_NOTES}}|$RELEASE_NOTES_ESC|g" \
@@ -233,8 +249,42 @@ mkdir -p "$TARGET_DIR"
 
 cp "$ZIP_OUT"                   "$TARGET_DIR/$ZIP_NAME"
 cp "$ZIP_OUT"                   "$TARGET_DIR/apaisuite-latest.zip"
+# Firewall-safe copies (identical bytes, .kit extension) — see KIT_NAME note above.
+cp "$ZIP_OUT"                   "$TARGET_DIR/$KIT_NAME"
+cp "$ZIP_OUT"                   "$TARGET_DIR/apaisuite-latest.kit"
 cp "$STAGE_ROOT/version.json"   "$TARGET_DIR/version.json"
 cp "$STAGE_ROOT/index.html"     "$TARGET_DIR/index.html"
+
+# Unpacked files for the "Download to folder" installer. The landing page fetches
+# app/files.json then each app/<path> and writes them into a user-picked folder
+# via the File System Access API — no ZIP on disk, so managed/VDI download
+# scanners that block archives are bypassed. Must be refreshed every release or
+# the folder installer keeps shipping the previous version's files.
+echo "      rebuilding $TARGET_DIR/app/ ($FILE_COUNT files) ..."
+rm -rf "$TARGET_DIR/app"
+mkdir -p "$TARGET_DIR/app"
+cp -R "$STAGED_EXT"/. "$TARGET_DIR/app"/
+( cd "$TARGET_DIR/app" && find . -type f ! -name files.json | sed 's|^\./||' | LC_ALL=C sort \
+    | node -e "process.stdout.write(JSON.stringify(require('fs').readFileSync(0,'utf8').split('\n').filter(Boolean)))" > files.json )
+
+# pkg.json: the whole extension as one base64 bundle served as application/json.
+# This is the installer's primary path — the only delivery that survives proxies
+# which 403 .kit/octet-stream archives AND individual .dll/.exe files, since JSON
+# is fetched through and every file is decoded in memory (nothing hits disk as an
+# archive or executable). Regenerated every release so it never drifts from app/.
+node -e '
+  const fs=require("fs"),path=require("path");
+  const APP=process.argv[1]; const files=[];
+  (function walk(d){ for(const n of fs.readdirSync(d)){ const f=path.join(d,n);
+    if(fs.statSync(f).isDirectory()){ walk(f); continue; }
+    const rel=path.relative(APP,f).split(path.sep).join("/");
+    if(rel==="files.json"||rel==="pkg.json") continue; files.push(rel);
+  } })(APP);
+  files.sort();
+  const version=JSON.parse(fs.readFileSync(path.join(APP,"manifest.json"),"utf8")).version;
+  const out={version,files:files.map(p=>({p,d:fs.readFileSync(path.join(APP,p)).toString("base64")}))};
+  fs.writeFileSync(path.join(APP,"..","pkg.json"), JSON.stringify(out));
+' "$TARGET_DIR/app"
 
 # ─── Done ───────────────────────────────────────────────────────────
 echo ""

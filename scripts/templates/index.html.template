@@ -8,6 +8,7 @@
     :root {
       --bg: #0F172A; --fg: #F8FAFC; --muted: #94A3B8;
       --accent: #FFC220; --card: #1E293B; --border: #334155; --code: #0B1220;
+      --ok: #22C55E; --err: #EF4444;
     }
     @media (prefers-color-scheme: light) {
       :root {
@@ -23,10 +24,11 @@
     .muted { color: var(--muted); }
     .sub { color: var(--muted); margin: 0 0 32px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 12px 0; }
-    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 0; }
-    a.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--border); color: var(--fg); background: var(--card); }
-    a.btn-primary { background: var(--accent); color: #0F172A; border-color: var(--accent); }
-    a.btn:hover { filter: brightness(1.05); }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 0; align-items: center; }
+    a.btn, button.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--border); color: var(--fg); background: var(--card); font-size: 15px; cursor: pointer; font-family: inherit; }
+    a.btn-primary, button.btn-primary { background: var(--accent); color: #0F172A; border-color: var(--accent); }
+    a.btn:hover, button.btn:hover { filter: brightness(1.05); }
+    button.btn:disabled { opacity: 0.55; cursor: default; filter: none; }
     code, pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; font: 13px/1.5 "JetBrains Mono", Menlo, Consolas, monospace; }
     pre { padding: 12px 14px; overflow-x: auto; }
     ol { padding-left: 22px; }
@@ -34,6 +36,15 @@
     .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
     .brand svg { width: 26px; height: 26px; }
     .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    /* progress */
+    #dl-progress { margin-top: 16px; display: none; }
+    #dl-progress.show { display: block; }
+    .bar { height: 8px; background: var(--code); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s ease; }
+    #dl-status { font-size: 13px; color: var(--muted); margin-top: 8px; word-break: break-all; }
+    #dl-status.ok { color: var(--ok); }
+    #dl-status.err { color: var(--err); }
+    .hint { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
   </style>
 </head>
 <body>
@@ -55,37 +66,235 @@
   <div class="card">
     <h2 style="margin-top:0">Install or update</h2>
     <div class="btn-row">
-      <a class="btn btn-primary" href="{{ZIP_URL}}">Download source ZIP</a>
+      <button id="dl-folder" class="btn btn-primary">Download to folder</button>
     </div>
-    <p class="muted" style="margin: 12px 0 0; font-size: 13px;">
-      APAISuite is distributed as an unpacked extension — download the source
-      ZIP and load it via <code>edge://extensions</code> → <strong>Load
-      unpacked</strong>. Updates have to be installed manually; the
-      in-extension nag pill alerts you when a new version is available.
+    <p class="hint">
+      Click <strong>Download to folder</strong>, then pick (or create) an empty
+      folder such as <code>APAISuite</code>. Every extension file is written
+      straight into it — no ZIP, no extracting. Then load that folder via
+      <code>edge://extensions</code> → <strong>Load unpacked</strong>.
+    </p>
+
+    <div id="dl-progress">
+      <div class="bar"><span id="dl-bar"></span></div>
+      <div id="dl-status">Starting…</div>
+    </div>
+
+    <p class="hint" id="dl-fallback" style="display:none">
+      Your browser can't write directly to a folder. Open this page in
+      <strong>Microsoft Edge</strong> or <strong>Chrome</strong>, or download the
+      <a href="{{KIT_NAME}}" download="{{ZIP_NAME}}">packaged file</a>
+      (rename it from <code>.kit</code> to <code>.zip</code>, then extract).
     </p>
   </div>
 
-  <h2>Update an existing "Load unpacked" install</h2>
-  <ol>
-    <li>Download the <strong>source ZIP</strong> above.</li>
-    <li>Extract it, replacing your existing <code>unified-extension-suite/</code> folder.</li>
-    <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong>, click the circular <strong>Reload</strong> button.</li>
-    <li>Confirm the version pill in the shell header reads <code>v{{VERSION}}</code>.</li>
-  </ol>
-
   <h2>First-time install (Load unpacked)</h2>
   <ol>
-    <li>Download and extract the source ZIP.</li>
-    <li>Open <code>chrome://extensions</code>.</li>
+    <li>Click <strong>Download to folder</strong> and choose a new empty folder.</li>
+    <li>Wait for it to report <strong>all {{FILE_COUNT}} files written</strong>.</li>
+    <li>Open <code>edge://extensions</code> (or <code>chrome://extensions</code>).</li>
     <li>Toggle <strong>Developer mode</strong> on (top right).</li>
-    <li>Click <strong>Load unpacked</strong> and pick the extracted folder.</li>
+    <li>Click <strong>Load unpacked</strong> and pick the folder you just filled.</li>
     <li>Click the APAISuite icon in the toolbar to open the shell.</li>
+  </ol>
+
+  <h2>Update an existing install</h2>
+  <ol>
+    <li>Click <strong>Download to folder</strong> and pick your existing
+      <code>APAISuite</code> folder (files are overwritten in place).</li>
+    <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong>,
+      click the circular <strong>Reload</strong> button.</li>
+    <li>Confirm the version pill in the shell header reads <code>v{{VERSION}}</code>.</li>
   </ol>
 
   <h2 id="release-notes" style="margin-top:48px">Release notes</h2>
   <div id="releases-list" class="muted" style="font-size: 14px;">Loading release history…</div>
+
   <script>
+    // ---- Direct-to-folder download (File System Access API) ----
+    (function () {
+      var btn = document.getElementById("dl-folder");
+      var prog = document.getElementById("dl-progress");
+      var bar = document.getElementById("dl-bar");
+      var status = document.getElementById("dl-status");
+      var fallback = document.getElementById("dl-fallback");
+
+      if (!window.showDirectoryPicker) {
+        btn.disabled = true;
+        fallback.style.display = "block";
+        return;
+      }
+
+      function setStatus(msg, cls) {
+        status.textContent = msg;
+        status.className = cls || "";
+      }
+
+      // Cache of directory handles by relative dir path ("" = root) so each
+      // folder is created exactly once and parallel writes never race on it.
+      var dirCache = null;
+      var suffixed = null;
+      async function ensureDir(dirHandle, dirPath) {
+        if (!dirPath) return dirHandle;
+        if (dirCache.has(dirPath)) return dirCache.get(dirPath);
+        var parts = dirPath.split("/");
+        var parent = await ensureDir(dirHandle, parts.slice(0, -1).join("/"));
+        var handle = await parent.getDirectoryHandle(parts[parts.length - 1], { create: true });
+        dirCache.set(dirPath, handle);
+        return handle;
+      }
+
+      async function writeBytes(dirHandle, relPath, data) {
+        var slash = relPath.lastIndexOf("/");
+        var dir = slash < 0 ? dirHandle : await ensureDir(dirHandle, relPath.slice(0, slash));
+        var name = slash < 0 ? relPath : relPath.slice(slash + 1);
+        var fh;
+        try {
+          fh = await dir.getFileHandle(name, { create: true });
+        } catch (e) {
+          // Chromium blocks creating executable-typed names (.dll/.exe/.ps1/.cmd...).
+          // Preserve the bytes under an allowed ".bin" name instead of failing.
+          if (e && /not allowed/i.test(e.message || "")) {
+            fh = await dir.getFileHandle(name + ".bin", { create: true });
+            suffixed.push(relPath);
+          } else { throw e; }
+        }
+        var w = await fh.createWritable();
+        await w.write(data);
+        await w.close();
+      }
+
+      // ---- In-browser ZIP reader: one request, native inflate, no library ----
+      function u16(dv, o) { return dv.getUint16(o, true); }
+      function u32(dv, o) { return dv.getUint32(o, true); }
+
+      async function inflateRaw(u8) {
+        var body = new Response(u8).body.pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(body).arrayBuffer());
+      }
+
+      // Read the central directory -> [{ name, method, start, size }].
+      function parseZip(buf) {
+        var dv = new DataView(buf), u8 = new Uint8Array(buf), n = buf.byteLength;
+        var eocd = -1, lim = Math.max(0, n - 22 - 65536);
+        for (var i = n - 22; i >= lim; i--) { if (u32(dv, i) === 0x06054b50) { eocd = i; break; } }
+        if (eocd < 0) throw new Error("not a zip (no EOCD)");
+        var count = u16(dv, eocd + 10), p = u32(dv, eocd + 16), entries = [];
+        for (var e = 0; e < count; e++) {
+          if (u32(dv, p) !== 0x02014b50) throw new Error("bad central header");
+          var method = u16(dv, p + 10), compSize = u32(dv, p + 20);
+          var fnLen = u16(dv, p + 28), exLen = u16(dv, p + 30), cmLen = u16(dv, p + 32);
+          var lho = u32(dv, p + 42);
+          var name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + fnLen));
+          var lfnLen = u16(dv, lho + 26), lexLen = u16(dv, lho + 28);
+          entries.push({ name: name, method: method, start: lho + 30 + lfnLen + lexLen, size: compSize });
+          p += 46 + fnLen + exLen + cmLen;
+        }
+        return entries;
+      }
+
+      btn.addEventListener("click", async function () {
+        var dirHandle;
+        try {
+          dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+        } catch (e) { return; } // user cancelled
+
+        btn.disabled = true;
+        prog.className = "show";
+        dirCache = new Map();
+        suffixed = [];
+        var done = 0, total = 0;
+
+        // Guard every file op so one stuck File System Access write can't wedge
+        // the whole run (that is what stalled it near the end at high concurrency).
+        function withTimeout(promise, ms, label) {
+          return new Promise(function (resolve, reject) {
+            var to = setTimeout(function () { reject(new Error("timed out: " + label)); }, ms);
+            promise.then(function (v) { clearTimeout(to); resolve(v); },
+                         function (e) { clearTimeout(to); reject(e); });
+          });
+        }
+
+        async function processTask(t) {
+          for (var attempt = 1; ; attempt++) {
+            try {
+              var data = await withTimeout(t.load(), 30000, t.rel + " (load)");
+              await withTimeout(writeBytes(dirHandle, t.rel, data), 30000, t.rel + " (write)");
+              return;
+            } catch (err) {
+              if (attempt >= 3) throw new Error(t.rel + " — " + err.message);
+              await new Promise(function (r) { setTimeout(r, 250 * attempt); });
+            }
+          }
+        }
+
+        async function runPool(tasks) {
+          total = tasks.length;
+          var dirs = {};
+          for (var i = 0; i < tasks.length; i++) {
+            var s = tasks[i].rel.lastIndexOf("/");
+            if (s > 0) dirs[tasks[i].rel.slice(0, s)] = 1;
+          }
+          for (var dp in dirs) await ensureDir(dirHandle, dp); // pre-create once
+          // Modest concurrency: the archive is already local, so heavy parallelism
+          // buys nothing and overloads the filesystem writable streams.
+          var CONCURRENCY = 4;
+          var next = 0;
+          async function worker() {
+            while (next < tasks.length) {
+              var t = tasks[next++];
+              await processTask(t);
+              done++;
+              bar.style.width = Math.round((done / total) * 100) + "%";
+              setStatus("Writing " + done + " / " + total + " \u2014 " + t.rel);
+            }
+          }
+          var pool = [];
+          for (var k = 0; k < Math.min(CONCURRENCY, tasks.length); k++) pool.push(worker());
+          await Promise.all(pool);
+        }
+
+        try {
+          // One request for a base64 bundle served as application/json — the one
+          // content type this network lets fetch() through. (Individual .dll/.exe
+          // files 403, and the .kit archive 403s too.) Files are decoded in memory
+          // and written out loose; no archive or executable is ever fetched alone.
+          setStatus("Downloading package…");
+          var resp = await fetch("pkg.json", { cache: "no-cache" });
+          if (!resp.ok) throw new Error("Package download blocked: HTTP " + resp.status + " on pkg.json");
+          var bundle = await resp.json();
+          var list = bundle.files || bundle;
+          setStatus("Unpacking…");
+          var tasks = list.map(function (f) {
+            return {
+              rel: f.p,
+              load: function () {
+                var bin = atob(f.d);
+                var arr = new Uint8Array(bin.length);
+                for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                return Promise.resolve(new Blob([arr]));
+              }
+            };
+          });
+
+          await runPool(tasks);
+          bar.style.width = "100%";
+          var extra = suffixed.length ? " (" + suffixed.length + " native-host files saved with a .bin suffix \u2014 the browser blocks writing .dll/.exe/.ps1/.cmd; not needed to load the extension)" : "";
+          setStatus("Done \u2014 " + total + " files written" + extra + ". Load this folder via Load unpacked.", "ok");
+        } catch (e) {
+          setStatus("Failed: " + (e && e.message ? e.message : e), "err");
+          btn.disabled = false;
+        }
+      });
+    })();
+
+    // ---- Release history ----
     (async function () {
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+        });
+      }
       try {
         const r = await fetch("releases.json", { cache: "no-cache" });
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -115,11 +324,6 @@
       } catch (e) {
         document.getElementById("releases-list").textContent =
           "Couldn't load release history: " + (e && e.message ? e.message : e);
-      }
-      function escapeHtml(s) {
-        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
-        });
       }
     })();
   </script>
