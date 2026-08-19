@@ -28,3 +28,6 @@ apaisuite-*.crx
 digitallocks-*.json
 *-probe.json
 *-capture.json
+
+# Local tooling only — playwright for dev/cws-drive.mjs, never shipped.
+node_modules/
