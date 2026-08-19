@@ -271,6 +271,62 @@ async function findOrOpenReportTab() {
 /** Ask Chrome not to reclaim a tab we are about to drive. */
 async function keepAwake(tabId) {
   try { await chrome.tabs.update(tabId, { autoDiscardable: false }); } catch {}
+
+  // autoDiscardable only stops Chrome DISCARDING the tab. It does not stop
+  // Chrome FREEZING it, which suspends JS execution outright — and a frozen
+  // tab is why captures failed with "the page shell loaded but the viz never
+  // finished": the document was complete, then execution stopped, so Tableau's
+  // render never ran to completion. A status snapshot caught it red-handed:
+  // { view: "VizPickDetails", discarded: false, frozen: true }.
+  //
+  // Two parts, because they solve different halves:
+  //
+  //   1. A tab that is ALREADY frozen when we adopt it stays frozen; nothing
+  //      we set afterwards revives it. Reloading does, so reload it. Losing
+  //      the current render costs nothing — a frozen tab renders nothing.
+  //   2. Hold a Web Lock in the page. An unreleased lock marks the page as
+  //      doing work, which is one of the conditions Chrome's freezing
+  //      intervention exempts. Best-effort: the exemption list is a browser
+  //      heuristic, not a contract, so this reduces re-freezing rather than
+  //      guaranteeing against it.
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab?.frozen) {
+      await chrome.tabs.reload(tabId);
+      await _awaitTabComplete(tabId, 30_000);
+    }
+  } catch {}
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world:  "MAIN",
+      func: () => {
+        if (window.__apaiKeepAwake) return;
+        window.__apaiKeepAwake = true;
+        try {
+          // Never resolves, so the lock is held for the life of the document.
+          navigator.locks?.request?.("apaisuite-keep-awake", { mode: "exclusive" },
+            () => new Promise(() => {}));
+        } catch { /* Web Locks unavailable — fall through, nothing lost */ }
+      },
+    });
+  } catch {}
+}
+
+// Resolve once the tab reports status "complete", or after `timeoutMs`.
+// Polling rather than onUpdated: this runs inside a capture that may already
+// hold listeners for the same tab, and a stray listener outliving its capture
+// is how lanes started interfering with each other.
+async function _awaitTabComplete(tabId, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    if (!t) return false;
+    if (t.status === "complete" && !t.frozen) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 
