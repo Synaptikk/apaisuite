@@ -20,7 +20,6 @@ import claimsdisposition from "./claimsdisposition/module.js";
 import digitallocks      from "./digitallocks/module.js";
 import workvivo          from "./workvivo/module.js";
 import livedashboard     from "./livedashboard/module.js";
-import licenseintake     from "./licenseintake/module.js";
 import orcmonitor        from "./orcmonitor/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
@@ -33,7 +32,6 @@ export default [
   livedashboard,
   aurorbuddy,
   orcmonitor,        // ORC Corridor Intelligence Monitor
-  licenseintake,
   sparkfraud,
   claimsdisposition,
   digitallocks,

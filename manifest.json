@@ -37,8 +37,7 @@
     "debugger",
     "browsingData",
     "alarms",
-    "notifications",
-    "nativeMessaging"
+    "notifications"
   ],
   "host_permissions": [
     "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
@@ -54,7 +53,6 @@
     "https://i5.walmartimages.com/*",
     "https://i.walmartimages.com/*",
     "https://storage.googleapis.com/cas_storage/*",
-    "https://www.riskonnectclearsight.com/*",
     "https://wmlink.wal-mart.com/*",
     "https://*.cloudfunctions.net/*",
     "https://*.run.app/*",
@@ -137,15 +135,6 @@
     },
     {
       "matches": [
-        "https://www.riskonnectclearsight.com/Walmart/StormsPackages/Storms.Wrapper/*"
-      ],
-      "js": [
-        "modules/claimsbuddy/content/clearsight_content.js"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
         "https://app.powerbi.com/*"
       ],
       "js": [
@@ -209,17 +198,6 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true
-    },
-    {
-      "matches": [
-        "https://app.us.auror.co/*",
-        "https://*.auror.co/*"
-      ],
-      "js": [
-        "modules/licenseintake/content/auror_inline.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
     },
     {
       "matches": [
