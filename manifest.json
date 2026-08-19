@@ -179,28 +179,6 @@
     },
     {
       "matches": [
-        "https://app.powerbi.com/*"
-      ],
-      "js": [
-        "modules/market120/content/powerbi_capture.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "https://stores.tableau.wal-mart.com/*"
-      ],
-      "js": [
-        "modules/market120/content/tableau_capture.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
         "https://app.us.auror.co/*",
         "https://*.auror.co/*"
       ],
