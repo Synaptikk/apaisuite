@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>APAISuite — VizPick</title>
+<script>document.documentElement.setAttribute("data-theme","light");</script>
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/layout.css">
+<link rel="stylesheet" href="styles/components.css">
+<link rel="stylesheet" href="vizpick/styles.css">
+</head><body>
+<script type="module">
+  import { shell } from "./_shell.js";
+  import { gaugeSvg } from "./vizpick/lib/charts.js";
+
+  const GOALS = { casesSeenPct: 95, locationPct: 95, pickPct: 90, overstockPct: 90, vizpick: 100 };
+
+  // Synthetic market — no real store numbers, no real Walmart data.
+  const STORES = [
+    { store: "0000", bu: "Demo BU", region: "0", vizpick: 99, cases: 99, loc: 98, pick: 97, over: 96 },
+    { store: "0001", bu: "Demo BU", region: "0", vizpick: 97, cases: 98, loc: 96, pick: 95, over: 93 },
+    { store: "0002", bu: "Demo BU", region: "0", vizpick: 95, cases: 96, loc: 95, pick: 92, over: 91 },
+    { store: "0003", bu: "Demo BU", region: "0", vizpick: 92, cases: 95, loc: 92, pick: 90, over: 88 },
+    { store: "0004", bu: "Demo BU", region: "0", vizpick: 87, cases: 91, loc: 87, pick: 84, over: 82 },
+    { store: "0005", bu: "Demo BU", region: "0", vizpick: 81, cases: 86, loc: 80, pick: 76, over: 74 },
+  ];
+
+
+  const ring = (label, value, goal) =>
+    gaugeSvg(value, { size: 62, thickness: 8, goal, label, fmt: (v) => `${Math.round(v)}%` });
+
+  const card = (r) => `
+    <article class="vizpick-store-card" data-store="${r.store}">
+      <header class="vizpick-store-card-summary">
+        <div class="vizpick-store-card-id">
+          <div class="vizpick-store-card-num">#${r.store}</div>
+          <div class="vizpick-store-card-sub">${r.bu} · Region ${r.region}</div>
+        </div>
+        <div class="vizpick-store-card-gauge">${gaugeSvg(r.vizpick, {
+          size: 96, thickness: 10, label: "", title: "VizPick Health",
+          goal: GOALS.vizpick, fmt: (v) => Math.round(v).toString() })}</div>
+        <span class="vizpick-store-card-grip" aria-hidden="true">⠿</span>
+      </header>
+      <div class="vizpick-store-card-rings">
+        ${ring("Cases", r.cases, GOALS.casesSeenPct)}
+        ${ring("Locations", r.loc, GOALS.locationPct)}
+        ${ring("Picks", r.pick, GOALS.pickPct)}
+        ${ring("Overstock", r.over, GOALS.overstockPct)}
+      </div>
+      <button class="vizpick-card-toggle" aria-expanded="false">Show numbers</button>
+    </article>`;
+
+  const main = `
+<section class="vizpick">
+  <header class="vizpick-header">
+    <div class="vizpick-title"><h1>VizPick Market Rollup</h1></div>
+    <div class="vizpick-toolbar">
+      <span class="vizpick-freshness" data-freshness="stores">captured 4 minutes ago</span>
+      <button class="btn btn-primary"><span class="btn-label">Refresh</span></button>
+    </div>
+  </header>
+  <section class="vizpick-picker">
+    <label class="vizpick-picker-label" for="m">Market</label>
+    <select class="vizpick-market-select" id="m"><option>Market 00 — Demo</option></select>
+    <span class="vizpick-picker-meta">6 stores</span>
+  </section>
+  <section class="vizpick-stores">
+    <div class="vizpick-family-head">
+      <h2 class="vizpick-section-heading">Stores</h2>
+      <span class="vizpick-store-count">6 stores</span>
+      <label class="vizpick-sort-label" for="s">Sort</label>
+      <select class="vizpick-sort" id="s"><option>VizPick Health (high → low)</option></select>
+    </div>
+    <p class="vizpick-draghint">Drag a card to rearrange.</p>
+    <div class="vizpick-store-grid">${STORES.map(card).join("")}</div>
+  </section>
+</section>`;
+
+  shell({ active: "vizpick", main });
+  document.documentElement.dataset.ready = "1";
+</script>
+</body></html>

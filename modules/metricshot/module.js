@@ -23,7 +23,7 @@ export default {
   manifest: {
     id:          "metricshot",
     name:        "Metric Shots",
-    description: "Scheduled screenshots of internal metric dashboards, posted to Workvivo channels using your existing authenticated tab.",
+    description: "Scheduled store metric cards, rendered locally from VizPick data and posted to Workvivo channels using your existing authenticated tab.",
     version:     "0.1.0",
     status:      "beta",
     accent:      "#0071CE",

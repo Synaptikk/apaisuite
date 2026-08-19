@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>APAISuite — Metric card</title>
+<script>document.documentElement.setAttribute("data-theme","light");</script>
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/components.css">
+<style>
+  body { margin:0; background:var(--apai-bg); }
+  .frame {
+    width:1280px; height:800px; box-sizing:border-box;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:22px; padding:40px 60px;
+  }
+  .cap { text-align:center; max-width:820px; }
+  .cap h1 { margin:0 0 6px; font-size:26px; letter-spacing:-0.02em; }
+  .cap p { margin:0; color:var(--apai-muted); font-size:15px; line-height:1.5; }
+  .shot {
+    background:#fff; border:1px solid var(--apai-border); border-radius:12px;
+    box-shadow:0 8px 28px rgba(16,24,40,.10); overflow:hidden; width:900px;
+  }
+  .shot svg { display:block; width:100%; height:auto; }
+</style>
+</head><body>
+<div class="frame">
+  <div class="cap">
+    <h1>Posted to Workvivo, rendered on your machine</h1>
+    <p>The card is drawn from the numbers the extension already captured — no screenshot
+       of the dashboard is taken, and the image never leaves the browser until you post it.</p>
+  </div>
+  <div class="shot" id="shot"></div>
+</div>
+<script type="module">
+  import { renderMetricCard } from "./metricshot/lib/render_card.js";
+  const parsed = {
+    departmentBreakout: [
+      { dept: "Dry Grocery & Beverage", pickPct: 71, totalPicked: 412 },
+      { dept: "Consumables",            pickPct: 78, totalPicked: 388 },
+      { dept: "Apparel",                pickPct: 83, totalPicked: 141 },
+      { dept: "Home",                   pickPct: 88, totalPicked: 265 },
+      { dept: "Entertainment",          pickPct: 91, totalPicked: 97  },
+      { dept: "Hardlines",              pickPct: 94, totalPicked: 203 },
+    ],
+    locationDetails: [
+      ...Array.from({ length: 11 }, () => ({ hoursSinceLastScan: 7  })),
+      ...Array.from({ length: 6 },  () => ({ hoursSinceLastScan: 10 })),
+      ...Array.from({ length: 4 },  () => ({ hoursSinceLastScan: 16 })),
+    ],
+  };
+  const { svg } = renderMetricCard(parsed, {
+    metricName: "VizPick Backroom Health",
+    store: "0000",
+    capturedAt: "Tue 19 Aug, 6:00 AM",
+  });
+  const host = document.getElementById("shot");
+  host.innerHTML = svg;
+  const el = host.querySelector("svg");
+  el.removeAttribute("width"); el.removeAttribute("height");
+  document.documentElement.dataset.ready = "1";
+</script>
+</body></html>

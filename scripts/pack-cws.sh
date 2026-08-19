@@ -58,8 +58,11 @@ node "$SCRIPT_DIR/strip-modules.mjs" "$EXT" "${STRIP_MODULES[@]}"
 # identical exports rather than deleted, because app.js and the service worker
 # import them unconditionally. The unpacked/self-hosted build keeps the real
 # thing: there, the self-updater is the ONLY way users get new versions.
+# Web Push goes the same way, for the same reason: its only payload type is
+# "extension-update", whose notification links to the off-store download page.
+# See scripts/stubs/push.js.
 echo "[3/6] replacing the self-updater with store stubs ..."
-for f in updater updater_ui; do
+for f in updater updater_ui push; do
   [ -f "$EXT/shared/$f.js" ] || { echo "  error: shared/$f.js missing from staged tree" >&2; exit 1; }
   cp "$SCRIPT_DIR/stubs/$f.js" "$EXT/shared/$f.js"
   echo "  stubbed shared/$f.js"

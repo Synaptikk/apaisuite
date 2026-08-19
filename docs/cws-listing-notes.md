@@ -81,41 +81,71 @@ wildcards were deliberately removed:
 
 ## Privacy / data-use disclosures
 
-A privacy policy URL is **mandatory** — the extension transmits to a server it owns.
+Privacy policy URL: **https://qrcallbox.com/apaisuiteprivacy** (source of truth:
+`docs/privacy/index.html` in this repo — edit there and redeploy, don't edit the
+hosted copy).
 
-What actually leaves the browser, and where:
+This section was rewritten after auditing every outbound request. The earlier
+version understated it badly, so treat the table below as the authority.
+
+### What actually leaves the browser
 
 | Data | Destination | Where |
 |---|---|---|
-| Anonymous installation id (`crypto.randomUUID()`), Web Push subscription, extension version, user-agent | `qrcallbox.com/api/extension/register` | `shared/push.js:108` |
-| The user's Sendbird `access_token` for Workvivo chat, plus store number and channel name | `qrcallbox.com/api/workvivo/token-heartbeat` | `modules/workvivo/service.js:38`, payload at `:87` |
-| The rendered metric card image | Workvivo/Sendbird channel the user selects | `modules/metricshot/lib/sendbird.js` |
+| **The user's own name, work email, Auror user id, store, market and job title**, on every row written | Firestore project `aurorbuddy` (developer-controlled) | `modules/aurorbuddy/lib/firestore.js:250` — `commonRowFields()` is spread into every `tool_events` / `tool_workflows` / `tool_scans` / `tool_metric_events` write |
+| **Associate names, shift start/end, job label, called-off flag**, plus store number and business date | Firestore project `managerchecklist` (developer-controlled) | `modules/closinglist/lib/firebaseUpload.js` |
+| The user's live **Sendbird `access_token`** for Workvivo chat, plus store number and channel name | `qrcallbox.com/api/workvivo/token-heartbeat` | `modules/workvivo/service.js:38`, payload at `:87` |
+| The rendered metric card image | The Workvivo/Sendbird channel the user picks, at the moment they pick it | `modules/metricshot/lib/sendbird.js` |
 
-Two categories must be ticked, not one:
+Everything else — captured dashboard rows, case notes, reports, settings — stays in
+`chrome.storage.local`.
 
-- **Authentication information — yes.** The heartbeat sends a live Sendbird
-  `access_token`. It is a credential, and ticking only "no PII" here is the kind of
-  understatement that gets an item pulled after publication rather than at review.
-  The honest framing is that the token is the user's own, is couriered to the user's
-  own QRCallBox backend so scan alerts can be posted on their behalf, and is the
+### How to answer the data-use form
+
+Three boxes, not one:
+
+- **Personally identifiable information — yes.** Name and work email on every
+  AurorBuddy row; associate names and shift times from ClosingList. There is no
+  reading of the code under which this is "anonymous", and claiming otherwise is
+  the kind of thing that gets an item pulled after publication rather than caught
+  at review.
+- **Authentication information — yes.** The Sendbird `access_token` is a credential.
+  The honest framing is that it is the user's own token, couriered to the user's own
+  QRCallBox backend so scan alerts can post on their behalf, and that this is the
   entire reason the module exists — `modules/workvivo/module.js:29` already says so
-  in the module description the user sees before enabling it.
-- **Personally identifiable information — no.** The installation id is
-  `crypto.randomUUID()`, stored locally, never derived from user identity.
+  in the description shown before the module is enabled.
+- **Personal communications, location, health, financial — no.**
 
-Nothing else leaves the browser. Investigation data stays in `chrome.storage.local`
-on the device.
+Certify Limited Use truthfully: used only to provide the features the user invokes,
+not sold, not used for advertising, not used to build profiles.
 
-Certify Limited Use truthfully: data is used only to provide the features the user
-invokes; it is not sold, not used for advertising, and not used to build profiles.
+### Web Push is stubbed out of the store build
+
+The real `shared/push.js` POSTs an installation id, push subscription and user-agent
+to `qrcallbox.com`, and its only payload type is `extension-update` — a notification
+linking to `https://qrcallbox.com/extension/` so the user can download a ZIP by hand
+(`background/service_worker.js:237`). In a store build that is an off-store
+distribution prompt attached to data collection with no remaining purpose, so
+`pack-cws.sh` swaps in a no-op (`scripts/stubs/push.js`). Without a subscription no
+push can be delivered, which makes the listener dead code. The unpacked build keeps
+the real thing.
+
+Consequently the store build sends **no** installation id and **no** user-agent.
+
 
 ## Before you submit
 
-- [ ] Load the built ZIP unpacked once. The store build differs from the repo
-      (stripped module, stubbed updater) and nothing tests that it boots.
-- [ ] Choose visibility. **Unlisted or private** fits an internal tool; a public
-      listing invites the single-purpose challenge for no benefit.
-- [ ] Screenshots at 1280x800 or 640x400.
+- [ ] **Load the built ZIP unpacked once.** The store build differs from the repo in
+      three ways — `assocpurchases` stripped, updater stubbed, push stubbed — and
+      nothing tests that it boots. This is the one remaining unverified step.
+- [ ] Choose visibility. **Unlisted** fits an internal tool; a public listing invites
+      the single-purpose challenge for no benefit. Private/group visibility is
+      stricter but needs the developer account inside a Google Workspace domain.
+- [x] Privacy policy live at https://qrcallbox.com/apaisuiteprivacy
+- [x] Screenshots at 1280×800 — `docs/store-assets/*.png`, regenerate with
+      `dev/screenshots/run.sh`. All data in them is synthetic (store `0000`,
+      "Demo BU", generic departments); listing images are public even on an
+      unlisted item, so never rebuild them against a real market.
 - [ ] Bump the version on every re-upload — the store rejects a repeat.
 - [ ] Have `docs/` ready but do not ship it; `pack-cws.sh` already excludes it.
 

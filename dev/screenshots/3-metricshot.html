@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>APAISuite — Metric Shots</title>
+<script>document.documentElement.setAttribute("data-theme","light");</script>
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/layout.css">
+<link rel="stylesheet" href="styles/components.css">
+<link rel="stylesheet" href="metricshot/styles.css">
+</head><body>
+<script type="module">
+  import { shell } from "./_shell.js";
+  import { renderMetricCard } from "./metricshot/lib/render_card.js";
+
+  // Synthetic capture — department names are generic, store is 0000.
+  const parsed = {
+    departmentBreakout: [
+      { dept: "Dry Grocery & Beverage", pickPct: 71, totalPicked: 412 },
+      { dept: "Consumables",            pickPct: 78, totalPicked: 388 },
+      { dept: "Apparel",                pickPct: 83, totalPicked: 141 },
+      { dept: "Home",                   pickPct: 88, totalPicked: 265 },
+      { dept: "Entertainment",          pickPct: 91, totalPicked: 97  },
+      { dept: "Hardlines",              pickPct: 94, totalPicked: 203 },
+    ],
+    locationDetails: [
+      ...Array.from({ length: 11 }, () => ({ hoursSinceLastScan: 7  })),
+      ...Array.from({ length: 6 },  () => ({ hoursSinceLastScan: 10 })),
+      ...Array.from({ length: 4 },  () => ({ hoursSinceLastScan: 16 })),
+    ],
+  };
+
+  const { svg, width, height } = renderMetricCard(parsed, {
+    metricName: "VizPick Backroom Health",
+    store: "0000",
+    capturedAt: "Tue 19 Aug, 6:00 AM",
+  });
+
+  const row = (name, sched, dest, last, post, status, cls) => `
+    <tr>
+      <td>${name}</td><td>${sched}</td><td>${dest}</td>
+      <td class="muted tiny">${last}</td><td class="muted tiny">${post}</td>
+      <td><span class="pill ${cls}">${status}</span></td>
+      <td class="ms-col-enabled"><input type="checkbox" checked></td>
+      <td class="ms-col-actions"><button class="btn btn-secondary btn-sm">Run now</button></td>
+    </tr>`;
+
+  const main = `
+<div class="ms-header">
+  <h1>Metric Shots</h1>
+  <p class="muted">Scheduled store metric cards, rendered locally from VizPick data and posted to Workvivo channels.</p>
+</div>
+<section class="card ms-toolbar">
+  <div class="ms-toolbar-row">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="pill">Store: 0000</span>
+      <span class="muted tiny">Next tick: tomorrow 6:00 AM</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      <button class="btn btn-primary btn-sm btn-pill">+ Add Metric</button>
+      <button class="btn btn-secondary btn-sm">Refresh</button>
+    </div>
+  </div>
+</section>
+<section class="card ms-table-card">
+  <table class="data-table ms-table">
+    <thead><tr>
+      <th>Name</th><th>Schedule</th><th>Destination</th><th>Last capture</th>
+      <th>Last successful post</th><th>Status</th>
+      <th class="ms-col-enabled">Enabled</th><th class="ms-col-actions">Actions</th>
+    </tr></thead>
+    <tbody>
+      ${row("Backroom Health — daily",   "Weekdays 6:00 AM",  "Workvivo · #ap-demo",    "today 6:00 AM", "today 6:00 AM", "posted",  "pill-ok")}
+      ${row("Overstock aging — weekly",  "Mondays 7:00 AM",   "Workvivo · #ap-demo",    "Mon 7:00 AM",   "Mon 7:00 AM",   "posted",  "pill-ok")}
+      ${row("Pick % by department",      "Weekdays 5:30 PM",  "Workvivo · #ap-demo",    "today 5:30 PM", "today 5:30 PM", "posted",  "pill-ok")}
+      ${row("Market rollup — leadership","Fridays 8:00 AM",   "Workvivo · #market-demo","Fri 8:00 AM",   "Fri 8:00 AM",   "posted",  "pill-ok")}
+      ${row("Unscanned locations",       "Daily 9:00 PM",     "Workvivo · #ap-demo",    "yesterday 9:00 PM", "yesterday 9:00 PM", "sign in again", "pill-warn")}
+    </tbody>
+  </table>
+</section>
+`;
+
+  shell({ active: "metricshot", main });
+  const body = document.getElementById("preview-body");
+  body.innerHTML = svg;
+  const el = body.querySelector("svg");
+  if (el) { el.removeAttribute("width"); el.removeAttribute("height"); el.style.width = "100%"; el.style.height = "auto"; el.style.display = "block"; }
+  document.documentElement.dataset.ready = "1";
+</script>
+</body></html>

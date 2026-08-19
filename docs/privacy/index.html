@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APAISuite — Privacy Policy</title>
+<meta name="description" content="What the APAISuite Chrome extension collects, what it sends, and where it goes.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #16181d;
+    --muted: #5c6370;
+    --line: #e3e6ec;
+    --accent: #0a5ad6;
+    --card: #f7f8fa;
+    --warn-bg: #fff8e6;
+    --warn-line: #e8c96a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --fg: #e8eaee;
+      --muted: #9aa1ad;
+      --line: #2a2e36;
+      --accent: #6aa6ff;
+      --card: #1b1e24;
+      --warn-bg: #2a2413;
+      --warn-line: #5f5124;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 32px; }
+  h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0; font-size: 15px; }
+  h2 {
+    font-size: 20px; margin: 40px 0 12px; letter-spacing: -0.01em;
+    padding-top: 8px;
+  }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  p { margin: 0 0 14px; }
+  ul { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); }
+  code {
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--card); padding: 1px 5px; border-radius: 4px;
+  }
+  .tablewrap { overflow-x: auto; margin: 0 0 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 520px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; background: var(--card); }
+  .note {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 16px 18px; margin: 0 0 18px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  footer {
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>APAISuite Privacy Policy</h1>
+  <p class="sub">Last updated 19 August 2026 &middot; Applies to the APAISuite Chrome extension</p>
+</header>
+
+<p>APAISuite is a workbench for Walmart Asset Protection investigators. It reads
+dashboards and internal tools you are already signed in to, and assembles the
+results in one place so a case can be worked without twelve open tabs.</p>
+
+<p>This policy describes exactly what the extension collects, what it transmits,
+and where that data goes. It is written against the source code rather than from
+a template, and it covers the version published on the Chrome Web Store.</p>
+
+<h2>The short version</h2>
+
+<div class="note">
+  <p><strong>Almost everything stays on your computer.</strong> Captured dashboard
+  rows, case notes, reports and settings are held in the browser's local extension
+  storage and are never uploaded.</p>
+  <p><strong>Four features are exceptions</strong>, and each one transmits only
+  because sending the data <em>is</em> the feature. They are listed in full below.</p>
+  <p><strong>Nothing is sold, shared with advertisers, or used to build a profile
+  of you.</strong></p>
+</div>
+
+<h2>What the extension sends, and where</h2>
+
+<p>These are the only cases in which data leaves your browser to a server operated
+by the developer or by a service acting on the developer's behalf.</p>
+
+<div class="tablewrap">
+<table>
+  <thead>
+    <tr><th>Feature</th><th>What is sent</th><th>Where it goes</th><th>Why</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>AurorBuddy</strong><br>case activity logging</td>
+      <td>Your name, work email, Auror user id, store, market and job title, together
+          with the Auror event identifiers you act on, the status of each import
+          workflow, and counts of actions taken.</td>
+      <td>A Google Firestore database operated by the developer
+          (project <code>aurorbuddy</code>).</td>
+      <td>So the team's case activity can be reported on across investigators. This
+          is the module's purpose; it is not incidental telemetry.</td>
+    </tr>
+    <tr>
+      <td><strong>Closing List</strong><br>roster sharing</td>
+      <td>Associate names, shift start and end times, job label, called-off flag,
+          store number and business date.</td>
+      <td>A Google Firestore database operated by the developer
+          (project <code>managerchecklist</code>).</td>
+      <td>So the Closing Manager Checklist web app shows the same roster live on
+          another device for the same store and date.</td>
+    </tr>
+    <tr>
+      <td><strong>QRCallBox / Workvivo</strong><br>posting on your behalf</td>
+      <td>Your Workvivo chat access token, plus your store number and the channel
+          name you selected.</td>
+      <td><code>qrcallbox.com</code>, a backend operated by the developer.</td>
+      <td>The server cannot sign in to Workvivo itself, because sign-in requires an
+          MFA push to you. Your browser signs in normally and hands the resulting
+          token to the server so QR scan alerts can be posted to your channel.</td>
+    </tr>
+    <tr>
+      <td><strong>MetricShot</strong><br>metric card posting</td>
+      <td>An image of the store metric card the extension renders locally.</td>
+      <td>The Workvivo channel you choose, at the moment you choose it.</td>
+      <td>Posting the card is the action you asked for.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>About the Workvivo access token</h3>
+<p>This is an authentication credential and is treated as one. It is your own token,
+issued to your own Workvivo session. It is transmitted over HTTPS to the QRCallBox
+backend, held only so scan alerts can be posted to your store's channel, and replaced
+each time the extension refreshes it. It is not shared with anyone else and is not
+used to access anything other than the channel you configured. If you do not enable
+the QRCallBox module, no token is ever sent.</p>
+
+<h2>What stays on your device</h2>
+
+<p>Everything else. Specifically, and without exception:</p>
+<ul>
+  <li>Case lists, ORC monitoring results, Spark order fraud reviews, digital lock
+      events, claims records and store metrics captured from dashboards.</li>
+  <li>Report drafts, exported PDFs and CSVs — these are written to your Downloads
+      folder and go nowhere else.</li>
+  <li>Module settings and preferences.</li>
+  <li>Session information used to tell whether you are still signed in to a
+      dashboard.</li>
+</ul>
+<p>This data is stored using the browser's local extension storage. It is removed
+when you uninstall the extension.</p>
+
+<h2>What the extension never does</h2>
+<ul>
+  <li>It does not collect your browsing history, and does not read pages other than
+      the specific dashboards named in its permissions.</li>
+  <li>It does not sell or rent data to anyone, and never has.</li>
+  <li>It does not transfer data to third parties except as described in the table
+      above.</li>
+  <li>It does not use your data for advertising, retargeting, credit scoring, or
+      lending decisions.</li>
+  <li>It does not ask for, store, or transmit your Walmart password. Where the
+      extension needs an authenticated session it uses the one your browser
+      already holds.</li>
+  <li>It does not include analytics SDKs, advertising SDKs, or third-party
+      trackers of any kind.</li>
+</ul>
+
+<h2>Credentials and sessions</h2>
+<p>Several modules read an authorisation header or session cookie that your browser
+is <em>already sending</em> to a site you are signed in to, and reuse it to fetch the
+same data the page would have fetched. This is done so the extension never has to ask
+you for a password. Except for the Workvivo token described above, these credentials
+stay on your device and are used only against the site that issued them.</p>
+
+<h2>Permissions</h2>
+<p>The extension requests access only to the specific internal Walmart systems and
+licensed vendor tools an Asset Protection investigator already uses — case
+visibility, Auror, Appriss Retail, Power BI, Tableau, Enviance, Workvivo and
+similar. Broad wildcard access to <code>walmart.com</code> was deliberately removed
+in favour of naming each host.</p>
+<p>The extension also uses Chrome's debugger permission, in one module only, to keep
+a background single-sign-on redirect from stalling and to submit the sign-in form on
+Walmart-managed devices where the ordinary scripting API does not work. It is
+attached only to that sign-in flow, always detached afterwards, and never used to
+read page content or network traffic.</p>
+
+<h2>Data retention and deletion</h2>
+<p>Data held on your device is deleted when you remove the extension, and can be
+cleared at any time from the extension's own settings.</p>
+<p>For the records described in the table above, contact the developer at the address
+below to request access to or deletion of data associated with you. Requests are
+handled within 30 days.</p>
+
+<h2>Children</h2>
+<p>APAISuite is a workplace tool for Walmart Asset Protection personnel. It is not
+directed to children and is not intended for anyone under 18.</p>
+
+<h2>Limited Use</h2>
+<p>APAISuite's use of information received from Google APIs adheres to the
+<a href="https://developer.chrome.com/docs/webstore/program-policies/limited-use/">Chrome
+Web Store User Data Policy</a>, including the Limited Use requirements. Data is used
+only to provide and improve the features described here, is not transferred except as
+described above, is not used for advertising, and is not sold.</p>
+
+<h2>Changes to this policy</h2>
+<p>If what the extension collects changes, this page is updated and the date at the
+top changes with it. Material changes are also called out in the extension's release
+notes.</p>
+
+<h2>Contact</h2>
+<p>Questions, access requests, or deletion requests:
+<a href="mailto:sinaptick@gmail.com">sinaptick@gmail.com</a></p>
+
+<footer>
+  APAISuite &middot; Privacy Policy &middot; Effective 19 August 2026
+</footer>
+
+</div>
+</body>
+</html>

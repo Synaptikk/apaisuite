@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>APAISuite</title>
+<script>document.documentElement.setAttribute("data-theme","light");</script>
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/layout.css">
+<link rel="stylesheet" href="styles/components.css">
+</head><body>
+<script type="module">
+  import { shell, homeMain } from "./_shell.js";
+  shell({ active: null, main: homeMain() });
+  document.documentElement.dataset.ready = "1";
+</script>
+</body></html>
