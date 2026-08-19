@@ -23,3 +23,8 @@ Thumbs.db
 # guard against accidental in-tree builds)
 apaisuite-*.zip
 apaisuite-*.crx
+
+# Dev capture dumps — these have carried real bearer tokens and internal UPNs.
+digitallocks-*.json
+*-probe.json
+*-capture.json

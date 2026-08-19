@@ -10,18 +10,25 @@
 // but isn't installed on most Walmart corp laptops.
 //
 // Usage:
-//   node zip-dir.mjs <dir-to-zip> <output.zip>
+//   node zip-dir.mjs <dir-to-zip> <output.zip> [--root]
 //
-// The top-level directory IS included in the archive (so extracting produces
-// a single folder, not a pile of files).
+// By default the top-level directory IS included in the archive (so extracting
+// produces a single folder, not a pile of files) — that's what the self-hosted
+// download wants.
+//
+// --root omits that prefix, putting manifest.json at the archive root. The
+// Chrome Web Store requires this and rejects a nested manifest with
+// "Manifest file is missing or unreadable."
 
 import AdmZip from "adm-zip";
 import { argv, exit, stderr } from "node:process";
 import path from "node:path";
 import { statSync } from "node:fs";
 
-if (argv.length !== 4) {
-  stderr.write("usage: node zip-dir.mjs <dir-to-zip> <output.zip>\n");
+const flags = argv.slice(4);
+const atRoot = flags.includes("--root");
+if (argv.length < 4 || flags.some((f) => f !== "--root")) {
+  stderr.write("usage: node zip-dir.mjs <dir-to-zip> <output.zip> [--root]\n");
   exit(64);
 }
 
@@ -38,7 +45,7 @@ const zip = new AdmZip();
 // addLocalFolder adds the *contents* of srcDir; the second arg lets us
 // prefix every entry with the top-level directory name so the archive
 // extracts to a single folder.
-zip.addLocalFolder(srcDir, path.basename(srcDir));
+zip.addLocalFolder(srcDir, atRoot ? "" : path.basename(srcDir));
 zip.writeZip(outPath);
 
-stderr.write(`zip-dir: wrote ${outPath}\n`);
+stderr.write(`zip-dir: wrote ${outPath}${atRoot ? " (manifest at archive root)" : ""}\n`);
