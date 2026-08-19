@@ -190,6 +190,13 @@ rm -rf "$STAGED_EXT/scripts" \
 # (this is what blew up v0.7.1 to 10 MB — dev/node_modules survived because
 # only the top-level rm pattern was applied).
 find "$STAGED_EXT" -type d -name node_modules -prune -exec rm -rf {} +
+
+# Same trap, same fix, for dev tooling and unit tests: the top-level rm above
+# only catches ./dev, so modules/digitallocks/dev/smoke.mjs and every
+# lib/tests/ directory were shipping to users. scripts/pack-cws.sh already
+# strips both, so leaving them here made the two builds diverge for no reason.
+find "$STAGED_EXT" -type d \( -name dev -o -name tests \) -prune -exec rm -rf {} +
+find "$STAGED_EXT" -type f -name '*.test.mjs' -delete
 find "$STAGED_EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 
 # ─── 3. Zip source ──────────────────────────────────────────────────
