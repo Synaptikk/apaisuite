@@ -380,3 +380,13 @@
 .module-metricshot .ms-store-nudge-body strong { color: var(--apai-warn); }
 .module-metricshot .ms-store-nudge-body p { margin: 2px 0 0; }
 .module-metricshot .ms-store-nudge-body .btn { flex: 0 0 auto; }
+
+/* Destination picker: dropdown plus a manual-entry fallback that is shown
+   only when the channel list cannot be fetched. */
+.module-metricshot .ms-channel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.module-metricshot .ms-channel-row .select { flex: 1 1 auto; min-width: 0; }
+.module-metricshot .ms-hidden { display: none; }

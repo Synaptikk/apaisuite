@@ -154,11 +154,23 @@
         </div>
       </div>
 
-      <label class="field">
-        <span class="field-label">Workvivo channel name<span class="ms-req">*</span></span>
-        <input id="ms-f-channel" class="input" required placeholder="1458 Leadership">
-        <span class="muted tiny">Must be a channel you're already a member of.</span>
-      </label>
+      <div class="field">
+        <span class="field-label" id="ms-f-channel-label">Destination<span class="ms-req">*</span></span>
+        <div class="ms-channel-row">
+          <select id="ms-f-channel-select" class="select" aria-labelledby="ms-f-channel-label">
+            <option value="@me">Direct message to me</option>
+          </select>
+          <button type="button" id="ms-f-channel-load" class="btn btn-secondary btn-sm">Load channels</button>
+        </div>
+        <!-- Fallback for when the channel list can't be fetched (no live
+             Workvivo session) — without it an empty dropdown would block
+             saving the metric entirely. -->
+        <input id="ms-f-channel" class="input ms-hidden" placeholder="Type a channel name"
+               aria-label="Channel name">
+        <span class="muted tiny" id="ms-f-channel-note">
+          Posting to yourself while the suite is under test. Load channels to pick a different one.
+        </span>
+      </div>
 
       <label class="field">
         <span class="field-label">Caption (optional)</span>

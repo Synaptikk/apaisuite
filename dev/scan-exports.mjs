@@ -13,8 +13,11 @@
 //
 // Run: node dev/scan-exports.mjs
 //
-// Known false positive: an `import ... from` written inside a comment as a
-// usage example is matched as if it were real code.
+// Matches are anchored to the start of a line so a usage example written as
+// `import { x } from "./y.js"` inside a comment is not mistaken for real code
+// — the `//` or ` * ` prefix keeps it from matching. An earlier version tried
+// stripping comments first and silently ate half of any file containing a
+// string literal with `/*` in it, inventing seven missing exports.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -60,7 +63,7 @@ const problems = [];
 
 for (const file of files) {
   const src = readFileSync(file, "utf8");
-  for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'](\.[^"']+)["']/g)) {
+  for (const m of src.matchAll(/^[ \t]*import\s*\{([^}]*)\}\s*from\s*["'](\.[^"']+)["']/gm)) {
     const spec = m[2];
     const target = path.resolve(path.dirname(file), spec);
     if (!cache.has(target)) cache.set(target, exportsOf(target));

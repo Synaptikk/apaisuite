@@ -67,6 +67,18 @@ export async function mount(host, container) {
   $("ms-dump-export")?.addEventListener("click", dumpExport);
   $("ms-try-export")?.addEventListener("click", tryExport);
   $("ms-introspect-sdk")?.addEventListener("click", introspectSdkClick);
+
+  $("ms-f-channel-load")?.addEventListener("click", loadChannels);
+  $("ms-f-channel-select")?.addEventListener("change", () => {
+    const manual = $("ms-f-channel-select").value === "__manual__";
+    showManual(manual);
+    const note = $("ms-f-channel-note");
+    if (note && !manual) {
+      note.textContent = $("ms-f-channel-select").value === "@me"
+        ? "Posts as a direct message to you."
+        : "Posts to this channel. You must already be a member.";
+    }
+  });
   $("ms-store-nudge-open")?.addEventListener("click", () => host.route("#/settings"));
 
   // Crop tool buttons + drag handlers.
@@ -153,6 +165,115 @@ export async function mount(host, container) {
     // previewing, and enabling toggles must be blocked until a store exists.
     const addBtn = $("ms-add");
     if (addBtn) addBtn.disabled = false;
+  }
+
+  // ── Destination picker ────────────────────────────────────────────────
+  //
+  // A dropdown of joined channels, with a manual-entry input that appears only
+  // when the list cannot be fetched. Listing needs a live Workvivo session and
+  // opens a background tab to borrow one, so it is on demand rather than on
+  // every form open — and the fallback exists so a failed fetch cannot leave
+  // the user unable to save a metric at all.
+
+  const SELF_VALUE = "@me";
+  const MANUAL_VALUE = "__manual__";
+
+  function channelEls() {
+    return { sel: $("ms-f-channel-select"), input: $("ms-f-channel"), note: $("ms-f-channel-note") };
+  }
+
+  function setChannelValue(name) {
+    const { sel, input } = channelEls();
+    if (!sel || !input) return;
+    const v = String(name || "").trim();
+    const isSelf = /^(@me|@self|\(me\))$/i.test(v);
+    const opt = [...sel.options].find((o) => o.value.toLowerCase() === v.toLowerCase());
+
+    if (isSelf || !v) {
+      sel.value = SELF_VALUE;
+      showManual(false);
+    } else if (opt) {
+      sel.value = opt.value;
+      showManual(false);
+    } else {
+      // Saved channel that isn't in the (possibly unloaded) list — keep it
+      // visible as a real choice instead of silently resetting to self, which
+      // would change where an existing metric posts without telling anyone.
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = v;
+      sel.insertBefore(o, sel.options[1] || null);
+      sel.value = v;
+      showManual(false);
+    }
+  }
+
+  function getChannelValue() {
+    const { sel, input } = channelEls();
+    if (!sel) return input ? input.value.trim() : "";
+    return sel.value === MANUAL_VALUE ? input.value.trim() : sel.value;
+  }
+
+  function showManual(on) {
+    const { input } = channelEls();
+    if (!input) return;
+    input.classList.toggle("ms-hidden", !on);
+    if (on) input.focus();
+  }
+
+  async function loadChannels() {
+    const { sel, note } = channelEls();
+    if (!sel) return;
+    const btn = $("ms-f-channel-load");
+    const keep = getChannelValue();
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+    if (note) note.textContent = "Opening Workvivo to read your channels…";
+    try {
+      const r = await host.messaging.send("list-channels", {});
+      if (!r?.ok) {
+        if (note) {
+          note.textContent = r?.errorClass === "NO_SESSION"
+            ? "Couldn't read your channels — open Workvivo and sign in, then try again. You can type a name instead."
+            : `Couldn't read your channels (${r?.error || "unknown error"}). You can type a name instead.`;
+        }
+        ensureManualOption();
+        return;
+      }
+      sel.innerHTML = "";
+      const self = document.createElement("option");
+      self.value = SELF_VALUE;
+      self.textContent = "Direct message to me";
+      sel.appendChild(self);
+      for (const ch of r.channels || []) {
+        if (ch.isSelf) continue;                 // already offered as "@me"
+        const o = document.createElement("option");
+        o.value = ch.name;
+        o.textContent = ch.memberCount ? `${ch.name} (${ch.memberCount})` : ch.name;
+        sel.appendChild(o);
+      }
+      ensureManualOption();
+      setChannelValue(keep);
+      if (note) {
+        const n = (r.channels || []).filter((c) => !c.isSelf).length;
+        note.textContent = r.truncated
+          ? `Showing the first ${n} channels — there may be more. If yours is missing, type its name.`
+          : `${n} channel${n === 1 ? "" : "s"} you've joined.`;
+      }
+    } catch (e) {
+      if (note) note.textContent = `Couldn't read your channels (${e?.message || e}).`;
+      ensureManualOption();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Reload channels"; }
+    }
+  }
+
+  function ensureManualOption() {
+    const { sel } = channelEls();
+    if (!sel || [...sel.options].some((o) => o.value === MANUAL_VALUE)) return;
+    const o = document.createElement("option");
+    o.value = MANUAL_VALUE;
+    o.textContent = "Type a channel name…";
+    sel.appendChild(o);
   }
 
   async function refreshLog() {
@@ -360,7 +481,7 @@ export async function mount(host, container) {
     $("ms-f-name").value = m?.name || "";
     $("ms-f-url").value = m?.url || "";
     $("ms-f-enabled").checked = m?.enabled !== false;
-    $("ms-f-channel").value = m?.destination?.channelName || "";
+    setChannelValue(m?.destination?.channelName || "@me");
     $("ms-f-caption").value = m?.caption || "";
     $("ms-f-tz").value = m?.timezone || "local";
     $("ms-f-times").value = (m?.schedules || []).map((s) => s.time).join("\n") || "";
@@ -398,7 +519,7 @@ export async function mount(host, container) {
       enabled: $("ms-f-enabled").checked,
       timezone: $("ms-f-tz").value.trim() || "local",
       schedules: times.map((t) => ({ days, time: t })),
-      destination: { type: "workvivo-sendbird", channelName: $("ms-f-channel").value.trim() },
+      destination: { type: "workvivo-sendbird", channelName: getChannelValue() },
       caption: $("ms-f-caption").value,
       capture: {
         mode: $("ms-f-mode").value,

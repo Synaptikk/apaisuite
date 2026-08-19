@@ -28,7 +28,8 @@ import { SEED_METRICS, SEED_URL_MIGRATIONS } from "./data/defaults.js";
 import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches } from "./lib/metrics.js";
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
-import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk } from "./lib/sendbird.js";
+import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk,
+         listWorkvivoChannels } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
 import { dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
 import { exportVizPickSheets, getVizPickFollowUpData } from "./lib/sources/vizpick_export.js";
@@ -139,10 +140,17 @@ async function ensureSeed() {
       }
     }
 
-    // One-time channel flip to @me (self-DM) for the pre-seeded vizpick-score.
-    // Guarded by a marker so it fires exactly once — if the user later sets a
-    // real channel, we won't clobber it on the next boot.
-    const chanMarker = await chrome.storage.local.get(`${PFX}channelMigratedToMe`);
+    // One-time channel flip to @me (self-DM). Originally this only rewrote the
+    // pre-seeded vizpick-score away from "1458 Leadership"; while the suite is
+    // under test EVERY metric posts to the user instead of a shared channel,
+    // so a misfiring capture lands in a DM rather than in front of a store.
+    //
+    // Each flip is guarded by its own marker, so a user who picks a real
+    // channel afterwards is never clobbered on the next boot. Removing the
+    // "post to me while testing" behaviour later means adding a new marker,
+    // not editing this one — this marker records that the flip already ran.
+    const ALL_TO_ME = `${PFX}allChannelsMigratedToMe`;
+    const chanMarker = await chrome.storage.local.get([`${PFX}channelMigratedToMe`, ALL_TO_ME]);
     if (!chanMarker[`${PFX}channelMigratedToMe`]) {
       const vp = current.find((m) => m.id === "vizpick-score");
       if (vp && vp.destination?.channelName === "1458 Leadership") {
@@ -151,6 +159,18 @@ async function ensureSeed() {
         log.emit("migrated-channel", { id: "vizpick-score", to: "@me" });
       }
       await chrome.storage.local.set({ [`${PFX}channelMigratedToMe`]: Date.now() });
+    }
+    if (!chanMarker[ALL_TO_ME]) {
+      for (const m of current) {
+        const name = String(m.destination?.channelName || "").trim().toLowerCase();
+        if (!name || name === "@me" || name === "@self" || name === "(me)") continue;
+        // channelUrl/resolvedAt are a cache of the OLD name — carrying them
+        // forward would post to the previous channel on the next run.
+        m.destination = { ...m.destination, channelName: "@me", channelUrl: undefined, resolvedAt: undefined };
+        mutated = true;
+        log.emit("migrated-channel", { id: m.id, to: "@me", reason: "testing" });
+      }
+      await chrome.storage.local.set({ [ALL_TO_ME]: Date.now() });
     }
 
     if (mutated) await saveMetrics(current);
@@ -799,6 +819,22 @@ export const handlers = {
       channelUrlSuffix: r.channelUrl ? r.channelUrl.slice(-6) : null,
       error: r.error, errorClass: r.errorClass,
     };
+  },
+
+  // Feeds the destination dropdown in the metric form. Opens a background
+  // Workvivo tab to borrow live credentials, same as any other post, so it is
+  // not free — the UI fetches on demand rather than on every render.
+  async "list-channels"() {
+    const r = await listWorkvivoChannels();
+    if (!r.ok) return { ok: false, error: r.error, errorClass: r.errorClass };
+    // Self-DM first, then alphabetical: the self channel is the common case
+    // while testing, and hunting for it in a name-sorted list of every joined
+    // channel is a papercut.
+    const channels = [...(r.channels || [])].sort((a, b) => {
+      if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return { ok: true, channels, truncated: !!r.truncated };
   },
 
   async "get-log"(msg) {

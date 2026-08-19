@@ -110,6 +110,26 @@ export async function resolveChannel(channelName) {
 }
 
 /**
+ * List the group channels this user has joined, for the destination picker.
+ *
+ * Returns { ok, channels: [{ channelUrl, name, memberCount, isSelf }], truncated }.
+ * `truncated` means we stopped at the page cap rather than the end of the list,
+ * so a channel missing from the dropdown means "we didn't look everywhere",
+ * not "you aren't in it" — the UI says so rather than implying the latter.
+ */
+export async function listWorkvivoChannels() {
+  const tabRes = await _ensureWorkvivoTab();
+  if (!tabRes.ok) return { ok: false, errorClass: tabRes.errorClass, error: tabRes.error };
+  const { tabId, openedFresh } = tabRes;
+  try {
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "list" }]);
+    return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
+  } finally {
+    await _closeIfOwn(tabId, openedFresh);
+  }
+}
+
+/**
  * Diagnostic: report what the session-key sniffer has captured (or not) on a
  * live workvivo tab. Surfaced by the UI's troubleshoot action.
  */
@@ -367,6 +387,28 @@ async function IN_PAGE_SB(arg) {
   if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
   if (!c.appId || !c.userId) return { ok: false, errorClass: "NO_SESSION", error: "missing app/user id" };
   const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
+
+  // Listing is the one action with no channelName to resolve, so it has to
+  // short-circuit before resolve() — which would otherwise fail on undefined.
+  if (arg.action === "list") {
+    const listed = await listChannels(base, c.userId);
+    if (listed.error) {
+      return { ok: false, errorClass: classify(listed.status), error: listed.error, keyAgeMs: c.ageMs };
+    }
+    const channels = (listed.channels || []).map((ch) => {
+      const members = ch.members || [];
+      const self = members.length === 1 && String((members[0] || {}).user_id) === String(c.userId);
+      return {
+        channelUrl: String(ch.channel_url || ""),
+        // Unnamed group channels are common; the URL tail is the only stable
+        // thing left to show, and it is what the UI already prints elsewhere.
+        name: String(ch.name || "").trim() || ("(unnamed …" + String(ch.channel_url || "").slice(-6) + ")"),
+        memberCount: members.length,
+        isSelf: self,
+      };
+    });
+    return { ok: true, channels, truncated: !!listed.truncated };
+  }
 
   const res = await resolve(base, c.userId, arg.channelName);
   if (res.error) {
