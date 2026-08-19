@@ -44,6 +44,21 @@
      reserves the ember hue itself for things you can act on. */
   --apai-heading:      #005AA8;
 
+  /* ── Chart series ────────────────────────────────────────────
+     VizPick's gauges are inline SVG built in JS (modules/vizpick/lib/charts.js).
+     Inline SVG resolves CSS custom properties from the document, so the chart
+     palette lives here rather than as hexes in that file — otherwise the rings
+     cannot follow the theme, which is how dark mode ended up with near-black
+     numbers inside them. These light values are exactly what charts.js used to
+     hardcode, so the light theme is unchanged. */
+  --chart-ink:     #1A1A1A;
+  --chart-muted:   #6B7280;
+  --chart-track:   #E2E5E9;
+  --chart-met:     #0053E2;
+  --chart-near:    #E07B00;
+  --chart-missed:  #C53030;
+  --chart-neutral: #0053E2;
+
   /* Ink for text sitting ON an accent fill. Paired with --module-accent so a
      module that overrides the accent must also state what is legible on it.
      Default white suits the blue accent (4.6:1). AurorBuddy's accent is
@@ -210,6 +225,20 @@
   --apai-error-bg:     color-mix(in srgb, var(--forge-black) 84%, var(--molten-ember));
   --apai-info:         var(--heat-gold);
   --apai-info-bg:      color-mix(in srgb, var(--forge-black) 88%, var(--steel));
+
+  /* Chart series, Foundry. Reads as a triage board: a store that met its goal
+     recedes, one that is close asks for attention, one that missed demands it.
+     Steel at full strength is 2.89:1 against the card — under the 3:1 that
+     graphical objects need — so "met" is Steel lightened toward Workshop
+     White (5.05:1), and the track is Steel mixed down so the unfilled arc
+     reads as a groove rather than the near-white it was. */
+  --chart-ink:     var(--workshop-white);
+  --chart-muted:   color-mix(in srgb, var(--workshop-white) 55%, var(--steel));
+  --chart-track:   color-mix(in srgb, var(--steel) 60%, var(--forge-black));
+  --chart-met:     color-mix(in srgb, var(--steel) 70%, var(--workshop-white));
+  --chart-near:    var(--heat-gold);
+  --chart-missed:  var(--molten-ember);
+  --chart-neutral: color-mix(in srgb, var(--steel) 70%, var(--workshop-white));
 }
 
 /* Modules define their own --module-accent, and a module element is a closer

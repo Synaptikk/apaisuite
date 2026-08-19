@@ -18,7 +18,7 @@ import {
   parseDeptBreakout,
   parseDonutHealth,
 } from "../parse_vizpick_stores_csv.js";
-import { bandFor } from "../charts.js";
+import { BANDS, bandFor } from "../charts.js";
 
 // ── Fixtures (real rows, tab-separated) ───────────────────────────────────
 const STORES_HEADERS = [
@@ -285,7 +285,12 @@ test("bandFor: current-day figures are graded exactly like closed ones", () => {
   assert.equal(cls(96, 95), "vizpick-met");
   assert.equal(cls(94, 95), "vizpick-near");     // was pending/black
   assert.equal(cls(56, 90), "vizpick-missed");   // was pending/black
-  assert.equal(bandFor(56, 90).color, "#c53030");
+  // Assert identity, not the literal colour: the palette moved into CSS custom
+  // properties so the gauges could follow the theme, and pinning a hex here
+  // would fail on every future palette change while testing nothing about the
+  // banding logic this test is actually for.
+  assert.equal(bandFor(56, 90).color, BANDS.missed.color);
+  assert.notEqual(BANDS.missed.color, BANDS.met.color, "bands must stay visually distinct");
 });
 
 test("Total Picked carries no derived denominator", () => {

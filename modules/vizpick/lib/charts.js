@@ -9,16 +9,29 @@
 // rather than proportional multi-slice donuts, so donutSvg's design (slices
 // summing to a whole) doesn't reproduce that look — gaugeSvg does.
 
+// Palette. These are CSS custom properties, not hexes, because this SVG is
+// injected INTO the document — inline SVG resolves var() from the page, so the
+// charts follow the theme for free. When they were hexes the gauge numbers
+// stayed near-black in dark mode, sitting inside a ring on a dark card.
+//
+// The fallbacks are the original hard-coded values, so a context that somehow
+// renders this without the stylesheet still gets the light palette rather than
+// black-on-black. Definitions live in styles/tokens.css.
+//
+// NOTE: modules/metricshot/lib/render_card.js deliberately keeps literal hexes
+// — it is rasterised offscreen with no stylesheet attached, where var() has
+// nothing to resolve against, and it posts onto white in Workvivo regardless
+// of the viewer's theme.
 const WM = {
-  blue:  "#0053e2",
-  spark: "#ffc220",
-  green: "#2a8703",
-  yellow:"#ffc220",   // Walmart Spark yellow
-  amber: "#e07b00",
-  red:   "#c53030",
-  ink:   "#1a1a1a",
-  grid:  "#e2e5e9",
-  muted: "#6b7280",
+  blue:  "var(--chart-met, #0053e2)",
+  spark: "var(--chart-near, #ffc220)",
+  green: "var(--chart-met, #2a8703)",
+  yellow:"var(--chart-near, #ffc220)",
+  amber: "var(--chart-near, #e07b00)",
+  red:   "var(--chart-missed, #c53030)",
+  ink:   "var(--chart-ink, #1a1a1a)",
+  grid:  "var(--chart-track, #e2e5e9)",
+  muted: "var(--chart-muted, #6b7280)",
 };
 
 // Goal-relative colour scale.
@@ -44,11 +57,13 @@ const WM = {
 // Values are ROUNDED before comparison, because every surface that shows one
 // rounds it to a whole percent; banding the raw value let 95.4 print as "95"
 // while being coloured as though it were above 95.
+// bandFor() returns one of these; `color` is painted directly onto SVG strokes,
+// so it carries the same custom properties as WM above rather than a hex.
 export const BANDS = {
-  met:     { cls: "vizpick-met",     color: "#0053e2" },  // Walmart blue
-  near:    { cls: "vizpick-near",    color: "#e07b00" },  // orange
-  missed:  { cls: "vizpick-missed",  color: "#c53030" },  // red
-  neutral: { cls: "vizpick-neutral", color: "#0053e2" },  // no goal exists
+  met:     { cls: "vizpick-met",     color: "var(--chart-met, #0053e2)" },
+  near:    { cls: "vizpick-near",    color: "var(--chart-near, #e07b00)" },
+  missed:  { cls: "vizpick-missed",  color: "var(--chart-missed, #c53030)" },
+  neutral: { cls: "vizpick-neutral", color: "var(--chart-neutral, #0053e2)" },
 };
 
 // Points below goal at which "close" becomes a clear miss.
