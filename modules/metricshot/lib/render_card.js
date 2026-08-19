@@ -1,201 +1,170 @@
 // modules/metricshot/lib/render_card.js
 //
-// Build the posted image from the REAL VizQL rows instead of screenshotting
-// Tableau. Input is parseVizPickResponse() output; output is a self-contained
-// SVG string that lib/rasterize.js turns into the PNG we post.
+// Renders the VizPick Backroom Health card as SVG, reproducing the Tableau
+// dashboard this used to screenshot via CDP. Geometry and colours were
+// measured off a capture of the real dashboard (980x614) rather than eyeballed:
 //
-// Pure — no chrome.*, no DOM. Node-testable.
+//   background #FFFFFF   blue #0B61B2   green #25A738   black #000000
+//   track #D9D9D9
 //
-// Two deliberate choices:
+// The dashboard's top-left period dropdown is deliberately not reproduced: it
+// is a Tableau control, not data, and a picture of a dropdown nobody can click
+// is just noise in a chat post.
 //
-//   * Self-contained SVG. Every colour and font size is an inline attribute.
-//     The rasteriser hands the markup to an Image with no stylesheet attached,
-//     so anything that relied on external CSS would render black-on-black.
+// Colour rule, read off the same capture: a ring with a goal is GREEN at or
+// above it and BLACK below it — there is no amber middle band. Rings with no
+// goal (the composite and the department rings) are blue and are never judged.
 //
-//   * The palette is duplicated from vizpick/lib/charts.js rather than
-//     imported. Importing would make metricshot fail to load whenever vizpick
-//     is absent — exactly the cross-module fragility that already exists
-//     between licenseintake and aurorbuddy (see docs/AUTH_AUDIT.md). These are
-//     six colour constants; a broken import is not worth saving them.
-//     Keep in sync with charts.js::BANDS if the brand colours change.
+// NO CSS custom properties and no classes in here, deliberately. This SVG is
+// rasterised in an offscreen document with no stylesheet attached, so var()
+// would have nothing to resolve against and every colour would fall back to
+// black. It also posts onto white in Workvivo regardless of the viewer's
+// theme, which is why it does not follow the app's dark mode.
 
-const WM = {
-  blue:   "#0053e2",
-  orange: "#e07b00",
-  red:    "#c53030",
-  ink:    "#1a1a1a",
-  muted:  "#6b7280",
-  rule:   "#e5e7eb",
-  bg:     "#ffffff",
+const C = {
+  bg:      "#FFFFFF",
+  blue:    "#0B61B2",
+  green:   "#25A738",
+  black:   "#000000",
+  track:   "#D9D9D9",
+  ink:     "#000000",
+  grey:    "#7F7F7F",
+  white:   "#FFFFFF",
 };
 
-// Mirrors charts.js::NEAR_BAND — within this many points of goal is "close".
-const NEAR_BAND = 5;
+const FONT = "Bogle, 'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-// Mirrors format_message.js so the picture and the text below it never
-// disagree about which bins are urgent.
-const TIERS = [
-  { minHours: 12, label: "URGENT >12h", color: WM.red },
-  { minHours:  9, label: "HIGH >9h",    color: WM.orange },
-  { minHours:  6, label: "AGED >6h",    color: WM.blue },
-];
+const W = 980;
+const H = 614;
+const HEADER_H = 72;
 
-const PICK_GOAL_PCT = 80;
-const MAX_DEPT_ROWS = 12;
+// Measured centres from the reference capture.
+const BIG   = { cx: 222, cy: 264, outer: 160, thick: 38 };
+const DEPT  = { cy: 509, xs: [97, 222, 347], outer: 37, thick: 10 };
+const GRID  = { xs: [575, 848], ys: [200, 470], outer: 118, thick: 17 };
 
 const esc = (s) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Truncate BEFORE escaping, never after. Slicing escaped text splits entities
-// — a department called "Dry Grocery & More" became "…&a", which is malformed
-// XML, and an SVG that fails to parse silently rasterises to nothing.
+const num = (v) => (Number.isFinite(v) ? v : null);
+
+// Truncate BEFORE escaping. Slicing escaped text splits entities — a label
+// containing "&" became "…&a", which is malformed XML, and an SVG that fails
+// to parse rasterises to nothing at all.
 const truncate = (s, n) => {
   const t = String(s ?? "");
-  return t.length > n ? t.slice(0, n - 1) + "\u2026" : t;
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
 };
 
-// parseVizPickResponse gives pick % as a 0..1 fraction, but a hand-built
-// metric or a future column change could hand us 0..100. Normalise rather
-// than render a bar at 0.87% of its goal.
-function toPct(v) {
-  if (!Number.isFinite(v)) return null;
-  return v <= 1.0001 ? v * 100 : v;
+const text = (x, y, s, { size = 16, weight = 400, fill = C.ink, anchor = "middle" } = {}) =>
+  `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="${FONT}" ` +
+  `font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(s)}</text>`;
+
+/**
+ * One ring. `pct` fills clockwise from twelve o'clock; the remainder shows the
+ * track, which is what makes a near-complete ring read at a glance.
+ */
+function ring(cx, cy, outer, thick, pct, color) {
+  const r = outer - thick / 2;
+  const circ = 2 * Math.PI * r;
+  const frac = Math.max(0, Math.min(1, (num(pct) ?? 0) / 100));
+  const on = circ * frac;
+  return (
+    `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="none" ` +
+      `stroke="${C.track}" stroke-width="${thick}"/>` +
+    (frac > 0
+      ? `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="none" stroke="${color}" ` +
+        `stroke-width="${thick}" stroke-dasharray="${on.toFixed(1)} ${(circ - on).toFixed(1)}" ` +
+        `transform="rotate(-90 ${cx} ${cy})"/>`
+      : "")
+  );
 }
 
-function bandColor(pct, goal) {
-  if (!Number.isFinite(pct)) return WM.muted;
-  const v = Math.round(pct);
-  if (v >= goal) return WM.blue;
-  if (v > goal - NEAR_BAND) return WM.orange;
-  return WM.red;
+// Green at or above goal, black below. Blue when there is no goal to judge.
+function bandColor(value, goal) {
+  if (goal == null || !Number.isFinite(goal)) return C.blue;
+  if (!Number.isFinite(value)) return C.blue;
+  return value >= goal ? C.green : C.black;
+}
+
+// Accepts either the dashboard shape or the older parsed-export shape, so a
+// caller that has not been updated still renders something rather than throwing.
+function normalise(input, meta) {
+  const src = input || {};
+  if (Number.isFinite(src.health) || Array.isArray(src.metrics)) {
+    return {
+      health: num(src.health),
+      metrics: (src.metrics || []).slice(0, 4),
+      deptRings: (src.deptRings || []).slice(0, 3),
+    };
+  }
+  // Legacy: derive what we can from a department/location export.
+  const depts = src.departmentBreakout || [];
+  const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const pickAvg = avg(depts.map((d) => num(d.pickPct)).filter(Number.isFinite));
+  return {
+    health: num(meta?.health) ?? null,
+    metrics: [{ label: "Picks", value: pickAvg, goal: 90 }],
+    deptRings: [],
+  };
 }
 
 /**
- * @param {object} parsed  parseVizPickResponse() output
- * @param {object} meta    { metricName, store, capturedAt, pickGoal }
- * @returns {{svg: string, width: number, height: number}}
+ * @returns {{svg:string,width:number,height:number}}
  */
-export function renderMetricCard(parsed, meta = {}) {
+export function renderMetricCard(input, meta = {}) {
+  const { health, metrics, deptRings } = normalise(input, meta);
   const {
-    metricName = "VizPick Backroom Health",
+    title = "VizPick Backroom Health",
     store = null,
     capturedAt = null,
-    pickGoal = PICK_GOAL_PCT,
   } = meta;
 
-  const depts = (parsed?.departmentBreakout ?? [])
-    .map((d) => ({ dept: d.dept, pct: toPct(d.pickPct), picked: d.totalPicked }))
-    .filter((d) => d.dept && Number.isFinite(d.pct))
-    .sort((a, b) => a.pct - b.pct)          // worst first — that's the point of the post
-    .slice(0, MAX_DEPT_ROWS);
+  const p = [];
+  p.push(`<rect width="${W}" height="${H}" fill="${C.bg}"/>`);
 
-  const locs = parsed?.locationDetails ?? [];
-  const tierCounts = TIERS.map((t) => ({
-    ...t,
-    count: locs.filter((l) => Number.isFinite(l.hoursSinceLastScan) && l.hoursSinceLastScan >= t.minHours).length,
-  }));
+  // ── Header bar ────────────────────────────────────────────────────────────
+  p.push(`<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${C.blue}"/>`);
+  p.push(text(W / 2, 48, truncate(title, 40), { size: 29, weight: 700, fill: C.white }));
 
-  const W = 900;
-  const padX = 32;
-  const headerH = 96;
-  const tileH = 92;
-  const rowH = 30;
-  const chartTop = headerH + tileH + 44;
-  const H = chartTop + Math.max(1, depts.length) * rowH + 52;
+  // Store / timestamp are not on the Tableau dashboard, but a posted image with
+  // no provenance is hard to act on, so they sit in the header's right edge.
+  const stamp = [store ? `Store ${store}` : null, capturedAt].filter(Boolean).join("  ·  ");
+  if (stamp) p.push(text(W - 14, 62, stamp, { size: 13, fill: C.white, anchor: "end" }));
 
-  const parts = [];
-  parts.push(`<rect width="${W}" height="${H}" fill="${WM.bg}"/>`);
+  // ── Composite ring ────────────────────────────────────────────────────────
+  p.push(ring(BIG.cx, BIG.cy, BIG.outer, BIG.thick, health, C.blue));
+  p.push(text(BIG.cx, BIG.cy - 8, Number.isFinite(health) ? Math.round(health) : "—",
+    { size: 76, weight: 700 }));
+  p.push(text(BIG.cx, BIG.cy + 42, "VizPick", { size: 21 }));
+  p.push(text(BIG.cx, BIG.cy + 74, "Health", { size: 21 }));
 
-  // ── Header ──────────────────────────────────────────────────────────────
-  parts.push(
-    `<text x="${padX}" y="46" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-      `font-size="28" font-weight="700" fill="${WM.ink}">${esc(metricName)}</text>`,
-  );
-  const sub = [store ? `Store ${esc(store)}` : null, capturedAt ? esc(capturedAt) : null]
-    .filter(Boolean)
-    .join("  ·  ");
-  if (sub) {
-    parts.push(
-      `<text x="${padX}" y="72" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-        `font-size="15" fill="${WM.muted}">${sub}</text>`,
-    );
-  }
-  parts.push(`<line x1="${padX}" y1="${headerH - 8}" x2="${W - padX}" y2="${headerH - 8}" stroke="${WM.rule}" stroke-width="1"/>`);
-
-  // ── Aged-bin tiles ──────────────────────────────────────────────────────
-  const tileW = (W - padX * 2 - 24) / 3;
-  tierCounts.forEach((t, i) => {
-    const x = padX + i * (tileW + 12);
-    const y = headerH + 6;
-    parts.push(`<rect x="${x}" y="${y}" width="${tileW}" height="${tileH - 12}" rx="8" fill="${t.color}" opacity="0.08"/>`);
-    parts.push(
-      `<text x="${x + 16}" y="${y + 34}" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-        `font-size="30" font-weight="700" fill="${t.color}">${t.count}</text>`,
-    );
-    parts.push(
-      `<text x="${x + 16}" y="${y + 58}" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-        `font-size="13" fill="${WM.muted}">${esc(t.label)} unscanned</text>`,
-    );
+  // ── Department rings (no goal — never judged) ─────────────────────────────
+  deptRings.slice(0, 3).forEach((d, i) => {
+    const cx = DEPT.xs[i];
+    p.push(ring(cx, DEPT.cy, DEPT.outer, DEPT.thick, num(d.value), C.blue));
+    p.push(text(cx, DEPT.cy + 7, Number.isFinite(num(d.value)) ? Math.round(d.value) : "—",
+      { size: 19, weight: 400 }));
+    p.push(text(cx, DEPT.cy + 79, truncate(d.label, 10), { size: 18, fill: C.grey }));
   });
 
-  // ── Department pick % bars ──────────────────────────────────────────────
-  // Two separate <text> elements, not one with a <tspan>. A tspan without its
-  // own x inherits the parent's, and several renderers restart it there
-  // instead of continuing inline — which drew the caption on top of the title.
-  parts.push(
-    `<text x="${padX}" y="${chartTop - 16}" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-      `font-size="15" font-weight="700" fill="${WM.ink}">Pick % by department</text>`,
-  );
-  parts.push(
-    `<text x="${W - padX}" y="${chartTop - 16}" text-anchor="end" ` +
-      `font-family="Bogle, Helvetica Neue, Arial, sans-serif" font-size="13" fill="${WM.muted}">` +
-      `goal ${pickGoal}% · lowest first</text>`,
-  );
+  // ── Goal grid ─────────────────────────────────────────────────────────────
+  metrics.slice(0, 4).forEach((m, i) => {
+    const cx = GRID.xs[i % 2];
+    const cy = GRID.ys[Math.floor(i / 2)];
+    const v = num(m.value);
+    p.push(ring(cx, cy, GRID.outer, GRID.thick, v, bandColor(v, m.goal)));
+    p.push(text(cx, cy - 12, Number.isFinite(v) ? `${Math.round(v)}%` : "—",
+      { size: 47, weight: 400 }));
+    p.push(text(cx, cy + 26, truncate(m.label, 14), { size: 24 }));
+    if (m.goal != null) {
+      p.push(text(cx, cy + 58, `Goal ${m.goal}%`, { size: 20, fill: C.grey }));
+    }
+  });
 
-  if (!depts.length) {
-    parts.push(
-      `<text x="${W / 2}" y="${chartTop + 28}" text-anchor="middle" ` +
-        `font-family="Bogle, Helvetica Neue, Arial, sans-serif" font-size="14" fill="${WM.muted}">` +
-        `No department rows in this capture</text>`,
-    );
-  } else {
-    const labelW = 150;
-    const barX = padX + labelW;
-    const barMaxW = W - padX - barX - 76;
-    // Goal marker, drawn behind the bars so a bar can cross it.
-    const goalX = barX + barMaxW * (pickGoal / 100);
-    parts.push(
-      `<line x1="${goalX.toFixed(1)}" y1="${chartTop - 4}" x2="${goalX.toFixed(1)}" ` +
-        `y2="${chartTop + depts.length * rowH}" stroke="${WM.muted}" stroke-width="1" stroke-dasharray="3 3"/>`,
-    );
-    depts.forEach((d, i) => {
-      const y = chartTop + i * rowH;
-      const barH = 18;
-      const w = Math.max(2, barMaxW * Math.min(1, d.pct / 100));
-      const color = bandColor(d.pct, pickGoal);
-      parts.push(
-        `<text x="${padX}" y="${y + barH - 4}" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-          `font-size="13" fill="${WM.ink}">${esc(truncate(d.dept, 22))}</text>`,
-      );
-      parts.push(`<rect x="${barX}" y="${y}" width="${barMaxW}" height="${barH}" rx="4" fill="${WM.rule}"/>`);
-      parts.push(`<rect x="${barX}" y="${y}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${color}"/>`);
-      parts.push(
-        `<text x="${barX + barMaxW + 10}" y="${y + barH - 4}" ` +
-          `font-family="Bogle, Helvetica Neue, Arial, sans-serif" font-size="13" font-weight="700" ` +
-          `fill="${color}">${Math.round(d.pct)}%</text>`,
-      );
-    });
-  }
-
-  parts.push(
-    `<text x="${padX}" y="${H - 18}" font-family="Bogle, Helvetica Neue, Arial, sans-serif" ` +
-      `font-size="11" fill="${WM.muted}">Rendered by APAISuite from VizPick source data — not a screenshot.</text>`,
-  );
-
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
-    parts.join("") +
-    `</svg>`;
-
-  return { svg, width: W, height: H };
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${p.join("")}</svg>`,
+    width: W,
+    height: H,
+  };
 }

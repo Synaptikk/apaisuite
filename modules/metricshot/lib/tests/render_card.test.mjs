@@ -1,96 +1,112 @@
-// node modules/metricshot/lib/tests/render_card.test.mjs
+// modules/metricshot/lib/tests/render_card.test.mjs
 //
-// The renderer's output is fed to an image decoder, which rejects malformed
-// XML silently — a broken card rasterises to nothing and the post fails with
-// an unhelpful error. These tests guard the ways that markup can go wrong.
+// Run with: node --test modules/metricshot/lib/tests/render_card.test.mjs
+//
+// The card reproduces the VizPick Backroom Health Tableau dashboard, so these
+// tests pin the things that make it recognisable — the colour rule, the ring
+// set — and the things that make it render at all. A malformed SVG rasterises
+// to nothing and surfaces only as a vague post failure, so well-formedness is
+// asserted rather than assumed.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderMetricCard } from "../render_card.js";
 
-// Minimal well-formedness check without pulling in an XML library: every tag
-// must balance and no bare "&" may survive.
-function assertWellFormed(svg) {
-  assert.ok(svg.startsWith("<svg "), "must start with <svg");
-  assert.ok(svg.endsWith("</svg>"), "must end with </svg>");
-  assert.ok(svg.includes('xmlns="http://www.w3.org/2000/svg"'), "needs the SVG namespace");
-  const bare = svg.match(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-f]+;)/gi);
-  assert.equal(bare, null, `bare ampersand(s) in output: ${bare}`);
-  assert.equal((svg.match(/<text/g) || []).length, (svg.match(/<\/text>/g) || []).length, "unbalanced <text>");
-}
+const GREEN = "#25A738";
+const BLACK = "#000000";
+const BLUE  = "#0B61B2";
 
-const SAMPLE = {
-  ok: true,
-  departmentBreakout: [
-    { dept: "Dairy", pickPct: 0.94, totalPicked: 310 },
-    { dept: "Bakery", pickPct: 0.55, totalPicked: 40 },
+const sample = (over = {}) => ({
+  health: 96,
+  metrics: [
+    { label: "Cases",     value: 97, goal: 95 },
+    { label: "Locations", value: 98, goal: 95 },
+    { label: "Picks",     value: 80, goal: 90 },
+    { label: "Overstock", value: 88, goal: 90 },
   ],
-  locationDetails: [
-    { location: "A1", hoursSinceLastScan: 14.2 },
-    { location: "B1", hoursSinceLastScan: 7.5 },
+  deptRings: [
+    { label: "Fresh", value: 97 },
+    { label: "F&C",   value: 97 },
+    { label: "GM",    value: 94 },
   ],
-};
-
-test("renders well-formed SVG", () => {
-  const { svg, width, height } = renderMetricCard(SAMPLE, { metricName: "VizPick Score" });
-  assertWellFormed(svg);
-  assert.ok(width > 0 && height > 0);
+  ...over,
 });
 
-test("escapes markup in department names", () => {
-  const { svg } = renderMetricCard(
-    { ...SAMPLE, departmentBreakout: [{ dept: '<script>&"x"', pickPct: 0.5 }] },
-    {},
-  );
-  assertWellFormed(svg);
-  assert.ok(!svg.includes("<script>"), "raw tag leaked into output");
+test("renders at the dashboard's own dimensions", () => {
+  const { svg, width, height } = renderMetricCard(sample(), {});
+  assert.equal(width, 980);
+  assert.equal(height, 614);
+  assert.match(svg, /^<svg [^>]*viewBox="0 0 980 614"/);
 });
 
-test("truncating a long name never splits an entity", () => {
-  // Regression: the name was sliced AFTER escaping, cutting "&amp;" into "&a"
-  // and producing XML the decoder rejects.
-  const long = "Dry Grocery & More & Even More & Longer Still";
-  const { svg } = renderMetricCard({ ...SAMPLE, departmentBreakout: [{ dept: long, pickPct: 0.5 }] }, {});
-  assertWellFormed(svg);
+test("is well-formed XML", () => {
+  const { svg } = renderMetricCard(sample(), { store: "1458" });
+  // Cheap structural checks — a real parser is not available here, and these
+  // catch the failures that actually happen: unbalanced tags and raw entities.
+  const open = (svg.match(/<(circle|rect|text|path|svg)\b/g) || []).length;
+  const close = (svg.match(/<\/(text|svg)>|\/>/g) || []).length;
+  assert.equal(open, close, "every element is closed");
+  assert.ok(!/&(?!(amp|lt|gt|quot|apos);)/.test(svg), "no unescaped ampersands");
 });
 
-test("bands against the goal: at/above blue, near orange, below red", () => {
-  const { svg } = renderMetricCard(
-    { ...SAMPLE, departmentBreakout: [
-      { dept: "At",   pickPct: 0.80 },   // == goal  -> blue
-      { dept: "Near", pickPct: 0.77 },   // within 5 -> orange
-      { dept: "Miss", pickPct: 0.40 },   // clear miss -> red
-    ] },
-    { pickGoal: 80 },
-  );
-  assert.ok(svg.includes("#0053e2"), "expected the met/blue band");
-  assert.ok(svg.includes("#e07b00"), "expected the near/orange band");
-  assert.ok(svg.includes("#c53030"), "expected the missed/red band");
+test("goal rings are green at or above goal and black below — no middle band", () => {
+  const { svg } = renderMetricCard(sample({
+    metrics: [
+      { label: "AtGoal",   value: 95, goal: 95 },   // exactly on goal counts as met
+      { label: "Above",    value: 99, goal: 95 },
+      { label: "JustshY",  value: 94, goal: 95 },   // one point under is still a miss
+      { label: "WayUnder", value: 40, goal: 90 },
+    ],
+    deptRings: [],
+  }), {});
+  const greens = (svg.match(new RegExp(GREEN, "g")) || []).length;
+  const blacks = (svg.match(new RegExp(`stroke="${BLACK}"`, "g")) || []).length;
+  assert.equal(greens, 2, "two rings met their goal");
+  assert.equal(blacks, 2, "two rings missed, and there is no amber tier");
 });
 
-test("accepts pick % as either a 0..1 fraction or a 0..100 number", () => {
-  const frac = renderMetricCard({ ...SAMPLE, departmentBreakout: [{ dept: "D", pickPct: 0.94 }] }, {});
-  const whole = renderMetricCard({ ...SAMPLE, departmentBreakout: [{ dept: "D", pickPct: 94 }] }, {});
-  assert.ok(frac.svg.includes(">94%<"), "fraction form should print 94%");
-  assert.ok(whole.svg.includes(">94%<"), "whole-number form should print 94%");
+test("rings without a goal are blue and never judged", () => {
+  const { svg } = renderMetricCard(sample({ metrics: [], deptRings: [{ label: "Fresh", value: 12 }] }), {});
+  // A department ring at 12 would be a catastrophic miss if it were judged.
+  assert.ok(svg.includes(`stroke="${BLUE}"`), "unjudged rings use the composite blue");
+  assert.ok(!svg.includes(`stroke="${BLACK}"`), "no goal means no black");
 });
 
-test("empty data renders a placeholder instead of throwing", () => {
-  const { svg } = renderMetricCard({ ok: false, departmentBreakout: [], locationDetails: [] }, {});
-  assertWellFormed(svg);
-  assert.ok(svg.includes("No department rows"));
+test("escapes label text, and truncates before escaping", () => {
+  const { svg } = renderMetricCard(sample({
+    deptRings: [{ label: "Fresh & Chilled & More & Beyond", value: 90 }],
+  }), {});
+  assert.ok(!/&(?!(amp|lt|gt|quot|apos);)/.test(svg),
+    "truncating after escaping would split an entity into malformed XML");
+  assert.ok(svg.includes("&amp;"));
 });
 
-test("counts aged bins by tier, inclusive of the boundary", () => {
-  const { svg } = renderMetricCard(
-    { ok: true, departmentBreakout: [], locationDetails: [
-      { location: "a", hoursSinceLastScan: 12 },    // >=12 counts in all three tiers
-      { location: "b", hoursSinceLastScan: 9.5 },   // >=9 and >=6
-      { location: "c", hoursSinceLastScan: 1 },     // none
-    ] },
-    {},
-  );
-  // Tiers are cumulative: 1 urgent, 2 high, 2 aged.
-  assert.ok(svg.includes(">1</text>"), "expected 1 in the >12h tile");
-  assert.ok(svg.includes(">2</text>"), "expected 2 in the >9h and >6h tiles");
+test("missing numbers render an em dash rather than NaN", () => {
+  const { svg } = renderMetricCard({
+    health: null,
+    metrics: [{ label: "Cases", value: null, goal: 95 }],
+    deptRings: [{ label: "Fresh", value: null }],
+  }, {});
+  assert.ok(!svg.includes("NaN"));
+  assert.ok(svg.includes("—"));
+});
+
+test("empty input still produces a parseable card", () => {
+  const { svg, width } = renderMetricCard({}, {});
+  assert.equal(width, 980);
+  assert.ok(svg.startsWith("<svg"));
+  assert.ok(svg.includes("VizPick Backroom Health"), "the header still identifies the report");
+});
+
+test("store and capture time appear so a posted image can be placed", () => {
+  const { svg } = renderMetricCard(sample(), { store: "1458", capturedAt: "Tue 19 Aug, 6:00 AM" });
+  assert.ok(svg.includes("Store 1458"));
+  assert.ok(svg.includes("Tue 19 Aug"));
+});
+
+test("carries no CSS custom properties", () => {
+  // It is rasterised offscreen with no stylesheet attached; a var() would
+  // resolve to nothing and the whole card would render black.
+  const { svg } = renderMetricCard(sample(), {});
+  assert.ok(!svg.includes("var(--"), "no var() may reach the offscreen rasteriser");
 });
