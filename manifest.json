@@ -216,12 +216,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "app.html",
-        "app.js",
-        "assets/*",
-        "styles/*",
-        "shared/*",
-        "modules/*"
+        "modules/aurorbuddy/assets/secure.ico"
       ],
       "matches": [
         "https://app.us.auror.co/*",

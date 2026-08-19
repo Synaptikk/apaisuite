@@ -28,7 +28,7 @@ trap 'rm -rf "$STAGE"' EXIT
 EXT="$STAGE/apaisuite"
 mkdir -p "$EXT"
 
-echo "[1/5] staging v$VERSION ..."
+echo "[1/6] staging v$VERSION ..."
 cp -r "$EXT_ROOT"/* "$EXT/"
 # Same exclusions as release.sh — see its section 2 for the rationale.
 rm -rf "$EXT/scripts" "$EXT/docs" "$EXT/dev" "$EXT/.git" "$EXT/.claude" \
@@ -49,19 +49,32 @@ STRIP_MODULES=(
   "assocpurchases:https://sf-reports-ui.walmart.com/*,https://sf-reports-api.walmart.com/*"
 )
 
-echo "[2/5] stripping modules excluded from the store build ..."
+echo "[2/6] stripping modules excluded from the store build ..."
 node "$SCRIPT_DIR/strip-modules.mjs" "$EXT" "${STRIP_MODULES[@]}"
 
-echo "[3/5] validating manifest for store upload ..."
+# The self-updater polls qrcallbox.com and downloads a new build's ZIP —
+# distribution outside the Web Store, which policy forbids, and pointless for a
+# store install that Chrome updates on its own. Swapped for no-op stubs with
+# identical exports rather than deleted, because app.js and the service worker
+# import them unconditionally. The unpacked/self-hosted build keeps the real
+# thing: there, the self-updater is the ONLY way users get new versions.
+echo "[3/6] replacing the self-updater with store stubs ..."
+for f in updater updater_ui; do
+  [ -f "$EXT/shared/$f.js" ] || { echo "  error: shared/$f.js missing from staged tree" >&2; exit 1; }
+  cp "$SCRIPT_DIR/stubs/$f.js" "$EXT/shared/$f.js"
+  echo "  stubbed shared/$f.js"
+done
+
+echo "[4/6] validating manifest for store upload ..."
 node "$SCRIPT_DIR/check-cws.mjs" manifest "$EXT"
 
-echo "[4/5] zipping (manifest at archive root) ..."
+echo "[5/6] zipping (manifest at archive root) ..."
 mkdir -p "$OUT_DIR"
 ZIP="$OUT_DIR/apaisuite-${VERSION}-cws.zip"
 rm -f "$ZIP"
 node "$SCRIPT_DIR/zip-dir.mjs" "$EXT" "$ZIP" --root
 
-echo "[5/5] verifying archive layout ..."
+echo "[6/6] verifying archive layout ..."
 ( cd "$SCRIPT_DIR" && node "$SCRIPT_DIR/check-cws.mjs" zip "$ZIP" )
 
 echo ""
