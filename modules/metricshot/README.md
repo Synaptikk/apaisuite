@@ -4,6 +4,14 @@ Scheduled screenshots of internal metric dashboards, posted into Workvivo channe
 
 **Status:** beta · **Version:** 0.1.0
 
+> **Known issue — image posting is currently broken.** Sendbird rejects multipart
+> sends on the session-key auth path with `400 "File-messages via SDK are
+> disabled"`, so the screenshot never lands. Everything up to and including the
+> capture works; only the final post fails. Text posting is unaffected. The
+> sniffer's net-recon ring buffer (`window.__APAISUITE_METRICSHOT_NETLOG`) was
+> added to discover the upload route Workvivo's own UI uses — that's the open
+> thread.
+
 ---
 
 ## What it does
@@ -13,7 +21,7 @@ Scheduled screenshots of internal metric dashboards, posted into Workvivo channe
 3. Wait for readiness (`document.readyState`, an optional `requiredSelector`, DOM-stability, then a configurable settle delay).
 4. `Page.captureScreenshot` via CDP.
 5. Sniff the PNG (signature, size, dimensions) and the page (`document.title` / `<h1>`) to refuse login/access-denied captures.
-6. Post the image into the configured Sendbird group channel via the Sendbird Platform REST API, run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests; the REST post then uses that key. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name.
+6. Post into the configured Sendbird group channel via the Sendbird Platform REST API, run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests; the REST post then uses that key. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name. **The image leg currently fails** — see the known issue above; text sends succeed.
 7. Record a deterministic run key so restarts + duplicate ticks never repost the same slot.
 
 ---
@@ -41,10 +49,10 @@ The metric shows up in the table with Enabled toggled on. It will fire at the ne
 ## Preconditions for successful posting
 
 - Edge/Chrome must be running (the extension SW needs to wake for the alarm), and you must be signed into Walmart SSO in this browser profile.
-- **A `workvivo.walmart.com` tab is not required to be pre-opened.** If none exists at post time the module opens one in the background (`https://workvivo.walmart.com/chat`, `active: false`), waits up to 45 s for the SendBird SDK to bootstrap, does the post, then **closes the tab**. If you already had a workvivo tab open (e.g., you're chatting), we use it in place and leave it alone — user-opened tabs are never closed.
+- **A `workvivo.walmart.com` tab is not required to be pre-opened.** The module always opens its **own** background tab (`https://workvivo.walmart.com/chat`, `active: false`), waits up to 30 s for the session-key sniffer to capture live creds, posts, then **closes that tab**. Your own workvivo tabs are never touched — not reused, not closed — so posting can't hijack a session you're actively chatting in. The wait is spent hidden for the first 8 s; if no key has appeared the tab is briefly foregrounded to force the SDK to boot, then your previously active tab is restored.
 - The user must already be a member of the destination channel. The module never joins or creates channels.
 - For Tableau pages: the target URL must be viewable without additional interactive filters. Query parameters (`:iid=1`, `?filter=...`) are preserved verbatim. The Tableau tab **stays open** across runs (reopening Tableau costs ~30 s of SSO + viz load, so tab-keeping there is worth it — unlike Workvivo, which we open fresh each time).
-- If Workvivo bounces the newly-opened tab to SSO and doesn't finish signing in within 45 s (SAML MFA challenge, expired session), the post fails with a `NO_SDK` error and retries on the next scheduled slot. No screenshot is posted in that state.
+- If Workvivo bounces the newly-opened tab to SSO and doesn't finish signing in within the 30 s window (SAML MFA challenge, expired session), no `Session-key` is ever sniffed: the post fails with `NO_SESSION` and retries on the next scheduled slot. No screenshot is posted in that state.
 
 ---
 
@@ -76,16 +84,19 @@ The metric shows up in the table with Enabled toggled on. It will fire at the ne
 Pure-function tests live in `lib/tests/*.test.mjs` and run without any browser:
 
 ```bash
-cd unified-extension-suite
-node --test modules/metricshot/lib/tests/
+# from the repo root
+node --test "modules/metricshot/lib/tests/*.test.mjs"
 ```
+
+Quote the glob — as of Node 24 a bare directory argument (`node --test modules/metricshot/lib/tests/`) no longer expands to the files in it and reports a spurious failure. `sendbird_rest.test.mjs` also reads its source via a repo-relative path, so run it from the repo root, not from `lib/tests/`. Expect **42 passing**.
 
 Covers:
 - `scheduler.test.mjs` — schedule expansion, dedupe keys, catch-up window, DST edge cases, midnight crossings.
 - `metrics.test.mjs` — config validation (URL, time format, weekdays, duplicate ids), normalization, defaults.
 - `validate.test.mjs` — PNG signature / dimensions / size, auth-wall title/heading sniff.
+- `sendbird_rest.test.mjs` — the in-page REST worker against a mock Sendbird API: channel resolution, `@me` auto-create, text and file sends, the exact auth header recipe, mid-post key rotation and replay, the pagination cap, and the `NO_SESSION` / `AUTH` guards. It eval's the module tail to reach `IN_PAGE_SB`, which isn't exported (it ships into the page via `chrome.scripting`).
 
-CDP capture and Sendbird posting are impure and covered by manual QA (below).
+CDP capture and tab lifecycle are impure and covered by manual QA (below).
 
 ---
 
@@ -97,7 +108,7 @@ Before the first real Workvivo post:
 - [ ] Open APAISuite → sidebar → **Metric Shots**. VizPick Score is visible with a Daily 10:00 / 14:00 / 20:00 schedule.
 - [ ] Click **Preview** — confirm the returned PNG shows the VizPick dashboard, not a login page or empty viz. (If no workvivo tab is open, the module opens one in the background automatically.)
 - [ ] Click **Validate destination** in the edit form — confirm it resolves to a `sendbird_group_channel_*` URL for "1458 Leadership".
-- [ ] With explicit approval only: click **Run now** — confirm ONE image message lands in the channel.
+- [ ] With explicit approval only: click **Run now**. Expect the post to fail with `400 File-messages via SDK are disabled` until the upload-route work lands — that's the known issue, not a regression. To exercise the parts that do work, use a text send.
 - [ ] Reload the extension (`edge://extensions` → reload icon) — the tick alarm and dedupe map survive.
 - [ ] Confirm ClosingList, QRCallBox, and Live Dashboard still work — no regression.
 
@@ -106,7 +117,8 @@ Before the first real Workvivo post:
 ## Known limitations
 
 - `chrome.alarms` has a 1-minute minimum period in production. Posts fire within ~60 s of the target clock time, never earlier.
-- The Sendbird SDK global name is not part of Workvivo's contract. If the SDK is bundled or renamed, the primary path breaks silently; the module falls back to the REST API (requires `https://api-*.sendbird.com/*` host permission).
+- The REST path is the only path — there is no SDK fallback, because the SDK is never reachable from `window`. It depends on two things outside Workvivo's contract: that the SDK keeps sending its `Session-key` as a plain request header (sniffable), and that the header recipe in `lib/sendbird.js` stays acceptable to Sendbird. If either changes, posting breaks with `NO_SESSION` or `AUTH` respectively. Requires the `https://api-*.sendbird.com/*` host permission.
+- The `Session-key` rotates. A 401/403 mid-post triggers one replay with the refreshed key (up to a 3 s wait for the sniffer to see it); if no newer key appears in that window the run fails `AUTH` and retries at the next slot.
 - Tableau readiness detection is heuristic (readyState + selector + settle). Very slow viz loads may still capture partial renders. Set `requiredSelector` in Advanced to make readiness deterministic.
 - If the machine is fully off at a scheduled time and the reboot happens more than `catchUpWindowMs` later, the run is skipped (`skipped-stale`) — this is intentional so you don't get a burst of stale posts on wake.
 

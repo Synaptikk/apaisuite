@@ -1,0 +1,135 @@
+# QRCallBox service-account posting — change plan
+
+Companion to [workvivo-auth.md](workvivo-auth.md), which records the verified
+auth chain. This file is the build plan for the QRCallBox side.
+
+Target repo: `https://github.com/Sinaptick/QRCallBox` (separate from apaisuite).
+Written 2026-08-18.
+
+---
+
+## Goal
+
+Post QR scan alerts to Workvivo from the server as `qrcallbox@walmart.com`,
+with no dependency on any employee being signed in. Replaces the extension's
+borrowed-token heartbeat.
+
+Note this is a **build**, not a migration: the backend currently has no Workvivo
+code at all, `token-heartbeat.js` was never committed (`git log --all -S` finds
+nothing), and the extension has been posting to a URL with no function behind
+it. There is nothing live to cut over from.
+
+## Two open unknowns
+
+**1. Hop 1 (the SSO login) is partially verified — and needs no browser.**
+The login page was dissected on 2026-08-18 (see workvivo-auth.md for the full
+detail). It is a plain HTML form POST with **no external scripts**, **no
+CAPTCHA** (the reCAPTCHA calls are dead `if (false)` branches), no iframes and
+no CSP. A cookie-jar HTTP client can drive it:
+
+1. GET `workvivo.walmart.com/chat`, follow the 302 chain to the SSO form.
+2. Parse the form action and `pf.adapterId` out of the HTML. The adapter path
+   is **per-session** — seen as both `XA56VpjABn` and `AUic0FsAvM` — so it must
+   be read from the landing URL, never hardcoded.
+3. POST `pf.username`, `pf.pass`, `domainName`, `BU`, `$store`, `pf.adapterId`,
+   `pf.ok`.
+4. Handle the SAMLResponse auto-post back to the Workvivo ACS, then keep the
+   `workvivo_session` / `laravel_token` / `XSRF-TOKEN` cookies.
+
+The earlier recommendation to use the already-installed `puppeteer-core` +
+`@sparticuz/chromium` for this is **withdrawn** — it would work, but it is not
+necessary and costs a cold-start Chrome launch per login.
+
+The one piece still unverified: whether username and password can go in a
+single POST (`pf.pass` is present on page 1, which suggests yes) or whether
+PingFederate insists on its two-screen sequence. Confirm with the test account,
+not a fabricated user id.
+
+**2. The Sendbird user id is not available server-side.** `/api/chat/config`
+returns only `app_id` and `access_token`. Both the websocket handshake and the
+channel-list call need the numeric user id, which the browser reads from
+`window.v2.id`. If hop 1 runs in puppeteer, read `window.v2.id` off the page in
+the same pass. Otherwise store the service account's id as config once — it is
+stable per account.
+
+**3. Whether MFA fires on login — CONTESTED, and it gates everything.** First
+recorded as "no MFA" from a live sign-in; the account holder then described a
+push approval to a phone or physical device between the username step and the
+password step. See the warning box in workvivo-auth.md. If the push is real,
+**no fully unattended login exists** and the operating model changes. Settle
+this before writing any login code.
+
+**Session cookie lifetime is measured:** `workvivo_session` and `laravel_token`
+are httpOnly/secure with a **24h** expiry counted from the latest request, not
+from login — the window rolls forward on activity. A server posting at least
+daily will almost never re-login. There is no PingFederate SSO cookie in the
+jar, so a lapsed session means replaying the full credential form; there is no
+silent re-auth to fall back on.
+
+## Changes
+
+### 1. Secrets
+
+Add `WORKVIVO_USER` and `WORKVIVO_PASSWORD` via
+`firebase functions:secrets:set`. Add the *names* as placeholders to
+`functions/.env.example` beside the existing entries. Functions v2 requires
+explicit binding on the handler or they are unreadable at runtime:
+
+```js
+onRequest({ secrets: [WORKVIVO_USER, WORKVIVO_PASSWORD], ... })
+```
+
+### 2. New module `functions/src/http/workvivo/`
+
+Follow the `src/http/tickets/index.js` pattern — ESM, `onRequest` from
+`firebase-functions/v2/https`, CORS from the shared `ALLOWED_ORIGINS` list.
+
+- `session.js` — token manager. login -> cookies -> access_token -> session key.
+  Exposes one `getSessionKey()` that returns a valid key or refreshes.
+- `post.js` — channel resolve + send. Port from
+  `modules/metricshot/lib/sendbird.js` in apaisuite; the resolution and retry
+  logic transfer nearly unchanged once the `chrome.scripting` wrapper is
+  dropped.
+- `index.js` — the HTTP handler.
+
+### 3. Cache the session in Firestore, not memory
+
+Function instances are ephemeral; an in-memory cache means a fresh SSO login on
+most invocations. Use a doc such as `system/workvivoSession` holding cookies,
+access token, session key, user id, app id and mint time.
+
+**Lock it down in `firestore.rules`** — deny all client reads and writes. It
+holds live session credentials.
+
+### 4. Wire-up
+
+- `functions/index.js`: add the export beside the tickets one, and **delete
+  lines 15-17 and 20** — commented-out imports of `workvivo-automation.js` and
+  `workvivo-monitor.js`, neither of which exists in the repo.
+- `firebase.json`: add a rewrite for the new endpoint, and **remove the four
+  existing workvivo rewrites** (`/api/workvivo/connect`, `/configure`,
+  `/disconnect`, `/check-completion`) — they map to functions that are not
+  deployed, so those paths fail today.
+
+### 5. Confirm the WebSocket global
+
+Runtime is Node 22. Node exposes a global `WebSocket` at that version and it is
+present on Node 24 locally, but verify on the deployed runtime before relying on
+it. If absent, add `ws` to dependencies — one line either way.
+
+### 6. Call it from the scan path
+
+Whatever handles a QR scan needs to invoke the poster. That path has not been
+traced yet.
+
+## Order of work
+
+Hop 1 first, standalone, run locally against a real login until it reliably
+returns cookies. Everything downstream is already proven end to end.
+
+## Do not touch yet
+
+Deleting `modules/workvivo/lib/qrcallbox.js`, `lib/extract.js` and the alarm
+wiring in `modules/workvivo/service.js` (apaisuite) is the right end state, but
+do it **after** the server path posts successfully. Until then it is the only
+thing that would signal a regression.
