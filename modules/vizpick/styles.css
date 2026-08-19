@@ -1,0 +1,556 @@
+/* modules/vizpick/styles.css
+   Uses APAISuite design tokens exclusively (var(--apai-*)) so palette /
+   spacing / typography changes in styles/tokens.css propagate automatically.
+   All selectors scoped under .module-vizpick per MODULE_CONTRACT.md §8. */
+
+/* The shell caps every module root at 1400px
+   (styles/layout.css: `.shell-viewport > main > [class*="module-"]`).
+   VizPick is a wide grid of small cards and benefits from the full window,
+   so it opts out — scoped to this module only, with one extra class of
+   specificity so it wins without an !important and without touching the
+   shared rule other modules rely on. */
+.shell-viewport > main > [class*="module-"].module-vizpick {
+  max-width: none;
+}
+
+.module-vizpick .vizpick {
+  padding: var(--sp-5) var(--sp-6);
+  display: grid;
+  gap: var(--sp-5);
+  /* Stay full-width up to a genuinely wide desktop, then stop growing so
+     text lines and the header don't stretch absurdly on ultrawides. The
+     card grid below is what actually consumes the extra width, by adding
+     columns rather than widening cards. */
+  width: 100%;
+  max-width: 2400px;
+  margin: 0 auto;
+}
+
+.vizpick-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.vizpick-title h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-blue-dark);
+  margin: 0;
+}
+.vizpick-subtitle {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: var(--sp-1) 0 0;
+  max-width: 60ch;
+  line-height: var(--lh-base);
+}
+.vizpick-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.vizpick-toolbar .btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: var(--sp-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: vizpick-spin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes vizpick-spin { to { transform: rotate(360deg); } }
+
+.vizpick-freshness {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+}
+.vizpick-freshness[data-state="ok"]      { color: var(--apai-success); background: var(--apai-success-bg); border-color: var(--apai-success); }
+.vizpick-freshness[data-state="stale"]   { color: var(--apai-warn);    background: var(--apai-warn-bg);    border-color: var(--apai-warn); }
+.vizpick-freshness[data-state="error"]   { color: var(--apai-error);   background: var(--apai-error-bg);   border-color: var(--apai-error); }
+.vizpick-freshness[data-state="pending"] { color: var(--apai-info);    background: var(--apai-info-bg);    border-color: var(--apai-info); }
+
+/* Market picker */
+.vizpick-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.vizpick-picker-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+}
+.vizpick-market-select {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+  min-width: 160px;
+}
+.vizpick-market-select:disabled { color: var(--apai-muted); }
+.vizpick-picker-meta { font-size: var(--fs-sm); color: var(--apai-muted); }
+
+/* Market-average gauges.
+   A grid rather than a flex row: auto-fit + minmax means the tracks always
+   divide the available width evenly and wrap to a second row when they no
+   longer fit, so a gauge can never be clipped off the right edge at an
+   awkward window size. minmax(0,...) lets a track shrink below the SVG's
+   intrinsic width instead of forcing an overflow. */
+.vizpick-panel {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.vizpick-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+}
+.vizpick-panel-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.vizpick-panel-sub { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+/* Tableau's own last-update stamp, sitting beside the panel title. */
+.vizpick-panel-stamp {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-blue-dark);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-pill);
+  padding: 2px var(--sp-3);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.vizpick-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--sp-4);
+  justify-items: center;
+}
+/* Let the ring scale down with its track on narrow windows. */
+.vizpick-gauge svg { max-width: 100%; height: auto; }
+.vizpick-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.vizpick-gauge svg { display: block; }
+.vizpick-gauge-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  text-align: center;
+}
+.vizpick-gauge-goal {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+}
+
+/* Donut (reserved for future proportional charts, kept for parity with market120) */
+.vizpick-donut-wrap { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.vizpick-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); font-size: var(--fs-sm); }
+.vizpick-legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+
+/* Store table */
+.vizpick-stores {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+  display: grid;
+  gap: var(--sp-3);
+}
+.vizpick-family-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.vizpick-family-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.vizpick-store-count { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+.vizpick-sort-label { font-size: var(--fs-sm); color: var(--apai-muted); }
+.vizpick-sort {
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+}
+.vizpick-draghint {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin: calc(-1 * var(--sp-2)) 0 0;
+}
+.vizpick-draghint[hidden] { display: none; }
+
+/* Per-store card grid.
+   Cards are expanded by default, so each one needs room for a "label …
+   1,234 / 5,678  95%" row without wrapping. 300px is the measured comfortable
+   minimum; auto-fill then packs as many columns as the window allows —
+   roughly 3 at 1080p, 5 at 1440p, 7+ on an ultrawide — instead of stretching
+   a fixed number of cards ever wider. min() keeps it from overflowing on
+   narrow windows. */
+.vizpick-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+/* Cards are always fully expanded — every metric is visible at all times.
+   They are draggable instead of collapsible. */
+.vizpick-store-card {
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3);
+  cursor: grab;
+  transition: box-shadow 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.vizpick-store-card:hover { border-color: var(--apai-blue); box-shadow: var(--shadow-1); }
+.vizpick-store-card:active { cursor: grabbing; }
+/* The card being dragged. */
+.vizpick-store-card.is-dragging { opacity: 0.4; }
+/* The card it would be dropped onto. */
+.vizpick-store-card.is-drop-target {
+  border-color: var(--apai-blue);
+  box-shadow: 0 0 0 2px var(--apai-blue) inset;
+}
+.vizpick-store-card-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+/* Store number leads; the composite ring sits to its right, pushed over by
+   the id block taking the free space. */
+.vizpick-store-card-summary .vizpick-store-card-id { order: 0; }
+.vizpick-store-card-summary .vizpick-store-card-gauge { order: 1; }
+.vizpick-store-card-summary .vizpick-store-card-grip { order: 2; align-self: flex-start; }
+
+.vizpick-card-toggle {
+  margin-top: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-1) 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--apai-border-soft);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  cursor: pointer;
+}
+.vizpick-card-toggle:hover { color: var(--apai-blue); }
+.vizpick-store-card-details[hidden] { display: none; }
+.vizpick-store-card-gauge svg { display: block; }
+.vizpick-store-card-id { flex: 1; min-width: 0; }
+.vizpick-store-card-num { font-size: var(--fs-md); font-weight: var(--fw-bold, 800); color: var(--apai-ink); }
+.vizpick-store-card-sub { font-size: var(--fs-xs); color: var(--apai-muted); }
+/* Drag grip. Purely an affordance — the whole card is draggable. */
+.vizpick-store-card-grip {
+  font-size: var(--fs-lg);
+  color: var(--apai-border);
+  letter-spacing: -2px;
+}
+.vizpick-store-card:hover .vizpick-store-card-grip { color: var(--apai-muted); }
+.vizpick-store-card-rings {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  justify-items: center;
+}
+/* The small rings carry their own value, so their goal caption would just be
+   noise at this size — the text rows below still show it on hover. */
+.vizpick-store-card-rings .vizpick-gauge-goal { display: none; }
+.vizpick-store-card-rings .vizpick-gauge-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+}
+.vizpick-store-card-rings .vizpick-gauge { gap: 2px; }
+.vizpick-minigauge-na {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+
+.vizpick-store-card-details {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  display: grid;
+  gap: var(--sp-2);
+}
+.vizpick-store-card-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.vizpick-store-card-metric-label { color: var(--apai-muted); }
+.vizpick-store-card-metric-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+/* NOTE: deliberately no `color` here. An earlier version set
+   `color: var(--apai-ink)` on this selector, which at (0,1,1) outranked the
+   (0,1,0) .vizpick-good/.vizpick-warn/.vizpick-bad classes and flattened
+   every metric to neutral ink — the traffic lights silently stopped working.
+   Keep this rule to typography only. */
+.vizpick-store-card-metric strong { font-variant-numeric: tabular-nums; }
+
+/* The real numerator/denominator behind a percentage, e.g. "10,658 / 11,164".
+   Muted and smaller so the percentage stays the headline. */
+.vizpick-ratio {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Goal-relative value colouring — see lib/charts.js::bandFor.
+     blue   at or above goal
+     orange below goal but within 5 points  (closed day only)
+     red    5+ points below goal            (closed day only)
+     black  current-day figure under goal — reported, not graded
+   Metrics with no published goal (Total Picked, Pallets %) get no class at
+   all and inherit the surrounding ink, so black means exactly one thing:
+   "not judged". */
+.vizpick-met     { color: var(--apai-blue);  font-weight: var(--fw-semi); }
+.vizpick-near    { color: #E07B00;           font-weight: var(--fw-semi); }
+.vizpick-missed  { color: var(--apai-error); font-weight: var(--fw-semi); }
+.vizpick-neutral { color: var(--apai-blue);  font-weight: var(--fw-medium); }
+
+[data-theme="dark"] .module-vizpick .vizpick-near { color: #FBBF24; }
+
+.vizpick-muted { color: var(--apai-muted); }
+
+/* ── Period tabs (Yesterday / Today) ─────────────────────────── */
+.vizpick-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--apai-border);
+  /* Up to eight tabs (Today + a week). Scroll instead of wrapping so the
+     strip stays one row and Today never moves off the left edge. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.vizpick-tab { flex: 0 0 auto; white-space: nowrap; }
+.vizpick-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-4);
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  color: var(--apai-muted);
+  font: inherit;
+  text-align: left;
+}
+.vizpick-tab:hover { color: var(--apai-ink); }
+.vizpick-tab[aria-selected="true"] {
+  color: var(--apai-blue-dark);
+  border-bottom-color: var(--apai-blue);
+}
+.vizpick-tab-name { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.vizpick-tab-date { font-size: var(--fs-xs); color: var(--apai-muted); }
+
+
+/* ── Today on-demand loader ──────────────────────────────────── */
+.vizpick-today-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  background: var(--apai-info-bg, var(--apai-bg-soft));
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+.vizpick-today-bar[hidden] { display: none; }
+.vizpick-today-bar-text { font-size: var(--fs-sm); color: var(--apai-ink); flex: 1; min-width: 260px; }
+.vizpick-today-bar-actions { display: flex; gap: var(--sp-2); }
+.vizpick-progress {
+  margin-top: var(--sp-2);
+  height: 6px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-border-soft);
+  overflow: hidden;
+}
+.vizpick-progress-fill {
+  height: 100%;
+  background: var(--apai-blue);
+  transition: width 200ms ease;
+}
+/* Setup phase: the viz is rendering and no store has completed, so there is
+   no percentage to show. A 0%-wide bar looks stalled — sweep instead. */
+.vizpick-progress-indeterminate {
+  width: 35%;
+  transition: none;
+  animation: vizpick-sweep 1.4s ease-in-out infinite;
+}
+@keyframes vizpick-sweep {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vizpick-progress-indeterminate { animation: none; width: 100%; opacity: 0.4; }
+}
+
+/* Metric absent from the current-day view — shown as an explicit "n/a"
+   placeholder rather than a zeroed ring that would read as real data. */
+.vizpick-gauge-na-box {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+.vizpick-card-nohealth {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px dashed var(--apai-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apai-muted);
+}
+
+.vizpick-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--apai-blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.vizpick-linkbtn[hidden] { display: none; }
+
+.vizpick-empty {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: 0;
+}
+
+.vizpick-section-heading {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0 0 var(--sp-3);
+}
+
+.vizpick-debug {
+  background: var(--apai-error-bg);
+  border: 1px solid var(--apai-error);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink);
+}
+.vizpick-debug[hidden] { display: none; }
+.vizpick-debug-body { margin-bottom: var(--sp-3); }
+.vizpick-debug code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--apai-bg-elev);
+  padding: 0 4px;
+  border-radius: var(--rad-sm);
+}
+.vizpick-debug pre {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  padding: var(--sp-2);
+  font-size: var(--fs-xs);
+  overflow: auto;
+  max-height: 300px;
+}
+.vizpick-debug-fix {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+  border-left: 3px solid var(--apai-error);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-sm);
+}
+.vizpick-debug-hint {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin: var(--sp-3) 0 0;
+}
+
+/* Outcome line for the last capture — in particular the "nothing changed,
+   nothing re-downloaded" case, which would otherwise look like a no-op. */
+.vizpick-runnote {
+  margin: calc(-1 * var(--sp-3)) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+.vizpick-runnote[hidden] { display: none; }
+
+.vizpick-debug-head { display: flex; align-items: baseline; gap: var(--sp-3); }
+.vizpick-debug-head .vizpick-section-heading { margin: 0; }
+.vizpick-debug-head .vizpick-linkbtn { margin-left: auto; }
+/* Marks an error that was loaded from storage rather than just produced. */
+.vizpick-debug-stale {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+  border-left: 3px solid var(--apai-muted);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink);
+}

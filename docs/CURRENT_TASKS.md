@@ -130,6 +130,208 @@ both lines in `modules/_registry.js`.
 
 ---
 
+### 6. VizPick Market Rollup — remaining UI + caching work
+
+**Why:** `modules/vizpick/` (v0.1.0, alpha) replaces typing store numbers
+one at a time into Tableau's VizPick Details search box. Pick a market once,
+see every store in it side by side.
+
+**Where it stands:** capture pipeline is working end-to-end against real
+Tableau data. Confirmed 2026-08-16: Market 1 returned 11 stores, market
+gauges rendered, store cards expanded.
+
+Load-bearing details that are easy to break — read before touching capture:
+- Tableau does **not** deliver the crosstab CSV over fetch/XHR. It builds
+  the CSV client-side into a Blob, calls `URL.createObjectURL()`, and clicks
+  a synthetic `<a download>`. `content/tableau_capture.js` patches
+  `createObjectURL` and reads the Blob in-page, before it ever becomes a
+  file — which also sidesteps Forcepoint DLP quarantining the download.
+- The string `Cases Seen %` also appears in Tableau's internal layout /
+  session JSON, so the generic `findBySubstr()` false-matches metadata.
+  `vizpick_stores_tableau.js` must keep using `findBlobBySubstr()`
+  (`via === "blob"` only).
+- Do **not** swap the structured CSV capture for screenshots or cropped
+  dashboard images. Filtering, math, colour coding, caching and clickable
+  cards all depend on real fields.
+- Market defaulting reads Settings → Defaults via `getUserHomeMarket()` /
+  `onUserMarketChange()` from `shared/userStore.js`. A manual pick must stay
+  sticky (`marketIsUserSet`).
+
+**Source layout — established live 2026-08-16, don't re-derive it.**
+The workbook splits the data across two views with *different shapes*:
+
+| | `views/VizPick/VizPick` | `views/VizPick/VizPickDetails` |
+|---|---|---|
+| Period | "refreshed daily for the day prior" | "refreshed frequently for the current business day… 1-2 Hours behind" |
+| Scope | **all stores, all markets** in one crosstab | **one store**, chosen by a Tableau *parameter* (`aria-label="Store"`, commit with ENTER) |
+| Store rollup sheet | "Download Summary by Store" (17 cols) | "Download Department Breakout (Current Day)", `Total` row |
+| "Last update" sheet | `8/16/2026` — **date only** | `2026-08-16 10:26:07` — **full timestamp** |
+
+The summary view's date filter offers only `1. Yesterday`, `2. Week to Date`,
+`3. Last WM Week`, `4. Last 7 Days`, `5. Last 30 Days` — there is **no Today
+bucket and no way to ask it for a single prior day**. That settles the
+open question in the original brief:
+
+> **Decision — Yesterday is not obtained by driving the period filter, and
+> "previous day" is not obtained by rolling a Today snapshot forward.**
+> Yesterday comes straight from the summary view (its native period), and
+> Today comes from the Details view. The two are different sources, not two
+> settings of one source. History is preserved by keeping the snapshot the
+> summary view displaces (`previous`), keyed on Tableau's own update stamp.
+
+Because Today is one export *per store*, a whole market costs N export
+cycles. It is therefore loaded on an explicit "Load today's data" button,
+not automatically.
+
+**Why Today is so much more fragile than Yesterday.** Yesterday is *one*
+export from a view that needs no interaction: open tab → wait for the viz →
+one crosstab → done (~8s on a warm tab). Today, per store, must type into a
+Tableau parameter, wait for the viz to re-query, export sheet A, wait for the
+toolbar to come back after the dialog tears down, then export sheet B. For a
+10-store market that is ~21 export cycles and ~10 parameter drives against
+Tableau's React UI, each with its own timing window — versus Yesterday's one.
+The per-step failure rate isn't higher; there are just ~30× more steps.
+
+**Parallel lanes (2026-08-16).** The crawl runs across up to
+`MAX_TABS = 3` background tabs draining a shared queue by index (not static
+slices, so a lane that draws a slow store doesn't strand the others).
+Measured with `dev/test-vizpick-lanes.mjs` against live Tableau, market 323:
+
+| stores | 1 lane | 3 lanes | |
+|---|---|---|---|
+| 3 | 73.8s | 55.8s | 1.32× — startup-dominated |
+| 6 | 218.7s | 77.1s | **2.84×**, 6/6 captured |
+
+At a real market size (9–11 stores) that is roughly 2 minutes instead of 6.
+
+Two bugs this work uncovered, both of which were also hurting the serial
+crawl:
+- **The toolbar is not a readiness signal for this view.** Tableau paints the
+  download button *before* the parameter controls render. The serial crawl
+  only got away with driving the Store box immediately because the
+  source-stamp export runs first and buys ~20s of slack; the moment extra
+  lanes skipped that, 2 of 3 stores died with "no Store parameter input in
+  this frame". `prepareTab()` now waits for the Store control itself, and the
+  SESSION error names the stage that failed instead of always blaming SSO.
+- **A no-op parameter set fires no query.** Setting Store to the value it
+  already holds produces no vizql traffic, so waiting for a re-query burned
+  the full 25s timeout and then discarded a store whose data was on screen
+  the whole time. This killed the *first* store of every crawl whenever the
+  view's default matched it. `captureStore()` now skips the wait when
+  `set.before` already equals the requested store.
+
+`onStore` persistence is serialised behind a promise chain: `mergeToday` is a
+read-modify-write on `chrome.storage.local`, so concurrent lanes would each
+read the same snapshot and the later write would silently drop the earlier
+lane's row. The lanes stay parallel; only the persist is one-at-a-time.
+
+**Field definitions — verified, and one of them refutes the obvious guess.**
+The Details export exposes the real numerators/denominators:
+- `Cases Seen % = Cases Seen / Cases Expected` (5,953/10,816 = 55% ✓)
+- `Pick % = Suggested Picks Completed / Suggested Picks` (343/739 = 46% ✓)
+- `Pallets % = pallets_seen / pallets_expected` (282/294 = 95.92% ✓)
+
+**VizPick Health is mean attainment, not a mean.** Established 2026-08-16
+over the full stored roster (4,598 stores). It is *not* an average of the
+four component rings — store 1 scores 98.14 with a best component of 98, so
+the composite exceeds `max(components)` and no mean, weighted or not, can
+produce it. A least-squares fit of the four raw percentages was poor
+(max error 8.9pp) and extrapolated above 100, which gave away the real shape:
+
+```
+VizPick Health = mean( min(100, cases/95), min(100, location/95),
+                       min(100, pick/90),  min(100, overstock/90) ) × 100
+```
+
+median error 0.28pp, p95 1.74pp — the residual is the components being
+published rounded to whole percents while Tableau computes from unrounded
+values. **Therefore the composite's goal is 100, by construction**, not an
+invented threshold: a store at or above every component goal scores exactly
+100, and 809 of the 4,598 stores do. `GOALS.vizpick = 100` in `view.js`, and
+three tests in `parse_vizpick_stores_csv.test.mjs` pin the derivation.
+
+So **`Total Picked` is NOT the Pick % numerator** — in the same row it reads
+452 against a numerator of 343. Deriving a denominator as
+`Total Picked / (Pick % / 100)` yields 982 against a true 739, a 33% error.
+The UI therefore renders only *real* `x / y` pairs and never a derived one;
+`modules/vizpick/lib/tests/parse_vizpick_stores_csv.test.mjs` has a test that
+fails if anyone reintroduces the derivation.
+
+**Shipped 2026-08-16** — all six items from the original brief are done and
+verified end-to-end in the Edge debug profile against live Tableau data
+(Market 120, 10 stores):
+cards expanded by default with per-card collapse and a Collapse/Expand all;
+full-width responsive grid (5 columns × 1552px at 1920px wide, achieved by
+opting this module out of the shell's 1400px cap); orange/red highlighting
+confirmed rendering `#D97706` / `#B91C1C`; absolute source timestamp with
+relative age as secondary; Yesterday/Today tabs each labelled with the
+calendar date they describe; real `x / y` ratios.
+
+**Gotcha — `chrome.tabs.query` cannot see Tableau's view name.** Tableau is a
+hash-router: the view lives entirely in the URL *fragment*
+(`…/#/site/OnlineGrocery/views/VizPick/VizPick`), and match patterns are
+matched against the URL **without** its fragment. So `".../*VizPick*"` matched
+*nothing* — verified live — which silently disabled tab reuse and made every
+Refresh open a new tab and pay a cold render (the usual cause of the `SESSION`
+timeout). Both sources now query the host (`".../*"`) and disambiguate the
+view with a regex in JS. Reuse of an already-rendered tab takes a capture from
+~60s to ~8s, and a pre-existing user tab is never closed.
+
+**Colour is goal-relative, and the current day is deliberately not judged.**
+Matching the Tableau dashboard's own rings and Shane's reporting convention
+(`lib/charts.js::bandFor`):
+
+| | Yesterday (closed day) | Today (still accumulating) |
+|---|---|---|
+| at/above goal | blue | blue |
+| within 5 pts below | orange | **black** |
+| 5+ pts below | black | black |
+
+Being under goal at 11am is meaningless, so a current-day miss is never
+coloured as a near-miss. Goals are Cases 95, Locations 95, Picks 90,
+Overstock 90; `Pallets %`, `Total Picked` and the `VizPick` composite have no
+published goal and are therefore never judged — the composite ring stays
+neutral blue exactly as Tableau renders it. One scale drives both the rings
+and the card text so they cannot disagree, and it bands the ROUNDED value
+because every surface prints whole percents (banding raw let 95.4 show as
+"95" while being coloured as though above 95).
+
+**Refreshing checks the timestamp before doing any work.** Both captures read
+the cheap "Last update" sheet first and, if it matches what is already stored,
+return `unchanged: true` without exporting anything — the stored snapshot and
+its previous-day history are left completely untouched. For Today this skips a
+multi-minute per-store crawl (measured 3s instead of minutes); the stored
+market must also match, since a different market needs different stores
+regardless of freshness. A "Re-capture anyway" link appears after a skip.
+
+**Known gaps / next steps:**
+- Today needs TWO exports per store: the department breakout (picks/cases +
+  the raw ratios) and "VizPick Donut Health" (Location %, Overstock % and the
+  composite — the breakout has none of those). Between them the viz toolbar is
+  removed from the DOM while the first dialog tears down, so the second export
+  must wait for it to reappear or it silently finds no Download button.
+- The Today crawl reuses one Tableau tab and sets the Store parameter in a
+  loop. It waits for a fresh vizql response (via the capture ring) before
+  each export, which is what stops it exporting the *previous* store's
+  numbers — the one failure mode that would look like valid data. Worth
+  re-checking if Tableau changes its request pattern.
+- Today is captured for the market that was selected when the button was
+  pressed; switching market does not invalidate it (the snapshot records
+  `market`, and `todayIsCurrent()` compares it), but there is no automatic
+  re-pull on market switch.
+- No alarm/scheduled pull yet — both captures are manual.
+
+**Testing notes:** Edge does not hot-reload extension source — reload at
+`edge://extensions` and close stale Tableau tabs so a fresh content script
+is injected. `dev/test-vizpick-e2e.mjs` does both automatically and drives
+the whole UI (`--today` also runs the per-store crawl);
+`dev/test-vizpick-cache.mjs` verifies the snapshot roll rules against the
+live extension. The Playwright/CDP debug profile is a separate Edge profile
+from the user's normal window. A one-off `SESSION` render timeout resolved on
+retry; don't add speculative focus-management complexity unless it repeats.
+
+---
+
 ## Watch list (not in flight; would be picked up next)
 
 - **User-directory lookup for ClaimsDisposition.** Probes in

@@ -1,0 +1,99 @@
+<section class="vizpick">
+  <header class="vizpick-header">
+    <div class="vizpick-title">
+      <h1>VizPick Market Rollup</h1>
+    </div>
+    <div class="vizpick-toolbar">
+      <span class="vizpick-freshness" data-freshness="stores">no capture yet</span>
+      <button class="btn btn-primary" data-action="refresh">
+        <span class="btn-label">Refresh</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <!-- Shown only after a refresh found nothing new upstream. -->
+      <button class="vizpick-linkbtn" data-action="force-refresh" hidden>Re-capture anyway</button>
+    </div>
+  </header>
+
+  <!-- Market picker — the whole point: no more typing store numbers. -->
+  <section class="vizpick-picker">
+    <label class="vizpick-picker-label" for="vizpick-market-select">Market</label>
+    <select class="vizpick-market-select" id="vizpick-market-select" data-market-select disabled>
+      <option value="">No data yet — click Refresh</option>
+    </select>
+    <span class="vizpick-picker-meta" data-picker-meta></span>
+  </section>
+
+  <!-- Outcome of the last capture (including "nothing changed"). -->
+  <p class="vizpick-runnote" data-run-note hidden></p>
+
+  <!-- Period tabs. Yesterday and Today come from two DIFFERENT Tableau
+       views with different shapes — see lib/sources/vizpick_today_tableau.js -->
+  <!-- Today first and leftmost, then a rolling week of closed days, newest to
+       oldest. Built in view.js because the set grows as history accumulates. -->
+  <div class="vizpick-tabs" role="tablist" aria-label="Reporting period" data-tabs></div>
+
+  <!-- Today needs one Tableau export per store, so it is loaded on demand. -->
+  <section class="vizpick-today-bar" data-today-bar hidden>
+    <div class="vizpick-today-bar-text" data-today-status></div>
+    <div class="vizpick-today-bar-actions">
+      <button class="btn btn-primary" data-action="load-today">Load today's data</button>
+      <button class="vizpick-linkbtn" data-action="force-today" hidden>Re-capture anyway</button>
+      <button class="btn" data-action="cancel-today" hidden>Cancel</button>
+    </div>
+  </section>
+
+  <!-- Market-average gauges (VizPick's own single-value ring style) -->
+  <section class="vizpick-panel">
+    <div class="vizpick-panel-head">
+      <h2>Market Average</h2>
+      <!-- Tableau's own "Last update" stamp for the active tab — NOT when the
+           browser last refreshed. Hover for the source note + relative age. -->
+      <span class="vizpick-panel-stamp" data-updated-abs>—</span>
+      <span class="vizpick-panel-sub" data-gauges-sub></span>
+    </div>
+    <div class="vizpick-gauges" data-gauges>
+      <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
+    </div>
+  </section>
+
+  <!-- Per-store cards for the selected market. Graphs only by default — the
+       store number and its overall score lead, then the four goal rings; the
+       numeric rows are behind a per-card toggle. Cards are draggable; the Sort
+       control sets the order until one is dragged. -->
+  <section class="vizpick-stores">
+    <div class="vizpick-family-head">
+      <h2>Stores in Market</h2>
+      <span class="vizpick-store-count" data-store-count></span>
+      <label class="vizpick-sort-label" for="vizpick-sort">Sort</label>
+      <select class="vizpick-sort" id="vizpick-sort" data-sort-select>
+        <option value="score-asc">Total score — low to high</option>
+        <option value="score-desc">Total score — high to low</option>
+        <option value="store-asc">Store number — low to high</option>
+        <option value="store-desc">Store number — high to low</option>
+        <option value="custom">Custom (drag to arrange)</option>
+      </select>
+      <button class="vizpick-linkbtn" data-action="toggle-all" hidden>Show all numbers</button>
+      <button class="vizpick-linkbtn" data-action="reset-order" hidden>Reset order</button>
+    </div>
+    <p class="vizpick-draghint">Drag a card to rearrange.</p>
+    <div class="vizpick-store-grid" data-store-cards>
+      <p class="vizpick-empty">Click Refresh to capture VizPick store data.</p>
+    </div>
+  </section>
+
+  <!-- Debug details (visible only when the last capture reports an error) -->
+  <section class="vizpick-debug" data-debug-section hidden>
+    <div class="vizpick-debug-head">
+      <h2 class="vizpick-section-heading">Last capture details</h2>
+      <button class="vizpick-linkbtn" data-action="copy-diagnostics">Copy diagnostics</button>
+      <button class="vizpick-linkbtn" data-action="dismiss-error">Dismiss</button>
+    </div>
+    <div class="vizpick-debug-body" data-debug-body></div>
+    <p class="vizpick-debug-hint">
+      <strong>Copy diagnostics</strong> puts the full capture state on your
+      clipboard — error class, stored snapshot counts, and the state of every
+      open Tableau tab. Paste it when reporting a capture that will not load.
+      It contains counts and timestamps only, no store-level figures.
+    </p>
+  </section>
+</section>
