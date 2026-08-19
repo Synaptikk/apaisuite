@@ -88,12 +88,23 @@ What actually leaves the browser, and where:
 | Data | Destination | Where |
 |---|---|---|
 | Anonymous installation id (`crypto.randomUUID()`), Web Push subscription, extension version, user-agent | `qrcallbox.com/api/extension/register` | `shared/push.js:108` |
-| Workvivo token heartbeat | `qrcallbox.com/api/workvivo/token-heartbeat` | `modules/workvivo/service.js:38` |
+| The user's Sendbird `access_token` for Workvivo chat, plus store number and channel name | `qrcallbox.com/api/workvivo/token-heartbeat` | `modules/workvivo/service.js:38`, payload at `:87` |
 | The rendered metric card image | Workvivo/Sendbird channel the user selects | `modules/metricshot/lib/sendbird.js` |
 
-Declare: **not** personally identifiable — the installation id is random and stored
-locally, never derived from user identity. Nothing else is sent to a third party.
-Investigation data stays in `chrome.storage.local` on the device.
+Two categories must be ticked, not one:
+
+- **Authentication information — yes.** The heartbeat sends a live Sendbird
+  `access_token`. It is a credential, and ticking only "no PII" here is the kind of
+  understatement that gets an item pulled after publication rather than at review.
+  The honest framing is that the token is the user's own, is couriered to the user's
+  own QRCallBox backend so scan alerts can be posted on their behalf, and is the
+  entire reason the module exists — `modules/workvivo/module.js:29` already says so
+  in the module description the user sees before enabling it.
+- **Personally identifiable information — no.** The installation id is
+  `crypto.randomUUID()`, stored locally, never derived from user identity.
+
+Nothing else leaves the browser. Investigation data stays in `chrome.storage.local`
+on the device.
 
 Certify Limited Use truthfully: data is used only to provide the features the user
 invokes; it is not sold, not used for advertising, and not used to build profiles.
