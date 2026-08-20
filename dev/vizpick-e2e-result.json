@@ -1,0 +1,270 @@
+{
+  "startedAt": "2026-08-16T17:30:36.557Z",
+  "steps": {
+    "extension": {
+      "id": "ckomcaimhnehdkhnngahpiboigbklpml",
+      "version": "0.9.1",
+      "state": "ENABLED"
+    },
+    "closedTabs": 1,
+    "mounted": true,
+    "ui": {
+      "cardTag": "ARTICLE",
+      "draggable": true,
+      "detailsCount": 0,
+      "metricRowsFirstCard": 6,
+      "sortValue": "store-asc",
+      "sortOptions": [
+        "score-asc",
+        "score-desc",
+        "store-asc",
+        "store-desc",
+        "custom"
+      ],
+      "storeOrder": [
+        "658",
+        "669",
+        "756",
+        "1089",
+        "1215",
+        "1458",
+        "2988",
+        "3660",
+        "5151",
+        "5173"
+      ],
+      "market": "120",
+      "marketOptions": 452,
+      "storeCount": 10,
+      "openCards": 0,
+      "gridColumns": 5,
+      "gridWidth": 1552,
+      "rootMaxWidth": "none",
+      "windowWidth": 1920,
+      "updatedAbs": "Sun, Aug 16",
+      "tabYesterdayDate": "Sat, 8/15",
+      "tabTodayDate": "Sun, 8/16",
+      "ratios": [
+        "9,247 / 9,753",
+        "61 / 82",
+        "8,567 / 8,769",
+        "65 / 85",
+        "9,631 / 10,145",
+        "20 / 30"
+      ],
+      "ratioCount": 20,
+      "census": {
+        "met": 23,
+        "near": 9,
+        "missed": 8,
+        "pending": 0,
+        "neutral": 0,
+        "none": 20
+      },
+      "colours": {
+        "met": "rgb(0, 113, 206)",
+        "missed": "rgb(185, 28, 28)",
+        "near": "rgb(224, 123, 0)"
+      },
+      "freshness": "captured 0s ago",
+      "sampleCard": "97 #658 A · Region 12 ⠿ Cases Seen % 9,247 / 9,753 95% Location % 96% Pick % 81% Total Picked 631 Overstock % 89% Pallets % 61 / 82 74%"
+    },
+    "sorted": {
+      "store-desc": [
+        {
+          "store": "5173",
+          "score": "98"
+        },
+        {
+          "store": "5151",
+          "score": "99"
+        },
+        {
+          "store": "3660",
+          "score": "90"
+        },
+        {
+          "store": "2988",
+          "score": "100"
+        },
+        {
+          "store": "1458",
+          "score": "96"
+        },
+        {
+          "store": "1215",
+          "score": "88"
+        },
+        {
+          "store": "1089",
+          "score": "97"
+        },
+        {
+          "store": "756",
+          "score": "98"
+        },
+        {
+          "store": "669",
+          "score": "95"
+        },
+        {
+          "store": "658",
+          "score": "97"
+        }
+      ],
+      "score-desc": [
+        {
+          "store": "2988",
+          "score": "100"
+        },
+        {
+          "store": "5151",
+          "score": "99"
+        },
+        {
+          "store": "756",
+          "score": "98"
+        },
+        {
+          "store": "5173",
+          "score": "98"
+        },
+        {
+          "store": "1089",
+          "score": "97"
+        },
+        {
+          "store": "658",
+          "score": "97"
+        },
+        {
+          "store": "1458",
+          "score": "96"
+        },
+        {
+          "store": "669",
+          "score": "95"
+        },
+        {
+          "store": "3660",
+          "score": "90"
+        },
+        {
+          "store": "1215",
+          "score": "88"
+        }
+      ],
+      "score-asc": [
+        {
+          "store": "1215",
+          "score": "88"
+        },
+        {
+          "store": "3660",
+          "score": "90"
+        },
+        {
+          "store": "669",
+          "score": "95"
+        },
+        {
+          "store": "1458",
+          "score": "96"
+        },
+        {
+          "store": "658",
+          "score": "97"
+        },
+        {
+          "store": "1089",
+          "score": "97"
+        },
+        {
+          "store": "5173",
+          "score": "98"
+        },
+        {
+          "store": "756",
+          "score": "98"
+        },
+        {
+          "store": "5151",
+          "score": "99"
+        },
+        {
+          "store": "2988",
+          "score": "100"
+        }
+      ],
+      "store-asc": [
+        {
+          "store": "658",
+          "score": "97"
+        },
+        {
+          "store": "669",
+          "score": "95"
+        },
+        {
+          "store": "756",
+          "score": "98"
+        },
+        {
+          "store": "1089",
+          "score": "97"
+        },
+        {
+          "store": "1215",
+          "score": "88"
+        },
+        {
+          "store": "1458",
+          "score": "96"
+        },
+        {
+          "store": "2988",
+          "score": "100"
+        },
+        {
+          "store": "3660",
+          "score": "90"
+        },
+        {
+          "store": "5151",
+          "score": "99"
+        },
+        {
+          "store": "5173",
+          "score": "98"
+        }
+      ]
+    },
+    "sortChecks": {
+      "storeAsc": true,
+      "storeDesc": true,
+      "scoreDesc": true,
+      "scoreAsc": true
+    },
+    "todayTab": {
+      "selected": "true",
+      "barVisible": true,
+      "status": "Showing 3 of 10 stores in this market. Today is captured one store at a time, so reloading takes a few minutes.",
+      "updatedAbs": "Sun, Aug 16 — 11:26 AM",
+      "cards": 3
+    },
+    "todayRun": {
+      "cards": 3,
+      "ratios": [
+        "9,347 / 10,132",
+        "400 / 476",
+        "6,403 / 8,797",
+        "451 / 661"
+      ],
+      "updatedAbs": "Sun, Aug 16 — 11:26 AM",
+      "status": "",
+      "sampleCard": "96 #658 A · Region 12 ⠿ Cases Seen % 9,347 / 10,132 92% Location % 97% Pick % 400 / 476 84% Total Picked 536 Overstock % 87%"
+    },
+    "consoleErrors": []
+  },
+  "finishedAt": "2026-08-16T17:31:25.101Z"
+}

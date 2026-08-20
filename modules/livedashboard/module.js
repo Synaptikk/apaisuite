@@ -32,6 +32,22 @@ export default {
       view:    () => import("./view.js"),
     },
 
+    // Dashboard widgets contributed to the Live Dashboard surface. The
+    // Settings page enumerates every module with a dashboard.widgets array
+    // and renders per-widget visibility toggles. Widget IDs are namespaced
+    // as "<moduleId>.<widgetId>" in chrome.storage.sync["shell.dashboardWidgets"];
+    // the view reads this and toggles [data-widget-id="…"] elements.
+    dashboard: {
+      widgets: [
+        { id: "absences",    label: "Callouts Today",        defaultOn: true },
+        { id: "compliance",  label: "Compliance Due Soon",   defaultOn: true },
+        { id: "accident",    label: "Accident Details",      defaultOn: true },
+        { id: "cvp",         label: "CVP Sell Through",      defaultOn: true },
+        { id: "register",    label: "Register Exceptions",   defaultOn: true },
+        { id: "recognition", label: "Recognition (shown in the Accident drill-down)", defaultOn: true },
+      ],
+    },
+
     service: {
       handlers,
     },

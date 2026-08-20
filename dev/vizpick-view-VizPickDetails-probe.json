@@ -1,0 +1,94 @@
+{
+  "view": "VizPickDetails",
+  "url": "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self",
+  "startedAt": "2026-08-16T15:38:11.087Z",
+  "steps": {
+    "filters": [
+      {
+        "name": "Location Status",
+        "value": "In Use"
+      },
+      {
+        "name": "Location Seen Today",
+        "value": "(All)"
+      },
+      {
+        "name": "Location Type",
+        "value": "Backroom"
+      },
+      {
+        "name": "Area",
+        "value": "(All)"
+      }
+    ],
+    "dateish": [
+      "Refresh",
+      "Updated",
+      "Download Department Breakout (Current Day Phone)",
+      "This dashboard is refreshed frequently for the current business day. Data can be approximately 1-2 Hours behind depending on upstream systems.",
+      "VizPick Backroom Health (Current Day)",
+      "If a case was last seen yesterday, it would remain expected each day until it's no longer in the Backroom",
+      "Picked % (Goal 90%) (Current Day):",
+      "Effective 3/9/24",
+      "-        Suggested Picks are refreshed during each update and represent the number of cases that",
+      "Suggested Picks are refreshed during each update and represent the number of cases that",
+      "Location Seen Today",
+      "Department Breakout (Current Day)"
+    ],
+    "sheetNames": [
+      {
+        "index": 0,
+        "text": "Cases Donut Health"
+      },
+      {
+        "index": 1,
+        "text": "Department Groups Donuts Health"
+      },
+      {
+        "index": 2,
+        "text": "Download Department Breakout (Current Day Phone)"
+      },
+      {
+        "index": 3,
+        "text": "Download Department Breakout (Current Day)"
+      },
+      {
+        "index": 4,
+        "text": "Download Location Details"
+      },
+      {
+        "index": 5,
+        "text": "Download Location Details (2)"
+      },
+      {
+        "index": 6,
+        "text": "Last update"
+      },
+      {
+        "index": 7,
+        "text": "Locations Donut Health"
+      },
+      {
+        "index": 8,
+        "text": "Metric Definitions Moble"
+      },
+      {
+        "index": 9,
+        "text": "Overstock Donut Health"
+      },
+      {
+        "index": 10,
+        "text": "Picks Donut Health"
+      },
+      {
+        "index": 11,
+        "text": "VizPick Donut Health"
+      }
+    ],
+    "lastUpdate": {
+      "ok": true,
+      "raw": "2026-08-16 10:26:07\t\n"
+    }
+  },
+  "finishedAt": "2026-08-16T15:38:24.524Z"
+}

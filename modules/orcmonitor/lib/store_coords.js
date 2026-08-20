@@ -30,5 +30,6 @@ export function getStoreCoords(storeNum) {
   return STORE_COORDS[String(storeNum)] ?? null;
 }
 
-// Southeast BU regions to search
-export const SE_BU_REGIONS = ["2","3","9","11","12","14","29","42"];
+// Southeast BU regions to search. Region 4 (Market 29) added 2026-07-31 so
+// scans work for stores like #605 that sit outside the Region 12 footprint.
+export const SE_BU_REGIONS = ["2","3","4","9","11","12","14","29","42"];

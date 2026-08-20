@@ -4,6 +4,8 @@
 // Leaflet loaded from local bundle: lib/leaflet.js (CSP-safe, same origin).
 // Colors match APAISuite light theme (tokens.css).
 
+import { getUserHomeStore, onUserStoreChange } from "../../shared/userStore.js";
+
 const PROGRESS_KEY = "orcmonitor.progress";
 
 // Key Market 120 / Region 12 store coordinates for pre-centering the map
@@ -42,17 +44,40 @@ export async function mount(host, container) {
 
   container.innerHTML = await fetch(host.url("view.html")).then(r => r.text());
 
+  // Seed the store input from the shell default when it's still empty.
+  // Also used below for map centering + "your store" highlighting.
+  let homeStore = (await getUserHomeStore()) || "";
+  const storeEl = container.querySelector("#om-store");
+  if (storeEl && !storeEl.value.trim() && homeStore) storeEl.value = homeStore;
+  const currentStore = () => (storeEl?.value ?? homeStore ?? "").trim();
+
+  // Live-update: if the user changes the shell default in Settings, seed
+  // the input again (only when it hasn't been manually typed into).
+  const unsubStore = onUserStoreChange((s) => {
+    homeStore = s || "";
+    if (storeEl && !storeEl.value.trim() && homeStore) storeEl.value = homeStore;
+  });
+
   // Load local Leaflet — same extension origin, passes script-src 'self'
   await _loadLeaflet(host);
   const map = _initMap(container);
   // Give the shell's layout engine time to settle, then size + center the map
   if (map) {
-    setTimeout(() => {
+    setTimeout(async () => {
       map.invalidateSize();
-      // Pre-center on the default store input value
-      const { getStoreCoords } = (window._orcStoreCoords ?? {});
-      const storeVal = (container.querySelector("#om-store")?.value ?? "1458").trim();
-      const preCoords = STORE_COORDS[storeVal];
+      // Pre-center on the default store input value. First try the hardcoded
+      // map; on miss, check the resolver's cache (populated after the first
+      // scan of an unknown store).
+      const storeVal = currentStore() || "1458";
+      let preCoords = STORE_COORDS[storeVal];
+      if (!preCoords) {
+        try {
+          const key = `orcmonitor.storeCoords.${storeVal}`;
+          const got = await chrome.storage.local.get(key);
+          const c = got?.[key];
+          if (Array.isArray(c) && c.length === 2) preCoords = c;
+        } catch { /* ignore */ }
+      }
       if (preCoords) map.setView(preCoords, 7, { animate:false });
     }, 200);
     setTimeout(() => { map.invalidateSize(); }, 700);
@@ -115,9 +140,9 @@ export async function mount(host, container) {
     const threats = data.threats ?? [];
     _clearLayers(map, mapLayers, dotLayers);
     _renderBase(map, mapLayers, data, corridorsGeoJSON());
-    _renderDots(map, dotLayers, data, threats, null, selectCard);
+    _renderDots(map, dotLayers, data, threats, null, selectCard, currentStore());
     _renderSummary(container, threats, data);
-    _renderCards(container, threats);
+    _renderCards(container, threats, currentStore());
     container.querySelector("#om-btn-export").disabled = !threats.length;
     _setStatus(container, `${threats.length} threats within 300 mi — sorted by risk score`);
   });
@@ -129,7 +154,7 @@ export async function mount(host, container) {
       c.style.boxShadow = isSel ? "0 0 0 2px var(--apai-blue,#0071CE)" : "";
       c.style.opacity   = !selected || isSel ? "1" : "0.42";
     });
-    if (lastData) _renderDots(map, dotLayers, lastData, lastData.threats??[], selected, selectCard);
+    if (lastData) _renderDots(map, dotLayers, lastData, lastData.threats??[], selected, selectCard, currentStore());
     if (selected && lastData) {
       const th = (lastData.threats??[]).find(t => String(t.personId) === String(selected));
       if (th?.lat && th?.lon) map?.setView([th.lat, th.lon], 9, { animate:true });
@@ -143,7 +168,7 @@ export async function mount(host, container) {
 
   container.querySelector("#om-btn-export")?.addEventListener("click", async () => {
     if (!lastData) return;
-    const store = (container.querySelector("#om-store")?.value ?? "1458").trim();
+    const store = currentStore() || "1458";
     const btn = container.querySelector("#om-btn-export");
     btn.disabled = true; btn.textContent = "Capturing map…";
     const mapImg = await _captureMapImage(container, map, lastData).catch(() => null);
@@ -174,8 +199,8 @@ export async function mount(host, container) {
           _renderBase(map, mapLayers, p, corridorsGeoJSON());
         }
         _renderSummary(c, partial, p);
-        _renderCards(c, partial);
-        _renderDots(map, dotLayers, { target: p.target, threats: partial }, partial, selected, selectCard);
+        _renderCards(c, partial, currentStore());
+        _renderDots(map, dotLayers, { target: p.target, threats: partial }, partial, selected, selectCard, currentStore());
         c.querySelector("#om-btn-export").disabled = !partial.length;
       }
     }, 1500);
@@ -188,6 +213,7 @@ export async function mount(host, container) {
 
   return () => {
     clearInterval(tokenPoll); clearInterval(progressInterval);
+    unsubStore?.();
     styleLink.remove(); try { map?.remove(); } catch {}
   };
 }
@@ -257,7 +283,7 @@ function _renderBase(map, ml, data, gj) {
   }, 100);
 }
 
-function _renderDots(map, dl, data, threats, selectedPid, onDotClick) {
+function _renderDots(map, dl, data, threats, selectedPid, onDotClick, yourStore) {
   dl.forEach(l => { try { map?.removeLayer(l); } catch {} });
   dl.length = 0;
   if (!map) return;
@@ -274,7 +300,7 @@ function _renderDots(map, dl, data, threats, selectedPid, onDotClick) {
     if (isSel) {
       const hist = (th.storeHistory??[]).filter(s=>s.lat&&s.lon);
       hist.forEach((s,i) => {
-        const isT = s.store?.includes("1458");
+        const isT = yourStore && s.store?.includes(yourStore);
         const dc  = isT?"#1A7F37":i===0?"#B91C1C":"#0071CE";
         dl.push(L.circleMarker([s.lat,s.lon],{radius:isT?9:6,color:"#fff",weight:1.5,fillColor:dc,fillOpacity:0.9})
           .bindPopup(`<b>${(s.store??"?").split(" - ")[0]}</b><br>${s.date??""} ${s.type?"· "+s.type:""}<br>${s.dist} mi${isT?"<br><b style='color:#1A7F37'>★ YOUR STORE</b>":""}`)
@@ -621,14 +647,14 @@ function _renderSummary(c, threats, data) {
   ].join("");
 }
 
-function _renderCards(c, threats) {
+function _renderCards(c, threats, yourStore) {
   const el = c.querySelector("#om-cards-container");
   el.innerHTML = threats.length
-    ? threats.slice(0,40).map(_cardHTML).join("")
+    ? threats.slice(0,40).map((t) => _cardHTML(t, yourStore)).join("")
     : `<p class="muted" style="padding:24px">No ORC threats detected within 250 miles.</p>`;
 }
 
-function _cardHTML(t) {
+function _cardHTML(t, yourStore) {
   const level = t.riskScore>=70?"high":t.riskScore>=45?"medium":"low";
   const rc    = t.riskScore>=70?"#B91C1C":t.riskScore>=45?"#D97706":"#CA8A04";
   const lc    = (t.lastSeenDays??99)<=14?"#B91C1C":(t.lastSeenDays??99)<=30?"#D97706":"var(--apai-muted,#6B7280)";
@@ -645,7 +671,7 @@ function _cardHTML(t) {
   }).join("");
 
   const hist = (t.storeHistory??[]).slice(0,5).map(s => {
-    const isT = s.store?.includes("1458");
+    const isT = yourStore && s.store?.includes(yourStore);
     return `<div class="om-ev-row${isT?" om-ev-target":""}">
       <span>${(s.store??"?").split(" - ")[0]}</span>
       <span style="color:#0071CE">${s.date??""}</span>

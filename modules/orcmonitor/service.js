@@ -8,6 +8,7 @@ import { getJwt, searchOrcEvents, getEventPersonIds,
          getPersonProfile, getProfileFeed }  from "./lib/auror_api.js";
 import { buildThreatCard }                   from "./lib/trajectory.js";
 import { getStoreCoords, SE_BU_REGIONS }     from "./lib/store_coords.js";
+import { resolveStoreCoords }                from "./lib/resolve_coords.js";
 
 const MODULE_ID     = "orcmonitor";
 const PROFILE_KEY   = `${MODULE_ID}.profileCache`;
@@ -115,8 +116,9 @@ export const handlers = {
       if (!r.ok) return { ok:false, error:`Auth failed: ${r.reason}` };
     }
 
-    const coords = getStoreCoords(targetStore);
-    if (!coords) return { ok:false, error:`Unknown store: ${targetStore}` };
+    const coords = getStoreCoords(targetStore)
+                || await resolveStoreCoords(targetStore);
+    if (!coords) return { ok:false, error:`Unknown store: ${targetStore} — Walmart store page had no coordinates.` };
     const [targetLat, targetLon] = coords;
 
     const personIds = new Set();

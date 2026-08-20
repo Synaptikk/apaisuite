@@ -20,7 +20,7 @@ import { postJson, SEARCH_URL, HEADERS, getSecureCongestionState } from "./appri
 import { cell, dedupCards, dedupTransactions,
          firstNameCandidates, nameMatchesAny, surnameIsLastToken } from "./appriss_names.js";
 
-const BASE         = "https://wmtus.apprissretailcloud.com";
+const BASE         = "https://apps.apprissretail.com/walmart-usa";
 // URL formats from pipeline/appriss_scraper.py — APPRISS SPA's own viewer URLs.
 const CCTV_BASE    = `${BASE}/video/react#/cameras?transactionId=`;
 const RECEIPT_BASE = `${BASE}/platform/viewer?hidechrome=true#/store/ardm/event/`;

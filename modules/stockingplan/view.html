@@ -17,11 +17,6 @@
       <span class="field-label">Date</span>
       <input id="sp-businessDate" class="input" type="date">
     </label>
-    <label class="field">
-      <span class="field-label">Shift starts ≥</span>
-      <input id="sp-startHour" class="input" type="number" min="0" max="23" value="22"
-             title="Include associates whose shift starts at or after this hour (24h). Default 22 = 10 PM.">
-    </label>
   </div>
   <div class="sp-action-row">
     <button id="sp-collect" class="btn btn-primary btn-pill btn-lg">
@@ -34,37 +29,57 @@
   </div>
 </section>
 
-<!-- Associates section — hidden until collect runs -->
-<section id="sp-assoc-section" class="card sp-associates" hidden>
-  <h2 class="sp-section-title">Associates <span id="sp-assoc-count" class="sp-count-badge"></span></h2>
-  <div id="sp-assoc-list" class="sp-assoc-list"></div>
+<!-- Delivery schedule — now across the TOP, full width -->
+<section id="sp-trucks-panel" class="card sp-trucks-panel" hidden>
+  <h2 class="sp-section-title">Delivery Schedule</h2>
+  <div id="sp-trucks-list" class="sp-trucks-list"></div>
 </section>
 
-<!-- Freight plan table — hidden until collect runs -->
-<section id="sp-plan-section" class="card sp-plan" hidden>
-  <h2 class="sp-section-title">Freight Plan</h2>
-  <p class="sp-rates-note muted tiny">Rates: Food/Cons 55 cases/hr · GM 45 cases/hr · Breakpacks 80/hr · Hours rounded up to nearest 30 min</p>
-  <div id="sp-plan-body" class="sp-plan-body"></div>
-</section>
+<!-- Main content: plan table (left) + associates (right) -->
+<div class="sp-content-layout">
+  <!-- Left column: freight plan table -->
+  <div class="sp-main-column">
+    <section id="sp-plan-section" class="card sp-plan" hidden>
+      <h2 class="sp-section-title">Freight Plan</h2>
+      <p class="sp-rates-note muted tiny">Rates ported from CaseVisibility per-department CPH · exact HH:MM (no rounding)</p>
+      <div id="sp-plan-body" class="sp-plan-body"></div>
+    </section>
 
-<!-- Output buttons — hidden until collect runs -->
-<div id="sp-output-row" class="cluster sp-output-row" hidden>
-  <button id="sp-print" class="btn btn-secondary">
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-      <path fill="currentColor" d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
-    </svg>
-    Print
-  </button>
-  <button id="sp-copy" class="btn btn-secondary">
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-      <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
-    </svg>
-    Copy
-  </button>
-  <button id="sp-openOutlook" class="btn btn-secondary">
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-      <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
-    </svg>
-    Open in Outlook
-  </button>
+    <!-- Output buttons — hidden until collect runs -->
+    <div id="sp-output-row" class="cluster sp-output-row" hidden>
+      <button id="sp-print" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path fill="currentColor" d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
+        </svg>
+        Print
+      </button>
+      <button id="sp-copy" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
+        </svg>
+        Copy
+      </button>
+      <button id="sp-openOutlook" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+        </svg>
+        Open in Outlook
+      </button>
+    </div>
+  </div>
+
+  <!-- Right column: associates (unassigned | assigned) -->
+  <aside id="sp-assoc-section" class="card sp-associates" hidden>
+    <h2 class="sp-section-title">Associates <span id="sp-assoc-count" class="sp-count-badge"></span></h2>
+    <div class="sp-assoc-columns">
+      <div class="sp-assoc-col">
+        <h3 class="sp-assoc-col-title">Unassigned <span id="sp-unassigned-count" class="sp-count-badge"></span></h3>
+        <div id="sp-assoc-unassigned" class="sp-assoc-list"></div>
+      </div>
+      <div class="sp-assoc-col">
+        <h3 class="sp-assoc-col-title">Assigned <span id="sp-assigned-count" class="sp-count-badge"></span></h3>
+        <div id="sp-assoc-assigned" class="sp-assoc-list"></div>
+      </div>
+    </div>
+  </aside>
 </div>

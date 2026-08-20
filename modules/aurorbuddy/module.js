@@ -57,7 +57,7 @@ export default {
       hosts: [
         "https://app.us.auror.co/*",
         "https://*.auror.co/*",
-        "https://wmtus.apprissretailcloud.com/*",
+        "https://apps.apprissretail.com/*",
         "https://*.walmart.com/*",
         "https://*.wal-mart.com/*",
       ],

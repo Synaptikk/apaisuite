@@ -1,0 +1,1031 @@
+{
+  "startedAt": "2026-08-16T15:29:24.156Z",
+  "steps": {
+    "vizReady": {
+      "ok": true,
+      "frameUrl": "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPick?%3Aembed=y&%3AshowVizHome=n&%3Atoolbar=top&%3Alinktarget=_self&%3AopenAuthoringInTopWindow=true&%3AbrowserBackButtonUndo=true&%3AcommentingEnabled=true&%3AreloadOnCustomViewSave=true&%3AshowAppBanner=false&%3AisVizPortal=true&%3AapiID=host0#2&navType=0&navSrc=Opt"
+    },
+    "scan": {
+      "dateish": [
+        "Refresh",
+        "Updated",
+        "This dashboard is refreshed daily for the day prior.",
+        "1. Yesterday",
+        "If a case was last seen yesterday, it would remain expected each day until it's no longer in the Backroom)",
+        "Yesterday"
+      ],
+      "widgets": [
+        {
+          "tag": "div",
+          "cls": "f1jr9v3y",
+          "aria": "Hide Filter Pane",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter BU Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context Me"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter BU Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context Me"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter BU Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context Me"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "tab-clip-focusbox",
+          "aria": "dept donuts (summary) (2). Data Visualization. Pie chart of Department Group 0 0, Angle applied to Measure Values, Color applied to Measure Names Color applied to Measure Names Tooltip applied to Cases Seen %, Tooltip applied to New Location %, Tooltip applied to New Overstock %, Tooltip applied to New Pick %, Label applied to New VizPick , Color applied to Measure Names. No data to visualize with current filters. To create a visualization and access the View Data Window, expand filters.",
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "tab-clip-focusbox",
+          "aria": "Metric Definitions Moble. Data Visualization. Text Table chart, Text applied to Metric Definitions Moble. No data to visualize with current filters. To create a visualization and access the View Data Window, expand filters.",
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter  Inclusive1. Yesterday✓Click to Show All Values✓Search✓Only Relevant Values✓Show Quick Filter"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFValue CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter  Inclusive1. Yesterday✓Click to Show All Values✓Search✓Only Relevant Values✓Show Quick Filter"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter  Inclusive1. Yesterday✓Click to Show All Values✓Search✓Only Relevant Values✓Show Quick Filter"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "1. Yesterday"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "1. Yesterday"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "1. Yesterday"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter Region Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter Region Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter Region Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter Market Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter Market Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter Market Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Contex"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter Store Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter Store Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context"
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter Store Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "tabLegendContentHolder",
+          "aria": "color legend for . Press Enter to turn Highlight mode on or off. Use arrow keys to navigate the list of values. Then press Space to toggle the Highlight on or off for a value",
+          "role": "listbox",
+          "text": "F&CFreshGM"
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControl",
+          "aria": null,
+          "role": "form",
+          "text": "StoreAfter typing a new value, press ENTER to commit or Escape to revert."
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControlBox",
+          "aria": null,
+          "role": null,
+          "text": "StoreAfter typing a new value, press ENTER to commit or Escape to revert."
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControl",
+          "aria": null,
+          "role": "form",
+          "text": "Hourly Bar ChartCases Created"
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControlBox",
+          "aria": null,
+          "role": null,
+          "text": "Hourly Bar ChartCases Created"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-widget tabComboStdTheme tabComboBoxNoIcon",
+          "aria": "Hourly Bar Chart Cases Created",
+          "role": "button",
+          "text": "Cases Created"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "Cases Created"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "Cases Created"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxIcon",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter Area Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter Area Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter Area Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControl",
+          "aria": null,
+          "role": "form",
+          "text": "By Store"
+        },
+        {
+          "tag": "div",
+          "cls": "ParameterControlBox",
+          "aria": null,
+          "role": null,
+          "text": "By Store"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-widget tabComboStdTheme tabComboBoxNoIcon",
+          "aria": "Hierarchy Selection By Store",
+          "role": "button",
+          "text": "By Store"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "By Store"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "By Store"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxIcon",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "tab-clip-focusbox",
+          "aria": "Data Visualization. Text Table chart of Measure Names Region, Tooltip applied to cases_expected, Tooltip applied to cases_seen, Tooltip applied to clearance_picked_tags, Tooltip applied to deleted_picked_tags, Tooltip applied to pallets_expected, Tooltip applied to pallets_seen, Tooltip applied to picked_count, Tooltip applied to Suggested Picks, Tooltip applied to Pallets %, Text applied to Measure Values. No data to visualize with current filters. To create a visualization and access the View Data Window, expand filters.",
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "div",
+          "cls": "QuickFilterPanel",
+          "aria": null,
+          "role": null,
+          "text": "Filter Dept Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilter CFAll CFHorizontal",
+          "aria": null,
+          "role": "form",
+          "text": "Filter Dept Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "div",
+          "cls": "CategoricalFilterBox",
+          "aria": null,
+          "role": null,
+          "text": "Filter Dept Inclusive(All)✓Showing All Values✓Search✓Only Relevant Values✓Show Quick Filter Context "
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBox tab-ctrl-formatted-widget tab-ctrl-formatted-darker-border-hover tab-ctrl-formatted-darker-border-focus tabComboStdTheme tabComb",
+          "aria": null,
+          "role": "combobox",
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxNameContainer tab-ctrl-formatted-fixedsize",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxName",
+          "aria": null,
+          "role": null,
+          "text": "(All)"
+        },
+        {
+          "tag": "div",
+          "cls": "tabComboBoxButtonHolder",
+          "aria": null,
+          "role": null,
+          "text": ""
+        },
+        {
+          "tag": "span",
+          "cls": "tabComboBoxButton",
+          "aria": null,
+          "role": null,
+          "text": ""
+        }
+      ],
+      "zones": [
+        {
+          "id": "tabZoneId576",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId7",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId11",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId12",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId61",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId482",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId164",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId377",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId408",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId82",
+          "aria": null,
+          "text": "Updated"
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": "Updated"
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": "Updated"
+        },
+        {
+          "id": "tabZoneId556",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId612",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId19",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId97",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId20",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId28",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId23",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId31",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId36",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": "tabZoneId29",
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        },
+        {
+          "id": null,
+          "aria": null,
+          "text": ""
+        }
+      ],
+      "widgetCount": 79
+    },
+    "sheetNames": [
+      {
+        "index": 0,
+        "testId": "sheet-thumbnail-0",
+        "text": "Average Last 7 Days Overstock Exceptions (Summary)"
+      },
+      {
+        "index": 1,
+        "testId": "sheet-thumbnail-1",
+        "text": "Download Summary by Department"
+      },
+      {
+        "index": 2,
+        "testId": "sheet-thumbnail-2",
+        "text": "Download Summary by Store"
+      },
+      {
+        "index": 3,
+        "testId": "sheet-thumbnail-3",
+        "text": "Hourly Bar Chart (Summary)"
+      },
+      {
+        "index": 4,
+        "testId": "sheet-thumbnail-4",
+        "text": "Last update (summary)"
+      },
+      {
+        "index": 5,
+        "testId": "sheet-thumbnail-5",
+        "text": "Locations Donut Health (Summary)"
+      },
+      {
+        "index": 6,
+        "testId": "sheet-thumbnail-6",
+        "text": "Metric Definitions Moble"
+      },
+      {
+        "index": 7,
+        "testId": "sheet-thumbnail-7",
+        "text": "Overstock Donut Health (Summary)"
+      },
+      {
+        "index": 8,
+        "testId": "sheet-thumbnail-8",
+        "text": "Overstock Exceptions Yesterday (Summary)"
+      },
+      {
+        "index": 9,
+        "testId": "sheet-thumbnail-9",
+        "text": "Picks Donut Health (Summary)"
+      },
+      {
+        "index": 10,
+        "testId": "sheet-thumbnail-10",
+        "text": "Show Bucket"
+      },
+      {
+        "index": 11,
+        "testId": "sheet-thumbnail-11",
+        "text": "Show Bucket2"
+      },
+      {
+        "index": 12,
+        "testId": "sheet-thumbnail-12",
+        "text": "Store Breakout (Phone)"
+      },
+      {
+        "index": 13,
+        "testId": "sheet-thumbnail-13",
+        "text": "VizPick Donut Health (Summary)"
+      },
+      {
+        "index": 14,
+        "testId": "sheet-thumbnail-14",
+        "text": "cases donut (summary)"
+      },
+      {
+        "index": 15,
+        "testId": "sheet-thumbnail-15",
+        "text": "dept donuts (summary)"
+      },
+      {
+        "index": 16,
+        "testId": "sheet-thumbnail-16",
+        "text": "dept donuts (summary) (2)"
+      },
+      {
+        "index": 17,
+        "testId": "sheet-thumbnail-17",
+        "text": "summary date bucket name"
+      },
+      {
+        "index": 18,
+        "testId": "sheet-thumbnail-18",
+        "text": "weekly line summary"
+      }
+    ],
+    "export4": {
+      "reached": {
+        "download": true,
+        "crosstab": true,
+        "sheetList": true,
+        "sheet": true,
+        "csv": true,
+        "export": true
+      }
+    },
+    "lastUpdateCsv": {
+      "ok": true,
+      "bytes": 11,
+      "raw": "8/16/2026\t\n"
+    },
+    "export2": {
+      "reached": {
+        "download": true,
+        "crosstab": true,
+        "sheetList": true,
+        "sheet": true,
+        "csv": true,
+        "export": true
+      }
+    },
+    "csv": {
+      "ok": true,
+      "bytes": 323158,
+      "lineCount": 4600,
+      "headers": [
+        "Store",
+        "BU",
+        "Region",
+        "Market",
+        "VizPick",
+        "Cases Seen %",
+        "Location %",
+        "Total Picked",
+        "Overstock %",
+        "Pick %",
+        "Cases Seen",
+        "Cases Expected",
+        "pallets_seen",
+        "pallets_expected",
+        "clearance_picked_tags",
+        "deleted_picked_tags",
+        "Pallets %"
+      ],
+      "firstRows": [
+        "Grand Total\tTotal\tTotal\tTotal\t96.70\t95%\t97%\t3,401,771\t90%\t80%\t31,725,132\t33,369,757\t269,086\t324,404\t56,226\t91,719\t82.95%",
+        "1\tA\t42\t323\t98.14\t95%\t98%\t1,740\t95%\t84%\t10,658\t11,164\t282\t294\t18\t21\t95.92%",
+        "2\tA\t42\t322\t96.52\t95%\t97%\t1,133\t91%\t80%\t9,613\t10,119\t53\t59\t11\t20\t89.83%",
+        "3\tA\t2\t21\t98.72\t97%\t99%\t778\t92%\t86%\t7,188\t7,395\t44\t53\t8\t9\t83.02%"
+      ],
+      "totalRow": "Store  \tBU   \tRegion    \tMarket   \tVizPick \tCases Seen %\tLocation %\tTotal Picked\tOverstock %\tPick %\tCases Seen\tCases Expected\tpallets_seen\tpallets_expected\tclearance_picked_tags\tdeleted_picked_tags\tPallets %"
+    }
+  },
+  "finishedAt": "2026-08-16T15:29:34.871Z"
+}

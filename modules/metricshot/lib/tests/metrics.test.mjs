@@ -15,6 +15,7 @@ import {
   shortScheduleSummary,
   metricNeedsStore,
   migrationMatches,
+  applyCaptureMigration,
   DEFAULT_CAPTURE,
 } from "../metrics.js";
 
@@ -187,4 +188,33 @@ test("migrationMatches: empty/degenerate inputs never match", () => {
   assert.equal(migrationMatches({}, { url: "x" }), false);
   assert.equal(migrationMatches(null, { url: "x" }), false);
   assert.equal(migrationMatches({ fromUrl: "x" }, null), false);
+});
+
+test("applyCaptureMigration: REGRESSION — user-customized padding survives a migration that bumps other fields", () => {
+  // The fromZoom:1 migration used to do `existing.capture = {...seed.capture}`,
+  // which silently wiped a hand-tuned crop the instant it fired. A stored
+  // padding that does NOT match the migration's oldDefaultPadding fingerprint
+  // means the user tuned it via the crop tool — it must survive.
+  const migration = { fromZoom: 1, oldDefaultPadding: { top: 8, right: 16, bottom: 40, left: 8 } };
+  const seedCapture = { ...DEFAULT_CAPTURE, zoom: 0.85, padding: { top: 12, right: 24, bottom: 48, left: 12 } };
+  const existingCapture = { ...DEFAULT_CAPTURE, zoom: 1, padding: { top: -5, right: 30, bottom: 10, left: -2 } };
+  const next = applyCaptureMigration(existingCapture, migration, seedCapture);
+  assert.deepEqual(next.padding, existingCapture.padding, "user's tuned padding must not be overwritten");
+  assert.equal(next.zoom, 0.85, "non-padding seed fields still apply");
+});
+
+test("applyCaptureMigration: untouched (still-default) padding IS replaced with the new seed default", () => {
+  const migration = { fromZoom: 1, oldDefaultPadding: { top: 8, right: 16, bottom: 40, left: 8 } };
+  const seedCapture = { ...DEFAULT_CAPTURE, zoom: 0.85, padding: { top: 12, right: 24, bottom: 48, left: 12 } };
+  const existingCapture = { ...DEFAULT_CAPTURE, zoom: 1, padding: { top: 8, right: 16, bottom: 40, left: 8 } };
+  const next = applyCaptureMigration(existingCapture, migration, seedCapture);
+  assert.deepEqual(next.padding, seedCapture.padding);
+});
+
+test("applyCaptureMigration: migration without oldDefaultPadding keeps full-replace behavior", () => {
+  const migration = { fromCaptureMode: "viewport" };
+  const seedCapture = { ...DEFAULT_CAPTURE, mode: "region", padding: { top: 1, right: 2, bottom: 3, left: 4 } };
+  const existingCapture = { ...DEFAULT_CAPTURE, mode: "viewport", padding: { top: 99, right: 99, bottom: 99, left: 99 } };
+  const next = applyCaptureMigration(existingCapture, migration, seedCapture);
+  assert.deepEqual(next, seedCapture);
 });

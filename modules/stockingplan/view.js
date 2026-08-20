@@ -1,12 +1,14 @@
 // modules/stockingplan/view.js
 
 import * as Compute from "./lib/compute.js";
+import { decToHHMM } from "./lib/cvRates.js";
 import { toPlaintext, toPrintHtml } from "./lib/render.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
 
 const CV_URL     = "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html";
 const CV_MATCH   = /^https:\/\/radapps3\.wal-mart\.com\/Protected\/CaseVisibility\//;
+const CV_BASE    = "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/";
 
 const DEFAULTS = {
   storeNbr:  "",
@@ -53,8 +55,17 @@ export async function mount(host, container) {
 
   // State managed in this closure.
   let plan        = null;   // Compute.buildPlan output
-  // assignments: Map<rowKey, { shift: 'stock2'|'stock3'|null, names: string[] }>
+  let currentStore = "";    // store nbr used for load-details deep links
+  // assignments: Map<rowKey, { shift: 'stock2'|'stock3'|null, names: string[], note: string }>
   let assignments = new Map();
+
+  // Build a deep link to CaseVisibility's load-details page for a given load.
+  // Mirrors main_viewLoadDetails: viewLoadDetails.html?storeNbr=&ttype=&loadID=
+  function loadDetailsUrl(loadId, ttype) {
+    const params = new URLSearchParams({ storeNbr: currentStore, loadID: String(loadId) });
+    if (ttype) params.set("ttype", ttype);
+    return `${CV_BASE}viewLoadDetails.html?${params.toString()}`;
+  }
 
   // Status helper.
   const $status = $("sp-status");
@@ -114,6 +125,7 @@ export async function mount(host, container) {
         return;
       }
       const businessDate = $("sp-businessDate").value      || todayIso();
+      currentStore = storeNbr;
       console.log("[stockingplan] onCollect start", { storeNbr, businessDate });
 
       setStatus("Finding CaseVisibility tab…");
@@ -138,17 +150,17 @@ export async function mount(host, container) {
       if (!schedResp || !schedResp.ok) throw new Error(schedResp?.error || "Schedule fetch failed.");
 
       setStatus("Capturing freight data…");
-      let freightResp = { ok: false, byDept: [], byAisle: [], error: null };
+      let freightResp = { ok: false, loads: [], liveCph: null, aisleMap: null, trucks: [], planMeta: null, error: null };
       try {
         // Pass the same tab so the SW doesn't open a second one.
         freightResp = await host.messaging.send("collect-freight", { storeNbr, businessDate, tabId: tab.id });
       } catch (e) {
-        freightResp = { ok: false, byDept: [], byAisle: [], error: String(e?.message ?? e) };
+        freightResp = { ok: false, loads: [], liveCph: null, aisleMap: null, trucks: [], planMeta: null, error: String(e?.message ?? e) };
       }
 
       plan = Compute.buildPlan(
         schedResp.data,
-        { byDept: freightResp.byDept, byAisle: freightResp.byAisle },
+        { loads: freightResp.loads, liveCph: freightResp.liveCph, aisleMap: freightResp.aisleMap, planMeta: freightResp.planMeta },
         { storeNbr, businessDate }
       );
 
@@ -196,95 +208,111 @@ export async function mount(host, container) {
       card.classList.add(`sp-truck-${typeClass}`);
       
       card.innerHTML = `
-        <div class="sp-truck-header">
+        <div class="sp-truck-top">
           <span class="sp-truck-type">${esc(truck.type)}</span>
           <span class="sp-truck-eta">${esc(truck.eta)}</span>
         </div>
-        <div class="sp-truck-details">
-          <div class="sp-truck-row">
-            <span class="sp-truck-label">Trailer:</span>
-            <span class="sp-truck-value">${esc(truck.trailer)}</span>
-          </div>
-          <div class="sp-truck-row">
-            <span class="sp-truck-label">Load ID:</span>
-            <button class="sp-truck-loadid" data-loadid="${esc(truck.loadId)}" title="Click to copy">
-              ${esc(truck.loadId)}
-              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-                <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
-              </svg>
-            </button>
-          </div>
-          <div class="sp-truck-row">
-            <span class="sp-truck-label">Cases:</span>
-            <span class="sp-truck-value">
-              ${truck.grocCases > 0 ? `${truck.grocCases.toLocaleString()} Groc/Cons` : ''}
-              ${truck.gmCases > 0 ? (truck.grocCases > 0 ? ' + ' : '') + `${truck.gmCases.toLocaleString()} GM` : ''}
-              ${truck.bpCases > 0 ? (truck.grocCases > 0 || truck.gmCases > 0 ? ' + ' : '') + `${truck.bpCases.toLocaleString()} BP` : ''}
-              = <strong>${truck.totalCases.toLocaleString()}</strong>
-            </span>
-          </div>
-          ${truck.status ? `<div class="sp-truck-status">${esc(truck.status)}</div>` : ''}
+        <div class="sp-truck-bottom">
+          <a class="sp-truck-loadid-link" href="${esc(loadDetailsUrl(truck.loadId, truck.type))}" target="_blank" rel="noopener" title="Trailer ${esc(truck.trailer)} — open load in CaseVisibility">
+            ${esc(truck.loadId)}
+            <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+              <path fill="currentColor" d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zM19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7z"/>
+            </svg>
+          </a>
+          <span class="sp-truck-cases">${truck.totalCases.toLocaleString()} cs</span>
         </div>
+        ${truck.status ? `<div class="sp-truck-status">${esc(truck.status)}</div>` : ''}
       `;
-      
-      // Add click-to-copy for Load ID
-      const loadIdBtn = card.querySelector('.sp-truck-loadid');
-      loadIdBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(truck.loadId);
-          const originalText = loadIdBtn.innerHTML;
-          loadIdBtn.innerHTML = '✓ Copied!';
-          setTimeout(() => { loadIdBtn.innerHTML = originalText; }, 2000);
-        } catch (e) {
-          console.error('Failed to copy:', e);
-        }
-      });
-      
+
       list.appendChild(card);
     });
   }
 
-  // --- Render associates ---------------------------------------------------
+  // --- Render associates (two columns: unassigned | assigned) --------------
+
+  const ROLE_GROUPS = {
+    stock2:      { label: "Stock 2 TA" },
+    stock3:      { label: "Overnight TA" },
+    modteam:     { label: "Overnight Mod Team" },
+    maintenance: { label: "Overnight Maintenance" },
+    other:       { label: "Other" },
+  };
+
+  // Set of associate names currently placed in at least one task.
+  function assignedNames() {
+    const names = new Set();
+    for (const a of assignments.values()) {
+      for (const n of a.names || []) names.add(n);
+    }
+    return names;
+  }
+
+  // Which tasks a given associate is assigned to (labels).
+  function tasksForName(name) {
+    const out = [];
+    for (const [key, a] of assignments) {
+      if ((a.names || []).includes(name)) out.push(key);
+    }
+    return out;
+  }
 
   function renderAssociates() {
-    const list = $("sp-assoc-list");
-    list.innerHTML = "";
+    const assigned = assignedNames();
     $("sp-assoc-count").textContent = `(${plan.associates.length})`;
 
-    // Group by role
-    const groups = {
-      stock2: { label: 'Stock 2 TA', associates: [] },
-      stock3: { label: 'Overnight TA', associates: [] },
-      modteam: { label: 'Overnight Mod Team', associates: [] },
-      maintenance: { label: 'Overnight Maintenance', associates: [] },
-      other: { label: 'Other', associates: [] },
-    };
+    const unassignedList = plan.associates.filter((a) => !assigned.has(a.name));
+    const assignedList   = plan.associates.filter((a) => assigned.has(a.name));
 
-    plan.associates.forEach(a => {
-      const role = a.role || 'other';
-      if (groups[role]) groups[role].associates.push(a);
-      else groups.other.associates.push(a);
-    });
+    $("sp-unassigned-count").textContent = `(${unassignedList.length})`;
+    $("sp-assigned-count").textContent   = `(${assignedList.length})`;
 
-    // Render each group
-    Object.entries(groups).forEach(([roleKey, group]) => {
-      if (group.associates.length === 0) return;
+    renderAssocColumn($("sp-assoc-unassigned"), unassignedList, false);
+    renderAssocColumn($("sp-assoc-assigned"),   assignedList,   true);
+  }
 
-      const header = document.createElement('div');
-      header.className = 'sp-assoc-group-header';
-      const callOuts = group.associates.filter(a => a.calledOut).length;
-      header.textContent = `${group.label} (${group.associates.length}${callOuts ? `, ${callOuts} call-outs` : ''})`;
-      list.appendChild(header);
+  // Render one column, grouped by role. If showTasks, annotate each name with
+  // the task(s) they're assigned to.
+  function renderAssocColumn(listEl, associates, showTasks) {
+    listEl.innerHTML = "";
+    if (!associates.length) {
+      listEl.innerHTML = `<div class="sp-assoc-empty muted tiny">— none —</div>`;
+      return;
+    }
 
-      const sorted = [...group.associates].sort((a, b) => a.name.localeCompare(b.name));
-      sorted.forEach(a => {
+    const groups = {};
+    for (const key of Object.keys(ROLE_GROUPS)) groups[key] = [];
+    for (const a of associates) (groups[a.role] || groups.other).push(a);
+
+    for (const [roleKey, group] of Object.entries(ROLE_GROUPS)) {
+      const members = groups[roleKey];
+      if (!members.length) continue;
+
+      const header = document.createElement("div");
+      header.className = "sp-assoc-group-header";
+      const callOuts = members.filter((a) => a.calledOut).length;
+      header.textContent = `${group.label} (${members.length}${callOuts ? `, ${callOuts} call-outs` : ""})`;
+      listEl.appendChild(header);
+
+      [...members].sort((a, b) => a.name.localeCompare(b.name)).forEach((a) => {
         const item = document.createElement("div");
         item.className = "sp-name-item" + (a.calledOut ? " sp-callout" : "");
         item.dataset.role = roleKey;
-        item.textContent = a.name + (a.calledOut ? " ✗" : "");
-        list.appendChild(item);
+        let html = esc(a.name) + (a.calledOut ? " ✗" : "");
+        if (showTasks) {
+          const where = tasksForName(a.name).map(taskLabelForKey).filter(Boolean);
+          if (where.length) html += ` <span class="sp-assoc-where">${esc(where.join(", "))}</span>`;
+        }
+        item.innerHTML = html;
+        listEl.appendChild(item);
       });
-    });
+    }
+  }
+
+  // Human label for a row key (e.g. "dept:D90" -> "D90", "aisle:9295:A8" -> "A8").
+  function taskLabelForKey(key) {
+    if (key.startsWith("aisle:")) return "A" + key.split(":").pop().replace(/^A/i, "");
+    if (key.startsWith("dept:")) return key.split(":").pop();
+    return key;
   }
 
   // --- Render plan table ---------------------------------------------------
@@ -314,15 +342,7 @@ export async function mount(host, container) {
     table.appendChild(tbody);
     body.appendChild(table);
 
-    // Dept-level rows.
-    for (const t of plan.deptTasks) {
-      const key = `dept:${t.key}`;
-      const tr  = makeRow(key, t.label + (t.isFC ? " <span class='sp-tag fc'>F&amp;C</span>" : " <span class='sp-tag gm'>GM</span>"),
-                          t.cases, t.breakpacks, t.hours, false);
-      tbody.appendChild(tr);
-    }
-
-    // Aisle sections (food/cons by aisle).
+    // --- 1. Aisles first (grocery D92/95 floor). ---
     for (const sec of plan.aisleSections) {
       const hdr = document.createElement("tr");
       hdr.className = "sp-dept-header";
@@ -332,9 +352,26 @@ export async function mount(host, container) {
 
       for (const pair of sec.pairs) {
         const key = `aisle:${sec.deptNbr}:${pair.label}`;
-        const tr  = makeRow(key, `Aisle ${esc(pair.label)}`, pair.totalCases, pair.totalBps, pair.hours, true);
+        const tr  = makeRow(key, `Aisle ${esc(pair.label)}`, pair.totalCases, pair.totalInnerPacks, pair.hours, true);
         tbody.appendChild(tr);
       }
+    }
+
+    // --- 2. Department groups, in custom stocking-floor order, with a
+    // divider header before each new group. ---
+    let lastGroup = null;
+    for (const t of plan.deptTasks) {
+      if (t.group !== lastGroup) {
+        const gh = document.createElement("tr");
+        gh.className = "sp-group-header";
+        gh.innerHTML = `<td colspan="6">${esc(t.group)}</td>`;
+        tbody.appendChild(gh);
+        lastGroup = t.group;
+      }
+      const key = `dept:${t.key}`;
+      const tr  = makeRow(key, t.label + (t.isFC ? " <span class='sp-tag fc'>F&amp;C</span>" : " <span class='sp-tag gm'>GM</span>"),
+                          t.cases, t.innerPacks, t.hours, false);
+      tbody.appendChild(tr);
     }
 
     if (plan.deptTasks.length === 0 && plan.aisleSections.length === 0) {
@@ -343,18 +380,18 @@ export async function mount(host, container) {
   }
 
   // Build a single plan table row with an assignment input.
-  function makeRow(key, labelHtml, cases, bps, hours, indented) {
+  function makeRow(key, labelHtml, cases, innerPacks, hours, indented) {
     const tr = document.createElement("tr");
     tr.className = "sp-plan-row" + (indented ? " sp-aisle-row" : "");
     tr.dataset.rowKey = key;
 
-    const assignment = assignments.get(key) || { shift: null, names: [] };
+    const assignment = assignments.get(key) || { shift: null, names: [], note: "" };
 
     tr.innerHTML = `
       <td class="sp-td-dept">${labelHtml}</td>
       <td class="sp-td-num">${cases}</td>
-      <td class="sp-td-num">${bps}</td>
-      <td class="sp-td-num sp-hrs">${hours}h</td>
+      <td class="sp-td-num">${innerPacks}</td>
+      <td class="sp-td-num sp-hrs">${decToHHMM(hours)}</td>
       <td class="sp-td-shift">
         <select class="sp-shift-select" data-key="${esc(key)}">
           <option value="">—</option>
@@ -368,6 +405,7 @@ export async function mount(host, container) {
           <input type="text" class="sp-assign-input" placeholder="assign…" data-key="${esc(key)}" autocomplete="off">
           <ul class="sp-dropdown" hidden></ul>
         </div>
+        <input type="text" class="sp-note-input" placeholder="note… (e.g. Malachi to pets after paper)" data-key="${esc(key)}" autocomplete="off">
       </td>`;
 
     // Set shift dropdown value
@@ -377,8 +415,16 @@ export async function mount(host, container) {
     // Wire shift select change
     shiftSelect.addEventListener("change", () => {
       const newShift = shiftSelect.value || null;
-      const current = assignments.get(key) || { shift: null, names: [] };
-      assignments.set(key, { shift: newShift, names: current.names });
+      const current = assignments.get(key) || { shift: null, names: [], note: "" };
+      assignments.set(key, { ...current, shift: newShift });
+    });
+
+    // Wire the per-task note field.
+    const noteInput = tr.querySelector(".sp-note-input");
+    if (assignment.note) noteInput.value = assignment.note;
+    noteInput.addEventListener("input", () => {
+      const current = assignments.get(key) || { shift: null, names: [], note: "" };
+      assignments.set(key, { ...current, note: noteInput.value });
     });
 
     // Render existing chips.
@@ -440,11 +486,12 @@ export async function mount(host, container) {
   }
 
   function selectAssociate(key, name, input, dropdown, chipsEl) {
-    const current = assignments.get(key) || { shift: null, names: [] };
+    const current = assignments.get(key) || { shift: null, names: [], note: "" };
     if (!current.names.includes(name)) {
       current.names.push(name);
       assignments.set(key, current);
       addChip(chipsEl, key, name);
+      renderAssociates(); // move name to the Assigned column
     }
     input.value    = "";
     dropdown.hidden = true;
@@ -456,10 +503,11 @@ export async function mount(host, container) {
     chip.dataset.name = name;
     chip.innerHTML = `${esc(name)} <button class="sp-chip-remove" aria-label="Remove ${esc(name)}" title="Remove">×</button>`;
     chip.querySelector(".sp-chip-remove").addEventListener("click", () => {
-      const current = assignments.get(key) || { shift: null, names: [] };
+      const current = assignments.get(key) || { shift: null, names: [], note: "" };
       current.names = current.names.filter((n) => n !== name);
       assignments.set(key, current);
       chip.remove();
+      renderAssociates(); // move name back to Unassigned if no longer used
     });
     chipsEl.appendChild(chip);
   }

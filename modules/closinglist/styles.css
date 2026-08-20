@@ -115,3 +115,50 @@
 .module-closinglist .cl-footer-note {
   margin-left: auto;
 }
+
+/* ---- Auto-send card --------------------------------------------------- */
+.module-closinglist .cl-autosend {
+  padding: 0;
+}
+.module-closinglist .cl-autosend summary {
+  cursor: pointer;
+  padding: var(--sp-3) var(--sp-5);
+  font-weight: var(--fw-semi);
+  color: var(--module-accent-dark);
+  user-select: none;
+  list-style: none;
+  font-size: var(--fs-md);
+}
+.module-closinglist .cl-autosend summary::-webkit-details-marker { display: none; }
+.module-closinglist .cl-autosend summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: var(--sp-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.module-closinglist .cl-autosend[open] summary::before {
+  transform: rotate(90deg);
+}
+.module-closinglist .cl-autosend-body {
+  padding: 0 var(--sp-5) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.module-closinglist .cl-autosend-note {
+  margin: 0;
+  line-height: 1.5;
+}
+.module-closinglist .cl-autosend-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.module-closinglist .cl-autosend-status {
+  flex: 1;
+  min-width: 0;
+}
+.module-closinglist .cl-autosend-ok { color: var(--apai-success); }
+.module-closinglist .cl-autosend-err { color: var(--apai-danger, #c0392b); }

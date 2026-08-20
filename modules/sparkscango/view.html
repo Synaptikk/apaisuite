@@ -1,0 +1,39 @@
+<section class="ssg-root">
+  <header class="ssg-head">
+    <h1>Spark &amp; Scan &amp; Go</h1>
+    <div class="ssg-head-right">
+      <span id="ssg-status" class="ssg-status">Loading…</span>
+      <button id="ssg-refresh" class="btn btn-primary btn-sm" type="button">Refresh all</button>
+    </div>
+  </header>
+
+  <nav class="ssg-tabs" role="tablist" aria-label="Spark & Scan&Go views">
+    <button class="ssg-tab is-active" data-tab="overview"          type="button" role="tab" aria-selected="true">Overview</button>
+    <button class="ssg-tab"           data-tab="scango_exceptions" type="button" role="tab" aria-selected="false">Scan &amp; Go Exceptions</button>
+    <button class="ssg-tab"           data-tab="spark_exceptions"  type="button" role="tab" aria-selected="false">Spark Exceptions</button>
+    <button class="ssg-tab"           data-tab="audits"            type="button" role="tab" aria-selected="false">Audits &amp; Metrics</button>
+  </nav>
+
+  <div class="ssg-filters" id="ssg-filters">
+    <!-- Filter bar renders dynamically per tab; adapter must advertise which
+         filters it can apply (date range, store, market, region, exception
+         type, audit result, status). Blank until an adapter is discovery-
+         unblocked. -->
+    <span class="muted tiny">Filter bar will populate once source adapters resolve.</span>
+  </div>
+
+  <main class="ssg-main">
+    <section class="ssg-pane is-active" id="ssg-pane-overview" role="tabpanel"></section>
+    <section class="ssg-pane"           id="ssg-pane-scango_exceptions" role="tabpanel" hidden></section>
+    <section class="ssg-pane"           id="ssg-pane-spark_exceptions"  role="tabpanel" hidden></section>
+    <section class="ssg-pane"           id="ssg-pane-audits"            role="tabpanel" hidden></section>
+  </main>
+
+  <aside class="ssg-drawer" id="ssg-drawer" hidden>
+    <div class="ssg-drawer-head">
+      <strong id="ssg-drawer-title">Investigation</strong>
+      <button id="ssg-drawer-close" class="btn btn-sm" type="button" aria-label="Close">Close</button>
+    </div>
+    <div class="ssg-drawer-body" id="ssg-drawer-body"></div>
+  </aside>
+</section>

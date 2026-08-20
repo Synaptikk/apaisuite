@@ -13,7 +13,9 @@ Scheduled screenshots of internal metric dashboards, posted into Workvivo channe
 3. Wait for readiness (`document.readyState`, an optional `requiredSelector`, DOM-stability, then a configurable settle delay).
 4. `Page.captureScreenshot` via CDP.
 5. Sniff the PNG (signature, size, dimensions) and the page (`document.title` / `<h1>`) to refuse login/access-denied captures.
-6. Post the image into the configured Sendbird group channel via the Sendbird Platform REST API, run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests; the REST post then uses that key. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name.
+6. Deliver the capture to the configured Workvivo chat channel. **Two paths, because Sendbird's REST API blocks file messages for this app** (`400108 "File-messages via SDK are disabled."`, verified 2026-07-28 — confirmed even with a pre-hosted URL):
+   - **Channel resolution + text** use the Sendbird Platform REST API from a fresh background `workvivo.walmart.com` tab. Credentials are obtained the same way the Workvivo app does: `GET /api/chat/config` (Laravel session cookie + `X-XSRF-TOKEN` header) returns `{ app_id, access_token }`, then a Sendbird WebSocket `LOGI` handshake exchanges the `access_token` for a short-lived session key used as the `Session-key` REST header. (No network sniffer/scraping.) Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name.
+   - **The image itself** is posted by driving Workvivo's OWN file composer via CDP (`lib/workvivo_upload.js`): open the channel route (`sendbird_group_channel_<id>` → `/chat/channels/gc_<id>`), foreground the tab so React renders, `DOM.setFileInputFiles` the PNG onto `#chat-file-attach`, then click Send. This routes the upload through Workvivo's backend (master token) which bypasses the SDK file restriction. A synthetic `input.files=` + change event does NOT work — Workvivo ignores untrusted events; CDP's trusted file-set is required. The optional caption is posted as a separate REST text message.
 7. Record a deterministic run key so restarts + duplicate ticks never repost the same slot.
 
 ---
@@ -108,7 +110,7 @@ Before the first real Workvivo post:
 - `chrome.alarms` has a 1-minute minimum period in production. Posts fire within ~60 s of the target clock time, never earlier.
 - The Sendbird SDK global name is not part of Workvivo's contract. If the SDK is bundled or renamed, the primary path breaks silently; the module falls back to the REST API (requires `https://api-*.sendbird.com/*` host permission).
 - Tableau readiness detection is heuristic (readyState + selector + settle). Very slow viz loads may still capture partial renders. Set `requiredSelector` in Advanced to make readiness deterministic.
-- If the machine is fully off at a scheduled time and the reboot happens more than `catchUpWindowMs` later, the run is skipped (`skipped-stale`) — this is intentional so you don't get a burst of stale posts on wake.
+- If the browser is closed at a scheduled time, the run is skipped (`skipped-stale`) on next wake — the default `catchUpWindowMs` (90 s) covers only the SW alarm-wake latency while the browser is running, so a browser-was-off gap of any real length silently drops the slot. Use "Run now" if you want to post it anyway.
 
 ---
 
@@ -116,7 +118,9 @@ Before the first real Workvivo post:
 
 **Un-scanned bins text message on the 14:00 and 20:00 posts** (deferred).
 
-Requirement: on posts *other than the first-of-day*, additionally send a text message listing every bin location whose Location Age > 6 h.
+Requirement: on posts *other than the first-of-day*, additionally send a text message listing un-scanned bin locations — those NOT scanned during today's scan window.
+
+**The age cutoff is relative to the post time.** Scanning happens ~9am-12pm, so a location's age only matters relative to when we send: any bin last scanned before the window opened (9:00 AM) was missed today. Cutoff = `postHour - 9`, and only bins *strictly older* than the cutoff are listed. A bin scanned right at 9:00 AM is exactly `cutoff` hours old at post time, so `age > cutoff` is false and it is correctly excluded. Examples: an 8:00 PM post uses a >11h cutoff (a 9am scan = 11h → not flagged); a 4:00 PM post uses >7h; a 4:30 PM post uses >7.5h. See `lib/format_message.js::_cutoffForPostTime`.
 
 Implementation notes for whoever picks this up:
 

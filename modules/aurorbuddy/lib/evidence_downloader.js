@@ -34,8 +34,8 @@
 // then the relative paths resolve there. Everything else needs a Native
 // Messaging host, which is overkill.
 
-const CCTV_BASE    = "https://wmtus.apprissretailcloud.com/video/react#/cameras?transactionId=";
-const RECEIPT_BASE = "https://wmtus.apprissretailcloud.com/platform/viewer?hidechrome=true#/store/ardm/event/";
+const CCTV_BASE    = "https://apps.apprissretail.com/walmart-usa/video/react#/cameras?transactionId=";
+const RECEIPT_BASE = "https://apps.apprissretail.com/walmart-usa/platform/viewer?hidechrome=true#/store/ardm/event/";
 
 // Lives under whatever is configured as the browser's 'Downloads' folder
 // in edge://settings/downloads. Chrome extensions cannot write outside

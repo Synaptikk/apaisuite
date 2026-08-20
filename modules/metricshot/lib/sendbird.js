@@ -3,24 +3,19 @@
 // Posts screenshots + text to a Workvivo/Sendbird group channel via the
 // Sendbird Platform REST API.
 //
-// ── Why REST, not the SDK ──────────────────────────────────────────────────
-// The Sendbird JS SDK is NEVER exposed on `window` at workvivo.walmart.com
-// (confirmed 2026-07-28 via CDP: no global, no iframe, v2.chat=false). Every
-// SDK-detection strategy was therefore doomed. But the SDK talks to
-// api-{appid}.sendbird.com/v3 with a rotating `Session-key` header, and that
-// key is AES-encrypted in IndexedDB (unreadable).
+// ── Auth flow (verified 2026-07-28 via live CDP; see UPLOAD_PLAN.md) ────────
+// Workvivo wraps Sendbird for chat. We get credentials the SAME way the app
+// itself does — no scraping, no fragile network sniffer:
+//   1. GET /api/chat/config  (Laravel session cookie + X-XSRF-TOKEN header)
+//        → { app_id, access_token }
+//   2. Open a Sendbird WebSocket with the access_token; the LOGI handshake
+//        returns a short-lived `key` (the session key).
+//   3. Call api-{appid}.sendbird.com/v3 with that key as `Session-key`.
 //
-// So the flow is:
-//   1. A MAIN-world content script (content/wv_session_sniffer.js) patches
-//      fetch/XHR on the workvivo tab and captures the live `Session-key`,
-//      `App-Id`, and `user_id` off the SDK's own outbound requests. It stashes
-//      them on window.__APAISUITE_METRICSHOT_SBKEY.
-//   2. Here we open our own fresh workvivo tab, wait for the sniffer to grab a
-//      key, then run an in-page REST helper (MAIN world, so it inherits the
-//      page's network/CORS context) that posts using the exact header recipe
-//      the real SDK uses.
+// NOTE: the access_token is NOT itself a valid session key (Sendbird returns
+// 400303 "Session key is invalid") — it must be exchanged via step 2.
 //
-// Header recipe proven to return 200 (2026-07-28):
+// Header recipe proven to return 200:
 //   Session-key, App-Id, Content-Type: application/json; charset=utf-8,
 //   SendBird: JS,web,4.22.0,{appId}, SB-User-Agent: JS/c4.22.0///oweb
 //
@@ -28,12 +23,14 @@
 //   - "@me" / "@self" / "(me)"  → find-or-create the 1-member self channel
 //   - anything else             → match a joined channel by name
 //
-// Note on serialization: chrome.scripting.executeScript({ func }) only
+// We run the REST worker in the workvivo tab's MAIN world so it inherits the
+// page's cookies/CORS context. chrome.scripting.executeScript({ func }) only
 // serializes the top-level function body — helpers must be inlined. Every
 // IN_PAGE_* function below is fully self-contained.
 
+import { postImageViaWorkvivoUI } from "./workvivo_upload.js";
+
 const WORKVIVO_URL = "https://workvivo.walmart.com/chat";
-const SBKEY_GLOBAL = "__APAISUITE_METRICSHOT_SBKEY";
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -58,27 +55,49 @@ export async function postTextToWorkvivo({ channelName, text }) {
 
 /**
  * Post a PNG screenshot (base64) to a channel, with optional caption.
- * @returns {Promise<{ok:boolean, path:"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
+ *
+ * IMPORTANT: Sendbird's REST API blocks file messages for this app
+ * (400108 "File-messages via SDK are disabled."). So images can NOT go via
+ * REST — they must be posted through Workvivo's own UI composer, driven by CDP
+ * (see lib/workvivo_upload.js). We therefore:
+ *   1. Resolve the channelName → channel_url via the working REST path.
+ *   2. Hand off to postImageViaWorkvivoUI, which opens the channel, sets the
+ *      file on #chat-file-attach via DOM.setFileInputFiles, and clicks Send.
+ * The caption (if any) is posted as a separate REST text message, which DOES
+ * work — keeping text + image both delivered.
+ *
+ * @returns {Promise<{ok:boolean, path:"ui"|"none", channelUrl?:string, error?:string, errorClass?:string}>}
  */
 export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileName, caption, onStep }) {
   const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
   if (!pngBase64) return { ok: false, path: "none", errorClass: "INPUT", error: "missing pngBase64" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
-  step("ensure-tab");
-  const tabRes = await _ensureWorkvivoTab({ onStep: step });
-  if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
-  const { tabId, openedFresh } = tabRes;
-  step("tab-ready", { tabId, openedFresh });
-
-  try {
-    step("rest-post");
-    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "file", channelName, pngBase64, fileName, caption }]);
-    step("rest-post-done", { ok: !!r?.ok, errorClass: r?.errorClass });
-    return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
-  } finally {
-    await _closeIfOwn(tabId, openedFresh);
+  // 1. Resolve channel_url via REST (opens + closes its own tab).
+  step("resolve-channel");
+  const resolved = await resolveChannel(channelName);
+  if (!resolved.ok) {
+    return { ok: false, path: "none", errorClass: resolved.errorClass || "REST_FAIL", error: resolved.error };
   }
+  step("channel-resolved", { channelUrl: resolved.channelUrl });
+
+  // 2. Post the image through Workvivo's UI composer (CDP-driven).
+  step("ui-upload");
+  const up = await postImageViaWorkvivoUI({
+    channelUrl: resolved.channelUrl,
+    pngBase64,
+    fileName,
+    onStep: (name, extra) => step(`ui:${name}`, extra),
+  });
+  step("ui-upload-done", { ok: !!up.ok, errorClass: up.errorClass });
+
+  // 3. Best-effort caption as a separate text message (REST text works fine).
+  if (up.ok && caption) {
+    step("caption");
+    await postTextToWorkvivo({ channelName, text: String(caption) }).catch(() => {});
+  }
+
+  return { ...up, path: up.ok ? "ui" : (up.path || "none"), channelUrl: resolved.channelUrl };
 }
 
 /**
@@ -98,8 +117,8 @@ export async function resolveChannel(channelName) {
 }
 
 /**
- * Diagnostic: report what the session-key sniffer has captured (or not) on a
- * live workvivo tab. Surfaced by the UI's troubleshoot action.
+ * Diagnostic: report the signed-in / chat-config state of a live workvivo tab.
+ * Surfaced by the UI's troubleshoot action.
  */
 export async function introspectSdk() {
   const tabRes = await _ensureWorkvivoTab();
@@ -116,10 +135,10 @@ export async function introspectSdk() {
 // ── Tab lifecycle ────────────────────────────────────────────────────────────
 
 /**
- * Always open our OWN fresh background workvivo tab, wait for the session-key
- * sniffer to capture live creds, and return it with openedFresh:true so the
- * caller (_closeIfOwn) closes it after posting. We never reuse the user's tab
- * (avoids hijacking their session).
+ * Always open our OWN fresh background workvivo tab, wait until it's signed in
+ * (window.v2.id + chatConfig present), and return it with openedFresh:true so
+ * the caller (_closeIfOwn) closes it after posting. We never reuse the user's
+ * tab (avoids hijacking their session).
  */
 async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
   const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
@@ -131,9 +150,9 @@ async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
   }
   step("tab-opened", { tabId: tab.id });
 
-  // Poll the sniffer global. The SDK fires authenticated calls within ~1-2s of
-  // load, but background tabs are throttled so give it a hidden grace period,
-  // then briefly foreground to force the SDK to boot if needed.
+  // Poll until the page is signed in and chat config is present. The SDK
+  // boots within ~1-2s of load, but background tabs are throttled so give it a
+  // hidden grace period, then briefly foreground to force boot if needed.
   step("creds-wait-hidden");
   let creds = await _waitForCreds(tab.id, Math.min(waitMs, 8_000));
   if (!creds) {
@@ -153,11 +172,11 @@ async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
     step("creds-not-found", { probe });
     return {
       ok: false, errorClass: "NO_SESSION",
-      error: `opened workvivo tab but no Sendbird session-key was captured within ${Math.round(waitMs / 1000)}s — sign in to Workvivo, then retry`,
+      error: `opened workvivo tab but not signed in / chat config unavailable within ${Math.round(waitMs / 1000)}s — sign in to Workvivo, then retry`,
       debug: probe,
     };
   }
-  step("creds-ready", { userId: creds.userId, hasKey: !!creds.sessionKey });
+  step("creds-ready", { userId: creds.userId, appId: creds.appId });
   return { ok: true, tabId: tab.id, openedFresh: true };
 }
 
@@ -167,7 +186,7 @@ async function _waitForCreds(tabId, timeoutMs) {
     const t = await chrome.tabs.get(tabId).catch(() => null);
     if (!t) return null; // tab gone
     const r = await _runInTab(tabId, IN_PAGE_READ_CREDS, []).catch(() => null);
-    if (r && r.sessionKey) return r;
+    if (r && r.appId && r.userId) return r;
     await _delay(1000);
   }
   return null;
@@ -203,35 +222,27 @@ async function _runInTab(tabId, func, args) {
 
 // ── In-page functions (MAIN world, self-contained, PURE) ─────────────────────
 
-/** Read whatever creds the sniffer has captured. */
+/** Read creds from Workvivo's own config (no sniffer). Returns null until the
+ *  page is signed in and /api/chat/config is reachable. */
 function IN_PAGE_READ_CREDS() {
   const w = /** @type any */ (globalThis);
-  const c = w.__APAISUITE_METRICSHOT_SBKEY;
-  if (!c || !c.sessionKey) return null;
-  // Fall back to page globals for appId/userId if the sniffer missed them.
+  const userId = w.v2 && w.v2.id != null ? String(w.v2.id) : null;
   const cfg = w.v2 && w.v2.chatConfig;
-  return {
-    sessionKey: c.sessionKey,
-    appId: c.appId || (cfg && cfg.app_id) || null,
-    userId: c.userId || (w.v2 && w.v2.id != null ? String(w.v2.id) : null),
-    ageMs: c.ts ? Date.now() - c.ts : null,
-  };
+  const appId = (cfg && cfg.app_id) || null;
+  if (!userId || !appId) return null;
+  return { appId, userId, signedIn: true };
 }
 
-/** Diagnostic snapshot of sniffer + page state. */
+/** Diagnostic snapshot of page + config state. */
 function IN_PAGE_INTROSPECT() {
   const w = /** @type any */ (globalThis);
-  const c = w.__APAISUITE_METRICSHOT_SBKEY;
   const cfg = w.v2 && w.v2.chatConfig;
   return {
-    snifferInstalled: !!w.__APAISUITE_METRICSHOT_SBKEY_INSTALLED,
-    hasSessionKey: !!(c && c.sessionKey),
-    keyAgeMs: c && c.ts ? Date.now() - c.ts : null,
-    appId: (c && c.appId) || (cfg && cfg.app_id) || null,
-    userId: (c && c.userId) || (w.v2 && w.v2.id != null ? String(w.v2.id) : null),
-    href: location.href,
     signedIn: !!(w.v2 && w.v2.id),
-    netlog: (w.__APAISUITE_METRICSHOT_NETLOG || []).slice(-30),
+    appId: (cfg && cfg.app_id) || null,
+    userId: w.v2 && w.v2.id != null ? String(w.v2.id) : null,
+    hasChatConfig: !!cfg,
+    href: location.href,
   };
 }
 
@@ -243,24 +254,68 @@ function IN_PAGE_INTROSPECT() {
  * forbids anyway. All helpers are nested; nothing outside this function is
  * referenced.
  *
- * actions: "resolve" | "text" | "file"
+ * actions: "resolve" | "text"
  */
 async function IN_PAGE_SB(arg) {
   const w = /** @type any */ (globalThis);
-  const creds = w.__APAISUITE_METRICSHOT_SBKEY;
 
-  function readCreds() {
-    if (!creds || !creds.sessionKey) return null;
+  // ── Credentials: fetch from Workvivo's own config, then mint a Sendbird
+  //    session key via the WS handshake. No scraping/sniffer needed.
+  //    (Verified 2026-07-28 via CDP: /api/chat/config returns
+  //    {app_id, access_token}; a WS LOGI exchanges access_token → session key
+  //    which authenticates the REST API. See UPLOAD_PLAN.md.)
+  let _sessionKey = null;
+
+  function _getCookie(name) {
+    const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  async function fetchChatConfig() {
+    const h = { accept: "application/json", "x-requested-with": "XMLHttpRequest" };
+    const xsrf = _getCookie("XSRF-TOKEN");
+    if (xsrf) h["x-xsrf-token"] = xsrf;
+    const r = await fetch("/api/chat/config", { headers: h, credentials: "include" });
+    if (!r.ok) return { error: "config " + r.status, status: r.status };
+    const j = await r.json().catch(() => ({}));
+    if (!j.app_id || !j.access_token) return { error: "config missing app_id/access_token" };
+    return { appId: j.app_id, accessToken: j.access_token };
+  }
+  function mintSessionKey(appId, accessToken, userId) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; try { ws.close(); } catch (_) {} resolve(v); } };
+      const wsUrl = "wss://ws-" + String(appId).toLowerCase() + ".sendbird.com/?p=JS&pv=4.22.0&sv=4.22.0&ai=" +
+        appId + "&user_id=" + encodeURIComponent(userId) + "&access_token=" + encodeURIComponent(accessToken);
+      const ws = new WebSocket(wsUrl);
+      const to = setTimeout(() => finish(null), 10000);
+      ws.onmessage = (ev) => {
+        const d = String(ev.data || "");
+        if (d.slice(0, 4) === "LOGI") {
+          clearTimeout(to);
+          try { finish(JSON.parse(d.slice(4)).key || null); } catch (_) { finish(null); }
+        }
+      };
+      ws.onerror = () => { clearTimeout(to); finish(null); };
+    });
+  }
+  async function getCreds() {
     const cfg = w.v2 && w.v2.chatConfig;
-    return {
-      sessionKey: creds.sessionKey,
-      appId: creds.appId || (cfg && cfg.app_id) || null,
-      userId: creds.userId || (w.v2 && w.v2.id != null ? String(w.v2.id) : null),
-    };
+    const userId = w.v2 && w.v2.id != null ? String(w.v2.id) : null;
+    if (!userId) return null;
+    // Prefer the live config endpoint; fall back to window.v2.chatConfig.
+    let appId = null, accessToken = null;
+    const fetched = await fetchChatConfig().catch(() => null);
+    if (fetched && !fetched.error) { appId = fetched.appId; accessToken = fetched.accessToken; }
+    else if (cfg) { appId = cfg.app_id || null; accessToken = cfg.access_token || cfg.token || null; }
+    if (!appId || !accessToken) return null;
+    const key = await mintSessionKey(appId, accessToken, userId);
+    if (!key) return null;
+    _sessionKey = key;
+    return { sessionKey: key, appId, userId };
   }
   function headers(appId, extra) {
     return Object.assign({
-      "Session-key": creds.sessionKey,
+      "Session-key": _sessionKey,
       "App-Id": appId,
       "SendBird": "JS,web,4.22.0," + appId,
       "SB-User-Agent": "JS/c4.22.0///oweb",
@@ -312,8 +367,8 @@ async function IN_PAGE_SB(arg) {
     return { channel: match };
   }
 
-  const c = readCreds();
-  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "no session-key captured yet" };
+  const c = await getCreds();
+  if (!c) return { ok: false, errorClass: "NO_SESSION", error: "could not obtain Sendbird credentials — sign in to Workvivo, then retry" };
   if (!c.appId || !c.userId) return { ok: false, errorClass: "NO_SESSION", error: "missing app/user id" };
   const base = "https://api-" + String(c.appId).toLowerCase() + ".sendbird.com/v3";
   const hdrs = headers(c.appId);
@@ -331,27 +386,6 @@ async function IN_PAGE_SB(arg) {
       method: "POST",
       headers: headers(c.appId, { "Content-Type": "application/json; charset=utf-8" }),
       body: JSON.stringify({ message_type: "MESG", user_id: c.userId, message: String(arg.text) }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, errorClass: classify(r.status), error: "post " + r.status + ": " + (j.message || "") };
-    return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
-  }
-
-  if (arg.action === "file") {
-    const bin = atob(arg.pngBase64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "image/png" });
-    const form = new FormData();
-    form.append("message_type", "FILE");
-    form.append("user_id", c.userId);
-    if (arg.caption) form.append("message", String(arg.caption));
-    form.append("file", blob, arg.fileName || "screenshot.png");
-    // NOTE: do NOT set Content-Type for multipart — the browser adds the boundary.
-    const r = await fetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
-      method: "POST",
-      headers: headers(c.appId),
-      body: form,
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, errorClass: classify(r.status), error: "post " + r.status + ": " + (j.message || "") };

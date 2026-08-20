@@ -8,18 +8,7 @@
        light theme on dark-preference users. The async chrome.storage.sync
        read happens in app.js and may overwrite this if it differs (e.g.,
        user toggled on another device). localStorage is the fast-path. -->
-  <script>
-    (function () {
-      try {
-        var saved = localStorage.getItem("shell.theme") || "system";
-        var resolved = saved;
-        if (saved === "system") {
-          resolved = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        }
-        document.documentElement.setAttribute("data-theme", resolved);
-      } catch (e) {}
-    })();
-  </script>
+  <script src="theme-init.js"></script>
   <link rel="stylesheet" href="styles/tokens.css">
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/layout.css">

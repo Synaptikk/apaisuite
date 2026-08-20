@@ -32,8 +32,12 @@ export const SEED_METRICS = [
     schedules: [
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "10:00" },
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "12:50" },
+      { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "16:30" },
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "20:00" },
     ],
+    // "@me" resolves to the 1-member Sendbird self-channel (see
+    // lib/sendbird.js::isSelf) — screenshots go to Shane only, not to the
+    // store leadership chat. Change this to a channel name to broadcast.
     destination: { type: "workvivo-sendbird", channelName: "@me" },
     caption: "",
     capture: {
@@ -72,7 +76,12 @@ export const SEED_METRICS = [
       settleDelayMs: 8000,
       timeoutMs: 60000,
       retries: 2,
-      catchUpWindowMs: 60 * 60 * 1000,
+      // Only catch up if the browser was already running when the slot fired
+      // and the SW just hadn't ticked yet (30s alarm delay + 60s tick period ≈
+      // ~90s of legitimate lag). If the browser was closed at the scheduled
+      // moment, the slot is skipped-stale on next wake — no burst of catch-up
+      // posts hours after the fact. Manual "Run now" is still available.
+      catchUpWindowMs: 90_000,
     },
   },
 ];
@@ -107,6 +116,11 @@ export const SEED_URL_MIGRATIONS = [
     // v0.1.4 — region mode at zoom:1 clipped the right/bottom of the report.
     // Migrate to zoom:0.85 + roomier padding so the full viz fits the frame.
     // Keyed on zoom===1 so it fires once then leaves user-tuned zooms alone.
+    // oldDefaultPadding is the v0.1.4-and-earlier seed padding — if a stored
+    // metric's padding still matches this exactly, it was never hand-tuned
+    // via the crop tool and it's safe to take the new default. Otherwise the
+    // user's crop survives the replace (see metrics.js::applyCaptureMigration).
     fromZoom: 1,
+    oldDefaultPadding: { top: 8, right: 16, bottom: 40, left: 8 },
   },
 ];

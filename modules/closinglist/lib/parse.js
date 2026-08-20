@@ -1,77 +1,20 @@
 // modules/closinglist/lib/parse.js
 //
 // Verbatim port of ClosingList's lib/parse.js. Pure functions only — no DOM,
-// no chrome.*. Exported as an ES module (the original was an IIFE namespace
-// + a module.exports for Node testability). Generic helpers (parseTimestamp,
-// titleCase, formatShiftRange) will be considered for extraction to
-// shared/dates.js + shared/strings.js in Phase 4, once a second consumer
-// validates the API surface (per docs/MIGRATION_PLAN.md::Phase 4).
+// no chrome.*. Exported as an ES module. Generic date/name helpers
+// (parseTimestamp, titleCase, formatShiftRange, formatTime12h, displayName)
+// now live in shared/cvSchedule.js and are re-exported here so existing
+// importers (service.js, view.js) keep working unchanged.
 
-// --- Timestamp parsing ----------------------------------------------------
-// CaseVisibility shift_*_ts strings are length 16. We've inferred the format
-// is "YYYY/MM/DD HH:MM" but accept several common alternates.
-export function parseTimestamp(ts) {
-  if (!ts || typeof ts !== "string") return null;
-  const trimmed = ts.trim();
-  // Try ISO with T first ("2026-05-22T13:00", "2026-05-22T13:00:00", "...Z")
-  let d = new Date(trimmed);
-  if (!isNaN(d.getTime())) return d;
-  // Try "YYYY/MM/DD HH:MM" or "YYYY-MM-DD HH:MM"
-  let m = trimmed.match(/^(\d{4})[/-](\d{2})[/-](\d{2})[ T](\d{1,2}):(\d{2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
-  // Try "MM/DD/YYYY HH:MM"
-  m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
-  if (m) return new Date(+m[3], +m[1] - 1, +m[2], +m[4], +m[5]);
-  // Try "MM/DD/YYYY HH:MM AM/PM"
-  m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (m) {
-    let h = +m[4];
-    if (/PM/i.test(m[6]) && h < 12) h += 12;
-    if (/AM/i.test(m[6]) && h === 12) h = 0;
-    return new Date(+m[3], +m[1] - 1, +m[2], h, +m[5]);
-  }
-  return null;
-}
+import {
+  parseTimestamp,
+  formatTime12h,
+  formatShiftRange,
+  titleCase,
+  displayName,
+} from "../../../shared/cvSchedule.js";
 
-export function formatTime12h(d) {
-  if (!d || isNaN(d.getTime())) return "??";
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
-}
-
-function _shortPart(d) {
-  if (!d || isNaN(d.getTime())) return { hm: "??", ampm: "" };
-  const h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? "pm" : "am";
-  const h12 = h % 12 || 12;
-  const minutes = m === 0 ? "" : ":" + String(m).padStart(2, "0");
-  return { hm: `${h12}${minutes}`, ampm };
-}
-// Compact form: "8am-5pm" when different ampm; "1:30-10:30pm" when same.
-// Whole hours drop the ":00".
-export function formatShiftRange(start, end) {
-  const s = _shortPart(start);
-  const e = _shortPart(end);
-  if (s.ampm && e.ampm && s.ampm === e.ampm) {
-    return `${s.hm}-${e.hm}${e.ampm}`;
-  }
-  return `${s.hm}${s.ampm}-${e.hm}${e.ampm}`;
-}
-
-// --- Display name ---------------------------------------------------------
-export function titleCase(s) {
-  if (!s) return "";
-  return String(s).toLowerCase().replace(/(^|[\s\-'])(\S)/g, (_, sep, ch) => sep + ch.toUpperCase());
-}
-export function displayName(assoc) {
-  const raw = (assoc.preferred_name || assoc.fname || "").trim();
-  if (!raw) return null;
-  return titleCase(raw);
-}
+export { parseTimestamp, formatTime12h, formatShiftRange, titleCase, displayName };
 
 // --- IVR cross-reference --------------------------------------------------
 // IVR names come in "LAST, FIRST" all-caps form. CaseVisibility rows have

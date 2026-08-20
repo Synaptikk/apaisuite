@@ -265,15 +265,35 @@
 }
 
 /* CVP breakdown rows */
+.module-livedashboard .ld-cvp-item {
+  border-bottom: 1px solid #ececec;
+  padding: 5px 0;
+}
+.module-livedashboard .ld-cvp-item:last-child { border-bottom: 0; }
 .module-livedashboard .ld-cvp-row {
   display: grid;
   grid-template-columns: 80px 70px 1fr 110px;
   align-items: center;
   gap: 12px;
-  padding: 5px 0;
-  border-bottom: 1px solid #ececec;
 }
-.module-livedashboard .ld-cvp-row:last-child { border-bottom: 0; }
+.module-livedashboard .ld-cvp-submetrics {
+  display: flex;
+  gap: 24px;
+  padding: 4px 0 2px 92px;
+  font-size: 11px;
+  color: #6f6f6f;
+}
+.module-livedashboard .ld-cvp-submetrics span {
+  white-space: nowrap;
+}
+.module-livedashboard .ld-cvp-submetrics strong {
+  color: #1f1f1f;
+  font-weight: 600;
+}
+.module-livedashboard .ld-cvp-submetrics em {
+  font-style: normal;
+  margin-left: 2px;
+}
 .module-livedashboard .ld-cvp-label {
   font-weight: 600;
   color: #4a4a4a;

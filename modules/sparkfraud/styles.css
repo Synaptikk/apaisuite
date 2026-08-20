@@ -428,6 +428,27 @@
 }
 .module-sparkfraud .items td.price { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* Check-off: dim the row and drift it to the bottom of the table */
+.module-sparkfraud .sf-check-cell {
+  width: 22px;
+  padding: 2px 4px;
+  text-align: center;
+}
+.module-sparkfraud .sf-item-check {
+  cursor: pointer;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--apai-blue);
+}
+.module-sparkfraud .items tr.sf-checked-off td {
+  opacity: 0.3;
+  text-decoration: line-through;
+  color: var(--apai-text-muted, #999);
+}
+.module-sparkfraud .items tr.sf-checked-off .sf-item-check {
+  opacity: 1;  /* keep the checkbox itself visible so it can be unchecked */
+}
+
 /* Per-order collapsible block — rendered when a trip has 2+ orders so each
    customer's items can be expanded independently. First order is open by
    default; subsequent orders collapsed for scannability. */

@@ -2,122 +2,137 @@
 //
 // Service-worker handlers for the StockingPlan module.
 // Uses raw chrome.storage with "stockingplan.*" prefix — host object is not
-// available in SW context (see AI_CONTEXT_BRIEF.md §2).
+// available in SW context.
 //
-// Freight approach (confirmed via Playwright 2026-07-01):
-//   1. Call window.main_search() in MAIN world (waits up to 15s for page JS init).
-//   2. Poll until #divImgProcessing hides (~5s).
-//   3. Read category totals from #summaryTableByArea already on the main page (no popup).
-//   4. Open casesByAisle.html via window.open() — inherits window.opener for aisle data.
-//      Wait readyState=complete + 2s buffer (table renders async after load).
-//   5. Scrape aisle DOM and return {byDept, byAisle}.
+// Freight approach (rebuilt 2026-07-28, verified against live capture — see
+// tools/FINDINGS.md):
+//   1. Run main_search() in MAIN world to populate sessionStorage.
+//   2. Read + LZString-decompress fpt_psnAPIJson (per-load, per-item freight),
+//      fpt_mainJson (live cph, if any).
+//   3. Fetch AisleLocation.ashx for the UPC->aisle fallback map.
+//   4. Return { loads, liveCph, aisleMap } — all rollups happen in compute.js.
 
-import { createAuth, SSO_SELECTORS } from "../../shared/auth.js";
+// --- MAIN-world function: search, then read decompressed sessionStorage -----
+// Args: [storeNbr, businessDate "YYYY-MM-DD"]
+// Relies on the CV page's own globals: main_search, LZString144, ajax3_toJson.
 
-const MODULE_ID  = "stockingplan";
-const CV_URL     = "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html";
-const CV_HOST_RE = /^https:\/\/radapps3\.wal-mart\.com\/Protected\/CaseVisibility\//;
-
-const auth = createAuth(MODULE_ID);
-
-// --- MAIN-world async function (pure — no closure references) ---------------
-// Args: [storeNbr: string, businessDate: string "YYYY-MM-DD"]
-
-async function searchAndScrapeDetailed(storeNbr, businessDate) {
-  // 1. Fill inputs. Wait for main_search to be initialized (page script is async).
+async function searchAndReadSession(storeNbr, businessDate) {
   const si = document.querySelector("#inpStoreNbr");
   const di = document.querySelector("#inpDate");
-  if (!si) return { byDept: [], byAisle: [], error: "inpStoreNbr not found" };
+  if (!si) return { error: "inpStoreNbr not found" };
   si.value = String(storeNbr);
   if (di) di.value = String(businessDate);
 
+  // Wait for the page's search fn to initialise (page script is async).
   const initDeadline = Date.now() + 15_000;
   while (typeof window.main_search !== "function" && Date.now() < initDeadline) {
     await new Promise((r) => setTimeout(r, 200));
   }
   if (typeof window.main_search !== "function") {
-    return { byDept: [], byAisle: [], error: "main_search not found after 15s — CV page may not have fully loaded" };
+    return { error: "main_search not found after 15s — CV page may not have loaded" };
   }
   window.main_search();
 
-  // 2. Poll until #divImgProcessing is hidden (all AJAX calls done, ~5s).
+  // Poll until the processing spinner hides (all AJAX done).
   const start = Date.now();
   await new Promise((r) => setTimeout(r, 300));
-  while (Date.now() - start < 20_000) {
+  while (Date.now() - start < 25_000) {
     await new Promise((r) => setTimeout(r, 400));
     const el = document.querySelector("#divImgProcessing");
-    if (!el || window.getComputedStyle(el).display === "none") break;
+    if (!el || getComputedStyle(el).display === "none") break;
   }
 
-  // 3. Category totals are already on the main page in #summaryTableByArea —
-  //    no popup needed. Poll until it has rows (updates async after spinner hides).
-  const byDept = [];
-  const FC_RE   = /frozen|dairy|deli|meat|produce|fresh|consumables|food/i;
-  const NAME_MAP = { Food: "Food (Non-FDD)" };
-  const areaDeadline = Date.now() + 8_000;
-  let areaTable;
-  while (Date.now() < areaDeadline) {
-    areaTable = document.getElementById("summaryTableByArea");
-    if (areaTable && areaTable.querySelectorAll("tr td").length > 2) break;
-    await new Promise((r) => setTimeout(r, 300));
+  // sessionStorage isn't populated until the search's AJAX resolves — poll it.
+  const decode = (key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    try { return window.ajax3_toJson(window.LZString144.decompress(raw)); }
+    catch (e) { return { __decodeError: String(e) }; }
+  };
+
+  let loads = null;
+  const dataDeadline = Date.now() + 15_000;
+  while (Date.now() < dataDeadline) {
+    loads = decode("fpt_psnAPIJson");
+    if (Array.isArray(loads) && loads.length) break;
+    await new Promise((r) => setTimeout(r, 400));
   }
-  if (areaTable) {
-    for (const row of areaTable.querySelectorAll("tr")) {
-      const cells = [...row.querySelectorAll("td,th")].map((c) => c.textContent.trim());
-      const cat = cells[0];
-      if (!cat) continue;
-      if (/^Cases by Area/i.test(cat)) continue;
-      if (cells.length < 3 || !isNaN(Number(cat.replace(/,/g, "")))) continue;
-      const cases = parseInt((cells[1] || "0").replace(/,/g, ""), 10) || 0;
-      const bps   = parseInt((cells[2] || "0").replace(/,/g, ""), 10) || 0;
-      byDept.push({
-        category_name: NAME_MAP[cat] || cat,
-        is_fc: FC_RE.test(cat),
-        case_qty:  cases,
-        bp_qty:    bps,
+
+  const mainJson = decode("fpt_mainJson");
+  const liveCph = (mainJson && Array.isArray(mainJson.cph) && mainJson.cph.length)
+    ? mainJson.cph : null;
+
+  // Build plan-date metadata so compute.js can drop trailers that belong to a
+  // different day (delivered-today / unload-tomorrow, canceled, or moved).
+  // Mirrors the inputs to CV's psn_checkIncludeInPlanOrNot.
+  let planMeta = null;
+  if (mainJson) {
+    const source = mainJson.api_for_shipments_source || "sfd";
+    const trailerPayload = mainJson?.shipments?.data?.trailers?.payload || [];
+    const trailers = [];
+    for (const t of trailerPayload) {
+      const stop = (t.stops && t.stops[0]) || {};
+      const actual = stop.actualShipments || [];
+      trailers.push({
+        loadId: t.transLoadId,
+        status: t.loadStatus,
+        deliverByTs: stop.inductWindowEndTs || null,
+        tz: stop.stopLocationTimeZone || null,
+        hasActual: actual.length > 0,
+        caseQtyNull: actual.length > 0 && actual[0].caseQuantity == null,
+        pckQtyDefined: actual.length > 0 && typeof actual[0].pckQty !== "undefined",
       });
     }
+    planMeta = {
+      source,
+      moved: (mainJson.shipments_moved || []).map((mv) => ({
+        load_id: mv.load_id, unload_date: mv.unload_date,
+      })),
+      trailers,
+    };
   }
 
-  // 4. Open the aisle child window. It uses window.opener data populated by main_search.
-  //    Playwright confirmed readyState=complete isn't enough — the table renders
-  //    asynchronously, so we add a 2s buffer after load.
-  const aisleWin = window.open("/Protected/CaseVisibility/html/casesByAisle.html", "_blank");
-
-  async function waitReady(win, ms) {
-    if (!win) return false;
-    const dl = Date.now() + ms;
-    while (Date.now() < dl) {
-      await new Promise((r) => setTimeout(r, 300));
-      try { if (win.document.readyState === "complete") return true; } catch {}
-    }
-    return false;
-  }
-  await waitReady(aisleWin, 15_000);
-  await new Promise((r) => setTimeout(r, 2_000));  // async table-render buffer
-
-  // 5. Scrape casesByAisle — columns confirmed via Playwright: [aisle, cases, time].
-  //    No BP column; cells[2] is a time string. BP totals come from casesByDept.
-  const byAisle = [];
-  if (aisleWin && !aisleWin.closed) {
-    for (const row of aisleWin.document.querySelectorAll("table tbody tr")) {
+  // Scrape the delivery schedule table for truck ETA/trailer/loadId. The
+  // per-item freight comes from psn; this is only for the sidebar display.
+  // Skip the header row AND the footer totals row (Bug B fix).
+  const trucks = [];
+  const deliveryTable = document.getElementById("summaryTableForDeliveries");
+  if (deliveryTable) {
+    const SUMMARY_RE = /^(grand\s*)?total|^summary/i;
+    const toInt = (s) => parseInt(String(s || "0").replace(/,/g, "").replace(/-/g, "0"), 10) || 0;
+    for (const row of deliveryTable.querySelectorAll("tr")) {
       const cells = [...row.querySelectorAll("td")].map((c) => c.textContent.trim());
-      if (cells.length < 2) continue;
-      const label = cells[0];
-      if (!label || /^(Totals?|Store\b|Unknown|Case Details|^Aisle$)/i.test(label)) continue;
-      const numMatch = label.match(/^A(\d+)$/);
-      byAisle.push({
-        aisle_nbr:   numMatch ? parseInt(numMatch[1], 10) : null,
-        aisle_label: label,
-        case_qty:    parseInt((cells[1] || "0").replace(/,/g, ""), 10) || 0,
-        bp_qty:      0,
-        dept_nbr:    92,
+      if (cells.length < 8) continue;                 // header (th) or malformed
+      if (cells[0] === "Delivery ETA") continue;      // header
+      if (SUMMARY_RE.test(cells[0]) || !cells[0]) continue; // footer totals / blank
+      trucks.push({
+        eta:        cells[0],
+        type:       cells[1],
+        trailer:    cells[2],
+        loadId:     cells[3],
+        grocCases:  toInt(cells[4]),
+        gmCases:    toInt(cells[5]),
+        bpCases:    toInt(cells[6]),
+        totalCases: toInt(cells[7]),
+        status:     row.textContent.includes("\u2713") ? "Arrived" : "",
       });
     }
-    try { aisleWin.close(); } catch {}
   }
 
-  return { byDept, byAisle };
+  // Fetch the aisle location map (UPC -> zone/aisle). Same-origin, cookies.
+  let aisleMap = null;
+  try {
+    const r = await fetch(
+      `../ashx/AisleLocation.ashx?func=getUniqueAislesAndLocationsFromSqlSvr&storeNbr=${encodeURIComponent(storeNbr)}`,
+      { credentials: "include", headers: { Accept: "application/json" } }
+    );
+    if (r.ok) aisleMap = await r.json();
+  } catch (_e) { /* aisle_loc on rows covers ~98%, map is a fallback */ }
+
+  if (!Array.isArray(loads)) {
+    return { error: "fpt_psnAPIJson not available after search", loads: [], liveCph, aisleMap, trucks, planMeta };
+  }
+  return { loads, liveCph, aisleMap, trucks, planMeta };
 }
 
 // --- Handlers ---------------------------------------------------------------
@@ -130,29 +145,18 @@ export const handlers = {
     try {
       const [res] = await chrome.scripting.executeScript({
         target: { tabId },
-        world:  "MAIN",
-        func:   searchAndScrapeDetailed,
-        args:   [String(storeNbr), String(businessDate)],
+        world: "MAIN",
+        func: searchAndReadSession,
+        args: [String(storeNbr), String(businessDate)],
       });
 
-      const { byDept = [], byAisle = [], error } = res?.result ?? {};
+      const { loads = [], liveCph = null, aisleMap = null, trucks = [], planMeta = null, error } = res?.result ?? {};
 
-      // Close any aisle/dept child tabs that window.open() left open — they
-      // would be picked up as the "existing CV tab" on the next Collect run.
-      const staleTabs = await chrome.tabs.query({
-        url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/casesBy*",
-      });
-      for (const t of staleTabs) chrome.tabs.remove(t.id).catch(() => {});
+      if (error && !loads.length) return { ok: false, error };
 
-      if (error && !byDept.length) return { ok: false, error };
-
-      return { ok: true, byDept, byAisle };
+      return { ok: true, loads, liveCph, aisleMap, trucks, planMeta, warning: error || null };
     } catch (e) {
       return { ok: false, error: String(e?.message ?? e) };
     }
-  },
-
-  async "get-last-plan"(_msg) {
-    return null;
   },
 };

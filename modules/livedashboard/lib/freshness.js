@@ -12,6 +12,7 @@ const STALE_DEFAULT_MS = {
   accident:     60 * 60 * 1000,
   cvp:          30 * 60 * 1000,
   register:     24 * 60 * 60 * 1000,
+  recognition:  12 * 60 * 60 * 1000,
 };
 
 export async function read(sourceId) {
@@ -26,7 +27,7 @@ export async function read(sourceId) {
   return { ...f, sourceId, staleAfterMs, isStale };
 }
 
-export async function readAll(sourceIds = ["absences","compliance","accident","cvp","register"]) {
+export async function readAll(sourceIds = ["absences","compliance","accident","cvp","register","recognition"]) {
   const out = {};
   for (const id of sourceIds) out[id] = await read(id);
   return out;

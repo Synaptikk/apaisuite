@@ -44,6 +44,7 @@ export async function mount(host, container) {
       paint(state);
       // If a drill-down is open, re-render it with fresh data
       if (openDrill) renderDrill(openDrill);
+      applyWidgetVisibility();
       statusText.textContent = state.storeNbr
         ? `Loaded · store ${state.storeNbr}`
         : "Enter your store number above to load data";
@@ -343,11 +344,15 @@ export async function mount(host, container) {
     }
   }
   function renderDrill(kind) {
-    if (kind === "absences")     return renderAbsencesDrill();
-    if (kind === "cvp")          return renderCvpDrill();
-    if (kind === "compliance")   return renderComplianceDrill();
-    if (kind === "register")     return renderRegisterDrill();
-    if (kind === "accident")     return renderAccidentDrill();
+    if (kind === "absences")     renderAbsencesDrill();
+    else if (kind === "cvp")          renderCvpDrill();
+    else if (kind === "compliance")   renderComplianceDrill();
+    else if (kind === "register")     renderRegisterDrill();
+    else if (kind === "accident")     renderAccidentDrill();
+    // Re-apply widget visibility so sub-widgets rendered into drillBody
+    // (e.g. the recognition section inside the accident drill) respect
+    // the user's per-widget toggles.
+    applyWidgetVisibility();
   }
 
   function renderAbsencesDrill() {
@@ -472,28 +477,40 @@ export async function mount(host, container) {
   function buildRecognitionSection(src) {
     const header = `<h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#4a4a4a">Recognition — last 7 days</h4>`;
     const c = src?.cache;
-    if (!c?.rolling7d?.length) {
-      return `${header}<div class="ld-empty">No recognition data yet. Click Refresh — pulls from the Field_Dashboard Power BI report.</div>`;
-    }
-    // Oldest → newest reads naturally left-to-right.
-    const days  = c.rolling7d.slice().reverse();
-    const total = days.reduce((a, r) => a + (r.count || 0), 0);
-    const dateCells  = days.map((r) => `<th>${escapeHtml(fmtDateShort(r.dateIso))}</th>`).join("");
-    const countCells = days.map((r) => `<td style="text-align:center">${r.count}</td>`).join("");
-    return `
-      ${header}
-      <table class="ld-table">
-        <thead>
-          <tr>${dateCells}<th style="text-align:right">7d&nbsp;total</th></tr>
-        </thead>
-        <tbody>
-          <tr>${countCells}<td style="text-align:right"><strong>${total}</strong></td></tr>
-        </tbody>
-      </table>
-      <div class="ld-empty" style="margin-top:6px">
-        Captured ${escapeHtml(c.capturedAt || "?")}${c.replayed ? " (store-filter replay)" : ""}
-      </div>
-    `;
+    // If the underlying Power BI query returned exactly the 500-row cap AND
+    // no rows matched the requested store, the 7d window may be truncated —
+    // your store's recent recognitions may sit outside the top 500 nationally.
+    const capHit = c?.totalRowsAllStores >= 500 && (c?.rows?.length || 0) === 0;
+    const inner = !c?.rolling7d?.length
+      ? `${header}<div class="ld-empty">No recognition data yet. Click Refresh — pulls from the Field_Dashboard Power BI report.</div>`
+      : (() => {
+          // Oldest → newest reads naturally left-to-right.
+          const days  = c.rolling7d.slice().reverse();
+          const total = days.reduce((a, r) => a + (r.count || 0), 0);
+          const dateCells  = days.map((r) => `<th>${escapeHtml(fmtDateShort(r.dateIso))}</th>`).join("");
+          const countCells = days.map((r) => `<td style="text-align:center">${r.count}</td>`).join("");
+          const truncNote = capHit
+            ? `<div class="ld-empty" style="margin-top:4px;color:#b45309">Note: 500-row cap hit and no rows matched store ${escapeHtml(c.storeNbr || "?")}. Recent entries for your store may not be in the top-500 nationwide feed.</div>`
+            : "";
+          return `
+            ${header}
+            <table class="ld-table">
+              <thead>
+                <tr>${dateCells}<th style="text-align:right">7d&nbsp;total</th></tr>
+              </thead>
+              <tbody>
+                <tr>${countCells}<td style="text-align:right"><strong>${total}</strong></td></tr>
+              </tbody>
+            </table>
+            <div class="ld-empty" style="margin-top:6px">
+              Captured ${escapeHtml(c.capturedAt || "?")}${c.replayed ? " (store-filter replay)" : ""}${c.totalRowsAllStores != null ? ` · ${c.totalRowsAllStores} rows nationwide, filtered to ${escapeHtml(c.storeNbr || "?")}` : ""}
+            </div>
+            ${truncNote}
+          `;
+        })();
+    // Wrap in a data-widget-id container so the Settings toggle can hide
+    // this sub-section independently of the parent Accident drill.
+    return `<div data-widget-id="livedashboard.recognition">${inner}</div>`;
   }
 
   function fmtDateShort(iso) {
@@ -683,10 +700,12 @@ export async function mount(host, container) {
       const label = ({ headline: "Headline", fresh: "Fresh", food: "Food", gm: "GM" })[id];
       if (!cat.ok) {
         return `
-          <div class="ld-cvp-row">
-            <div class="ld-cvp-label">${label}</div>
-            <div class="ld-cvp-pct">—</div>
-            <div class="ld-error" style="grid-column: span 2">${escapeHtml(cat.error || cat.errorClass || "no data")}</div>
+          <div class="ld-cvp-item">
+            <div class="ld-cvp-row">
+              <div class="ld-cvp-label">${label}</div>
+              <div class="ld-cvp-pct">—</div>
+              <div class="ld-error" style="grid-column: span 2">${escapeHtml(cat.error || cat.errorClass || "no data")}</div>
+            </div>
           </div>`;
       }
       return renderCvpRow({ id, label }, cat.currentWeek);
@@ -697,10 +716,12 @@ export async function mount(host, container) {
   function renderCvpRow(cat, cw) {
     if (!cw) {
       return `
-        <div class="ld-cvp-row">
-          <div class="ld-cvp-label">${cat.label}</div>
-          <div class="ld-cvp-pct">—</div>
-          <div class="ld-empty" style="grid-column: span 2">no rows</div>
+        <div class="ld-cvp-item">
+          <div class="ld-cvp-row">
+            <div class="ld-cvp-label">${cat.label}</div>
+            <div class="ld-cvp-pct">—</div>
+            <div class="ld-empty" style="grid-column: span 2">no rows</div>
+          </div>
         </div>`;
     }
     const pct = cw.sellThruPctTy;
@@ -713,16 +734,38 @@ export async function mount(host, container) {
           : `▼ ${(ly - pct).toFixed(1)} vs LY ${ly.toFixed(1)}%`)
       : "";
     const total = cw.cvpTotalQtyTy;
+    const subMetrics = renderCvpSubMetrics(cw);
     return `
-      <div class="ld-cvp-row">
-        <div class="ld-cvp-label">${cat.label}</div>
-        <div class="ld-cvp-pct" data-sev="${sev}">${pct == null ? "—" : pct.toFixed(1) + "%"}</div>
-        <div class="ld-cvp-bar-track" title="${pct == null ? "no data" : pct.toFixed(1) + "%"}">
-          <div class="ld-cvp-bar-fill" data-sev="${sev}" style="width:${barPct}%"></div>
+      <div class="ld-cvp-item">
+        <div class="ld-cvp-row">
+          <div class="ld-cvp-label">${cat.label}</div>
+          <div class="ld-cvp-pct" data-sev="${sev}">${pct == null ? "—" : pct.toFixed(1) + "%"}</div>
+          <div class="ld-cvp-bar-track" title="${pct == null ? "no data" : pct.toFixed(1) + "%"}">
+            <div class="ld-cvp-bar-fill" data-sev="${sev}" style="width:${barPct}%"></div>
+          </div>
+          <div class="ld-cvp-meta">${dir}${total != null ? ` · ${total.toLocaleString()} units` : ""}</div>
         </div>
-        <div class="ld-cvp-meta">${dir}${total != null ? ` · ${total.toLocaleString()} units` : ""}</div>
+        ${subMetrics}
       </div>
     `;
+  }
+
+  function renderCvpSubMetrics(cw) {
+    const parts = [];
+    const adherence = renderSubMetric("Adherence", cw.adherencePctTy, cw.adherencePctLy);
+    if (adherence) parts.push(adherence);
+    const compliance = renderSubMetric("Compliance", cw.compliancePctTy, cw.compliancePctLy);
+    if (compliance) parts.push(compliance);
+    if (!parts.length) return "";
+    return `<div class="ld-cvp-submetrics">${parts.join("")}</div>`;
+  }
+
+  function renderSubMetric(label, ty, ly) {
+    if (ty == null) return "";
+    const delta = ly == null ? "" : (ty - ly >= 0
+      ? `<em>▲ ${(ty - ly).toFixed(1)} vs LY ${ly.toFixed(1)}%</em>`
+      : `<em>▼ ${(ly - ty).toFixed(1)} vs LY ${ly.toFixed(1)}%</em>`);
+    return `<span>${label} <strong>${ty.toFixed(1)}%</strong> ${delta}</span>`;
   }
 
   // ── Click handlers ──────────────────────────────────────────────
@@ -831,6 +874,48 @@ export async function mount(host, container) {
     reload();
   });
 
+  // ── Widget visibility (Settings → Dashboard toggles) ──────────────
+  //
+  // Any element in this container with a data-widget-id attribute is
+  // hidden when the user has toggled the corresponding widget off in
+  // #/settings → Dashboard. Prefs live at
+  // chrome.storage.sync["shell.dashboardWidgets"] as { "<mod>.<widget>": bool }.
+  // Missing keys default to visible (matches the "defaultOn: true" convention).
+  let widgetPrefs = {};
+  async function loadWidgetPrefs() {
+    try {
+      const got = await chrome.storage.sync.get("shell.dashboardWidgets");
+      widgetPrefs = got?.["shell.dashboardWidgets"] || {};
+    } catch {
+      widgetPrefs = {};
+    }
+  }
+  function applyWidgetVisibility() {
+    // Root container widgets (buttons) AND any drill-body sub-widgets
+    // (recognition section inside the accident drill) share the same
+    // data-widget-id convention.
+    for (const el of container.querySelectorAll("[data-widget-id]")) {
+      const visible = widgetPrefs[el.dataset.widgetId] !== false;
+      el.hidden = !visible;
+    }
+  }
+  const onStorageChanged = async (changes, areaName) => {
+    if (areaName !== "sync") return;
+    if ("shell.dashboardWidgets" in changes) {
+      await loadWidgetPrefs();
+      applyWidgetVisibility();
+    }
+    // Shell home-store default changed in Settings → re-flow the dashboard
+    // (view.js re-reads the SW's getSettings(), which now prefers the shell
+    // default over the module's own persisted storeNbr).
+    if ("apai.userHomeStoreOverride" in changes) {
+      reload().catch((e) => console.warn("[livedashboard view] shell-store reload failed:", e?.message));
+      onRefreshClick().catch((e) => console.warn("[livedashboard view] shell-store refresh failed:", e?.message));
+    }
+  };
+  chrome.storage.onChanged.addListener(onStorageChanged);
+  await loadWidgetPrefs();
+
   // When the user returns to this tab (e.g., after signing into Hoops in
   // another tab), re-run bootstrap. Any source with a stale lastError
   // will retry per shouldBootstrap's lastError-forces-retry rule. Same
@@ -851,8 +936,12 @@ export async function mount(host, container) {
   }
   document.addEventListener("visibilitychange", onVisibilityChange);
 
-  // Initial paint
+  // Initial paint (from cached state) — then force a full refresh so every
+  // dashboard open pulls fresh data from every source, bypassing the
+  // per-source stale thresholds. This runs the same code path as the manual
+  // Refresh button so the user sees status feedback while pulls complete.
   await reload();
+  onRefreshClick().catch((e) => console.warn("[livedashboard view] mount refresh failed:", e?.message));
 
   // Cleanup
   return () => {
@@ -863,6 +952,7 @@ export async function mount(host, container) {
     refreshBtn.removeEventListener("click", onRefreshClick);
     storeInput.removeEventListener("change", onStoreCommit);
     document.removeEventListener("visibilitychange", onVisibilityChange);
+    chrome.storage.onChanged.removeListener(onStorageChanged);
     unsubSourceComplete();
     link.remove();
   };

@@ -61,6 +61,32 @@
   </div>
 </details>
 
+<details class="card cl-autosend">
+  <summary>Auto-Send at 12:00 PM</summary>
+  <div class="cl-autosend-body">
+    <label class="check">
+      <input id="cl-autoSendEnabled" type="checkbox">
+      <span>Send closing list automatically every day at noon</span>
+    </label>
+    <label class="field cl-field-full">
+      <span class="field-label">Recipient</span>
+      <input id="cl-autoSendRecipient" class="input" type="email"
+             placeholder="1458leadership@walmart.onmicrosoft.com">
+    </label>
+    <p class="cl-autosend-note muted tiny">
+      Outlook must be open at some point before noon each day — the extension
+      captures your Microsoft Graph session automatically. Uses the Store, Filters,
+      and IVR settings above.
+    </p>
+    <div class="cl-autosend-actions">
+      <button id="cl-autoSendSave" class="btn btn-primary btn-sm">Save</button>
+      <button id="cl-autoSendNow" class="btn btn-secondary btn-sm">Send Now (test)</button>
+      <button id="cl-autoSendReload" class="btn btn-secondary btn-sm">Test on Reload</button>
+      <span id="cl-autoSendStatus" class="cl-autosend-status muted tiny"></span>
+    </div>
+  </div>
+</details>
+
 <div class="cl-action">
   <button id="cl-collect" class="btn btn-primary btn-pill btn-lg">
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

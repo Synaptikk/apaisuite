@@ -111,7 +111,15 @@
     for (let i = ring.length - 1; i >= 0; i--) {
       const r = ring[i];
       if (!r.reqBody) continue;
-      if (r.status === 200 || r.status === 0) return r;
+      if (r.status !== 200 && r.status !== 0) continue;
+      // Defense-in-depth: a QES bundle whose REQUEST body mentions the
+      // recognition column can still come back with the inner result missing
+      // or empty (auth top-up, throttling, cached-empty result). Verify the
+      // response actually carries a Select column whose Name references the
+      // description marker before handing this record to the SW.
+      if (!r.respBody) continue;
+      if (!BODY_MARKER.test(r.respBody)) continue;
+      return r;
     }
     return null;
   }

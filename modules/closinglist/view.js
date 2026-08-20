@@ -20,6 +20,7 @@
 import * as Parse from "./lib/parse.js";
 import { uploadAssociatesToFirestore } from "./lib/firebaseUpload.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
+import { getUserHomeStore } from "../../shared/userStore.js";
 
 const DEFAULTS = {
   storeNbr: "",
@@ -32,6 +33,8 @@ const DEFAULTS = {
     "Dual Licensed Opt, Front End, In Home Delivery, Optician, Rx",
   includeIvr: true,
   showJobTitles: false,
+  autoSendEnabled: false,
+  autoSendRecipient: "1458leadership@walmart.onmicrosoft.com",
 };
 
 // Older versions shipped narrower defaults. If a user still has one of these
@@ -68,7 +71,7 @@ export async function mount(host, container) {
     stored.excludeJobs = DEFAULTS.excludeJobs;
     host.storage.sync.set("excludeJobs", DEFAULTS.excludeJobs).catch(() => {});
   }
-  $("cl-storeNbr").value         = stored.storeNbr ?? DEFAULTS.storeNbr;
+  $("cl-storeNbr").value         = (await getUserHomeStore()) || stored.storeNbr || DEFAULTS.storeNbr;
   $("cl-businessDate").value     = todayIso();
   $("cl-recipient").value        = stored.recipient ?? DEFAULTS.recipient;
   $("cl-startHour").value        = stored.startHour ?? DEFAULTS.startHour;
@@ -77,6 +80,53 @@ export async function mount(host, container) {
   $("cl-excludeJobs").value      = stored.excludeJobs ?? DEFAULTS.excludeJobs;
   $("cl-includeIvr").checked     = stored.includeIvr ?? DEFAULTS.includeIvr;
   $("cl-showJobTitles").checked  = stored.showJobTitles ?? DEFAULTS.showJobTitles;
+
+  // 4b. Load auto-send settings + last-send status from the service.
+  let autoSendUnsub = null;
+  async function refreshAutoSendStatus() {
+    try {
+      const result = await host.messaging.send("auto-send-get-status");
+      $("cl-autoSendEnabled").checked = result.enabled;
+      $("cl-autoSendRecipient").value = result.recipient || DEFAULTS.autoSendRecipient;
+      renderAutoSendStatus(result.lastStatus, result.nextScheduledAt);
+    } catch (_) { /* service not yet warm — ignore */ }
+  }
+
+  function renderAutoSendStatus(lastStatus, nextScheduledAt) {
+    const el = $("cl-autoSendStatus");
+    if (!el) return;
+    const parts = [];
+
+    if (lastStatus) {
+      const when = lastStatus.at ? new Date(lastStatus.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "";
+      if (lastStatus.ok) {
+        el.className = "cl-autosend-status muted tiny cl-autosend-ok";
+        parts.push(`Last sent: ${when}`);
+      } else {
+        el.className = "cl-autosend-status muted tiny cl-autosend-err";
+        parts.push(`Last attempt failed (${when}): ${lastStatus.message}`);
+      }
+    } else {
+      el.className = "cl-autosend-status muted tiny";
+    }
+
+    if (nextScheduledAt) {
+      const next = new Date(nextScheduledAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+      parts.push(`Next: ${next}`);
+    } else if ($("cl-autoSendEnabled").checked) {
+      el.className = "cl-autosend-status muted tiny cl-autosend-err";
+      parts.push("No alarm scheduled — click Save");
+    }
+
+    el.textContent = parts.join(" — ");
+  }
+
+  await refreshAutoSendStatus();
+
+  // Listen for broadcasts from the service worker when a send completes.
+  autoSendUnsub = host.messaging.on("auto-send-status-changed", () => {
+    refreshAutoSendStatus();
+  });
 
   async function saveDefaults() {
     await host.storage.sync.set({
@@ -172,8 +222,6 @@ export async function mount(host, container) {
       let ivrStatus = "";
       if (includeIvr) {
         setStatus("Collecting IVR call-offs (this opens an IVR tab, ~5-15s)…");
-        // host.messaging.send rejects on { ok: false }, so the catch is the
-        // only failure path here. ivrResp on the happy path always has ok:true.
         try {
           const ivrResp = await host.messaging.send("collect-ivr-absences");
           ivrRows   = ivrResp.rows || [];
@@ -218,9 +266,6 @@ export async function mount(host, container) {
     } catch (e) {
       setStatus(String(e?.message ?? e), "error");
     } finally {
-      // Use the captured reference — $("cl-collect") would return null if the
-      // user navigated away mid-collect (container detached). Setting .disabled
-      // on a detached node is a safe no-op.
       $collect.disabled = false;
     }
   }
@@ -264,18 +309,83 @@ export async function mount(host, container) {
     setStatus("Exclude list reset to default.", "ok");
   }
 
-  // 8. Wire listeners.
+  // 8. Auto-send handlers.
+  async function onAutoSendSave() {
+    const $save = $("cl-autoSendSave");
+    $save.disabled = true;
+    try {
+      await saveDefaults(); // persist main settings that auto-send depends on
+      const enabled   = $("cl-autoSendEnabled").checked;
+      const recipient = $("cl-autoSendRecipient").value.trim() || DEFAULTS.autoSendRecipient;
+      await host.messaging.send("auto-send-save-settings", { enabled, recipient });
+      const $as = $("cl-autoSendStatus");
+      $as.textContent = enabled
+        ? `Enabled — will send to ${recipient} at noon daily.`
+        : "Disabled.";
+      $as.className = "cl-autosend-status muted tiny";
+    } catch (e) {
+      const $as = $("cl-autoSendStatus");
+      $as.textContent = "Save failed: " + (e?.message ?? e);
+      $as.className = "cl-autosend-status muted tiny cl-autosend-err";
+    } finally {
+      $save.disabled = false;
+    }
+  }
+
+  async function onAutoSendNow() {
+    const $now = $("cl-autoSendNow");
+    $now.disabled = true;
+    const $as = $("cl-autoSendStatus");
+    $as.textContent = "Sending…";
+    $as.className = "cl-autosend-status muted tiny";
+    try {
+      // Save current settings first so the SW picks them up.
+      await saveDefaults();
+      const enabled   = $("cl-autoSendEnabled").checked;
+      const recipient = $("cl-autoSendRecipient").value.trim() || DEFAULTS.autoSendRecipient;
+      await host.messaging.send("auto-send-save-settings", { enabled, recipient });
+      await host.messaging.send("auto-send-trigger-now");
+      $as.textContent = "Triggered — check for a Chrome notification in a few seconds.";
+    } catch (e) {
+      $as.textContent = "Failed: " + (e?.message ?? e);
+      $as.className = "cl-autosend-status muted tiny cl-autosend-err";
+    } finally {
+      $now.disabled = false;
+    }
+  }
+
+  async function onAutoSendReload() {
+    const $btn = $("cl-autoSendReload");
+    $btn.disabled = true;
+    try {
+      await saveDefaults();
+      const enabled   = $("cl-autoSendEnabled").checked;
+      const recipient = $("cl-autoSendRecipient").value.trim() || DEFAULTS.autoSendRecipient;
+      await host.messaging.send("auto-send-save-settings", { enabled, recipient });
+      // Set the boot flag — register() will read it and fire executeDailySend.
+      await chrome.storage.local.set({ "closinglist.bootSend": true });
+      chrome.runtime.reload();
+    } catch (e) {
+      $btn.disabled = false;
+      const $as = $("cl-autoSendStatus");
+      $as.textContent = "Failed: " + (e?.message ?? e);
+      $as.className = "cl-autosend-status muted tiny cl-autosend-err";
+    }
+  }
+
+  // 9. Wire listeners.
   $("cl-collect").addEventListener("click", onCollect);
   $("cl-copy").addEventListener("click", onCopy);
   $("cl-openOutlook").addEventListener("click", onOpenOutlook);
   $("cl-resetExcludeJobs").addEventListener("click", onResetExcludeJobs);
+  $("cl-autoSendSave").addEventListener("click", onAutoSendSave);
+  $("cl-autoSendNow").addEventListener("click", onAutoSendNow);
+  $("cl-autoSendReload").addEventListener("click", onAutoSendReload);
 
-  // 9. Cleanup function — invoked (awaited) by the shell on route change.
-  // Async so future teardown (unsubscribing from host.messaging.on listeners,
-  // cancelling in-flight ops) can be added without changing the contract.
+  // 10. Cleanup function — invoked (awaited) by the shell on route change.
   return async () => {
     link.remove();
-    // Future: any host.messaging.on() unsubscribe handles go here.
+    if (autoSendUnsub) autoSendUnsub();
   };
 }
 

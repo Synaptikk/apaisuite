@@ -13,8 +13,8 @@ const LOG = (...a) => console.log("[assocpurchases]", ...a);
 
 // ── APPRISS auth ────────────────────────────────────────────────────────────
 
-const APPRISS_DOMAIN = "wmtus.apprissretailcloud.com";
-const APPRISS_HOME   = "https://wmtus.apprissretailcloud.com/secure/sso/saml2?RelayState=/platform/portal";
+const APPRISS_DOMAIN = "apps.apprissretail.com";
+const APPRISS_HOME   = "https://wmlink.wal-mart.com/securestore";
 const _auth = createAuth("assocpurchases");
 
 async function _waitForTabLoad(tabId, timeoutMs = 15_000) {
@@ -54,10 +54,12 @@ async function ensureApprissAuth() {
     await _auth.clickSso(tab.id, APPRISS_SSO_SELECTORS).catch(() => {});
   }
 
-  // Poll up to 30 s for the session cookie / probe to flip.
+  // Poll up to 30 s for the API probe to succeed. Cookie presence alone
+  // is unreliable — a stale APPRISS cookie can persist across server-side
+  // session expiry, so trust the probe (which hits the real search API).
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (await _auth.hasSessionCookie(APPRISS_DOMAIN) || await probeApprissAuth()) break;
+    if (await probeApprissAuth()) break;
     await new Promise(r => setTimeout(r, 600));
   }
 

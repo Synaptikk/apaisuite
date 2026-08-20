@@ -1,0 +1,20 @@
+{
+  "name": "stockingplan",
+  "version": "1.0.0",
+  "description": "",
+  "main": "module.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "node tools/verify-compute.js",
+    "capture": "node tools/capture-cv-data.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

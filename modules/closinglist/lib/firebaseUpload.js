@@ -9,8 +9,12 @@
 //   - Anonymous auth. ID token cached in chrome.storage.local + refreshed when
 //     it nears expiry. Refresh token also cached so we don't sign up new
 //     anonymous identities on every reload.
-//   - Hardcoded to store 1458 — security rules in the webapp reject anything
-//     else, and the extension shouldn't write data it can't observe.
+//   - Any store number is accepted, as long as it's numeric. The Firestore
+//     rules validate the session id shape (`^[0-9]+-[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+//     and gate writes on auth; the store number itself comes from the user's
+//     CaseVisibility session (view.js reads it from the `cl-storeNbr` input,
+//     which is prefilled from chrome.storage and ultimately from the intranet
+//     Main.ashx?storeNbr=... URL).
 //   - Idempotent / bandwidth-aware: PATCH only if the associate fingerprint
 //     changed since the last successful push. Fingerprint = sha-256 of the
 //     normalized associate JSON, stored alongside the cached token.
@@ -19,7 +23,6 @@
 // identifier, not a secret — Firebase security rules enforce auth + path.
 const FB_API_KEY        = "AIzaSyAcPgKnHNBJJYkI4OVJASzHUwaKj2qCxdU";
 const FB_PROJECT_ID     = "managerchecklist";
-const FB_FIXED_STORE    = "1458";
 
 const TOKEN_KEY         = "closinglist.fbToken";        // { idToken, refreshToken, expiresAt, localId }
 const FINGERPRINT_KEY   = "closinglist.fbFingerprint";  // { sessionId, hash, at }
@@ -37,9 +40,9 @@ export async function uploadAssociatesToFirestore(model, opts) {
     if (!FB_API_KEY || FB_API_KEY === "PASTE_FIREBASE_API_KEY_HERE") {
       return { ok: false, error: "Firebase API key not configured in firebaseUpload.js" };
     }
-    const storeNbr = String(opts.storeNbr || FB_FIXED_STORE);
-    if (storeNbr !== FB_FIXED_STORE) {
-      return { ok: false, error: `Upload only enabled for store ${FB_FIXED_STORE} (got ${storeNbr}).` };
+    const storeNbr = String(opts.storeNbr || "").trim();
+    if (!/^\d+$/.test(storeNbr)) {
+      return { ok: false, error: `Invalid storeNbr "${storeNbr}", expected digits only (matches Firestore rule ^[0-9]+-YYYY-MM-DD$).` };
     }
     const businessDate = opts.businessDate;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate || "")) {

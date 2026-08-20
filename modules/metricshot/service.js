@@ -25,7 +25,7 @@
 //     metricshot.lastPreview.<id>  — { pngBase64, at, width, height } (UI cache)
 
 import { SEED_METRICS, SEED_URL_MIGRATIONS } from "./data/defaults.js";
-import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches } from "./lib/metrics.js";
+import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches, applyCaptureMigration } from "./lib/metrics.js";
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk } from "./lib/sendbird.js";
@@ -129,28 +129,61 @@ async function ensureSeed() {
         // match (see metrics.js::migrationMatches for the why).
         if (migrationMatches(migration, existing)) {
           existing.url = seed.url;
-          // Full replace of capture block on migration — old fields we no
-          // longer use (like requiredSelector defaults from prior seed) get
-          // wiped, and new fields (clip, containText, region mode) land.
-          existing.capture = { ...seed.capture };
+          // Replace the capture block on migration — old fields we no longer
+          // use (like requiredSelector defaults from prior seed) get wiped,
+          // and new fields (clip, containText, region mode) land. A
+          // user-customized crop `padding` (set via the crop tool) survives
+          // if the migration declares `oldDefaultPadding` — see
+          // metrics.js::applyCaptureMigration.
+          existing.capture = applyCaptureMigration(existing.capture, migration, seed.capture);
           mutated = true;
           log.emit("migrated-seed", { id: seed.id, from: migration.fromUrl || migration.fromRequiredSelector || `mode=${migration.fromCaptureMode}` });
         }
       }
     }
 
-    // One-time channel flip to @me (self-DM) for the pre-seeded vizpick-score.
-    // Guarded by a marker so it fires exactly once — if the user later sets a
-    // real channel, we won't clobber it on the next boot.
-    const chanMarker = await chrome.storage.local.get(`${PFX}channelMigratedToMe`);
-    if (!chanMarker[`${PFX}channelMigratedToMe`]) {
+    // One-time: point the pre-seeded vizpick-score at the self-channel.
+    //
+    // This replaces two earlier marker-gated migrations that flipped "@me"
+    // BACK to "1458 Leadership" after image-post debugging. Those are gone —
+    // leaving them in would have silently undone this on any profile whose
+    // markers weren't already set.
+    //
+    // Only rewrites a metric still sitting on exactly "1458 Leadership", so a
+    // channel the user picked themselves is never clobbered. Changing the seed
+    // alone would not be enough: the metric already exists in storage, and
+    // seeds only apply when a metric is first created.
+    const selfMarker = await chrome.storage.local.get(`${PFX}channelToSelf`);
+    if (!selfMarker[`${PFX}channelToSelf`]) {
       const vp = current.find((m) => m.id === "vizpick-score");
       if (vp && vp.destination?.channelName === "1458 Leadership") {
         vp.destination = { ...vp.destination, channelName: "@me", channelUrl: undefined, resolvedAt: undefined };
         mutated = true;
-        log.emit("migrated-channel", { id: "vizpick-score", to: "@me" });
+        log.emit("migrated-channel", { id: "vizpick-score", to: "@me", reason: "send-to-self-for-now" });
       }
-      await chrome.storage.local.set({ [`${PFX}channelMigratedToMe`]: Date.now() });
+      await chrome.storage.local.set({ [`${PFX}channelToSelf`]: Date.now() });
+    }
+
+    // One-time: shrink the catch-up window for any existing metric that still
+    // carries the old 1-hour default. Old behavior meant a slot missed while
+    // the browser was closed would fire (and often re-fire on every 1-min
+    // tick if the post failed) up to an hour later — surprising when the
+    // user opens the browser at 12:30 and gets a "10:00 VizPick" post. New
+    // default (90s) covers only SW alarm-wake latency while the browser is
+    // running; slots missed because the browser was off are skipped cleanly.
+    // Only rewrites metrics still on the old 3_600_000 value — user-tuned
+    // catch-up windows are left alone. Marker-gated so it fires exactly once.
+    // Added 2026-08-01.
+    const catchupMarker = await chrome.storage.local.get(`${PFX}catchupWindowShrunkTo90s`);
+    if (!catchupMarker[`${PFX}catchupWindowShrunkTo90s`]) {
+      for (const m of current) {
+        if (m.capture?.catchUpWindowMs === 3_600_000) {
+          m.capture = { ...m.capture, catchUpWindowMs: 90_000 };
+          mutated = true;
+          log.emit("migrated-catchup", { id: m.id, from: 3_600_000, to: 90_000 });
+        }
+      }
+      await chrome.storage.local.set({ [`${PFX}catchupWindowShrunkTo90s`]: Date.now() });
     }
 
     if (mutated) await saveMetrics(current);
@@ -346,14 +379,10 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
       },
     });
 
-    // Post to Workvivo/Sendbird.
-    const localWhen = formatLocal(scheduledAt || captureRes.capturedAt, metric.timezone);
+    // Post to Workvivo/Sendbird. No caption — the follow-up text (VizPick)
+    // already carries the metric name + timestamp header, so a separate small
+    // caption message just clutters the channel.
     const fileName  = `${metric.id}-${fileTimestamp(captureRes.capturedAt)}.png`;
-    const captionLines = [
-      metric.name,
-      metric.caption?.trim() || null,
-      `Captured: ${localWhen}`,
-    ].filter(Boolean);
     log.emit("run-step", { id: metric.id, attempt, step: "post-start", channelName: metric.destination?.channelName });
     // Watchdog: postScreenshotToWorkvivo opens/primes a Workvivo tab and can
     // wait ~45s for the Sendbird SDK, all without emitting anything. Race it
@@ -368,7 +397,6 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
         channelName: metric.destination?.channelName,
         pngBase64:   captureRes.pngBase64,
         fileName,
-        caption:     captionLines.join("\n"),
         onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: `post:${name}`, ...(extra || {}) }),
       }),
       _postTimeout,
@@ -841,21 +869,29 @@ export const handlers = {
   },
 };
 
-// ── Init hook (called from module.js::register) ──────────────────────────
+// ── Init hook ────────────────────────────────────────────────────────────
 
-export async function register() {
+// Shared boot sequence: plant the seed metric (idempotent) then arm the tick
+// alarm (idempotent). Used by BOTH:
+//   - module.js top-level (runs on every SW boot/wake) — so scheduled posts
+//     fire even if the user never opens the module UI, and recover across
+//     Chrome restarts / SW idle-shutdown.
+//   - register() below (runs in the app.html page context when the module is
+//     mounted) — kept for parity so opening the UI also guarantees setup.
+// Both entry points are safe to call repeatedly: ensureSeed() no-ops once a
+// metric exists (or the user emptied the list), and installTickAlarm() no-ops
+// once the alarm exists.
+export async function bootInit() {
   await ensureSeed();
   await installTickAlarm();
 }
 
-// ── Utilities ────────────────────────────────────────────────────────────
-
-function formatLocal(epochMs, zone) {
-  const opts = { dateStyle: "medium", timeStyle: "short" };
-  if (zone && zone !== "local") opts.timeZone = zone;
-  try { return new Intl.DateTimeFormat([], opts).format(new Date(epochMs)); }
-  catch { return new Date(epochMs).toString(); }
+// Called from module.js's default-export register (page/UI context).
+export async function register() {
+  await bootInit();
 }
+
+// ── Utilities ────────────────────────────────────────────────────────────
 
 function fileTimestamp(epochMs) {
   const d = new Date(epochMs);

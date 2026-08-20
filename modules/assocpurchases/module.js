@@ -8,11 +8,11 @@
 //
 // Data sources:
 //   • MUMD report  — sf-reports-ui.walmart.com/mumd/detail-mumd-report
-//   • APPRISS      — wmtus.apprissretailcloud.com (markdown purchase discount card search)
+//   • APPRISS      — apps.apprissretail.com/walmart-usa (markdown purchase discount card search)
 //
 // Name resolution: MUMD WINs (ses008s) → real names via Workvivo quick-search.
-// Both sf-reports-ui.walmart.com and wmtus.apprissretailcloud.com are already
-// covered by the suite's host_permissions (*.walmart.com/* + *.apprissretailcloud.com/*).
+// Both sf-reports-ui.walmart.com and apps.apprissretail.com are already
+// covered by the suite's host_permissions (*.walmart.com/* + apps.apprissretail.com/*).
 
 import { handlers as serviceHandlers } from "./service.js";
 
@@ -36,7 +36,7 @@ export default {
       needs: ["tabs", "scripting", "storage"],
       hosts: [
         "https://sf-reports-ui.walmart.com/*",
-        "https://wmtus.apprissretailcloud.com/*",
+        "https://apps.apprissretail.com/*",
         "https://workvivo.walmart.com/*",
       ],
     },

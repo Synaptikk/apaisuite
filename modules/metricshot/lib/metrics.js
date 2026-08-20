@@ -31,7 +31,10 @@ export const DEFAULT_CAPTURE = Object.freeze({
   settleDelayMs: 8000,
   timeoutMs: 60000,
   retries: 2,
-  catchUpWindowMs: 60 * 60 * 1000,
+  // See defaults.js — ~90s covers only the SW alarm-wake latency while the
+  // browser is running. Missed slots (browser closed) skip cleanly rather than
+  // firing hours later on next open.
+  catchUpWindowMs: 90_000,
 });
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -251,6 +254,33 @@ export function metricNeedsStore(m) {
  * `fromUrl`, so it re-fired on every service-worker restart and wiped the
  * user's capture block (incl. saved crop) back to seed defaults.
  */
+/**
+ * Compute the capture block a matched migration should install, WITHOUT
+ * clobbering a user-customized `padding` (set via the crop tool).
+ *
+ * `existing.capture = { ...seed.capture }` (the naive full replace) can't
+ * tell "user never touched padding" apart from "user's crop happens to be
+ * exactly the old default" — so a migration that wants to bump padding
+ * along with some other field must declare `oldDefaultPadding`, the padding
+ * shape it expects on an untouched metric. If the existing padding still
+ * matches that fingerprint, the new seed padding is safe to take; if it
+ * doesn't, the user tuned it and it must survive the replace. Migrations
+ * that don't declare `oldDefaultPadding` keep the previous full-replace
+ * behavior (they don't touch padding semantics).
+ */
+export function applyCaptureMigration(existingCapture, migration, seedCapture) {
+  const next = { ...seedCapture };
+  if (migration?.oldDefaultPadding && existingCapture?.padding
+      && !paddingEquals(existingCapture.padding, migration.oldDefaultPadding)) {
+    next.padding = existingCapture.padding;
+  }
+  return next;
+}
+
+function paddingEquals(a, b) {
+  return a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
+}
+
 export function migrationMatches(migration, existing) {
   if (!migration || !existing) return false;
   const checks = [];

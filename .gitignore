@@ -10,6 +10,9 @@ scripts/.staging/
 # scripts/release.sh strips dev/ at package time; this prevents accidental commit.
 dev/node_modules/
 
+# Module-local dev tooling deps (e.g. stockingplan's Playwright capture scripts)
+modules/**/node_modules/
+
 # Playwright MCP session logs / snapshots (generated in module dev folders)
 **/.playwright-mcp/
 

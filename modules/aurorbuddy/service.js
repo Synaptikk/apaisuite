@@ -48,8 +48,8 @@ const AUROR_HOME   = "https://app.us.auror.co/";
 // Verified live via CDP: cookies-cleared tab opened at the SAML URL
 // arrives at /platform/portal#/index?page=executive within ~6s with no
 // clicks needed.
-const APPRISS_HOME = "https://wmtus.apprissretailcloud.com/secure/sso/saml2?RelayState=/platform/portal";
-const APPRISS_DOMAIN = "wmtus.apprissretailcloud.com";
+const APPRISS_HOME = "https://wmlink.wal-mart.com/securestore";
+const APPRISS_DOMAIN = "apps.apprissretail.com";
 
 const JWT_TTL_MS = 20 * 60 * 1000;
 
@@ -340,6 +340,11 @@ async function ensureAurorAuth() {
 // Drive one cycle of "click SSO + poll for cookie/probe." Returns true
 // on success. Caller is responsible for opening/reloading the tab — this
 // just does the per-attempt detection work.
+//
+// We require probeApprissApiAuth() to succeed — cookie presence alone
+// is unreliable because a stale APPRISS cookie can persist across the
+// server-side session expiry, giving a false "authenticated" signal.
+// The probe hits the real search API and only trusts a JSON response.
 async function _apprissPollForAuth(tabId, waitMs) {
   // Re-check landing state in case caller skipped the click.
   const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -350,7 +355,6 @@ async function _apprissPollForAuth(tabId, waitMs) {
   }
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
-    if (await auth.hasSessionCookie(APPRISS_DOMAIN)) return { ok: true, reason: "cookie appeared" };
     if (await probeApprissApiAuth()) return { ok: true, reason: "api probe ok" };
     await new Promise((r) => setTimeout(r, 600));
   }

@@ -378,7 +378,7 @@ export async function mount(host, container) {
     $("ms-f-settle").value = c.settleDelayMs ?? 8000;
     $("ms-f-timeout").value = c.timeoutMs ?? 60000;
     $("ms-f-retries").value = c.retries ?? 2;
-    $("ms-f-catchup").value = c.catchUpWindowMs ?? 3600000;
+    $("ms-f-catchup").value = c.catchUpWindowMs ?? 90000;
     $("ms-modal-backdrop").hidden = false;
   }
 

@@ -1,0 +1,319 @@
+# Workvivo / Sendbird auth — how posting actually authenticates
+
+Captured live on 2026-08-17 against `workvivo.walmart.com` with a real store
+account, via a scripted browser. Supersedes the assumptions in the QRCallBox
+service-account handoff and explains what `modules/metricshot/lib/sendbird.js`
+is working around.
+
+**No credentials, tokens, or user ids are recorded in this document.**
+
+---
+
+## The short version
+
+A server can post to Workvivo chat with nothing but a username and password.
+No browser is required at post time, and no employee needs to be signed in
+anywhere. The chain is three hops:
+
+```
+username + password
+   └─(1)─> Workvivo session cookie          (SAML SSO, no MFA observed)
+             └─(2)─> Sendbird access_token  (GET /api/chat/config)
+                       └─(3)─> session key  (websocket LOGI handshake)
+                                 └─────────> REST posting works
+```
+
+Each hop was executed end-to-end and returned 200.
+
+---
+
+## (1) Login — SAML SSO, no second factor
+
+`https://workvivo.walmart.com/chat` redirects to Walmart PingFederate:
+
+```
+https://mtls.pfedprod.wal-mart.com/idp/<idpId>/resumeSAML20/idp/SSO.ping
+```
+
+> ### ⚠️ CONTESTED — resolve before building anything
+>
+> This was first recorded as "no MFA" based on a live sign-in where the person
+> doing it reported no challenge and a 1–15 second sign-in. The account holder
+> has since described the flow as: **username + store number + site type → a
+> push approval to a phone or physical device → then the password**.
+>
+> Those cannot both be true, and the difference is decisive:
+>
+> - **No MFA** → a server logs in unattended. Everything below works as written.
+> - **Push approval** → **no unattended login is possible.** A human must
+>   approve a prompt on every fresh sign-in. That does not sink the design, but
+>   it changes the operating model — see "If MFA is real" below.
+>
+> Do not write the login code until this is settled. Settle it by signing in
+> once with the service account and watching what happens.
+
+Sign-in to loaded chat page was **1–15 seconds**, and no "remember this device"
+/ "stay signed in" option was offered — so there is no device-trust artifact to
+seed even if one would help.
+
+Must be confirmed **for the service account specifically** — MFA policy is
+commonly set per-account or per-group, so `qrcallbox@walmart.com` may well be
+enrolled differently from a store user account.
+
+### If MFA is real
+
+The 24h rolling session (measured below) is what makes this survivable. A
+server that posts at least once a day keeps the window alive indefinitely and
+only needs a human approval when the chain breaks — a quiet weekend, an
+outage, a credential change. Options, best first:
+
+1. **Ask the admins to exempt the service account from MFA.** They already
+   provisioned it for automated posting, so this is a narrow, coherent ask and
+   is the only option that yields a truly unattended system.
+2. **Accept an occasional human approval.** Store the session in Firestore,
+   alert when it lapses, and have someone approve a push to restore it. Works,
+   but it reintroduces exactly the human dependency this project set out to
+   remove — just far less often than the old hourly heartbeat did.
+3. **Seed the session by hand.** A person signs in somewhere once and the
+   cookies are loaded into the secret store. Same as (2) with more manual steps
+   and no alerting; only worth it as a stopgap.
+
+### The redirect chain
+
+All plain `302 GET`s, no JS involved in getting to the form:
+
+```
+GET workvivo.walmart.com/chat
+ -> GET workvivo.walmart.com/login
+ -> GET workvivo.walmart.com/saml/sso
+ -> GET pfedprod.wal-mart.com/idp/SSO.saml2
+ -> GET mtls.pfedprod.wal-mart.com/idp/{adapterPath}/resumeSAML20/idp/SSO.ping   [200, the form]
+```
+
+`{adapterPath}` is **per-session** — observed as `XA56VpjABn` on one run and
+`AUic0FsAvM` on another. It must be parsed from the landing URL, never
+hardcoded.
+
+### The form
+
+Single form, `method="POST"`, action = the same `resumeSAML20/idp/SSO.ping`
+path (relative). Fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `username1` | text | the visible User ID box |
+| `pf.username` | hidden | JS copies `username1` into this on submit |
+| `pf.pass` | hidden | the password slot — present on page 1 |
+| `domainName` | select | Country/Region, prefilled (`US`) |
+| `BU` | select | Location — `Homeoffice` / `Store/Club` / … |
+| `$store` | text | store number |
+| `pf.adapterId` | hidden | prefilled, 14 chars |
+| `pf.ok` / `pf.cancel` | hidden | which button was pressed |
+
+### It is scriptable with plain HTTP — no browser required
+
+This is the important finding. The login page has:
+
+- **No external scripts at all** (`script[src]` is empty).
+- **One inline script**, ~12 KB, which only shuffles fields
+  (`updateDomainAndBU()`, copying `username1` into `pf.username`) and calls
+  `document.forms[0].submit()`. The submit button is `onclick="postOk();"`.
+- **CAPTCHA compiled out.** Both reCAPTCHA call sites are dead branches —
+  literally `if (false) { grecaptcha.execute(); }` and
+  `if(false) { grecaptcha.reset(); }`. `window.grecaptcha` is `undefined`,
+  there are no captcha elements, and no sitekey anywhere in the page.
+- No iframes, no meta-refresh, no CSP header on the SSO response, and the SSO
+  page sets no cookies of its own.
+
+So the earlier suggestion to drive hop 1 with headless Chrome is **not
+needed**. A cookie-jar HTTP client can do it: follow the redirects, parse the
+form action and `pf.adapterId` out of the HTML, POST the fields, then handle
+the SAMLResponse auto-post back to the Workvivo ACS.
+
+**Still unverified:** whether the password can go in the same POST as the
+username (`pf.pass` is present on page 1, which suggests yes) or whether
+PingFederate insists on the two-screen sequence. Confirming needs one real
+submit, so do it with the test account rather than a fabricated user id —
+failed logins against a real IdP are worth avoiding.
+
+### Session cookies (measured)
+
+| Cookie | Domain | Flags | Lifetime |
+|---|---|---|---|
+| `workvivo_session` | workvivo.walmart.com | httpOnly, secure | **24h** |
+| `laravel_token` | workvivo.walmart.com | httpOnly, secure | **24h** |
+| `XSRF-TOKEN` | workvivo.walmart.com | secure, readable | **24h** |
+| `pf.chosenBU`, `pf.chosenDomain` | mtls.pfedprod.wal-mart.com | — | 30d, UI prefs only |
+| `AMP_*` | .walmart.com | — | 1y, analytics |
+
+The 24h expiry is measured **from the current request, not from login** — the
+window rolls forward on activity. A server posting at least daily will rarely
+re-login; one going quiet for over a day must redo hop 1.
+
+Note there is **no PingFederate SSO session cookie** in the jar — only the two
+`pf.chosen*` UI preferences. So there is no silent re-auth to lean on: once the
+Workvivo session lapses, the credential form must be replayed in full.
+
+## (2) `GET /api/chat/config` → the Sendbird access token
+
+```
+GET https://workvivo.walmart.com/api/chat/config
+Cookie:       <Workvivo session cookies>
+X-XSRF-TOKEN: <urldecoded value of the XSRF-TOKEN cookie>
+Accept:       application/json
+
+200 → { "app_id": "<uuid>", "access_token": "<40 chars>" }
+```
+
+- The `X-XSRF-TOKEN` header is **required**. Cookies alone return `401`
+  (verified — the same request without the header fails).
+- The value is the urldecoded `XSRF-TOKEN` cookie, standard Laravel convention.
+- The returned `access_token` is byte-identical to the one the page exposes at
+  `window.v2.chatConfig.access_token` — the same credential the old extension
+  heartbeat was harvesting, available directly and without a browser.
+
+## (3) Exchange the access token for a session key
+
+The access token **cannot authenticate Sendbird REST on its own.** All of these
+return `400`:
+
+| Attempt | Result |
+|---|---|
+| `Access-Token: <token>` | `400 "Api-Token is missing"` |
+| `Access-Token` + full SendBird SDK headers | `400 "Api-Token is missing"` |
+| `Session-Key: <access_token>` | `400 "Session key is invalid"` |
+| no auth header | `400 "Api-Token is missing"` |
+
+Sendbird wants either an admin master token (which Walmart declined to issue)
+or a genuine **session key**. The session key is minted by the SDK's websocket
+handshake, which accepts the access token:
+
+```
+wss://ws-{appId-lowercase}.sendbird.com/
+  ?p=JS&pv=4.22.0&sv=4.22.0
+  &ai={appId}
+  &user_id={userId}
+  &access_token={access_token}
+  &active=1
+```
+
+The server replies with a single frame prefixed `LOGI` followed by JSON. The
+session key is the `key` field. Relevant fields:
+
+| Field | Meaning |
+|---|---|
+| `key` | the session key — 40 chars, used as the `Session-Key` REST header |
+| `ekey` | secondary key, not needed for REST posting |
+| `expires_at` | **`-1` — the key does not carry an expiry timestamp** |
+| `login_ts`, `ping_interval`, `pong_timeout` | connection keepalive params |
+
+Open the socket, read one frame, take `key`, close the socket. No need to keep
+the connection alive for REST posting.
+
+### On `expires_at: -1`
+
+The minted key advertises no expiry. That does **not** mean it is permanent —
+the live page's key demonstrably rotates, which is the entire reason
+`wv_session_sniffer.js` exists. Treat `-1` as "no scheduled refresh available"
+and drive refresh off failure instead: on `401`/`403`, redo hops (2) and (3)
+and retry once. `lib/sendbird.js` already has exactly this retry shape.
+
+## (4) Posting
+
+With `Session-Key` in hand, the existing REST recipe in
+`modules/metricshot/lib/sendbird.js` works unchanged:
+
+```
+Session-Key:  <minted key>
+App-Id:       <appId>
+SendBird:     JS,web,4.22.0,<appId>
+SB-User-Agent: JS/c4.22.0///oweb
+```
+
+Verified: `GET /v3/users/{userId}/my_group_channels` returned `200` with real
+channel data using a key minted this way.
+
+---
+
+## Channel targeting notes
+
+From a live account with 26 group channels:
+
+- **8 had names; 18 were empty-string.** The unnamed ones are direct messages.
+  Name-matching only ever resolves the named group channels — which is fine,
+  since those are the destinations anyone configures, but a name lookup that
+  misses should not be described to the user as "you are not in that channel".
+- The self / note-to-self channel is tagged **`custom_type: "self_channel"`**.
+  The Workvivo UI itself queries for it with `?custom_types=self_channel`.
+  `sendbird.js` currently identifies it heuristically as "a channel with
+  exactly one member" — matching on `custom_type` would be more accurate and
+  matches what the product actually does.
+
+## Still open
+
+- **Image upload.** Multipart sends over this auth path return
+  `400 "File-messages via SDK are disabled"`. That is an app-level Sendbird
+  setting and minting a proper session key does **not** change it. Workvivo's
+  own UI must upload through a different route; capturing a real image send
+  from the UI network trace is the outstanding task. Text sends are unaffected.
+- **Service-account MFA.** Verify `qrcallbox@walmart.com` specifically; the
+  no-MFA result above is from a store user account.
+- **Session cookie lifetime.** Not measured. Determines how often the server
+  must redo hop (1) rather than just hops (2)–(3).
+
+## What this means for the QRCallBox service account
+
+The handoff's "token manager" is buildable as originally described — a real
+token manager, not a persistent headless browser. It needs to:
+
+1. Hold the service account's username + password in the existing secret store.
+2. Log in (hop 1) and keep the session cookie + XSRF token.
+3. Mint `access_token` (hop 2) and exchange it for a session key (hop 3).
+4. Cache the session key; on `401`/`403` re-run 2–3, and if that fails, re-run
+   1–3, then retry the post once.
+
+Hops 2–4 are plain HTTP and one short-lived websocket — all cheap and scriptable
+in Cloud Functions. Hop 1 is the only piece that touches a login form, and if it
+proves awkward to script directly against PingFederate, it is the one place a
+headless browser would earn its keep.
+
+---
+
+## Posting confirmed by delivery — browser and Node (2026-08-18)
+
+Two text messages were posted through the chain and **appeared in the channel**
+— real delivered messages, not just 200s. The wording here is deliberately
+scoped: this proves the posting API sequence (hops 2→4), not unattended
+operation.
+
+```
+[valid session cookie]
+  -> GET /api/chat/config -> access_token
+  -> websocket LOGI -> session key
+  -> resolve "QR testing" -> POST /v3/group_channels/{url}/messages  [200, delivered]
+```
+
+- Channel: `QR testing` (`sendbird_group_channel_450471571_...`), 3 members.
+- **Test 1** ran inside the browser page (`page.evaluate`), reusing cookies from
+  a human's manual login.
+- **Test 2** ran from a **standalone Node process** (node v24, global
+  `fetch` + `WebSocket`, cross-origin requests with explicit `Cookie` and
+  `Session-Key` headers) — i.e. the Cloud Functions runtime, no browser. Same
+  result, delivered.
+- Both **posted under the session owner's identity**, because both used that
+  human's session. Production posts must run under the store's own account —
+  which is what the cookie-courier onboarding provides.
+- Text only. Image upload stays blocked by the app-level
+  `File-messages via SDK are disabled` setting.
+
+### What this does and does not establish
+- **Established:** hops 2–4 work, and work from a real server process, not just
+  a browser. Given a valid session cookie, a Node backend delivers a message.
+- **Not established:** hop 1 — a server, or the extension, obtaining that cookie
+  for the *service* account. In both tests the cookie came from a human login.
+  The onboarding design (docs/qrcallbox-store-onboarding.md) closes this by
+  capturing the cookie in the extension after a guided browser login, rather
+  than logging in server-side.
+- **Not yet measured:** how long a captured session survives under a periodic
+  keep-alive, and whether a hard SSO backstop caps it. ~18h of survival observed
+  so far. Only a multi-day keep-alive run answers this.

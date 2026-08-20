@@ -56,6 +56,9 @@ doc is worth reading and which one to trust when two contradict.
 | `BACKEND_MIGRATION_PLAN.md` | CURRENT_TASKS | Tracking the shanesmith → suite cutover | 6-phase plan. Phases 1.1 + 1.2 deployed 2026-06-07. |
 | `USAGE_METRICS_MODEL.md` | CANONICAL | Adding a metric action or PII rule | `tool_metric_events` schema + helper API + redaction rules. |
 | `FINAL_VALUE_CAPTURE_PLAN.md` | CANONICAL | Touching the Mark Submitted UX or DOM-scrape probe | V1 shipped 2026-06-07. V1.5 + V2 deferred. |
+| `workvivo-auth.md` | ACTIVE_REFERENCE | Touching Workvivo/Sendbird auth | Live Workvivo/Sendbird auth chain from browser capture (2026-08-18). Ported in from the `workvivo-auth-and-sendbird-hardening` branch during the 2026-08-20 branch consolidation; `metricshot/lib/sendbird.js` has since moved past the sniffer-based approach this doc describes to a mint-a-fresh-key flow — read for the auth chain background, not as a spec of the current code. |
+| `workvivo-service-account-plan.md` | ACTIVE_REFERENCE | Planning the ServiceNow official-token ask | QRCallBox service-account build plan (2026-08-18). Ported in same as above. |
+| `qrcallbox-store-onboarding.md` | ACTIVE_REFERENCE | Onboarding a new store to QRCallBox | Design doc (2026-08-18). Ported in same as above. |
 
 ## Dev probe findings (`unified-extension-suite/dev/`)
 
@@ -63,6 +66,7 @@ doc is worth reading and which one to trust when two contradict.
 |---|---|---|---|
 | `HOOPS_FINDINGS.md` | CURRENT_TASKS | When working on the Sell-Through integration | 2026-06-02 — endpoint + query captured. |
 | `DIRECTORY_FINDINGS.md` | ACTIVE_REFERENCE | When resuming user-directory lookup work | 2026-05-31. Most endpoints dead-ended; documents the one viable lead (Workvivo `/users/lookup`). |
+| `vizpick-headline-data-findings.md` | CURRENT_TASKS | Extending VizPick past the 4 grid metrics | 2026-08-19 — identifies the two remaining donut-health worksheets (Department Groups Fresh/F&C/GM) needed for `CURRENT_TASKS.md` §6 "Known gaps." `sheetdocId` GUIDs not yet recovered. |
 
 ## Per-module READMEs (`modules/<slug>/...`)
 

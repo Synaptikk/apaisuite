@@ -18,6 +18,7 @@
 //     the donor's ⏱ Scan timings panel
 
 import { mergeTimings } from "./lib/timings.js";
+import { getUserHomeStore } from "../../shared/userStore.js";
 
 export async function mount(host, container) {
   // ── 1. Inject stylesheet ────────────────────────────────────────────
@@ -37,6 +38,13 @@ export async function mount(host, container) {
   }
 
   const $ = (id) => container.querySelector("#" + id);
+
+  // Seed home-store input from the shell default when it's still empty.
+  const storeInput = $("ab-store");
+  if (storeInput && !storeInput.value.trim()) {
+    const homeStore = await getUserHomeStore();
+    if (homeStore) storeInput.value = homeStore;
+  }
 
   // ── 3. State ────────────────────────────────────────────────────────
   let currentDays  = "Last30days";
@@ -688,7 +696,7 @@ export async function mount(host, container) {
               <td>${storeCell}</td>
               <td class="mono">POS ${escapeHtml(t.register)}</td>
               <td class="mono">${escapeHtml(t.trans_no)}</td>
-              <td class="mono txt-right bold">$${escapeHtml(t.amount)}</td>
+              <td class="mono txt-right bold">$${fmtMoney(t.amount)}</td>
               <td>${escapeHtml(t.datetime)}</td>
               <td class="txt-center">${links}</td>
             </tr>`;
@@ -944,6 +952,13 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]
   ));
+}
+
+// APPRISS returns amounts as strings like "5.440000" (6 decimals). Format
+// to standard 2-decimal currency; fall back to the raw value if not numeric.
+function fmtMoney(a) {
+  const n = Number(a);
+  return Number.isFinite(n) ? n.toFixed(2) : escapeHtml(a);
 }
 
 // CSS.escape polyfill — used to safely interpolate transaction IDs into

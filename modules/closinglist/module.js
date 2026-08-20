@@ -9,14 +9,19 @@
 // (W3C ServiceWorker issue #1356). view.js stays as a lazy thunk because
 // the suite shell loads it in the app.html page context where dynamic
 // import is allowed and lazy loading still saves bytes on boot.
-import { handlers as serviceHandlers } from "./service.js";
+import { handlers as serviceHandlers, installDailySendAlarm, clearDailySendAlarm, onAlarm } from "./service.js";
+
+// Alarm listener MUST be registered at top-level (during the SW's initial
+// script execution) so Chrome will wake the SW when the daily noon alarm fires
+// after idle-shutdown. Same constraint as webRequest listeners in service_worker.js.
+chrome.alarms.onAlarm.addListener(onAlarm);
 
 export default {
   manifest: {
     id:          "closinglist",
     name:        "ClosingList",
     description: "Closing-shift email draft from CaseVisibility schedule + IVR call-offs.",
-    version:     "0.2.0",
+    version:     "0.3.0",
     status:      "active",
     // Module uses the suite's default blue accent — no override.
 
@@ -30,10 +35,11 @@ export default {
     },
 
     permissions: {
-      needs: ["scripting", "tabs", "storage", "clipboardWrite"],
+      needs: ["scripting", "tabs", "storage", "clipboardWrite", "alarms", "notifications"],
       hosts: [
         "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
         "https://ivrattcloud-prod.wal-mart.com/*",
+        "https://graph.microsoft.com/*",
       ],
     },
 
@@ -50,22 +56,41 @@ export default {
       },
     ],
 
-    webRequestFilters: [],
+    // Capture the Authorization: Bearer token from Outlook's Graph API calls.
+    // Stored in chrome.storage.session["closinglist.graphToken"] by the suite-wide
+    // webRequest dispatcher in service_worker.js. Used at noon by the daily
+    // auto-send alarm to POST to graph.microsoft.com/v1.0/me/sendMail.
+    webRequestFilters: [
+      {
+        urls:        ["https://graph.microsoft.com/v1.0/*", "https://graph.microsoft.com/beta/*"],
+        headerName:  "authorization",
+        storageKey:  "graphToken",
+        ttlMs:       3_300_000, // 55 minutes
+        predicate:   { startsWith: "Bearer " },
+      },
+    ],
   },
 
-  // register() runs once on shell boot for every registered module. Use it
-  // for one-time setup (legacy-key migration, warm caches, ...). Keep it
-  // light — heavy work should happen on first mount() instead.
   async register(_host) {
-    // No legacy-key migration: per the retirement plan (see
-    // docs/SOURCE_MAPPING.md::Original extensions retirement status), the
-    // standalone ClosingList extension stays installed alongside the suite
-    // during the verification window. It has its own extension id and its
-    // own isolated chrome.storage namespace, so there's nothing to migrate
-    // — the suite is genuinely a fresh install with its own DEFAULTS.
-    //
-    // When/if the user wants to carry their saved prefs over, call
-    // migrateLegacyKeys (from shared/storage.js) here with the donor's
-    // unnamespaced sync/local keys.
+    // If a test-send was queued via the UI before the last reload, fire it now
+    // by sending a message to the SW handler (so executeDailySend runs in SW
+    // context where the IVR pendingIvrResolver is wired up correctly).
+    const boot = await chrome.storage.local.get("closinglist.bootSend");
+    if (boot["closinglist.bootSend"]) {
+      await chrome.storage.local.remove("closinglist.bootSend");
+      chrome.runtime.sendMessage({ module: "closinglist", type: "auto-send-trigger-now" })
+        .catch((e) => console.error("[closinglist] boot send message failed:", e));
+    }
+
+    // Re-install the daily alarm if the user has auto-send enabled.
+    // Idempotent: installDailySendAlarm is a no-op if the alarm already exists.
+    // This runs on every SW boot, so a Chrome restart recovers the alarm.
+    const s = await chrome.storage.sync.get("closinglist.autoSendEnabled");
+    if (s["closinglist.autoSendEnabled"]) {
+      await installDailySendAlarm();
+    } else {
+      // Ensure a stale alarm from a prior enable is cleaned up.
+      await clearDailySendAlarm();
+    }
   },
 };

@@ -16,6 +16,16 @@
 //     Edge workaround SparkFraud documented in its registries/auth_modes.json)
 
 import { createAuth } from "../../shared/auth.js";
+import {
+  SWIFT_DASHBOARD_URL,
+  SSO_START_URL,
+  GSCOPE_SPARK_DASHBOARD,
+  GSCOPE_ORDER_RESOLUTION,
+  GSCOPE_ORIGIN,
+  GSCOPE_OMS_ORDERS_PATH,
+} from "../../shared/sparkInvestigation/endpoints.js";
+import { buildSwiftHeaders } from "../../shared/sparkInvestigation/auth.js";
+import { fetchDispatcherTrips as _sharedFetchDispatcherTrips } from "../../shared/sparkInvestigation/dispatcher.js";
 
 const MODULE_ID = "sparkfraud";
 
@@ -31,15 +41,12 @@ const CAPTURE_GLOBAL_NAME = "__APAISUITE_SPARKFRAUD_CAP";
 const ALARM_NAME = "sparkfraud.watchlist-poll";
 const WATCHLIST_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours
 const ENUMS_URL = chrome.runtime.getURL("modules/sparkfraud/registries/enums.json");
-const SWIFT_DASHBOARD_URL = "https://swift.walmart.com/sparkApp/api/proxy/v4/dashboard";
 
 const SSO_FORM_LOAD_TIMEOUT_MS = 5000;
-// Direct SSO entry point via PingFederate IdP. The donor used
+// SSO_START_URL now imported from shared/sparkInvestigation/endpoints.js — the
+// direct pfedprod IdP entry that skips gscope /login. The donor used
 // https://gscope.walmartlabs.com/login + a "Sign in using Company SSO" button,
-// which is one step longer than necessary — the SSO flow ultimately lands on
-// pfedprod with a "Go" button anyway. Going to pfedprod directly skips the
-// gscope /login hop.
-const SSO_START_URL = "https://pfedprod.wal-mart.com/idp/startSSO.ping?PartnerSpId=https://gscope.walmartlabs.com/sp";
+// which is one hop longer than necessary.
 const SSO_REDIRECT_TIMEOUT_MS = 45_000;
 
 const auth = createAuth(MODULE_ID);
@@ -483,7 +490,7 @@ export const handlers = {
     try {
       const orderId = msg.orderId;
       if (!orderId) return { ok: false, error: "no orderId" };
-      const targetUrl = "https://gscope.walmartlabs.com/mfe/spark/dashboard";
+      const targetUrl = GSCOPE_SPARK_DASHBOARD;
       const tab = await chrome.tabs.create({ url: targetUrl, active: true });
       await waitForTabUrl(tab.id, "/spark/dashboard", 30_000);
       await sleep(3_000);
@@ -575,7 +582,7 @@ export const handlers = {
     try {
       const driverName = String(msg.driverName || "").trim();
       if (!driverName) return { ok: false, error: "no driverName" };
-      const targetUrl = "https://gscope.walmartlabs.com/mfe/spark/dashboard";
+      const targetUrl = GSCOPE_SPARK_DASHBOARD;
 
       helperWin = await chrome.windows.create({
         url: targetUrl,
@@ -735,7 +742,7 @@ export const handlers = {
     try {
       const orderId = msg.orderId;
       if (!orderId) return { ok: false, error: "no orderId" };
-      const targetUrl = "https://gscope.walmartlabs.com/mfe/ordermanagement/orderresolution";
+      const targetUrl = GSCOPE_ORDER_RESOLUTION;
       const tab = await chrome.tabs.create({ url: targetUrl, active: true });
 
       await waitForTabUrl(tab.id, "/orderresolution", 30_000);
@@ -777,15 +784,15 @@ export const handlers = {
     try {
       const orderIds = msg.orderIds || [];
       if (!orderIds.length) return { ok: false, error: "no order ids" };
-      const targetUrl = "https://gscope.walmartlabs.com/mfe/ordermanagement/orderresolution";
+      const targetUrl = GSCOPE_ORDER_RESOLUTION;
 
       // FAST PATH ──────────────────────────────────────────────────
       const cached = (await chrome.storage.session.get(STORAGE_OMS_HEADERS_KEY))[STORAGE_OMS_HEADERS_KEY];
       if (cached) {
-        const gscopeTabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
+        const gscopeTabs = await chrome.tabs.query({ url: `${GSCOPE_ORIGIN}/*` });
         if (gscopeTabs.length) {
           try {
-            const url = "https://gscope.walmartlabs.com/api/gateway/provider-oms/orders" +
+            const url = `${GSCOPE_ORIGIN}${GSCOPE_OMS_ORDERS_PATH}` +
                         `?limit=200&offset=0&orderNo=${encodeURIComponent(orderIds.join(","))}`;
             const [{ result }] = await chrome.scripting.executeScript({
               target: { tabId: gscopeTabs[0].id },
@@ -1293,8 +1300,9 @@ _ensureWatchlistAlarm().catch(e => {
 });
 
 // ── Headers for the SW-side Dispatcher query ─────────────────────────
-// Mirrors the buildHeaders() function in view.js but executes inside the
-// SW. Needed by pollWatchlist (the alarm fires while no UI is open).
+// Thin wrapper: gscope tab discovery + cookie read stays here (SparkFraud-
+// specific), pure header assembly delegates to
+// shared/sparkInvestigation/auth.js:buildSwiftHeaders.
 async function _buildSwiftHeaders() {
   const authRes = await ensureGscopeAuthTab();
   if (!authRes.ready) {
@@ -1312,89 +1320,11 @@ async function _buildSwiftHeaders() {
     } catch (_) { /* try next tab */ }
   }
   if (!cookies) return { ok: false, reason: "no-cookies", message: "Couldn't read gscope cookies" };
-
-  // Lowercase keys for case-insensitive lookup (cookies are inconsistently
-  // cased — `loginid` vs `loginId` etc).
-  const ci = {};
-  for (const k of Object.keys(cookies)) ci[k.toLowerCase()] = cookies[k];
-  if (!ci.authtoken) {
-    return { ok: false, reason: "auth-cookies-missing", message: "gscope authToken cookie missing" };
-  }
-
-  const loginId      = ci.loginid || "";
-  const display      = ci.displayname || "";
-  let   loginIdOut   = loginId;
-  let   displayOut   = display;
-  // Walmart's gscope ships displayname/loginid as empty — user identity is now
-  // in wire-id (format: "Display Name - loginId"). Mirrors the view.js fallback.
-  if ((!displayOut || !loginIdOut) && ci["wire-id"]) {
-    const m = ci["wire-id"].match(/^(.*?)\s*-\s*([^-\s][^-]*?)\s*$/);
-    if (m) {
-      if (!displayOut)  displayOut  = m[1].trim();
-      if (!loginIdOut)  loginIdOut  = m[2].trim();
-    } else if (!displayOut) {
-      displayOut = ci["wire-id"];
-    }
-  }
-  const storeId      = ci["store-no"] || ci.storeno || "";
-  const loggedDomain = ci.loggedindomain || "store";
-  const loggedUser   = ci.loggedinusername || "";
-  const firstName    = displayOut.split(" ")[0] || "";
-  const lastName     = displayOut.split(" ").slice(1).join(" ") || "";
-
-  return {
-    ok: true,
-    headers: {
-      "content-type":          "application/json",
-      "x-authheader":          ci.authheader || "",
-      "x-authtoken":           ci.authtoken  || "",
-      "x-userid":              loginIdOut,
-      "x-username":            displayOut,
-      "x-firstname":           firstName,
-      "x-lastname":            lastName,
-      "x-loggedindomain":      loggedDomain,
-      "x-loggedinusername":    loggedUser,
-      "x-storeid":             storeId,
-      "x-realmid":             "DISPATCHER_WEB_UI",
-      "x-source":              "DISPATCHER",
-      "x-sourceapp":           "DISPATCHER_WEB_UI",
-      "x-channel":             "WEB",
-      "x-domain":              "USLM",
-      "x-tenant":              "WALMART_US",
-      "x-tenantid":            "0",
-      "tenantid":              "0",
-      "wm_tenant_id":          "0",
-      "wm_consumer.tenant_id": "0",
-      "x-timezone":            "+00:00",
-      "device_timezone":       "America/New_York",
-      "installed_app":         "spark-dispatcher.us",
-    },
-  };
+  return buildSwiftHeaders(cookies);
 }
 
 async function _fetchDispatcherTrips(headers, store, windowMinutes) {
-  const now = new Date();
-  const start = new Date(now.getTime() - windowMinutes * 60_000);
-  const end   = new Date(now.getTime() + windowMinutes * 60_000);
-  // Simple ISO without TZ offset is acceptable — dispatcher accepts UTC Z.
-  const body = {
-    startTime: start.toISOString(),
-    endTime:   end.toISOString(),
-    pickupPointIds: [String(store)],
-    clients: ["0"],
-    pageSize: 200,
-    // No services filter — watchlist needs every trip the driver might be on.
-    services: ["PICKING", "PICKING_DELIVERY", "DELIVERY"],
-  };
-  const r = await fetch(SWIFT_DASHBOARD_URL, {
-    method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`Dispatcher HTTP ${r.status}`);
-  const data = await r.json();
-  return data?.payload?.tasksByClientId?.["0"]?.trips || [];
+  return _sharedFetchDispatcherTrips({ headers, store, windowMinutes });
 }
 
 // Generate a small inline PNG for the notification icon (the suite ships

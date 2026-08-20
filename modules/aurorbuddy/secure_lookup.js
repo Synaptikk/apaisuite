@@ -3,10 +3,10 @@
 // Popup view for the "Secure" pill we inject onto Auror person cards.
 //
 // Receives ?name=<full name>&id=<auror person id> on the URL, defaults the
-// home-store input from livedashboard.settings (already configured by the
-// user once for the dashboard), and calls the existing appriss_lookup SW
-// handler with a synthesised one-item suspects[] payload. Renders the
-// returned cards + transactions in a compact card-grouped table.
+// home-store input from the shell's home-store setting (or livedashboard's
+// per-module setting as a legacy fallback), and calls the existing
+// appriss_lookup SW handler with a synthesised one-item suspects[] payload.
+// Renders the returned cards + transactions in a compact card-grouped table.
 //
 // Why reuse appriss_lookup: it already handles Secure auth top-up, the
 // surname summary call, the per-card detail calls + retries on Secure's
@@ -14,15 +14,22 @@
 // AurorBuddy scan uses. A bespoke direct call here would diverge over
 // time; passing through the SW handler keeps the two surfaces consistent.
 
+import { getUserHomeStore } from "../../shared/userStore.js";
+
 const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
 const NAME = (params.get("name") || "").trim();
 const ID   = (params.get("id") || "").trim();
 
-// Default store: read from livedashboard's settings if present (the dashboard
-// asks the user for a store on first run, so this is usually populated).
+// Default store: prefer the shell-level home store (Settings → Defaults, or
+// Auror JWT). Fall back to livedashboard's per-module storeNbr for users
+// who set that before the shell default existed.
 async function defaultStore() {
+  try {
+    const shell = await getUserHomeStore();
+    if (shell) return String(shell).replace(/\D/g, "");
+  } catch { /* ignore */ }
   try {
     const got = await chrome.storage.sync.get("livedashboard.settings");
     const s = got?.["livedashboard.settings"]?.storeNbr;
@@ -42,7 +49,10 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function fmtAmount(a) { return String(a ?? ""); }
+function fmtAmount(a) {
+  const n = Number(a);
+  return Number.isFinite(n) ? n.toFixed(2) : String(a ?? "");
+}
 function fmtDateTime(dt) { return String(dt ?? ""); }
 
 function setStatus(msg, isErr = false) {

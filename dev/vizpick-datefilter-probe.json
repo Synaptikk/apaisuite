@@ -1,0 +1,58 @@
+{
+  "startedAt": "2026-08-16T15:30:53.706Z",
+  "steps": {
+    "filters": [
+      {
+        "name": "BU",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "(unnamed)",
+        "value": "1. Yesterday",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "Region",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "Market",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "Store",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "Area",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      },
+      {
+        "name": "Dept",
+        "value": "(All)",
+        "containerClass": "tab-zone tab-widget tabSuppressVizTooltipsAndOverlays tabZone-filter fade-bg"
+      }
+    ],
+    "openResult": {
+      "ok": true,
+      "menuCount": 8,
+      "options": [
+        "F&C",
+        "Fresh",
+        "GM",
+        "1. Yesterday",
+        "2. Week to Date",
+        "3. Last WM Week",
+        "4. Last 7 Days",
+        "5. Last 30 Days"
+      ],
+      "inlineItems": []
+    }
+  },
+  "finishedAt": "2026-08-16T15:31:02.303Z"
+}

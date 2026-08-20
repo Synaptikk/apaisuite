@@ -1,0 +1,99 @@
+{
+  "ok": true,
+  "build": "2026-08-16d",
+  "generatedAt": "2026-08-19T21:36:23.489Z",
+  "schemaVersion": 3,
+  "permissions": { "tableauHost": true, "missing": [] },
+  "request": {
+    "market": "120",
+    "marketType": "string",
+    "storesInMarket": 10,
+    "sampleStores": ["658", "669", "756", "1089", "1215"],
+    "rosterMarketSample": ["string"]
+  },
+  "stored": {
+    "days": [
+      { "dataDate": "2026-08-18", "rows": 4599, "sourceKey": "8/19/2026" }
+    ],
+    "today": null
+  },
+  "auto": { "stores": true, "today": false, "lastRun": 1787174884061 },
+  "tableauTabs": [
+    { "view": "VizPick", "status": "complete", "discarded": false, "active": false, "frozen": false, "audible": false },
+    { "view": "VizPickDetails", "status": "complete", "discarded": false, "active": false, "frozen": true, "audible": false }
+  ],
+  "lastError": {
+    "stores": {
+      "build": "2026-08-16d",
+      "capturedAt": "2026-08-19T21:29:10.158Z",
+      "debug": {
+        "byFrame": [
+          {
+            "installed": true,
+            "size": 0,
+            "url": "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=2&:linktarget=_self",
+            "urls": []
+          },
+          { "installed": false, "url": "about:blank" },
+          {
+            "installed": true,
+            "size": 0,
+            "url": "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPick?%3Aembed=y&%3AshowVizHome=n&%3Atoolbar=top&%3Alinktarget=_self&%3AopenAuthoringInTopWindow=true&%3AbrowserBackButtonUndo=true&%3AcommentingEnabled=true&%3AreloadOnCustomViewSave=true&%3AshowAppBanner=false&%3AisVizPortal=true&%3AapiID=host0#2&navType=0&navSrc=Opt",
+            "urls": []
+          }
+        ]
+      },
+      "error": "No CSV containing \" Cases Seen %\" captured within 45000ms.",
+      "errorClass": "NO_CAPTURE",
+      "ok": false
+    },
+    "today": {
+      "build": "2026-08-16d",
+      "capturedAt": "2026-08-19T21:29:10.997Z",
+      "debug": {
+        "discarded": false,
+        "errorClass": "SLOW_RENDER",
+        "message": "Tableau was still rendering after 120s (the page shell loaded but the viz never finished). Usually a cold session or a slow upstream - retrying often works.",
+        "page": {
+          "hasPasswordField": false,
+          "hasStoreParam": true,
+          "hasToolbar": false,
+          "installed": true,
+          "loading": false,
+          "signInish": false,
+          "tableauError": false,
+          "testIdCount": 37,
+          "textSample": "VizPick VizPick Details Overstock Summary CAP Summary CAP Details Questions Updated Show External Details Store After typing a new value, press ENTER to commit or Escape to revert. Download Locaitons (Modular Deleted Cases Phone) Metric Definitions Moble Download Department Breakout (Current Day Phone) Download Locaitons (Clearance Cases Phone) Download Location Details (2) VizPick Backroom Health",
+          "title": "Workbook: VizPick",
+          "url": "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?%3Aembed=y&%3Atoolbar=n#1"
+        },
+        "stageReason": "the viz never rendered",
+        "tabUrl": "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?%3Aembed=y&%3Atoolbar=n#1"
+      },
+      "error": "Tableau was still rendering after 120s (the page shell loaded but the viz never finished). Usually a cold session or a slow upstream - retrying often works. The tab was left open - confirm data renders there, then Refresh again.",
+      "errorClass": "SLOW_RENDER",
+      "ok": false
+    }
+  },
+  "freshness": {
+    "stores": {
+      "inFlight": false,
+      "lastAttempt": "2026-08-19T21:29:10.159Z",
+      "lastError": "NO_CAPTURE: No CSV containing \" Cases Seen %\" captured within 45000ms.",
+      "lastSuccess": "2026-08-19T16:59:08.658Z",
+      "lastUnavailable": null,
+      "sourceId": "stores",
+      "staleAfterMs": 93600000,
+      "isStale": false
+    },
+    "today": {
+      "inFlight": false,
+      "lastAttempt": "2026-08-19T21:29:10.998Z",
+      "lastError": "SLOW_RENDER: Tableau was still rendering after 120s (the page shell loaded but the viz never finished). Usually a cold session or a slow upstream - retrying often works. The tab was left open - confirm data renders there, then Refresh again.",
+      "lastUnavailable": null,
+      "sourceId": "today",
+      "staleAfterMs": 10800000,
+      "isStale": true
+    }
+  }
+}

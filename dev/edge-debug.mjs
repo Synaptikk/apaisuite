@@ -250,7 +250,7 @@ const scenarios = {
           "app.us.auror.co", "auror.co",
           "auror-prod-us.auth0.com", "auth0.com",
           "login.us.auror.co",
-          "wmtus.apprissretailcloud.com",
+          "apps.apprissretail.com",
         ];
         for (const domain of DOMAINS) {
           const cs = await chrome.cookies.getAll({ domain });

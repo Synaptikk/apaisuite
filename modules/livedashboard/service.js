@@ -170,20 +170,24 @@ export async function onAlarm(alarm) {
 
 // ── Settings helpers ─────────────────────────────────────────────────
 // Store-number resolution order:
-//   1. User-set value in chrome.storage.sync["livedashboard.settings"].storeNbr
-//   2. Auto-detected from cached Auror JWT (shared/userStore.js)
+//   1. Shell home-store default (Settings → Defaults, or Auror JWT)
+//      — set via chrome.storage.sync["apai.userHomeStoreOverride"]
+//   2. Per-module value in chrome.storage.sync["livedashboard.settings"].storeNbr
+//      (kept as a fallback for users who set a store here before the shell
+//      default existed, and for offline use when the shell default is empty)
 //   3. "" — the view prompts the user to enter their store
 //
-// Returning the empty string when nothing is known is intentional: every
-// store-keyed pull guards against it (see pullCvp/pullRegister/etc. — they
-// short-circuit with errorClass "NO_STORE"), so we never persist garbage
-// caches under a null store key.
+// The shell default wins so that changing it in Settings updates every
+// module. Users can still override per-mount via the module's own store
+// input; that override is persisted to the per-module key and used as
+// fallback the next time the shell default is empty.
 async function getSettings() {
   const got = await chrome.storage.sync.get(K.settings);
   const raw = got[K.settings] || {};
+  const shell = await getUserHomeStore();
+  if (shell) return { ...raw, storeNbr: shell };
   if (raw.storeNbr) return raw;
-  const detected = await getUserHomeStore();
-  return { ...raw, storeNbr: detected || "" };
+  return { ...raw, storeNbr: "" };
 }
 
 async function setSettings(patch) {
@@ -375,15 +379,16 @@ async function pullRecognition({ storeNbr } = {}) {
   await chrome.storage.local.set({
     [K.recognitionCache(storeNbr)]: {
       storeNbr,
-      rows:       res.rows,
+      rows:               res.rows,
       rolling7d,
-      capturedAt: res.capturedAt,
-      replayed:   res.replayed,
+      capturedAt:         res.capturedAt,
+      replayed:           res.replayed,
+      totalRowsAllStores: res.totalRowsAllStores,
     },
   });
   await freshness.markSuccess("recognition");
   broadcast("source_complete", { sourceId: "recognition", ok: true, rolledUp: { rolling7d } });
-  return { ok: true, rows: res.rows, rolling7d };
+  return { ok: true, rows: res.rows, rolling7d, totalRowsAllStores: res.totalRowsAllStores };
 }
 
 // ── refresh_all ─────────────────────────────────────────────────────

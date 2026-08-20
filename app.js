@@ -13,6 +13,19 @@ import { listModules, getModule }   from "./shared/registry.js";
 import { createHost }               from "./shared/host.js";
 import { $, $$, escapeHtml }        from "./shared/ui.js";
 import { mountUpdaterIndicator }    from "./shared/updater_ui.js";
+import {
+  getUserHomeStore,
+  setUserHomeStoreOverride,
+  clearUserHomeStoreOverride,
+  getUserHomeMarket,
+  setUserHomeMarketOverride,
+  clearUserHomeMarketOverride,
+  extractStoreFromWid,
+  extractWidFromAurorSub,
+  OVERRIDE_KEY,
+  MARKET_OVERRIDE_KEY,
+} from "./shared/userStore.js";
+import { listKnownMarkets, getMarketRoster } from "./shared/marketRoster.js";
 
 const $nav  = $("#shell-nav");
 const $main = $("#shell-main");
@@ -434,8 +447,99 @@ async function mountModule(id, restPath) {
 }
 
 // ── Stub views ────────────────────────────────────────────────
-function renderSettings() {
+async function renderSettings() {
   const current = localStorage.getItem("shell.theme") || "system";
+  const widgetSpecs = getDashboardWidgetSpecs();
+  let widgetPrefs = {};
+  try {
+    const got = await chrome.storage.sync.get("shell.dashboardWidgets");
+    widgetPrefs = got?.["shell.dashboardWidgets"] || {};
+  } catch { /* sync unavailable — treat as all defaults */ }
+
+  // Defaults card state
+  let overrideStore = "";
+  let overrideMarket = "";
+  try {
+    const got = await chrome.storage.sync.get([OVERRIDE_KEY, MARKET_OVERRIDE_KEY]);
+    overrideStore  = String(got?.[OVERRIDE_KEY] ?? "");
+    overrideMarket = String(got?.[MARKET_OVERRIDE_KEY] ?? "");
+  } catch { /* sync unavailable — treat as unset */ }
+  const detectedStore = await jwtDerivedStore();
+  const markets = listKnownMarkets();
+
+  const defaultsCard = `
+      <div class="card">
+        <h2 class="card-title">Defaults</h2>
+        <div class="stack stack-sm">
+          <p class="muted" style="margin:0">
+            Home store and market used by every module that supports one.
+            Per-module inputs (e.g. the Live Dashboard store field) still let
+            you override for that module only. Saved to chrome.storage.sync
+            so it follows you across Edge profiles.
+          </p>
+
+          <label class="stack stack-xs" style="max-width:420px">
+            <span class="muted tiny" style="text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Home store</span>
+            <div class="cluster" style="gap:8px;align-items:center">
+              <input id="shell-store-input" type="text" inputmode="numeric" autocomplete="off" maxlength="5" value="${escapeHtml(overrideStore)}" style="width:120px" placeholder="e.g. 1458">
+              <button id="shell-store-autodetect" class="btn btn-sm" type="button" ${detectedStore ? "" : "disabled"}>Auto-detect</button>
+              <button id="shell-store-clear" class="btn btn-sm" type="button" ${overrideStore ? "" : "disabled"}>Clear</button>
+            </div>
+            <span class="muted tiny" id="shell-store-hint">
+              ${detectedStore
+                ? (overrideStore
+                    ? `Detected from Auror JWT: ${escapeHtml(detectedStore)}`
+                    : `Detected from Auror JWT: ${escapeHtml(detectedStore)} — click Auto-detect to use it`)
+                : `No Auror identity cached yet — open AurorBuddy and sign in, then reopen this page to enable Auto-detect.`}
+            </span>
+          </label>
+
+          <label class="stack stack-xs" style="max-width:420px">
+            <span class="muted tiny" style="text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Home market</span>
+            <div class="cluster" style="gap:8px;align-items:center">
+              <select id="shell-market-input" style="width:120px">
+                <option value="">— none —</option>
+                ${markets.map((m) => `<option value="${escapeHtml(m)}" ${m === overrideMarket ? "selected" : ""}>${escapeHtml(m)}</option>`).join("")}
+              </select>
+              <button id="shell-market-clear" class="btn btn-sm" type="button" ${overrideMarket ? "" : "disabled"}>Clear</button>
+            </div>
+            <span class="muted tiny" id="shell-market-hint">
+              ${overrideMarket
+                ? `Roster: ${(getMarketRoster(overrideMarket) || []).join(", ") || "(unknown market number)"}`
+                : `Select a market to expose its store roster to market-aware modules (Claims Disposition, Market 120).`}
+            </span>
+          </label>
+        </div>
+      </div>
+  `;
+
+  const dashboardCard = widgetSpecs.length ? `
+      <div class="card">
+        <h2 class="card-title">Dashboard</h2>
+        <div class="stack stack-sm">
+          <p class="muted" style="margin:0">
+            Show or hide data points on the Live Dashboard. Toggling here
+            updates the dashboard live. Preferences sync across your Edge profiles.
+          </p>
+          ${groupWidgetSpecsByModule(widgetSpecs).map((group) => `
+            <div class="stack stack-sm" style="padding-top:8px">
+              <div class="muted tiny" style="text-transform:uppercase;letter-spacing:0.04em;font-weight:600">${escapeHtml(group.moduleName)}</div>
+              ${group.widgets.map((w) => {
+                const key = `${w.moduleId}.${w.widgetId}`;
+                const on = widgetPrefs[key] !== false;   // default visible
+                return `
+                  <label class="check" style="display:flex;align-items:center;gap:8px;padding:4px 0">
+                    <input type="checkbox" data-widget-toggle="${escapeHtml(key)}" ${on ? "checked" : ""}>
+                    <span>${escapeHtml(w.label)}</span>
+                  </label>
+                `;
+              }).join("")}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+  ` : "";
+
   $main.innerHTML = `
     <div class="stack" style="max-width:900px;margin:0 auto">
       <h1>Settings</h1>
@@ -457,7 +561,8 @@ function renderSettings() {
           </div>
         </div>
       </div>
-      <div class="state-empty">More suite-level + per-module settings will land in Phase 6.</div>
+      ${defaultsCard}
+      ${dashboardCard}
     </div>
   `;
   // Wire the radios to apply + persist.
@@ -469,6 +574,133 @@ function renderSettings() {
       chrome.storage.sync.set({ "shell.theme": v }).catch(() => {});
     });
   }
+
+  // Wire Defaults card (home store + home market).
+  const storeInput   = $main.querySelector("#shell-store-input");
+  const storeAuto    = $main.querySelector("#shell-store-autodetect");
+  const storeClear   = $main.querySelector("#shell-store-clear");
+  const marketInput  = $main.querySelector("#shell-market-input");
+  const marketClear  = $main.querySelector("#shell-market-clear");
+  const marketHint   = $main.querySelector("#shell-market-hint");
+
+  const commitStore = async (raw) => {
+    const v = String(raw ?? "").trim();
+    if (!v) {
+      await clearUserHomeStoreOverride();
+      storeInput.value = "";
+      storeClear.disabled = true;
+      return;
+    }
+    if (!/^\d{1,5}$/.test(v)) {
+      // Invalid — restore previous value.
+      const got = await chrome.storage.sync.get(OVERRIDE_KEY);
+      storeInput.value = String(got?.[OVERRIDE_KEY] ?? "");
+      return;
+    }
+    await setUserHomeStoreOverride(v);
+    storeInput.value = v;
+    storeClear.disabled = false;
+  };
+  storeInput?.addEventListener("blur",   (e) => commitStore(e.target.value).catch((err) => console.warn("[shell] set store failed:", err?.message)));
+  storeInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
+  storeClear?.addEventListener("click", async () => {
+    await clearUserHomeStoreOverride();
+    storeInput.value = "";
+    storeClear.disabled = true;
+  });
+  storeAuto?.addEventListener("click", async () => {
+    const detected = await jwtDerivedStore();
+    if (!detected) return;
+    await setUserHomeStoreOverride(detected);
+    storeInput.value = detected;
+    storeClear.disabled = false;
+  });
+
+  marketInput?.addEventListener("change", async () => {
+    const v = String(marketInput.value ?? "").trim();
+    try {
+      if (!v) {
+        await clearUserHomeMarketOverride();
+        marketClear.disabled = true;
+        marketHint.textContent = "Select a market to expose its store roster to market-aware modules (Claims Disposition, Market 120).";
+      } else {
+        await setUserHomeMarketOverride(v);
+        marketClear.disabled = false;
+        const roster = getMarketRoster(v) || [];
+        marketHint.textContent = `Roster: ${roster.join(", ") || "(unknown market number)"}`;
+      }
+    } catch (err) {
+      console.warn("[shell] set market failed:", err?.message);
+    }
+  });
+  marketClear?.addEventListener("click", async () => {
+    marketInput.value = "";
+    await clearUserHomeMarketOverride();
+    marketClear.disabled = true;
+    marketHint.textContent = "Select a market to expose its store roster to market-aware modules (Claims Disposition, Market 120).";
+  });
+
+  // Wire widget toggles to persist. The live dashboard subscribes to
+  // chrome.storage.onChanged so hides/shows apply immediately in any open
+  // dashboard tab.
+  for (const box of $main.querySelectorAll("input[data-widget-toggle]")) {
+    box.addEventListener("change", async () => {
+      const key = box.dataset.widgetToggle;
+      try {
+        const got  = await chrome.storage.sync.get("shell.dashboardWidgets");
+        const next = { ...(got?.["shell.dashboardWidgets"] || {}), [key]: box.checked };
+        await chrome.storage.sync.set({ "shell.dashboardWidgets": next });
+      } catch (e) {
+        console.warn("[shell] couldn't persist widget toggle:", e?.message);
+      }
+    });
+  }
+}
+
+// Read the store number the Auror JWT identity implies, without touching
+// the user's manual override. Used by the Settings "Auto-detect" button so
+// it can preview what the JWT would give even while an override is set.
+async function jwtDerivedStore() {
+  try {
+    const got = await chrome.storage.local.get("aurorbuddy.fb_aurorIdentity");
+    const sub = got?.["aurorbuddy.fb_aurorIdentity"]?.aurorUserId;
+    return extractStoreFromWid(extractWidFromAurorSub(sub)) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Flatten every module's manifest.dashboard.widgets into a single list.
+// Modules with no dashboard contributions are omitted. Order matches
+// module registry order (respecting the user's saved sidebar order).
+function getDashboardWidgetSpecs() {
+  const out = [];
+  for (const mod of getOrderedModules()) {
+    const widgets = mod?.manifest?.dashboard?.widgets;
+    if (!Array.isArray(widgets)) continue;
+    for (const w of widgets) {
+      if (!w?.id || !w?.label) continue;
+      out.push({
+        moduleId:   mod.manifest.id,
+        moduleName: mod.manifest.name,
+        widgetId:   w.id,
+        label:      w.label,
+        defaultOn:  w.defaultOn !== false,
+      });
+    }
+  }
+  return out;
+}
+
+function groupWidgetSpecsByModule(specs) {
+  const byId = new Map();
+  for (const s of specs) {
+    if (!byId.has(s.moduleId)) {
+      byId.set(s.moduleId, { moduleId: s.moduleId, moduleName: s.moduleName, widgets: [] });
+    }
+    byId.get(s.moduleId).widgets.push(s);
+  }
+  return [...byId.values()];
 }
 
 function renderDocs() {

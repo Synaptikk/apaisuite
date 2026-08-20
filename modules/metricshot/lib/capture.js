@@ -26,18 +26,15 @@
 import { looksLikeAuthWall } from "./validate.js";
 import { SSO_SELECTORS, createAuth } from "../../../shared/auth.js";
 import { getUserHomeStore } from "../../../shared/userStore.js";
+import { attach as _attach, detach as _detach, sendCdp, withTimeout as _withTimeout } from "./cdp.js";
 
 const _auth = createAuth("metricshot");
 
-const CDP_VERSION = "1.3";
 const TAG = "[metricshot capture]";
 
-// Tabs where we have CDP attached, tracked so we don't double-attach.
-const _attached = new Set();
-chrome.tabs?.onRemoved?.addListener?.((tabId) => _attached.delete(tabId));
-chrome.debugger?.onDetach?.addListener?.((source) => {
-  if (source?.tabId != null) _attached.delete(source.tabId);
-});
+// _sendCdp keeps the original call-site signature (tabId, method, params) and
+// delegates to the shared 15s-timeout wrapper in cdp.js.
+const _sendCdp = (tabId, method, params) => sendCdp(tabId, method, params);
 
 /**
  * @param {object} metric  Metric config (see lib/metrics.js).
@@ -356,53 +353,8 @@ export async function captureMetric(metric, opts = {}) {
 }
 
 // ── CDP wrappers ──────────────────────────────────────────────────────────
-
-async function _attach(tabId) {
-  if (_attached.has(tabId)) return true;
-  try {
-    await chrome.debugger.attach({ tabId }, CDP_VERSION);
-    _attached.add(tabId);
-    return true;
-  } catch (e) {
-    // Common: another extension/DevTools already attached. We can still try
-    // to capture without the spoof — the page might just show a stale render.
-    console.warn(TAG, "attach failed:", e?.message ?? e);
-    return false;
-  }
-}
-
-async function _detach(tabId) {
-  try { await chrome.debugger.detach({ tabId }); } catch (_) {}
-  _attached.delete(tabId);
-}
-
-async function _sendCdp(tabId, method, params) {
-  // chrome.debugger.sendCommand has NO built-in timeout. Against a reused /
-  // wedged Tableau tab (openedFresh:false), commands like Page.enable or
-  // Emulation.setDeviceMetricsOverride can hang forever — and a trailing
-  // .catch() at the call site does nothing because the await never settles.
-  // Wrap every command so a stuck CDP call rejects fast and the capture
-  // pipeline can surface an error / retry instead of freezing at cdp-attached.
-  return _withTimeout(
-    chrome.debugger.sendCommand({ tabId }, method, params),
-    15_000,
-    `CDP ${method}`,
-  );
-}
-
-// Race a promise against a timeout. chrome.scripting.executeScript and
-// chrome.debugger.sendCommand have NO built-in timeout — against a wedged /
-// zombie tab (e.g. a reused Tableau session stuck mid-render) they never
-// resolve, and the only backstop was the blunt 90s capture watchdog. Wrapping
-// individual probes lets a stuck step fail fast so the capture can surface a
-// useful error (and the scheduler can retry) instead of hanging.
-function _withTimeout(promise, ms, label) {
-  let t;
-  const timeout = new Promise((_, rej) => {
-    t = setTimeout(() => rej(new Error(`${label || "operation"} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
-}
+// attach/detach/sendCdp/withTimeout now live in ./cdp.js (shared with
+// workvivo_upload.js). Imported + aliased at the top of this file.
 
 // ── Tab / navigation helpers ─────────────────────────────────────────────
 

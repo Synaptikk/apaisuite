@@ -20,8 +20,14 @@
 import { toTrip, toCandidateMatch, computeInStoreWindow, attachOmsItems, toItem } from "./models/index.js";
 import { emit, EVENTS } from "./telemetry/events.js";
 import { saveInvestigation, toInvestigationRecord } from "./journal.js";
-
-const SWIFT_DASHBOARD = "https://swift.walmart.com/sparkApp/api/proxy/v4/dashboard";
+import { SWIFT_DASHBOARD_URL as SWIFT_DASHBOARD, walmartItemUrl } from "../../shared/sparkInvestigation/endpoints.js";
+import { buildSwiftHeaders as sharedBuildSwiftHeaders } from "../../shared/sparkInvestigation/auth.js";
+import { detectQueryType as sharedDetectQueryType } from "../../shared/sparkInvestigation/input_detect.js";
+import {
+  offsetStringFor as sharedOffsetStringFor,
+  tzAbbrFor as sharedTzAbbrFor,
+  makeStoreDate as sharedMakeStoreDate,
+} from "../../shared/sparkInvestigation/time_window.js";
 
 export async function mount(host, container) {
   // ── 1. Inject stylesheet ────────────────────────────────────────────
@@ -142,27 +148,15 @@ export async function mount(host, container) {
   }
 
   function offsetStringFor(date, tz) {
-    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" });
-    const parts = fmt.formatToParts(date);
-    const tzPart = parts.find(p => p.type === "timeZoneName")?.value || "";
-    let raw = tzPart.replace("GMT", "").trim() || "+00:00";
-    if (/^[+-]\d$/.test(raw))    raw = raw.replace(/^([+-])(\d)$/, "$10$2:00");
-    if (/^[+-]\d\d$/.test(raw))  raw = raw + ":00";
-    return raw;
+    return sharedOffsetStringFor(date, tz);
   }
 
   function tzAbbrFor(date, tz) {
-    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" });
-    const parts = fmt.formatToParts(date);
-    return parts.find(p => p.type === "timeZoneName")?.value || tz;
+    return sharedTzAbbrFor(date, tz);
   }
 
   function makeStoreDate(dateStr, timeStr) {
-    const fakeUtc = new Date(`${dateStr}T${timeStr}:00Z`);
-    const local = new Date(fakeUtc.toLocaleString("en-US", { timeZone: STORE_TZ }));
-    const utc   = new Date(fakeUtc.toLocaleString("en-US", { timeZone: "UTC" }));
-    const offsetMs = utc.getTime() - local.getTime();
-    return new Date(fakeUtc.getTime() + offsetMs);
+    return sharedMakeStoreDate(dateStr, timeStr, STORE_TZ);
   }
 
   function fmtTimeStoreTz(ms, opts = {}) {
@@ -793,65 +787,21 @@ ${itemsHtml}
   // ── 9. Auth + headers ──────────────────────────────────────────────
   async function buildHeaders() {
     const c = await getCookies();
-    const have = Object.keys(c).sort();
-    if (!c.authToken && !c.authtoken) {
+    const result = sharedBuildSwiftHeaders(c);
+    if (!result.ok) {
       setStatus("Not signed in to gscope", "err");
-      const msg = "Missing gscope auth cookies. Cookies the extension found: " +
+      const have = Object.keys(c || {}).sort();
+      throw new Error(
+        (result.message || "Missing gscope auth cookies") +
+        ". Cookies the extension found: " +
         (have.length ? have.join(", ") : "(none)") +
         ". Open https://gscope.walmartlabs.com/apphome in a tab in this same Edge profile, complete SSO, then refresh this page. " +
-        "Open DevTools (F12) Console for the full lookup diagnostic.";
-      throw new Error(msg);
+        "Open DevTools (F12) Console for the full lookup diagnostic."
+      );
     }
-    const ci = {};
-    for (const k of Object.keys(c)) ci[k.toLowerCase()] = c[k];
-
-    let loginId  = ci.loginid || "";
-    let display  = ci.displayname || "";
-    // Walmart's gscope now ships displayname/loginid as EMPTY strings — the
-    // canonical user identity moved to wire-id (format: "Display Name - loginId").
-    // Fall back to that when the legacy cookies aren't populated; without this
-    // the status badge reads "Signed in: unknown" even though auth succeeded.
-    if ((!display || !loginId) && ci["wire-id"]) {
-      const m = ci["wire-id"].match(/^(.*?)\s*-\s*([^-\s][^-]*?)\s*$/);
-      if (m) {
-        if (!display) display = m[1].trim();
-        if (!loginId) loginId = m[2].trim();
-      } else if (!display) {
-        display = ci["wire-id"];
-      }
-    }
-    const storeId  = ci["store-no"] || ci.storeno || "";
-    const loggedDomain = ci.loggedindomain || "store";
-    const loggedUser   = ci.loggedinusername || "";
-    const firstName    = display.split(" ")[0] || "";
-    const lastName     = display.split(" ").slice(1).join(" ") || "";
-
-    setStatus("Signed in: " + (display || loginId || "unknown"), "ok");
-    return {
-      "content-type":          "application/json",
-      "x-authheader":          ci.authheader || "",
-      "x-authtoken":           ci.authtoken  || "",
-      "x-userid":              loginId,
-      "x-username":            display,
-      "x-firstname":           firstName,
-      "x-lastname":            lastName,
-      "x-loggedindomain":      loggedDomain,
-      "x-loggedinusername":    loggedUser,
-      "x-storeid":             storeId,
-      "x-realmid":             "DISPATCHER_WEB_UI",
-      "x-source":              "DISPATCHER",
-      "x-sourceapp":           "DISPATCHER_WEB_UI",
-      "x-channel":             "WEB",
-      "x-domain":              "USLM",
-      "x-tenant":              "WALMART_US",
-      "x-tenantid":            "0",
-      "tenantid":              "0",
-      "wm_tenant_id":          "0",
-      "wm_consumer.tenant_id": "0",
-      "x-timezone":            "+00:00",
-      "device_timezone":       "America/New_York",
-      "installed_app":         "spark-dispatcher.us",
-    };
+    const id = result.identity || {};
+    setStatus("Signed in: " + (id.display || id.loginId || "unknown"), "ok");
+    return result.headers;
   }
 
   // ── 10. API calls ──────────────────────────────────────────────────
@@ -1276,17 +1226,18 @@ ${itemsHtml}
       const orderTotal = items.reduce((s, it) => s + (Number(it.unitPriceUsd) || 0) * (Number(it.quantity) || 1), 0);
       const summary = `Order ${orderId} · ${customerName} · ${items.length} item${items.length === 1 ? "" : "s"} · ${fmtMoney(orderTotal)}`;
 
-      const tableRows = items.map(item => `
-        <tr class="${item.isCancelled ? "cancelled" : ""}" data-item-name="${(item.name || "").toLowerCase()}" data-upc="${item.upc || ""}" data-item-id="${item.id || ""}">
+      const tableRows = items.map((item, idx) => `
+        <tr class="${item.isCancelled ? "cancelled" : ""}" data-item-name="${(item.name || "").toLowerCase()}" data-upc="${item.upc || ""}" data-item-id="${item.id || ""}" data-row-index="${idx}">
+          <td class="sf-check-cell"><input type="checkbox" class="sf-item-check" aria-label="Check off"></td>
           <td><div class="thumb placeholder" data-item-id="${item.id || ""}">${(item.id || "?").slice(0, 6)}</div></td>
-          <td>${item.name || "—"} <a class="item-link" href="https://www.walmart.com/ip/${encodeURIComponent(item.id || "")}" target="_blank" rel="noopener" title="Open on walmart.com">${item.id || ""}</a></td>
+          <td>${item.name || "—"} <a class="item-link" href="${walmartItemUrl(item.id)}" target="_blank" rel="noopener" title="Open on walmart.com">${item.id || ""}</a></td>
           <td>${item.quantity != null ? item.quantity : "1"}</td>
           <td class="price">${fmtMoney(item.unitPriceUsd)}</td>
           <td>${item.lineStatus || "—"}</td>
         </tr>`).join("");
 
       const tableHtml = `<table>
-        <thead><tr><th></th><th>Item</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+        <thead><tr><th class="sf-check-cell"></th><th></th><th>Item</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>`;
 
@@ -1303,6 +1254,29 @@ ${itemsHtml}
       }
     }
     itemsContainer.innerHTML = html;
+
+    // Wire check-off behaviour once per container. Checking a row greys it
+    // and sorts it to the bottom of its <tbody>; unchecking restores order.
+    if (!itemsContainer.dataset.checkWired) {
+      itemsContainer.dataset.checkWired = "1";
+      itemsContainer.addEventListener("change", e => {
+        const cb = e.target;
+        if (!cb.classList.contains("sf-item-check")) return;
+        const tr = cb.closest("tr");
+        const tbody = tr?.closest("tbody");
+        if (!tr || !tbody) return;
+        tr.classList.toggle("sf-checked-off", cb.checked);
+        const rows = [...tbody.querySelectorAll("tr")];
+        rows.sort((a, b) => {
+          const ac = a.classList.contains("sf-checked-off");
+          const bc = b.classList.contains("sf-checked-off");
+          if (ac !== bc) return ac ? 1 : -1;
+          return (Number(a.dataset.rowIndex) || 0) - (Number(b.dataset.rowIndex) || 0);
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    }
+
     tripEl.dataset.itemsReady = "1";
 
     delete tripEl.dataset.thumbsLoaded;
@@ -1821,11 +1795,7 @@ ${itemsHtml}
   //   - Otherwise            → driver name (opens popup)
   // The + Watchlist button only appears when input parses as a driver name.
   function detectQueryType(input) {
-    const trimmed = input.trim();
-    if (!trimmed) return "empty";
-    const tokens = trimmed.split(/[,\s]+/).filter(Boolean);
-    if (tokens.every(t => /^\d+$/.test(t))) return "orders";
-    return "driver";
+    return sharedDetectQueryType(input);
   }
 
   function updateQuickLookupUI() {

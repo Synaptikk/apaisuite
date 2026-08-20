@@ -1,0 +1,604 @@
+{
+  "slicers": [
+    {
+      "cls": "visualContainerHost visualContainerOutOfFocus",
+      "isSlicer": true,
+      "x": 250,
+      "y": 98,
+      "w": 1333,
+      "h": 1777,
+      "text": "Power BI Report\n\nBackroom Adjustments Report\n\nReport updates(A) daily.\n\nLast updated: 7/28/2026 1:21:31 AM CST\n\nBU\nAll\nR"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderBelow",
+      "isSlicer": false,
+      "x": 689,
+      "y": 104,
+      "w": 495,
+      "h": 57,
+      "text": "Backroom Adjustments Report"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderBelow",
+      "isSlicer": false,
+      "x": 1274,
+      "y": 103,
+      "w": 298,
+      "h": 63,
+      "text": "Report updates(A) daily.\n\nLast updated: 7/28/2026 1:21:31 AM CST"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 263,
+      "y": 174,
+      "w": 125,
+      "h": 62,
+      "text": "BU\nAll"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 267,
+      "y": 178,
+      "w": 116,
+      "h": 53,
+      "text": "BU\nAll"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 433,
+      "y": 174,
+      "w": 125,
+      "h": 62,
+      "text": "Region\nAll"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 437,
+      "y": 178,
+      "w": 116,
+      "h": 53,
+      "text": "Region\nAll"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 603,
+      "y": 174,
+      "w": 109,
+      "h": 62,
+      "text": "Market\nAll"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 607,
+      "y": 178,
+      "w": 100,
+      "h": 53,
+      "text": "Market\nAll"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 757,
+      "y": 174,
+      "w": 97,
+      "h": 62,
+      "text": "Store\n1458"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 761,
+      "y": 178,
+      "w": 87,
+      "h": 53,
+      "text": "Store\n1458"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 899,
+      "y": 174,
+      "w": 96,
+      "h": 62,
+      "text": "Dept\nAll"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 903,
+      "y": 178,
+      "w": 87,
+      "h": 53,
+      "text": "Dept\nAll"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 1040,
+      "y": 174,
+      "w": 192,
+      "h": 62,
+      "text": "Adjustment Type\nStolen"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 1044,
+      "y": 178,
+      "w": 184,
+      "h": 53,
+      "text": "Adjustment Type\nStolen"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": true,
+      "x": 1278,
+      "y": 173,
+      "w": 218,
+      "h": 63,
+      "text": "Date"
+    },
+    {
+      "cls": "slicer-container",
+      "isSlicer": true,
+      "x": 1282,
+      "y": 177,
+      "w": 209,
+      "h": 54,
+      "text": "Date"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 263,
+      "y": 249,
+      "w": 161,
+      "h": 53,
+      "text": "Total Adj $\n($46.6K)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 459,
+      "y": 249,
+      "w": 170,
+      "h": 54,
+      "text": "Total Adj Qty\n-3,523"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 666,
+      "y": 249,
+      "w": 198,
+      "h": 53,
+      "text": "INV Reduction Adj $\n(Blank)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 902,
+      "y": 249,
+      "w": 173,
+      "h": 53,
+      "text": "INV Increase Adj $\n(Blank)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 1110,
+      "y": 249,
+      "w": 136,
+      "h": 53,
+      "text": "Shortage Adj $\n(Blank)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 1274,
+      "y": 249,
+      "w": 127,
+      "h": 53,
+      "text": "Stolen Adj $\n($46.6K)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 1429,
+      "y": 250,
+      "w": 143,
+      "h": 52,
+      "text": "Store Use Adj $\n(Blank)"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 551,
+      "y": 310,
+      "w": 248,
+      "h": 332,
+      "text": "Top User ID Total Adj $\nScroll up\nScroll down\nScroll left\nScroll right\nRow Selection\nStore\nUserID\nSum of Total Adj $\n \nS"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 263,
+      "y": 311,
+      "w": 275,
+      "h": 331,
+      "text": "Dept Drilldown Total Adj $\nScroll up\nScroll down\nScroll left\nScroll right\nStore\nSum of Total Adj $\n \n1458\n($46,595.06)\nT"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 817,
+      "y": 311,
+      "w": 755,
+      "h": 331,
+      "text": "Top Adj Items by $ (Excluding Fresh)\nScroll up\nScroll down\nScroll left\nScroll right\nRow Selection\nDept\nItem Nbr\nItem Des"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 263,
+      "y": 652,
+      "w": 427,
+      "h": 306,
+      "text": "UserID Adj by $ (Excluding Fresh)\nScroll up\nScroll down\nScroll left\nScroll right\nRow Selection\nUserID\nSum of Qty\nSum of "
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder noVisualTitle visualHeaderAbove",
+      "isSlicer": false,
+      "x": 702,
+      "y": 652,
+      "w": 870,
+      "h": 309,
+      "text": "Scroll up\nScroll down\nScroll left\nScroll right\nBU\nStolen\n \nTotal\n \nA - SOUTHEAST BU\n($46,595.06)\n($46,595.06)\n12\n($46,59"
+    },
+    {
+      "cls": "visualContainer unselectable readMode hideBorder visualHeaderAbove droppableElem",
+      "isSlicer": false,
+      "x": 263,
+      "y": 982,
+      "w": 1309,
+      "h": 768,
+      "text": "Store Details\nScroll up\nScroll down\nScroll left\nScroll right\nRow Selection\nRegion\nMarket\nStore\nDept\nCategory\nUPC\nItem Nb"
+    }
+  ],
+  "storeMentions": [
+    {
+      "tag": "DIV",
+      "cls": "itemRow pbi-focus-outline ng-star-inserted",
+      "aria": "Store ISA Report",
+      "text": "",
+      "x": 1,
+      "y": 177
+    },
+    {
+      "tag": "SPAN",
+      "cls": "itemName trimmedTextWithEllipsis ng-star-inserted",
+      "title": "Store ISA Report",
+      "text": "Store ISA Report",
+      "x": 5,
+      "y": 185
+    },
+    {
+      "tag": "DIV",
+      "cls": "itemRow pbi-focus-outline ng-star-inserted",
+      "aria": "NHM Store ISA Reporting",
+      "text": "",
+      "x": 1,
+      "y": 219
+    },
+    {
+      "tag": "SPAN",
+      "cls": "itemName trimmedTextWithEllipsis ng-star-inserted",
+      "title": "NHM Store ISA Reporting",
+      "text": "NHM Store ISA Reporting",
+      "x": 5,
+      "y": 227
+    },
+    {
+      "tag": "H3",
+      "cls": "slicer-header-text",
+      "aria": "Store",
+      "title": "Store",
+      "text": "Store",
+      "x": 769,
+      "y": 178
+    },
+    {
+      "tag": "DIV",
+      "cls": "slicer-dropdown-menu",
+      "aria": "Store",
+      "text": "",
+      "x": 766,
+      "y": 203
+    },
+    {
+      "tag": "DIV",
+      "cls": "slicer-restatement",
+      "text": "1458",
+      "x": 771,
+      "y": 209
+    },
+    {
+      "tag": "DIV",
+      "cls": "visualContainer unselectable readMode hideBorder visualHeade",
+      "aria": "Store Use Adj $ ",
+      "text": "",
+      "x": 1429,
+      "y": 250
+    },
+    {
+      "tag": "DIV",
+      "cls": "visualTitle themableBackgroundColor themableColor sub-select",
+      "title": "Store Use Adj $",
+      "text": "",
+      "x": 1433,
+      "y": 250
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 355
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 372
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 389
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 406
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 423
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 440
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 457
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 474
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 490
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 507
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 524
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 541
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 558
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 575
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 592
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 609
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 625
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 642
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 659
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive main-cell ",
+      "text": "1458",
+      "x": 556,
+      "y": 676
+    },
+    {
+      "tag": "DIV",
+      "cls": "expandableContent pivotTableCellWrap ",
+      "text": "1458",
+      "x": 288,
+      "y": 357
+    },
+    {
+      "tag": "DIV",
+      "cls": "visualContainer unselectable readMode hideBorder visualHeade",
+      "aria": "Store Details  ",
+      "text": "",
+      "x": 263,
+      "y": 982
+    },
+    {
+      "tag": "DIV",
+      "cls": "visualTitle themableBackgroundColor themableColor sub-select",
+      "title": "Store Details ",
+      "text": "",
+      "x": 267,
+      "y": 982
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1029
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1062
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1080
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1098
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1115
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1133
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1166
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1199
+    },
+    {
+      "tag": "DIV",
+      "cls": "pivotTableCellWrap cell-interactive tablixAlignCenter main-c",
+      "text": "1458",
+      "x": 367,
+      "y": 1217
+    }
+  ],
+  "filterPane": [
+    {
+      "cls": "slicer-header",
+      "text": "BU"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Region"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Market"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Store"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Dept"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Adjustment Type"
+    },
+    {
+      "cls": "slicer-header",
+      "text": "Date"
+    }
+  ]
+}

@@ -23,7 +23,7 @@
 
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../../../shared/auth.js";
 
-const REPORT_ID    = "52d28de7-a2ba-44e5-ab04-689e66eba90f";
+const REPORT_ID    = "04aa0743-2bb9-4e34-b19d-5089b1832b6a";
 const PAGE_ID      = "e8acdf337be7254e2859";   // Safety Observations All Stores
 const REPORT_URL   = `https://app.powerbi.com/groups/me/reports/${REPORT_ID}/${PAGE_ID}?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi`;
 const TAB_PATTERN  = `https://app.powerbi.com/*${REPORT_ID}*`;
@@ -128,7 +128,15 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
     };
   }
 
-  const rows = decodeRecognitionResponse(respBody);
+  const allRows = decodeRecognitionResponse(respBody);
+  // The captured QES bundle typically has NO fascility_nbr_padded filter
+  // (only an IS NOT NULL check on fascility_nbr), so swapStoreFilter above
+  // is a no-op and the response covers every store nationwide. Filter
+  // client-side to just the requested store before returning. If the
+  // bundle IS store-filtered upstream, this filter is a no-op.
+  const rows = requested
+    ? allRows.filter((r) => padStore(r.storeNbr) === requested)
+    : allRows;
   // Rows == 0 isn't an error — the store may simply have no recognitions in
   // the date window. Surface that distinct from a missing result-block.
   const importedAt = new Date().toISOString();
@@ -142,6 +150,7 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
   return {
     ok: true,
     rows,
+    totalRowsAllStores: allRows.length,
     capturedAt:     importedAt,
     capturedStore,
     requestedStore: requested,

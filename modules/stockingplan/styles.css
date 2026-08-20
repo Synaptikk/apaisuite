@@ -17,6 +17,33 @@
   margin-bottom: 0.1em;
 }
 
+/* Main layout: plan table (left) + associates (right) */
+.module-stockingplan .sp-content-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .module-stockingplan .sp-content-layout {
+    grid-template-columns: 1fr;
+  }
+  .module-stockingplan .sp-associates {
+    order: 2;
+  }
+  .module-stockingplan .sp-main-column {
+    order: 1;
+  }
+}
+
+/* Delivery schedule strip across the top — horizontal scrolling cards */
+.module-stockingplan .sp-trucks-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 /* Config grid */
 .module-stockingplan .sp-grid {
   display: grid;
@@ -49,10 +76,42 @@
   color: var(--apai-muted, #666);
 }
 
-/* Associate name list — 3 columns, alphabetical flow */
+/* Associates panel scrolls WITH the user (sticky), with its own overflow. */
+.module-stockingplan .sp-associates {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+/* Associate columns: unassigned | assigned */
+.module-stockingplan .sp-assoc-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.module-stockingplan .sp-assoc-col-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid var(--walmart-blue-100, #0053e2);
+}
+
+.module-stockingplan .sp-assoc-empty {
+  padding: 0.4rem 0;
+}
+
+.module-stockingplan .sp-assoc-where {
+  font-size: 0.72rem;
+  color: var(--walmart-blue-100, #0053e2);
+  font-weight: 600;
+}
+
+/* Associate name list — single column inside each side */
 .module-stockingplan .sp-assoc-list {
-  columns: 3;
-  column-gap: 1.5rem;
+  columns: 1;
 }
 
 .module-stockingplan .sp-name-item {
@@ -63,6 +122,22 @@
 
 .module-stockingplan .sp-name-item.sp-callout {
   color: var(--sp-callout);
+}
+
+.module-stockingplan .sp-assoc-group-header {
+  break-inside: avoid;
+  padding: 8px 4px 4px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--walmart-blue-100, #0053e2);
+  background: var(--walmart-gray-10, #f7f7f7);
+  border-bottom: 2px solid var(--walmart-blue-100, #0053e2);
+  margin-top: 12px;
+}
+
+.module-stockingplan .sp-assoc-group-header:first-child {
+  margin-top: 0;
 }
 
 /* Plan table */
@@ -106,8 +181,156 @@
   padding: 5px 8px;
 }
 
+/* Custom floor-layout group dividers */
+.module-stockingplan .sp-group-header td {
+  background: var(--walmart-blue-100, #0053e2);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+}
+
 .module-stockingplan .sp-aisle-row .sp-td-dept {
   padding-left: 1.5rem;
+}
+
+/* Shift column */
+.module-stockingplan .sp-th-shift {
+  width: 90px;
+}
+
+.module-stockingplan .sp-shift-select {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 0.85rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: white;
+}
+
+.module-stockingplan .sp-shift-select:focus {
+  outline: 2px solid var(--walmart-blue-100, #0053e2);
+  outline-offset: -1px;
+}
+
+/* Trucks panel — horizontal top strip */
+.module-stockingplan .sp-trucks-panel {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  padding: 1rem;
+}
+
+.module-stockingplan .sp-trucks-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--walmart-blue-100, #0053e2);
+}
+
+.module-stockingplan .sp-truck-card {
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  padding: 0.4rem 0.55rem;
+  flex: 0 1 auto;
+  min-width: 130px;
+  font-size: 0.72rem;
+}
+
+.module-stockingplan .sp-truck-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.module-stockingplan .sp-truck-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 3px;
+}
+
+.module-stockingplan .sp-truck-cases {
+  font-weight: 700;
+  color: #333;
+  white-space: nowrap;
+}
+
+.module-stockingplan .sp-truck-rdc {
+  border-left: 4px solid var(--walmart-blue-100, #0053e2);
+}
+
+.module-stockingplan .sp-truck-hvdc {
+  border-left: 4px solid var(--walmart-spark-100, #ffc220);
+}
+
+.module-stockingplan .sp-truck-mp {
+  border-left: 4px solid var(--walmart-green-100, #2a8703);
+}
+
+.module-stockingplan .sp-truck-fdd {
+  border-left: 4px solid #1e88e5;
+}
+
+.module-stockingplan .sp-truck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.module-stockingplan .sp-truck-type {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--walmart-blue-100, #0053e2);
+}
+
+.module-stockingplan .sp-truck-eta {
+  font-size: 0.68rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.module-stockingplan .sp-truck-loadid-link {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--walmart-blue-100, #0053e2);
+  text-decoration: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.module-stockingplan .sp-truck-loadid-link:hover {
+  background: #f0f0f0;
+  border-color: var(--walmart-blue-100, #0053e2);
+  text-decoration: underline;
+}
+
+.module-stockingplan .sp-truck-loadid-link svg {
+  opacity: 0.6;
+}
+
+.module-stockingplan .sp-truck-status {
+  margin-top: 0.25rem;
+  padding: 3px 6px;
+  background: #e8f5e9;
+  color: #2a8703;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
 }
 
 /* Tags */
@@ -182,6 +405,33 @@
 .module-stockingplan .sp-assign-input:focus {
   outline: none;
   border-color: var(--sp-accent);
+}
+
+/* Per-task note field — small, for things like "Malachi to pets after paper" */
+.module-stockingplan .sp-note-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  font-style: italic;
+  padding: 2px 6px;
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+  background: #fffdf5;
+}
+
+.module-stockingplan .sp-note-input:focus {
+  outline: none;
+  border-color: var(--walmart-spark-100, #ffc220);
+  border-style: solid;
+}
+
+/* Note in print output */
+.module-stockingplan .note,
+.sp-print .note {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: #995213;
 }
 
 .module-stockingplan .sp-dropdown {
