@@ -347,39 +347,109 @@ export function parseDeptBreakout(text) {
  */
 export function parseDonutHealth(text) {
   if (!text || typeof text !== "string") return { ok: false, reason: "empty body" };
-  const clean = text.replace(/^﻿/, "");
+  const clean = text.replace(/^\ufeff/, "");
   const lines = clean.split(/\r?\n/).filter((l) => l.length);
   if (lines.length < 2) return { ok: false, reason: "no data rows" };
+  return parseDonutHealthRows(lines.map((l) => l.split("\t")));
+}
 
-  const headers = lines[0].split("\t").map((h) => h.trim());
-  const col = (n) => headers.indexOf(n);
-  const idx = {
-    cases:     col("Cases Seen %"),
-    location:  col("New Location %"),
-    overstock: col("New Overstock %"),
-    pick:      col("New Pick %"),
-    vizpick:   col("New VizPick"),
+// ── Donut sheets, row form ──────────────────────────────────────────────────
+//
+// The crosstab arrives as raw TSV here, but MetricShot's export path yields
+// rows already split (string[][]). These row-form functions are the single
+// implementation both use — MetricShot briefly carried its own copy, and two
+// parsers of one Tableau sheet is a drift waiting to happen.
+//
+// Two shapes of the real export that break naive parsing:
+//
+//   "New VizPick " carries a TRAILING SPACE, and sits beside "New VizPick
+//   Remaining" — so headers are matched trimmed, and "remaining" excluded.
+//
+//   Tableau renders a donut as two arcs, so every value is a row PAIR: a
+//   background row with the percent columns blank, then the real row. Picking
+//   the first data row silently reads the background arc.
+
+function donutCols(headerRow) {
+  const norm = (headerRow || []).map((h) => String(h ?? "").trim().toLowerCase());
+  const at = (i) => (i >= 0 ? i : null);
+  // EXACT (trimmed) names, not substrings. The donut sheet's columns are
+  // "New Location %" / "New Pick %" / "New VizPick", while the stores sheet
+  // has "Location %" / "Pick %" / "VizPick" — so a substring match accepts the
+  // stores sheet as a donut sheet and reads the wrong columns off it. Trimming
+  // is what absorbs the trailing space in "New VizPick ", and matching "new
+  // vizpick" exactly is what keeps "New VizPick Remaining" out.
+  const exact = (name) => at(norm.indexOf(name));
+  return {
+    cases:     exact("cases seen %"),
+    location:  exact("new location %"),
+    pick:      exact("new pick %"),
+    overstock: exact("new overstock %"),
+    vizpick:   exact("new vizpick"),
+    group:     exact("department group"),
   };
-  if (idx.location < 0 || idx.vizpick < 0) {
-    return { ok: false, reason: `unexpected columns; got: ${headers.join(", ")}` };
-  }
+}
 
-  for (const line of lines.slice(1)) {
-    const c = line.split("\t");
-    const loc = (c[idx.location] ?? "").trim();
-    if (!loc) continue; // spacer row
-    return {
-      ok: true,
-      health: {
-        casesSeenPct: num(c[idx.cases]),
-        locationPct:  num(c[idx.location]),
-        overstockPct: num(c[idx.overstock]),
-        pickPct:      num(c[idx.pick]),
-        vizpick:      num(c[idx.vizpick]),
-      },
-    };
+// The real row is the one carrying percentages; its partner is the background
+// arc and has them blank.
+function isDonutValueRow(row, c) {
+  for (const i of [c.cases, c.location, c.pick, c.overstock]) {
+    if (i != null && String(row[i] ?? "").trim()) return true;
   }
-  return { ok: false, reason: "no populated donut-health row" };
+  return false;
+}
+
+/**
+ * @param {string[][]} rows  "VizPick Donut Health" rows (row 0 = headers).
+ * @returns {{ok:boolean, reason?:string, health?:{casesSeenPct:number|null,
+ *            locationPct:number|null, overstockPct:number|null,
+ *            pickPct:number|null, vizpick:number|null}}}
+ */
+export function parseDonutHealthRows(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return { ok: false, reason: "no data rows" };
+  const c = donutCols(rows[0]);
+  if (c.location == null || c.vizpick == null) {
+    return { ok: false, reason: `unexpected columns; got: ${(rows[0] || []).join(", ")}` };
+  }
+  const row = rows.slice(1).find((r) => isDonutValueRow(r, c));
+  if (!row) return { ok: false, reason: "no populated donut-health row" };
+  const at = (i) => (i == null ? null : num(row[i]));
+  return {
+    ok: true,
+    health: {
+      casesSeenPct: at(c.cases),
+      locationPct:  at(c.location),
+      overstockPct: at(c.overstock),
+      pickPct:      at(c.pick),
+      vizpick:      at(c.vizpick),
+    },
+  };
+}
+
+/**
+ * The three department-group rings (Fresh / F&C / GM).
+ *
+ * "Department Group" is a real Tableau dimension carrying its own
+ * pre-aggregated score — there is no numeric department column in this export,
+ * and a department-number-to-group mapping must never be inferred to fake one.
+ *
+ * @param {string[][]} rows  "Department Groups Donuts Health" rows.
+ * @returns {Array<{group:string, vizpick:number|null}>}  dashboard order kept
+ */
+export function parseDepartmentGroupRows(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return [];
+  const c = donutCols(rows[0]);
+  if (c.group == null || c.vizpick == null) return [];
+
+  const out = [];
+  const seen = new Set();
+  for (const row of rows.slice(1)) {
+    if (!isDonutValueRow(row, c)) continue;      // background arc
+    const group = String(row[c.group] ?? "").trim();
+    if (!group || seen.has(group)) continue;
+    seen.add(group);
+    out.push({ group, vizpick: num(row[c.vizpick]) });
+  }
+  return out.slice(0, 3);
 }
 
 // Build an ISO-8601 string in LOCAL time (Tableau reports store-local wall

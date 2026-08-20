@@ -140,110 +140,44 @@ function _hoursSince(v, now) {
   return hrs;
 }
 
+
 // ── Donut health sheets ──────────────────────────────────────────────────────
 //
-// Two worksheets back the eight rings on the VizPick Backroom Health dashboard.
-// Column layout confirmed from a live export (2026-08, see
-// docs/vizpick-headline-data-findings.md):
-//
-//   "VizPick Donut Health" (store-level headline)
-//     "Cases Seen %"     → Cases ring        (goal 95)
-//     "New Location %"   → Locations ring    (goal 95)
-//     "New Pick %"       → Picks ring        (goal 90)
-//     "New Overstock %"  → Overstock ring    (goal 90)
-//     "New VizPick "     → the composite VizPick Health ring (no goal)
-//
-//   "Department Groups Donuts Health" (the three small rings)
-//     "Department Group" → dimension with the literal values Fresh / F&C / GM
-//     "New VizPick "     → that group's own pre-computed score
-//
-// Two things this has to survive, both from the real export:
-//
-//   1. "New VizPick " carries a TRAILING SPACE in the header. Matching is done
-//      on trimmed, lower-cased headers so that cannot bite.
-//   2. Tableau renders a donut as two arc segments, so every value appears as a
-//      row PAIR: a background/"remaining" row where the percent columns are
-//      blank, then the real row where they are populated. Selecting on "has a
-//      populated percent column" picks the real one; taking the first data row
-//      would silently read the background arc.
+// Parsing lives in modules/vizpick/lib/parse_vizpick_stores_csv.js, which owns
+// these worksheets and already drives them for VizPick's own Today capture.
+// This file only reshapes the result into what the card wants. Two parsers of
+// one Tableau sheet is a drift waiting to happen, and this one was the copy.
 
+import { parseDonutHealthRows, parseDepartmentGroupRows }
+  from "../../../vizpick/lib/parse_vizpick_stores_csv.js";
+
+// Goals are shown on the dashboard, not carried in the export.
 const DONUT_GOALS = { cases: 95, locations: 95, picks: 90, overstock: 90 };
 
-function _donutCols(H) {
-  return {
-    cases:     H.exact("cases seen %"),
-    locations: H.contains("location %"),
-    picks:     H.contains("pick %"),
-    // "new overstock %" must not match "new vizpick remaining"; exact-ish first.
-    overstock: H.contains("overstock %"),
-    // Trailing space in the real header; excluded from matching "remaining".
-    vizpick:   H.contains("vizpick", { notContains: ["remaining"] }),
-    group:     H.contains("department group"),
-  };
-}
-
-// A donut's real row is the one carrying percentages; its partner row is the
-// background arc and has them blank.
-function _isValueRow(row, c) {
-  for (const i of [c.cases, c.locations, c.picks, c.overstock]) {
-    if (i != null && _str(row[i])) return true;
-  }
-  return false;
-}
-
 /**
- * Store-level headline numbers.
- *
- * @param {string[][]} rows  "VizPick Donut Health" export rows (row 0 = headers).
- * @returns {{ health:number|null,
- *             metrics:Array<{label:string,value:number|null,goal:number|null}> }}
+ * @param {string[][]} rows  "VizPick Donut Health" export rows.
+ * @returns {{health:number|null,
+ *            metrics:Array<{label:string,value:number|null,goal:number|null}>}}
  */
 export function mapDonutHealth(rows) {
-  const empty = { health: null, metrics: [] };
-  if (!Array.isArray(rows) || rows.length < 2) return empty;
-  const H = _headerIndex(rows[0]);
-  const c = _donutCols(H);
-
-  const row = rows.slice(1).find((r) => _isValueRow(r, c));
-  if (!row) return empty;
-
-  const at = (i) => (i == null ? null : _toNumber(row[i]));
+  const r = parseDonutHealthRows(rows);
+  if (!r.ok) return { health: null, metrics: [] };
+  const h = r.health;
   return {
-    health: at(c.vizpick),
+    health: h.vizpick,
     metrics: [
-      { label: "Cases",     value: at(c.cases),     goal: DONUT_GOALS.cases },
-      { label: "Locations", value: at(c.locations), goal: DONUT_GOALS.locations },
-      { label: "Picks",     value: at(c.picks),     goal: DONUT_GOALS.picks },
-      { label: "Overstock", value: at(c.overstock), goal: DONUT_GOALS.overstock },
+      { label: "Cases",     value: h.casesSeenPct, goal: DONUT_GOALS.cases },
+      { label: "Locations", value: h.locationPct,  goal: DONUT_GOALS.locations },
+      { label: "Picks",     value: h.pickPct,      goal: DONUT_GOALS.picks },
+      { label: "Overstock", value: h.overstockPct, goal: DONUT_GOALS.overstock },
     ],
   };
 }
 
 /**
- * The three department-group rings.
- *
- * These are a real Tableau dimension, not something derived by mapping
- * department numbers into groups — the export is already aggregated at this
- * level and carries no numeric department column at all. Inventing that
- * mapping would put confident, wrong numbers on a posted report.
- *
  * @param {string[][]} rows  "Department Groups Donuts Health" export rows.
- * @returns {Array<{label:string,value:number|null}>}  dashboard order preserved
+ * @returns {Array<{label:string,value:number|null}>}
  */
 export function mapDepartmentGroups(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) return [];
-  const H = _headerIndex(rows[0]);
-  const c = _donutCols(H);
-  if (c.group == null || c.vizpick == null) return [];
-
-  const out = [];
-  const seen = new Set();
-  for (const row of rows.slice(1)) {
-    if (!_isValueRow(row, c)) continue;           // background arc row
-    const label = _str(row[c.group]);
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
-    out.push({ label, value: _toNumber(row[c.vizpick]) });
-  }
-  return out.slice(0, 3);
+  return parseDepartmentGroupRows(rows).map((g) => ({ label: g.group, value: g.vizpick }));
 }
