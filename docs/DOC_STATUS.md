@@ -56,6 +56,7 @@ doc is worth reading and which one to trust when two contradict.
 | `BACKEND_MIGRATION_PLAN.md` | CURRENT_TASKS | Tracking the shanesmith → suite cutover | 6-phase plan. Phases 1.1 + 1.2 deployed 2026-06-07. |
 | `USAGE_METRICS_MODEL.md` | CANONICAL | Adding a metric action or PII rule | `tool_metric_events` schema + helper API + redaction rules. |
 | `FINAL_VALUE_CAPTURE_PLAN.md` | CANONICAL | Touching the Mark Submitted UX or DOM-scrape probe | V1 shipped 2026-06-07. V1.5 + V2 deferred. |
+| `BRANCH_CONSOLIDATION_2026-08-20.md` | HISTORICAL | Touching `metricshot/lib/sendbird.js`, the distribution/release story, or `shared/marketRoster.js`/`cvSchedule.js` | Explains the 2026-08-20 branch consolidation and flags two open items: (1) the "qrcallbox.com only" claim below is now contradicted by real CWS submission work on `origin/apaisuite` — confirm actual status before trusting either doc; (2) `sendbird.js`'s sniffer-vs-mint-key approach was never deliberately reconciled between two branches, just inherited. |
 
 ## Dev probe findings (`unified-extension-suite/dev/`)
 

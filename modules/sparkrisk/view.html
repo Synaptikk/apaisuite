@@ -1,0 +1,219 @@
+<!-- modules/sparkrisk/view.html
+     SparkRisk UI - adapted for APAI Suite
+     IDs prefixed with 'sr-' to avoid collisions -->
+
+<div class="sr-header">
+  <h1>SparkRisk</h1>
+  <span class="sr-subtitle">Pre-checkout timing analysis for Spark Shop & Deliver</span>
+  <button id="sr-help" class="btn btn-secondary btn-sm" title="How SparkRisk works">? Help</button>
+  <span id="sr-status" class="badge"></span>
+</div>
+
+<!-- Help modal -->
+<dialog id="sr-help-modal" class="modal">
+  <header class="modal-head">
+    <span>How SparkRisk Works</span>
+    <button id="sr-help-close" class="btn-icon" aria-label="Close">×</button>
+  </header>
+  <div class="modal-body">
+    <h3>What it does</h3>
+    <p>
+      SparkRisk identifies Spark delivery driver sessions with unusual pre-checkout timing patterns,
+      flagging potential fraud or operational issues before items leave the store.
+    </p>
+
+    <h3>Scoring Model (v2)</h3>
+    <p>Priority score based on three factors:</p>
+    <ul>
+      <li><strong>Excess Time</strong> — How much slower than expected for the basket size</li>
+      <li><strong>Driver Deviation</strong> — Compared to this driver's personal baseline</li>
+      <li><strong>Peer Percentile</strong> — Compared to context-matched peers (congestion, peak hours, batch size)</li>
+    </ul>
+
+    <h3>Workflow</h3>
+    <ol>
+      <li>Extract WISMO data using the "Data Extraction" tool below</li>
+      <li>Review high-priority sessions in the queue (score ≥ 45)</li>
+      <li>Click a session to see register timestamp (for camera review) and order details</li>
+      <li>Resolve real order numbers when needed for investigation</li>
+      <li>Mark sessions as cleared, confirmed, or escalated</li>
+    </ol>
+
+    <h3>Privacy & Security</h3>
+    <p>
+      All data stored locally in browser IndexedDB. Real order IDs and driver names are visible
+      but audit-logged. Never share extracted data outside authorized systems.
+    </p>
+  </div>
+  <footer class="modal-foot">
+    <button id="sr-help-close-btn" class="btn btn-primary">Got it</button>
+  </footer>
+</dialog>
+
+<!-- Context bar -->
+<section class="sr-context">
+  <div class="sr-context-chips">
+    <div class="chip"><span class="chip-label">Store</span><span id="sr-store-val" class="chip-value">1458</span></div>
+    <div class="chip"><span class="chip-label">Date Range</span><span id="sr-date-range" class="chip-value">—</span></div>
+    <div class="chip"><span class="chip-label">Sessions</span><span id="sr-session-count" class="chip-value">—</span></div>
+  </div>
+  <div class="sr-context-actions">
+    <button id="sr-refresh-btn" class="btn btn-secondary btn-sm">↻ Refresh</button>
+    <button id="sr-extract-btn" class="btn btn-primary btn-sm">↓ Extract WISMO Data</button>
+  </div>
+</section>
+
+<!-- Navigation tabs -->
+<nav class="sr-tabs">
+  <button class="sr-tab active" data-tab="overview">Overview</button>
+  <button class="sr-tab" data-tab="queue">Review Queue</button>
+  <button class="sr-tab" data-tab="extraction">Data Extraction</button>
+</nav>
+
+<!-- OVERVIEW TAB -->
+<section class="sr-tab-content active" id="sr-overview">
+  <div class="kpi-grid" id="sr-kpi-grid">
+    <!-- Filled by JavaScript -->
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-card chart-wide">
+      <div class="chart-header">
+        <span class="chart-title">Excess Time Distribution</span>
+        <span class="chart-note">Click bar to filter queue</span>
+      </div>
+      <div class="chart-body">
+        <canvas id="sr-excess-chart" height="180"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="chart-title">Daily Volume</span>
+      </div>
+      <div class="chart-body">
+        <canvas id="sr-daily-chart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUEUE TAB -->
+<section class="sr-tab-content" id="sr-queue">
+  <div class="sr-filters">
+    <label class="field">
+      <span class="field-label">Min Score</span>
+      <input type="number" id="sr-min-score" class="input" value="0" min="0" max="100">
+    </label>
+    <label class="field">
+      <span class="field-label">Max Score</span>
+      <input type="number" id="sr-max-score" class="input" value="100" min="0" max="100">
+    </label>
+    <label class="field">
+      <span class="field-label">Status</span>
+      <select id="sr-status-filter" class="input">
+        <option value="">All</option>
+        <option value="new">New</option>
+        <option value="in_review">In Review</option>
+        <option value="cleared">Cleared</option>
+        <option value="confirmed">Confirmed</option>
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Sort by</span>
+      <select id="sr-sort" class="input">
+        <option value="priority_score" selected>Priority Score</option>
+        <option value="extraction_date">Date</option>
+        <option value="excess_minutes">Excess Time</option>
+      </select>
+    </label>
+    <button id="sr-apply-filters" class="btn btn-primary">Apply</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table" id="sr-queue-table">
+      <thead>
+        <tr>
+          <th>Pri</th>
+          <th>Score</th>
+          <th>Conf</th>
+          <th>Driver</th>
+          <th>Exp</th>
+          <th>Date</th>
+          <th>Items / Orders</th>
+          <th>Duration</th>
+          <th>Excess</th>
+          <th>Register</th>
+          <th>Peer Pct</th>
+          <th>Prior N</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="sr-queue-body">
+        <tr><td colspan="13" class="empty-row">Loading queue…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination" id="sr-queue-pager"></div>
+</section>
+
+<!-- EXTRACTION TAB -->
+<section class="sr-tab-content" id="sr-extraction">
+  <div class="sr-extraction-panel">
+    <h2>WISMO Data Extraction</h2>
+    <p class="muted">Extract Spark Shop & Deliver orders from WISMO dashboard</p>
+
+    <div class="field-group">
+      <label class="field">
+        <span class="field-label">Start Date</span>
+        <input type="date" id="sr-extract-start" class="input" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">End Date</span>
+        <input type="date" id="sr-extract-end" class="input" value="">
+      </label>
+    </div>
+
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="sr-extract-auto-ingest" checked>
+        <span>Automatically ingest and score sessions after extraction</span>
+      </label>
+    </div>
+
+    <button id="sr-extract-start-btn" class="btn btn-primary">Start Extraction</button>
+
+    <div id="sr-extract-progress" class="extraction-progress hidden">
+      <div class="progress-bar">
+        <div id="sr-extract-progress-bar" class="progress-fill" style="width: 0%"></div>
+      </div>
+      <div id="sr-extract-status" class="muted tiny">Preparing extraction…</div>
+    </div>
+
+    <div id="sr-extract-results" class="extraction-results hidden">
+      <!-- Filled by JavaScript -->
+    </div>
+
+    <div class="notice-bar notice-amber" style="margin-top: var(--space-4)">
+      <span class="notice-icon">⚠️</span>
+      <span><strong>Requires WISMO authentication.</strong> You must be logged into WISMO in another tab. The extension will capture network responses via Chrome DevTools Protocol.</span>
+    </div>
+  </div>
+</section>
+
+<!-- Session Detail Panel (overlay) -->
+<div id="sr-detail-overlay" class="overlay hidden">
+  <div class="panel" id="sr-detail-panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title" id="sr-panel-title">Session Detail</h2>
+        <p class="panel-subtitle" id="sr-panel-subtitle"></p>
+      </div>
+      <button class="panel-close" id="sr-panel-close" aria-label="Close">✕</button>
+    </div>
+    <div class="panel-body" id="sr-panel-body">
+      <!-- Filled by JavaScript -->
+    </div>
+  </div>
+</div>

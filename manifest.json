@@ -73,9 +73,55 @@
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
-    "https://api-*.sendbird.com/*"
+    "https://api-*.sendbird.com/*",
+    "https://wismo-dashboard.walmart.com/*",
+    "https://wismo.walmart.com/*"
   ],
   "content_scripts": [
+    {
+      "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "modules/market120/content/powerbi_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://stores.tableau.wal-mart.com/*"
+      ],
+      "js": [
+        "modules/market120/content/tableau_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://gscope.walmartlabs.com/*"
+      ],
+      "js": [
+        "modules/sparkrisk/content/capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "modules/sparkscango/content/powerbi_ssg_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
     {
       "matches": [
         "https://sf-reports-ui.walmart.com/mumd/*"

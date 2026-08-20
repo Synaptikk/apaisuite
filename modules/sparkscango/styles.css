@@ -1,0 +1,165 @@
+/* modules/sparkscango/styles.css
+   Scoped by the shell to .module-sparkscango. Follows APAISuite design tokens. */
+
+.module-sparkscango .ssg-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+}
+
+.module-sparkscango .ssg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--apai-border, #e6e6e6);
+}
+.module-sparkscango .ssg-head h1 {
+  font-size: 16px;
+  margin: 0;
+}
+.module-sparkscango .ssg-head-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.module-sparkscango .ssg-status {
+  font-size: 12px;
+  color: #6f6f6f;
+}
+.module-sparkscango .ssg-status.err { color: #b91c1c; }
+.module-sparkscango .ssg-status.warn { color: #b45309; }
+.module-sparkscango .ssg-status.ok  { color: #067d3d; }
+
+.module-sparkscango .ssg-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--apai-border, #e6e6e6);
+}
+.module-sparkscango .ssg-tab {
+  padding: 6px 12px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  cursor: pointer;
+  color: #333;
+}
+.module-sparkscango .ssg-tab:hover { background: #f7f7f7; }
+.module-sparkscango .ssg-tab.is-active {
+  border-bottom-color: var(--apai-blue, #0071CE);
+  font-weight: 600;
+}
+
+.module-sparkscango .ssg-filters {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--apai-border, #e6e6e6);
+  min-height: 24px;
+}
+
+.module-sparkscango .ssg-main {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+.module-sparkscango .ssg-pane { display: none; }
+.module-sparkscango .ssg-pane.is-active { display: block; }
+
+/* State cards (loading / empty / error / discovery-required) */
+.module-sparkscango .ssg-state {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  color: #555;
+  background: #fafafa;
+  margin: 8px 0;
+}
+.module-sparkscango .ssg-state.err     { border-color: #f4a5a5; background: #fef7f7; color: #7a1f1f; }
+.module-sparkscango .ssg-state.warn    { border-color: #f2d29c; background: #fffbf3; color: #7a4b0a; }
+.module-sparkscango .ssg-state.info    { border-color: #a5c7f4; background: #f6faff; color: #0a3a7a; }
+.module-sparkscango .ssg-state .ssg-state-title  { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.module-sparkscango .ssg-state .ssg-state-detail { font-size: 12px; color: inherit; }
+.module-sparkscango .ssg-state code { font-size: 11px; background: #eee; padding: 1px 4px; border-radius: 3px; }
+
+/* KPI grid on Overview */
+.module-sparkscango .ssg-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.module-sparkscango .ssg-kpi {
+  padding: 12px;
+  border: 1px solid var(--apai-border, #e6e6e6);
+  border-radius: 6px;
+  background: #fff;
+}
+.module-sparkscango .ssg-kpi-label { font-size: 11px; text-transform: uppercase; color: #6f6f6f; letter-spacing: 0.04em; }
+.module-sparkscango .ssg-kpi-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.module-sparkscango .ssg-kpi-sub   { font-size: 11px; color: #6f6f6f; margin-top: 4px; }
+
+/* Table */
+.module-sparkscango .ssg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.module-sparkscango .ssg-table th,
+.module-sparkscango .ssg-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+.module-sparkscango .ssg-table tr:hover td { background: #f9fbff; cursor: pointer; }
+
+/* Drawer */
+.module-sparkscango .ssg-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: 80vw;
+  background: #fff;
+  border-left: 1px solid #ddd;
+  box-shadow: -6px 0 16px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+.module-sparkscango .ssg-drawer[hidden] { display: none; }
+.module-sparkscango .ssg-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+}
+.module-sparkscango .ssg-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+}
+.module-sparkscango .ssg-drawer-section {
+  margin-bottom: 16px;
+}
+.module-sparkscango .ssg-drawer-section h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6f6f6f;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px 0;
+}
+.module-sparkscango .ssg-facts {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.module-sparkscango .ssg-facts dt { color: #6f6f6f; }
+.module-sparkscango .ssg-facts dd { margin: 0; }

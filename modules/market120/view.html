@@ -1,0 +1,160 @@
+<section class="mkt120">
+  <header class="mkt120-header">
+    <div class="mkt120-title">
+      <h1>Market 120 · Clearance &amp; ISA Review</h1>
+      <p class="mkt120-subtitle">
+        Two separate metric families combined into one executive view.
+        Data pulled through the extension via background tabs — no iframes, no re-authentication prompts.
+      </p>
+    </div>
+    <div class="mkt120-toolbar">
+      <button class="btn btn-primary" data-action="refresh-all">
+        <span class="btn-label">Refresh all</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Clearance / Deleted family -->
+  <section class="mkt120-family mkt120-family-cd" data-family="clearance">
+    <div class="mkt120-family-head">
+      <h2>Clearance / Deleted <span class="mkt120-family-source">— Tableau · Market 120 aggregate</span></h2>
+      <span class="mkt120-freshness" data-freshness="clearance">no capture yet</span>
+      <button class="btn btn-secondary btn-sm" data-action="refresh-clearance">Refresh</button>
+    </div>
+    <div class="mkt120-kpi-row">
+      <div class="mkt120-kpi" data-metric="clearance_dollars">
+        <span class="mkt120-kpi-label">Clearance $</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+      <div class="mkt120-kpi" data-metric="deleted_dollars">
+        <span class="mkt120-kpi-label">Deleted $</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+      <div class="mkt120-kpi" data-metric="deleted_on_clearance_dollars">
+        <span class="mkt120-kpi-label">Deleted-on-Clearance $</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISA family -->
+  <section class="mkt120-family mkt120-family-isa" data-family="isa">
+    <div class="mkt120-family-head">
+      <h2>ISA Activity <span class="mkt120-family-source">— Power BI · Market 120</span></h2>
+      <span class="mkt120-freshness" data-freshness="isa">no capture yet</span>
+      <button class="btn btn-secondary btn-sm" data-action="refresh-isa">Refresh</button>
+    </div>
+    <div class="mkt120-kpi-row">
+      <div class="mkt120-kpi" data-metric="isa_total_adjusted_dollars">
+        <span class="mkt120-kpi-label">Total Adjusted $</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+      <div class="mkt120-kpi" data-metric="isa_total_adjusted_qty">
+        <span class="mkt120-kpi-label">Total Adjusted Qty</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+      <div class="mkt120-kpi" data-metric="stolen_adjusted_dollars">
+        <span class="mkt120-kpi-label">Stolen Adj $</span>
+        <span class="mkt120-kpi-value">—</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Store-level breakdown (report-style: insights + KPIs + charts) -->
+  <section class="mkt120-breakdown" data-breakdown-section hidden>
+    <div class="mkt120-family-head">
+      <h2>Market 120 Breakdown <span class="mkt120-family-source">— Tableau Clearance/Deleted crosstab</span></h2>
+      <span class="mkt120-breakdown-asof" data-breakdown-asof></span>
+    </div>
+
+    <!-- Executive insights (top) -->
+    <div class="mkt120-insights" data-insights-top>
+      <h3 class="mkt120-insights-title">&#x1F511; Executive Insights</h3>
+      <ol class="mkt120-insights-list" data-insights-list></ol>
+    </div>
+
+    <!-- KPI grid -->
+    <div class="mkt120-bd-kpis" data-bd-kpis></div>
+
+    <!-- Charts -->
+    <div class="mkt120-charts">
+      <div class="mkt120-chart-card">
+        <h3 class="mkt120-chart-title">Top 10 Market 120 Stores by Clearance/Deleted $</h3>
+        <div class="mkt120-chart" data-chart-stores></div>
+      </div>
+      <div class="mkt120-chart-card">
+        <h3 class="mkt120-chart-title">Clearance vs Deleted — Market 120</h3>
+        <div class="mkt120-chart" data-chart-split></div>
+      </div>
+    </div>
+
+    <!-- Bottom-line summary -->
+    <div class="mkt120-bottomline" data-insights-bottom>
+      <h3 class="mkt120-insights-title">&#x1F4CC; Bottom-Line Summary</h3>
+      <ul class="mkt120-bottomline-list" data-bottomline-list></ul>
+    </div>
+  </section>
+
+  <!-- Week-over-week store detail (Clearance/Deleted, Market 120) -->
+  <section class="mkt120-wow" data-wow-section>
+    <div class="mkt120-family-head">
+      <h2>Week-over-Week by Store <span class="mkt120-family-source">— Tableau Clearance/Deleted · Market 120</span></h2>
+      <span class="mkt120-freshness" data-freshness="stores">no capture yet</span>
+      <button class="btn btn-secondary btn-sm" data-action="refresh-stores">Refresh</button>
+    </div>
+    <p class="mkt120-wow-meta" data-wow-meta></p>
+    <div class="mkt120-wow-table-wrap">
+      <table class="mkt120-wow-table" data-wow-table>
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th class="num">Total C/D $</th>
+            <th class="num">Δ $ WoW</th>
+            <th class="num">% $</th>
+            <th class="num">Total C/D Units</th>
+            <th class="num">Δ Units WoW</th>
+            <th class="num">% Units</th>
+          </tr>
+        </thead>
+        <tbody data-wow-body>
+          <tr><td colspan="7" class="mkt120-empty">Click Refresh to capture this week's store snapshot.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Alerts (Pass 3: live) -->
+  <section class="mkt120-alerts">
+    <h2 class="mkt120-section-heading">Alerts</h2>
+    <div class="mkt120-alert-list" data-alert-list>
+      <p class="mkt120-empty">Click Refresh to pull KPIs; alerts will populate.</p>
+    </div>
+  </section>
+
+  <!-- Debug details (visible only when a source reports an error) -->
+  <section class="mkt120-debug" data-debug-section hidden>
+    <h2 class="mkt120-section-heading">Last capture details</h2>
+    <div class="mkt120-debug-body" data-debug-body></div>
+    <p class="mkt120-debug-hint">
+      Details persist to <code>chrome.storage.local["market120.debug.*"]</code>.
+      Open DevTools → Application → Storage to inspect the raw response preview.
+    </p>
+  </section>
+
+  <!-- Pass-status banner -->
+  <aside class="mkt120-pass-banner" data-pass-banner>
+    <strong>Pass 5 — report-style breakdown shipped.</strong>
+    The Market 120 Breakdown section now mirrors the flat HTML report:
+    executive insights (top &amp; bottom), a KPI grid with national context,
+    a top-10-stores bar chart and a clearance-vs-deleted donut (dependency-free
+    inline SVG — MV3 CSP blocks CDN Chart.js), plus the week-over-week table.
+    All aggregation + chart logic is unit-tested (32/32) against the real capture.
+    <br><em>Live note:</em> the store capture opens the Tableau tab in the
+    <em>foreground</em> (background tabs throttle Tableau's render, which made
+    it crawl) and only auto-closes it on success — a failed/half-loaded tab is
+    left open so you can re-auth or inspect. If a Refresh shows a
+    <code>NO_CAPTURE</code> badge, the export came through as a direct download
+    and we fall back to the <code>chrome.downloads</code> path (follow-up).
+  </aside>
+</section>

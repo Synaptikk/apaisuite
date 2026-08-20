@@ -1,0 +1,50 @@
+{
+  "wismo_dashboard": {
+    "url": "https://wismo-dashboard.walmart.com/api/v2/orders/shop-deliver",
+    "method": "POST",
+    "auth": "cookie",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "description": "WISMO dashboard API - returns shop & deliver orders for a date range"
+  },
+  
+  "wismo_order_counts": {
+    "url": "https://wismo-dashboard.walmart.com/api/v2/orders/counts",
+    "method": "POST",
+    "auth": "cookie",
+    "description": "Get order counts by status and date"
+  },
+  
+  "wismo_config": {
+    "url": "https://wismo-dashboard.walmart.com/api/v2/config",
+    "method": "GET",
+    "auth": "cookie",
+    "description": "Get user config and permissions"
+  },
+  
+  "oms_order_details": {
+    "url": "https://wismo.walmart.com/api/gateway/provider-oms/order-details",
+    "method": "GET",
+    "auth": "cookie",
+    "headers": {
+      "WM_CONSUMER.ID": "required",
+      "WM_SVC.NAME": "required",
+      "WM_SVC.ENV": "required"
+    },
+    "description": "OMS order details - MAY include item-level data with timestamps",
+    "status": "unvalidated"
+  },
+  
+  "item_thumbnail": {
+    "url": "https://i5.walmartimages.com/asr/{item_id}",
+    "method": "GET",
+    "auth": "none",
+    "params": {
+      "odnHeight": 80,
+      "odnWidth": 80,
+      "odnBg": "FFFFFF"
+    },
+    "description": "Walmart product thumbnail image"
+  }
+}
