@@ -140,6 +140,15 @@ see every store in it side by side.
 Tableau data. Confirmed 2026-08-16: Market 1 returned 11 stores, market
 gauges rendered, store cards expanded.
 
+**Why the export exists at all (settled live 2026-08-21).** The viz is
+`renderMode: "render-mode-server"` — Tableau rasterises on the server and ships
+an image, so the numbers never reach the browser as data. `dataDictionary` in
+the bootstrap payload is `{}`. The crosstab export is the only route by which
+values cross the wire; "just parse the vizql render data" is a dead end. But
+the export is currently driven through the DOM when it is really three plain
+HTTP steps, which is a live optimisation worth measuring. Full evidence and the
+replay sequence: [`../dev/VIZPICK_EXPORT_FINDINGS.md`](../dev/VIZPICK_EXPORT_FINDINGS.md).
+
 Load-bearing details that are easy to break — read before touching capture:
 - Tableau does **not** deliver the crosstab CSV over fetch/XHR. It builds
   the CSV client-side into a Blob, calls `URL.createObjectURL()`, and clicks
@@ -156,6 +165,12 @@ Load-bearing details that are easy to break — read before touching capture:
 - Market defaulting reads Settings → Defaults via `getUserHomeMarket()` /
   `onUserMarketChange()` from `shared/userStore.js`. A manual pick must stay
   sticky (`marketIsUserSet`).
+- The user's own store card is marked `.is-home` (accent spine + tint +
+  "yours" chip) from `getUserHomeStore()`. Compared **numerically** —
+  `getUserHomeStore()` strips leading zeros from the WIN suffix while the
+  Tableau `Store` column is passed through verbatim, so `"01458" === "1458"`
+  would be false. Read once at mount: there is no `onUserStoreChange`, and
+  changing the value means a trip to Settings, which unmounts the view.
 
 **Source layout — established live 2026-08-16, don't re-derive it.**
 The workbook splits the data across two views with *different shapes*:
@@ -180,8 +195,41 @@ open question in the original brief:
 > summary view displaces (`previous`), keyed on Tableau's own update stamp.
 
 Because Today is one export *per store*, a whole market costs N export
-cycles. It is therefore loaded on an explicit "Load today's data" button,
-not automatically.
+cycles. Any market is loaded on the explicit "Load today's data" button.
+**One market is also followed automatically (2026-08-20):** the home market
+from Settings → Defaults. `service.js::autoCheck` reads it with
+`getUserHomeMarket()` on the 30-minute `vizpick.autocheck` alarm and on SW
+boot, and **skips entirely when no home market is set** — naming a market
+there is the opt-in, which is why `AUTO_DEFAULTS.today` can default to
+`true` without crawling a market nobody asked for. Each run still checks
+Tableau's stamp first and returns `unchanged` without re-exporting.
+
+Two things this broke on first contact, both fixed 2026-08-20 — worth knowing
+because the same shape will recur for any module that starts doing background
+work it previously only did on demand:
+
+- **The card grid rebuilt itself every few seconds.** `today_rows` broadcasts
+  once per store and the view's handler called `paint()`, which rebuilds the
+  grid through `innerHTML` and resets scroll. That was fine while a crawl only
+  ever ran because the user pressed "Load today's data" and was watching a
+  progress bar; once the crawl also ran unprompted it yanked the page out from
+  under anyone reading it, every ~6s for two minutes. The handler is now
+  debounced (`ROWS_REPAINT_DEBOUNCE_MS`) so a whole crawl produces one repaint.
+  The progress bar and run note stay undebounced — they are cheap text writes
+  that do not touch the grid, so the crawl still reads as live.
+- **`BOOTSTRAP_MIN_GAP_MS` silently became the refresh cadence.** It was 10
+  minutes, chosen when `bootstrapIfNeeded()` only ran as the shell mounted the
+  module. Running it at SW boot means it runs on essentially every message, so
+  the 10-minute gap overrode `AUTO_PERIOD_MIN` and crawled three times as often
+  as intended. It is now pinned to `AUTO_PERIOD_MIN`; two constants controlling
+  one rate must not be free to disagree.
+
+Known trade-off: the auto run follows the *home* market, not the last one
+crawled by hand. Loading Today for a peer market and leaving the module open
+means the next auto run replaces `store.today` with the home market's rows.
+The peer market's Today tab then renders empty rather than wrong —
+`view.js::todayRows()` inner-joins today rows against the selected market's
+roster — but the data is gone until re-loaded.
 
 **Why Today is so much more fragile than Yesterday.** Yesterday is *one*
 export from a view that needs no interaction: open tab → wait for the viz →
@@ -253,6 +301,8 @@ three tests in `parse_vizpick_stores_csv.test.mjs` pin the derivation.
 So **`Total Picked` is NOT the Pick % numerator** — in the same row it reads
 452 against a numerator of 343. Deriving a denominator as
 `Total Picked / (Pick % / 100)` yields 982 against a true 739, a 33% error.
+(It counts a wider set of pick categories; it is no longer rendered at all —
+see the `Total Picked` entry in the Watch list for why.)
 The UI therefore renders only *real* `x / y` pairs and never a derived one;
 `modules/vizpick/lib/tests/parse_vizpick_stores_csv.test.mjs` has a test that
 fails if anyone reintroduces the derivation.
@@ -289,7 +339,7 @@ Matching the Tableau dashboard's own rings and Shane's reporting convention
 
 Being under goal at 11am is meaningless, so a current-day miss is never
 coloured as a near-miss. Goals are Cases 95, Locations 95, Picks 90,
-Overstock 90; `Pallets %`, `Total Picked` and the `VizPick` composite have no
+Overstock 90; `Pallets %` and the `VizPick` composite have no
 published goal and are therefore never judged — the composite ring stays
 neutral blue exactly as Tableau renders it. One scale drives both the rings
 and the card text so they cannot disagree, and it bands the ROUNDED value
@@ -332,7 +382,111 @@ retry; don't add speculative focus-management complexity unless it repeats.
 
 ---
 
+### 7. Periodic alarms — suite-wide fix, landed 2026-08-20
+
+**What was wrong:** six modules had alarms that could never fire. Two
+compounding bugs:
+1. `chrome.alarms.create()` with an existing name **cancels and reschedules**
+   it, restarting the period from zero. Several modules called it
+   unconditionally under a comment asserting the opposite ("Idempotent —
+   replaces any prior entry"). Replacing *is* the bug.
+2. Those installs ran from `module.js::register()`, which `app.js` calls when
+   the shell mounts a module and the service worker never calls at all — so
+   the alarm was (re)created on every shell page load and nowhere else.
+
+Together: open or reload the suite tab more often than the alarm period and
+the alarm never fires. `digitallocks` was the worst case at 24 hours.
+
+**What landed:** `shared/alarms.js` (`ensureAlarm()` + `IS_SERVICE_WORKER`),
+covered by `shared/tests/alarms.test.mjs`. Installs moved to `module.js` top
+level behind the SW guard. The rules are now in
+`MODULE_CONTRACT.md::Periodic alarms` — read that before adding a module with
+an alarm.
+
+| Module | Had period-reset bug | Ungated `onAlarm` |
+|---|---|---|
+| `vizpick` | ✅ fixed | ✅ fixed |
+| `digitallocks` | ✅ fixed | ✅ fixed |
+| `workvivo` | ✅ fixed | ✅ fixed |
+| `livedashboard` | ✅ fixed | ✅ fixed |
+| `sparkscango` | ✅ fixed | ✅ fixed |
+| `sparkfraud` | ✅ fixed | ✅ fixed |
+| `metricshot` | no — already read-before-create | ✅ fixed |
+| `aurorbuddy` (×3) | no — already read-before-create | ✅ fixed |
+| shell updater | no — already correct | n/a (SW-only file) |
+
+**Not folded in, deliberately:** `livedashboard`'s `bootstrapIfNeeded()` stays
+in `register()`. Unlike the alarms it is a dashboard-*open* behaviour and its
+pulls drive Hoops/IVR pages; moving it to SW boot would run those on every
+browser start whether or not anyone opens the dashboard. `vizpick`'s
+equivalent *was* moved, because keeping the current-day rollup warm without
+being viewed is the entire point of that module.
+
+**Still worth verifying in the wild:** these alarms have effectively never
+run, so their handlers are the least-exercised code in the suite. Watch the
+first few ticks of `sparkfraud`'s watchlist poll and `sparkscango`'s
+15-minute exception pulls.
+
 ## Watch list (not in flight; would be picked up next)
+
+- **VizPick `Total Picked` — resolved and removed from the card (2026-08-20).**
+  It counts a WIDER set of picks than `Pick %` does. The VizPickDetails
+  Picks-ring hover itemises the categories: `On Hand Picks Today` (= the
+  export's `Suggested Picks Completed`, and the only category `Pick %` is
+  computed from), plus `Pick Anyway Picks`, `Clearance Picks` and
+  `Modular Deleted Picks`. `Pick Anyway` is the decisive one — a named class of
+  picks the system did not suggest. Same unit throughout; picks are picks. That
+  is why the card showed 173/568 next to 278 and read as a contradiction.
+
+  Not fully decomposed, and now moot: on the sampled store 411 + 182 + 3 + 7 =
+  603 while the tooltip's `Total Picks` read 711, so at least one category is
+  unlisted ("Additional Information" is a selection, not a breakdown). It was
+  also never confirmed that the tooltip's `Total Picks` is the same measure as
+  the export's `Total Picked` column.
+
+  **Decision: completed / suggested is the number that matters.** The
+  `Total Picked` row is gone from the store card; `Pick %` already shows the
+  real ratio (e.g. `173 / 568  30%`). The field is still parsed — it is a
+  column in the export and costs nothing — it just has no UI. The
+  investigation scaffolding built to define it (`lib/pick_semantics.js`, its
+  tests, the retained per-department rows, the `pickSemantics` diagnostics
+  block and its storage key) has been removed rather than left as dead weight
+  for a metric nobody uses.
+
+  If a `Total Picked` row is ever re-added it needs a definition first, and
+  the open question above is what to answer.
+
+  *Housekeeping:* a `vizpick.debug.pickSemantics` key may linger in
+  `chrome.storage.local` on profiles that ran the instrumented build. Nothing
+  reads it, it is bounded at a few tens of KB, and the suite has
+  `unlimitedStorage` — harmless to leave.
+
+- **DigitalLocks `NEW_HIRE_CONTEXT` — dead config, needs a hire-date source.**
+  `data/risk_weights.json` carries `NEW_HIRE_CONTEXT: 10` and
+  `thresholds.newHireThresholdDays: 90`, but no rule in
+  `lib/riskScoring.js` reads either — they have never fired. The intent is
+  to add weight when the associate opening the lock is inside their first
+  90 days.
+
+  **Blocker:** the Power BI export has no hire date. Its columns are
+  `store, Lock name, Zone Name, Unlock Source, USER ID, FIRST NAME,
+  LAST NAME, Position, Event_time` — nothing tenure-related. So this needs
+  a second source keyed on `USER ID` (WIN). Options, cheapest first:
+  1. Derive a *proxy* from the import itself — first-seen date per WIN
+     across stored imports. Free, no new source, but only as deep as the
+     retained history and it mislabels anyone who simply hadn't opened a
+     lock before. Would need to be labelled "new to lock activity", not
+     "new hire", or the reason string lies to the reviewer.
+  2. A user-maintained roster JSON in `data/` (same pattern as the other
+     editable configs) — accurate, but manual upkeep per store.
+  3. A real directory/HR lookup. See the dead ends in
+     [`../dev/DIRECTORY_FINDINGS.md`](../dev/DIRECTORY_FINDINGS.md); the
+     one live lead there is the Workvivo user lookup, which returns
+     identity but not tenure.
+
+  Decide the source before writing the rule — the weight is the easy part.
+  Until then, leave the two config keys in place (documented as inert)
+  rather than deleting them.
 
 - **User-directory lookup for ClaimsDisposition.** Probes in
   [`../dev/DIRECTORY_FINDINGS.md`](../dev/DIRECTORY_FINDINGS.md). Most

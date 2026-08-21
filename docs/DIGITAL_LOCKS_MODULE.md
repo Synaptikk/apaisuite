@@ -67,8 +67,9 @@ configurable `bands` table.
 
 | Trigger | Weight |
 |---|---|
-| After-hours 12 AM – 5 AM (`AFTERHOURS_DEEP`) | +30 |
-| Late/early 11 PM – 12 AM or 5 AM – 7 AM (`AFTERHOURS_EDGE`) | +20 |
+| After-hours 12 AM – 5 AM (`AFTERHOURS_DEEP`) | +50 |
+| Late/early 11 PM – 12 AM or 5 AM – 7 AM (`AFTERHOURS_EDGE`) | +35 |
+| …same, but the job code is normally on shift then **and** the event is in that role's own area (`AFTERHOURS_EDGE_EXPECTED`) | +10 |
 | Role / zone mismatch | +25 |
 | High-risk zone or lock (keyword hit) | +20 |
 | High per-day unlock volume (>= p95 and >= absolute floor) | +15 |
@@ -88,8 +89,29 @@ All three live in `modules/digitallocks/data/` and are user-editable
 without code changes:
 
 - `role_zone_rules.json` — position → allowed-zone-keywords map, plus
-  `broadAccessPositions` (AP, TLs, Coaches, Store Managers, stocking,
-  overnight, install) exempt from the mismatch rule.
+  `broadAccessPositions` (AP, TLs, Coaches, Store Managers, service
+  technician, install) exempt from the mismatch rule, plus
+  `expectedEdgeHourPositions` (job codes normally on shift across the
+  11 PM / 5–7 AM shift-change edges — overnight, CAP1/CAP3, maintenance,
+  receiving, bakery/deli/produce/meat, OGP, fuel, front-end openers).
+  All lists are plain substring matches against `Position`.
+
+  **Stocking / overnight / maintenance were removed from
+  `broadAccessPositions` on 2026-08-20** and given explicit `roleZoneMap`
+  entries. Every zone this report emits is a locked high-value case, so
+  "broad access" meant an overnight stocker could open the pharmacy or
+  jewelry case at any hour and never be flagged. Their maps allow the
+  TIER 1 general-merchandise zones and exclude TIER 2, Pharmacy and New
+  Devices; the keywords are anchored (`electronics-tier 1`, not
+  `electronics`) so the TIER 2 desk does not match, which means they need
+  revisiting if the Power BI zone naming changes.
+
+  The two interact: the edge-hours discount fires only when the position is
+  on `expectedEdgeHourPositions` **and** `roleZoneMap` positively allows the
+  zone. A position missing from `roleZoneMap` returns "cannot judge", which
+  both suppresses the mismatch rule and blocks the discount — so a job code
+  added to `expectedEdgeHourPositions` needs a `roleZoneMap` entry as well,
+  or it will silently never be discounted.
 - `high_risk_keywords.json` — substrings matched against zone+lock name.
 - `risk_weights.json` — weights, bands, time-window definitions, and
   outlier thresholds.

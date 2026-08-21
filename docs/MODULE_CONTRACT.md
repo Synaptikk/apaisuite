@@ -61,8 +61,15 @@ migration to rewrite storage keys.
 import { handlers } from "./service.js";
 
 // Optional: if you need a wake-on-event listener (alarms, etc.), register it
-// at top-level so Chrome wakes the SW when the event fires after idle.
-// See workvivo/module.js for an example.
+// at top-level so Chrome wakes the SW when the event fires after idle — AND
+// install the alarm there too, gated to the service worker. See the
+// "Periodic alarms" rules below and workvivo/module.js for the shape.
+import { IS_SERVICE_WORKER, ensureAlarm } from "../../shared/alarms.js";
+
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener(onAlarm);
+  installAlarms().catch((e) => console.warn("[<slug>] installAlarms failed:", e));
+}
 
 export default {
   manifest: {
@@ -117,11 +124,42 @@ export default {
   },
 
   async register(host) {
-    // One-time module init. Runs at shell load. Optional.
-    // Use this for: installing alarms, pre-warming caches, etc.
+    // One-time module init. Runs at SHELL LOAD ONLY — app.js calls this when
+    // it mounts a module. It NEVER runs in the service worker. Use it for
+    // shell-side setup (pre-warming a view's cache, an on-open bootstrap).
+    // Do NOT install alarms here — see below.
   },
 };
 ```
+
+### Periodic alarms — two rules, both non-obvious
+
+Learned the hard way on 2026-08-20, when six modules were found with alarms
+that had never fired once. Both rules are enforced by `shared/alarms.js`;
+`shared/tests/alarms.test.mjs` pins the behaviour.
+
+**1. Install from `module.js` top level, not from `register()`.**
+`register()` is called by `app.js` when the shell mounts a module. The service
+worker never calls it. An alarm installed there exists only while someone has
+the suite tab open, and a browser that has never opened that module has no
+alarm at all. Top-level code in `module.js` runs on every SW boot, which is
+the actual "browser start" hook.
+
+**2. Use `ensureAlarm()`, never bare `chrome.alarms.create()`.**
+`create()` with the name of an existing alarm does **not** leave it alone: it
+cancels that alarm and schedules a fresh one, restarting the period from zero.
+Combined with rule 1 that was fatal — every shell page load reset the
+countdown, so anyone who opened the suite more often than the alarm period
+never saw it fire. `digitallocks` was the worst case at 24 hours.
+`ensureAlarm()` reads first and only writes when the alarm is missing or its
+period no longer matches the code, so changing a period constant still takes
+effect on the next boot.
+
+**And gate both on `IS_SERVICE_WORKER`.** `module.js` is imported by the shell
+page as well as the SW, and extension pages receive `chrome.alarms` events
+too. An ungated listener runs its handler once in the SW and once in every
+open suite tab — separate module instances with separate in-flight guards,
+each driving its own background tabs and writes.
 
 ### Registration
 
