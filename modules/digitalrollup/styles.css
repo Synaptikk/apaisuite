@@ -1,0 +1,469 @@
+/* modules/digitalrollup/styles.css
+   Layout and chrome are lifted from modules/vizpick/styles.css so the two
+   market rollups read as one family — same header, picker, panel, card grid
+   and column behaviour. What is NOT carried over is the gauge machinery:
+   this board has no rings, because three of its four headline figures (pick
+   rate, minutes, queue depth) are not percentages and a ring would imply a
+   0-100 fill they do not have.
+
+   Uses APAISuite design tokens exclusively (var(--apai-*)). All selectors
+   scoped under .module-digitalrollup per MODULE_CONTRACT.md §8. */
+
+/* The shell caps every module root at 1400px (styles/layout.css). A wide grid
+   of small cards benefits from the whole window, so this module opts out —
+   scoped to itself, with one extra class of specificity so it wins without an
+   !important and without touching the shared rule. */
+.shell-viewport > main > [class*="module-"].module-digitalrollup {
+  max-width: none;
+}
+
+.module-digitalrollup .dmb {
+  padding: var(--sp-5) var(--sp-6);
+  display: grid;
+  gap: var(--sp-5);
+  width: 100%;
+  max-width: 2400px;
+  margin: 0 auto;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+.dmr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.dmr-title h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+  margin: 0;
+}
+.dmr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.dmr-toolbar .btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: var(--sp-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: dmr-spin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes dmr-spin { to { transform: rotate(360deg); } }
+
+.dmr-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.dmr-auto input { accent-color: var(--apai-blue); cursor: pointer; }
+
+.dmr-freshness {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+  cursor: help;
+}
+.dmr-freshness[data-state="ok"]      { color: var(--apai-success); background: var(--apai-success-bg); border-color: var(--apai-success); }
+.dmr-freshness[data-state="stale"]   { color: var(--apai-warn);    background: var(--apai-warn-bg);    border-color: var(--apai-warn); }
+.dmr-freshness[data-state="error"]   { color: var(--apai-error);   background: var(--apai-error-bg);   border-color: var(--apai-error); }
+.dmr-freshness[data-state="pending"] { color: var(--apai-info);    background: var(--apai-info-bg);    border-color: var(--apai-info); }
+
+/* ── Market picker ──────────────────────────────────────────────── */
+.dmr-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.dmr-picker-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+}
+.dmr-market-select {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+  min-width: 160px;
+}
+.dmr-market-select:disabled { color: var(--apai-muted); }
+.dmr-picker-meta { font-size: var(--fs-sm); color: var(--apai-muted); }
+
+/* ── Market-average panel ───────────────────────────────────────── */
+.dmr-panel {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+.dmr-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  flex-wrap: wrap;
+}
+.dmr-panel-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.dmr-panel-sub { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+.dmr-panel-stamp {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-pill);
+  padding: 2px var(--sp-3);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Stat tiles — the no-ring replacement for VizPick's gauge row. Same
+   auto-fit grid so they divide the width evenly and wrap rather than clip. */
+.dmr-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: var(--sp-3);
+}
+.dmr-tile {
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The status band lives on the leading edge, the same idiom the store cards
+     and the shell's active nav item use. */
+  border-left: 3px solid var(--apai-border);
+}
+.dmr-tile[data-status="green"]  { border-left-color: var(--apai-success); }
+.dmr-tile[data-status="yellow"] { border-left-color: var(--dmr-amber); }
+.dmr-tile[data-status="red"]    { border-left-color: var(--apai-error); }
+.dmr-tile[data-status="gray"]   { border-left-color: var(--apai-border); }
+.dmr-tile-value {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold, 800);
+  color: var(--apai-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.dmr-tile-label { font-size: var(--fs-xs); color: var(--apai-muted); }
+
+/* ── Store section ──────────────────────────────────────────────── */
+.dmr-stores {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 4px solid var(--apai-blue);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-1);
+  display: grid;
+  gap: var(--sp-3);
+}
+.dmr-stores-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.dmr-stores-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+.dmr-store-count { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+.dmr-sort-label { font-size: var(--fs-sm); color: var(--apai-muted); }
+.dmr-sort {
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+}
+
+/* Same column behaviour as VizPick: auto-fill at a 300px comfortable minimum,
+   so the window adds COLUMNS rather than stretching cards — roughly 3 at
+   1080p, 5 at 1440p. min() keeps it from overflowing a narrow window. */
+.dmr-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+.dmr-store-card {
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3);
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+.dmr-store-card:hover { border-color: var(--apai-blue); box-shadow: var(--shadow-1); }
+
+/* The user's own store (Settings > Defaults). Deliberately quiet — a spine on
+   the leading edge and a faint tint, enough to find at a glance in a wall of
+   cards without reading as a warning. */
+.dmr-store-card.is-home {
+  border-color: var(--module-accent);
+  background: var(--module-accent-bg);
+  box-shadow: inset 3px 0 0 0 var(--module-accent);
+}
+.dmr-store-card.is-home:hover {
+  box-shadow: inset 3px 0 0 0 var(--module-accent), var(--shadow-1);
+}
+/* --module-accent-ink, not #fff: the dark theme's accent is a light hue and
+   white on it is unreadable. */
+.dmr-home-chip {
+  margin-left: var(--sp-2);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--module-accent);
+  color: var(--module-accent-ink);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+/* A store the app returned with no live data — dimmed rather than hidden, so
+   its absence is visible instead of the market silently getting smaller. */
+.dmr-store-card.is-nodata { opacity: 0.6; }
+
+.dmr-store-card-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.dmr-store-card-id { flex: 1; min-width: 0; }
+.dmr-store-card-num { font-size: var(--fs-md); font-weight: var(--fw-bold, 800); color: var(--apai-ink); }
+.dmr-store-card-sub { font-size: var(--fs-xs); color: var(--apai-muted); }
+
+/* Worst-of-the-card status, so a market can be triaged without reading rows. */
+.dmr-chip {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  padding: 1px var(--sp-2);
+  border-radius: var(--rad-pill);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.dmr-chip[data-status="green"]  { color: var(--apai-success); background: var(--apai-success-bg); border-color: var(--apai-success); }
+/* --apai-warn, NOT --dmr-amber: the amber below is vetted against the card
+   surface, and on --apai-warn-bg it drops to ~3:1. The warn token is the
+   foreground that token pairs with (see the note in styles/tokens.css). */
+.dmr-chip[data-status="yellow"] { color: var(--apai-warn);    background: var(--apai-warn-bg);    border-color: var(--apai-warn); }
+.dmr-chip[data-status="red"]    { color: var(--apai-error);   background: var(--apai-error-bg);   border-color: var(--apai-error); }
+.dmr-chip[data-status="gray"]   { color: var(--apai-muted);   background: var(--apai-bg-elev);    border-color: var(--apai-border-soft); }
+
+/* The headline figures, always visible — this is the row that replaces
+   VizPick's ring strip. Equal columns at any card width; the count comes from
+   view.js (`--dmr-headline-n`, set from HEADLINE.length) so adding a figure
+   does not need a matching edit here to avoid silently overflowing the row. */
+.dmr-headline {
+  display: grid;
+  grid-template-columns: repeat(var(--dmr-headline-n, 4), minmax(0, 1fr));
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+}
+.dmr-headline-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  text-align: center;
+}
+/* fs-sm, not fs-md: at five columns in a 300px card a bold "100.0%" beside a
+   bold "8.0 min" no longer fits, and these values are set `nowrap` so they
+   would overflow the card rather than wrap. The label below is what carries
+   the size contrast, not the value. */
+.dmr-headline-value {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold, 800);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dmr-headline-label {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  line-height: 1.15;
+}
+
+.dmr-card-toggle {
+  margin-top: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-1) 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--apai-border-soft);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  cursor: pointer;
+}
+.dmr-card-toggle:hover { color: var(--apai-blue); }
+.dmr-store-card-details[hidden] { display: none; }
+.dmr-store-card-details {
+  margin-top: var(--sp-2);
+  display: grid;
+  gap: var(--sp-3);
+}
+
+/* One block per API group: picking / staging / dispense / quality. */
+.dmr-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--apai-border-soft);
+  margin-bottom: var(--sp-1);
+}
+.dmr-group-head .dmr-chip { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.dmr-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  padding: 1px 0;
+}
+.dmr-metric-label { color: var(--apai-muted); }
+/* NOTE: deliberately no `color` on the value wrapper. Setting one here would
+   outrank the .dmr-good/.dmr-warn/.dmr-bad classes on specificity and silently
+   flatten every metric to neutral ink — the exact trap documented in
+   vizpick/styles.css. Keep this rule to typography only. */
+.dmr-metric-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semi);
+  white-space: nowrap;
+}
+
+/* Status colouring. Unlike VizPick, the bands are NOT computed here — the GIF
+   API ships a *_status of "green" | "yellow" | "red" | "gray" alongside every
+   figure, so these classes only paint what the source already decided. That
+   means our colours cannot drift from the board's own. */
+.dmr-good    { color: var(--apai-success); }
+.dmr-warn    { color: var(--dmr-amber); }
+.dmr-bad     { color: var(--apai-error); }
+.dmr-neutral { color: var(--apai-ink); }
+.dmr-na      { color: var(--apai-muted); font-weight: var(--fw-regular); }
+
+/* Amber as one token, defined per theme. The light-mode value is the same
+   #E07B00 VizPick uses; the dark theme needs a lighter hue to stay legible on
+   an elevated dark surface. */
+.module-digitalrollup { --dmr-amber: #E07B00; }
+[data-theme="dark"] .module-digitalrollup { --dmr-amber: #FBBF24; }
+
+/* An overdue or at-risk store gets a line of its own — a count that is
+   normally zero and matters entirely when it is not. */
+.dmr-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+/* ── Shared small parts ─────────────────────────────────────────── */
+.dmr-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--apai-link);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.dmr-linkbtn[hidden] { display: none; }
+
+.dmr-empty {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+  margin: 0;
+}
+
+.dmr-runnote {
+  margin: calc(-1 * var(--sp-3)) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+.dmr-runnote[hidden] { display: none; }
+
+.dmr-section-heading {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-ink);
+  margin: 0;
+}
+
+/* ── Diagnostics ────────────────────────────────────────────────── */
+.dmr-debug {
+  background: var(--apai-error-bg);
+  border: 1px solid var(--apai-error);
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink);
+}
+.dmr-debug[hidden] { display: none; }
+.dmr-debug-head { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.dmr-debug-head .dmr-linkbtn { margin-left: auto; }
+/* Inside the diagnostics panel the surface is --apai-error-bg, where the
+   neutral link token does not have the contrast it needs. */
+.dmr-debug .dmr-linkbtn,
+.dmr-debug .dmr-debug-hint { color: var(--apai-error); }
+.dmr-debug-body { margin-bottom: var(--sp-3); }
+.dmr-debug code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--apai-bg-elev);
+  padding: 0 4px;
+  border-radius: var(--rad-sm);
+}
+.dmr-debug-fix {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+  border-left: 3px solid var(--apai-error);
+  border-radius: var(--rad-sm);
+}
+.dmr-debug-hint {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin: var(--sp-3) 0 0;
+}

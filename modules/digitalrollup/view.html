@@ -1,0 +1,83 @@
+<section class="dmb">
+  <header class="dmr-header">
+    <div class="dmr-title">
+      <h1>Digital Market Rollup</h1>
+    </div>
+    <div class="dmr-toolbar">
+      <!-- The background refresh is on by default. The switch is here rather
+           than in Settings because the pill beside it is where you notice the
+           board has stopped moving. -->
+      <label class="dmr-auto" title="Refresh this board in the background">
+        <input type="checkbox" data-auto-toggle>
+        <span data-auto-label>Auto</span>
+      </label>
+      <span class="dmr-freshness" data-freshness>no data yet</span>
+      <button class="btn btn-primary" data-action="refresh">
+        <span class="btn-label">Refresh</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Market picker — populated from /api/hierarchy, which is already scoped
+       server-side to what this user may see. -->
+  <section class="dmr-picker">
+    <label class="dmr-picker-label" for="dmr-market-select">Market</label>
+    <select class="dmr-market-select" id="dmr-market-select" data-market-select disabled>
+      <option value="">No data yet — click Refresh</option>
+    </select>
+    <span class="dmr-picker-meta" data-picker-meta></span>
+  </section>
+
+  <!-- Outcome of the last pull, including the cases that changed nothing. -->
+  <p class="dmr-runnote" data-run-note hidden></p>
+
+  <!-- Market averages, mirroring the strip the GIF board itself puts up top.
+       Stat tiles rather than rings: only two of these are percentages. -->
+  <section class="dmr-panel">
+    <div class="dmr-panel-head">
+      <h2>Market Average</h2>
+      <!-- The app's OWN refresh stamp (when it last read GRT), not when this
+           browser fetched. Hover for both. -->
+      <span class="dmr-panel-stamp" data-updated-abs>—</span>
+      <span class="dmr-panel-sub" data-panel-sub></span>
+    </div>
+    <div class="dmr-tiles" data-tiles>
+      <p class="dmr-empty">Click Refresh to load this market's board.</p>
+    </div>
+  </section>
+
+  <!-- Per-store cards. The four headline figures show at a glance; the full
+       Picking / Staging / Dispense / Availability rows are behind a per-card
+       toggle so a market reads as a wall of comparable numbers. -->
+  <section class="dmr-stores">
+    <div class="dmr-stores-head">
+      <h2>Stores in Market</h2>
+      <span class="dmr-store-count" data-store-count></span>
+      <label class="dmr-sort-label" for="dmr-sort">Sort</label>
+      <!-- Options are generated in view.js from METRIC_SORTS, so every figure
+           on a card is sortable by construction rather than by anyone
+           remembering to add an <option> here. -->
+      <select class="dmr-sort" id="dmr-sort" data-sort-select></select>
+      <button class="dmr-linkbtn" data-action="toggle-all" hidden>Show all details</button>
+    </div>
+    <div class="dmr-store-grid" data-store-cards>
+      <p class="dmr-empty">Click Refresh to load this market's board.</p>
+    </div>
+  </section>
+
+  <!-- Shown only when the last pull failed. -->
+  <section class="dmr-debug" data-debug-section hidden>
+    <div class="dmr-debug-head">
+      <h2 class="dmr-section-heading">Last pull details</h2>
+      <button class="dmr-linkbtn" data-action="copy-diagnostics">Copy diagnostics</button>
+    </div>
+    <div class="dmr-debug-body" data-debug-body></div>
+    <p class="dmr-debug-hint">
+      <strong>Copy diagnostics</strong> puts the full pull state on your
+      clipboard — error class, which fetch path was used, stored snapshot
+      counts and the state of any open dashboard tab. It carries no
+      store-level figures.
+    </p>
+  </section>
+</section>

@@ -38,6 +38,18 @@ export async function mount(host, container) {
   let cropCtx = null;   // { id, clipUsed, anchorRegion, padding, natW, natH }
   let cropDrag = null;  // { x0, y0, x1, y1 }
 
+  // Destination-picker sentinels. Declared here (not down by setChannelValue's
+  // definition) because this whole function `return`s its cleanup callback at
+  // the end of its synchronous setup — code positioned after that `return`
+  // never executes as statements, only hoisted `function` declarations do.
+  // These were `const`s sitting after the return: their bindings hoisted into
+  // TDZ but the assignment line was unreachable dead code, so EVERY call to
+  // setChannelValue (and therefore openModal — Add and Edit both) threw
+  // "Cannot access 'SELF_VALUE' before initialization" before ever reaching
+  // the line that shows the modal.
+  const SELF_VALUE = "@me";
+  const MANUAL_VALUE = "__manual__";
+
   // 3. Subscribe to broadcasts BEFORE first render so we don't miss anything.
   const unsubStatus = host.messaging.on("status-changed", ({ id, status }) => {
     const m = metrics.find((x) => x.id === id);
@@ -67,6 +79,7 @@ export async function mount(host, container) {
   $("ms-dump-export")?.addEventListener("click", dumpExport);
   $("ms-try-export")?.addEventListener("click", tryExport);
   $("ms-introspect-sdk")?.addEventListener("click", introspectSdkClick);
+  $("ms-read-netlog")?.addEventListener("click", readNetlogClick);
 
   $("ms-f-channel-load")?.addEventListener("click", loadChannels);
   $("ms-f-channel-select")?.addEventListener("change", () => {
@@ -174,9 +187,9 @@ export async function mount(host, container) {
   // opens a background tab to borrow one, so it is on demand rather than on
   // every form open — and the fallback exists so a failed fetch cannot leave
   // the user unable to save a metric at all.
-
-  const SELF_VALUE = "@me";
-  const MANUAL_VALUE = "__manual__";
+  //
+  // SELF_VALUE / MANUAL_VALUE are declared up near the other closure state
+  // (not here) — see the comment there for why.
 
   function channelEls() {
     return { sel: $("ms-f-channel-select"), input: $("ms-f-channel"), note: $("ms-f-channel-note") };
@@ -316,6 +329,23 @@ export async function mount(host, container) {
       catch { /* clipboard blocked — still shown in the panel */ }
     } catch (e) {
       pre.textContent = `Introspect failed: ${e?.message ?? e}`;
+    }
+  }
+
+  // TEMP diagnostic: read the sniffer's netlog off a tab the user already has
+  // open (unlike introspectSdkClick, which opens its own fresh tab and so
+  // would always see an empty log). Use after manually sending a test image
+  // in your own Workvivo tab, to capture the real upload route.
+  async function readNetlogClick() {
+    const pre = $("ms-dump-export-pre");
+    pre.textContent = "Reading netlog from your open Workvivo tab…";
+    try {
+      const res = await host.messaging.send("read-netlog", {});
+      pre.textContent = JSON.stringify(res, null, 2);
+      try { await navigator.clipboard.writeText(JSON.stringify(res, null, 2)); host.ui?.toast?.("Netlog copied to clipboard."); }
+      catch { /* clipboard blocked — still shown in the panel */ }
+    } catch (e) {
+      pre.textContent = `Read netlog failed: ${e?.message ?? e}`;
     }
   }
 

@@ -28,11 +28,14 @@ import { SEED_METRICS, SEED_URL_MIGRATIONS } from "./data/defaults.js";
 import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, metricNeedsStore, migrationMatches } from "./lib/metrics.js";
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
+import { withKeepAwake } from "../../shared/sw_keepalive.js";
+import { runDecision, failureEntry } from "./lib/retry_policy.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk,
-         listWorkvivoChannels } from "./lib/sendbird.js";
+         readNetlogFromOpenTab, listWorkvivoChannels } from "./lib/sendbird.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
 import { dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
-import { exportVizPickSheets, getVizPickFollowUpData } from "./lib/sources/vizpick_export.js";
+import { exportVizPickSheets } from "./lib/sources/vizpick_export.js";
+import { getFollowUpSheets } from "./lib/sources/followup_data.js";
 import { formatUnscannedMessage } from "./lib/format_message.js";
 import { createLogging } from "../../shared/logging.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
@@ -251,8 +254,11 @@ async function tick() {
     }
     const due = expandDueRuns(metric, at);
     for (const run of due) {
-      if (postedRuns[run.runKey]) {
-        skipped.push({ id: metric.id, runKey: run.runKey, reason: "already-posted" });
+      // See lib/retry_policy.js — "already-posted" is no longer the same
+      // thing as "has an entry", because failures are recorded too.
+      const decision = runDecision(postedRuns[run.runKey], at);
+      if (!decision.run) {
+        skipped.push({ id: metric.id, runKey: run.runKey, reason: decision.reason });
         continue;
       }
       if (run.stale) {
@@ -292,7 +298,20 @@ async function tick() {
  * Capture + validate + post. Owns retries. Writes status + dedupe entry.
  * Never throws — returns { ok, ... } for the caller.
  */
-async function runOne(metric, { reason, runKey, scheduledAt }) {
+/**
+ * A capture-and-post cycle is minutes of work that is mostly waiting — on a
+ * page to render, and on Sendbird to accept an upload. Very few extension API
+ * calls, so the worker's idle timer is free to fire part way through and take
+ * the run with it, which looks exactly like "it stopped when I navigated
+ * away". See shared/sw_keepalive.js.
+ *
+ * Wrapped rather than try/finally'd inside so the body stays untouched.
+ */
+async function runOne(metric, opts) {
+  return withKeepAwake(`metricshot.${metric?.id ?? "run"}`, () => _runOne(metric, opts));
+}
+
+async function _runOne(metric, { reason, runKey, scheduledAt }) {
   const at = Date.now();
   const store = await getUserHomeStore().catch(() => null);
   const cap = metric.capture || {};
@@ -324,17 +343,34 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
     // path in this file. captureMetric is documented "never throws", but a
     // stuck await inside it is what the timeout guards against.
     const CAPTURE_WATCHDOG_MS = cap.watchdogMs ?? 90_000;
+    // The watchdog CANCELS, it does not merely stop waiting.
+    //
+    // Racing a promise only abandons the wait — the capture carries on
+    // driving the same Tableau tab. Attempt N+1 then started while attempt N
+    // was still mid-flight on that tab, and the two fought: telemetry on
+    // 2026-08-21 shows attempt 1 logging `settle-delay`/`scrape` while
+    // attempt 2 logged `run-start`. Each overlap made the next hang likelier,
+    // turning one screenshot into ~39 captures over 65 minutes.
+    //
+    // captureMetric checks this signal at every step() boundary and inside
+    // its long polling loops, so aborting actually unwinds it.
+    const ac = new AbortController();
     let _wd;
     const _timeout = new Promise((resolve) => {
-      _wd = setTimeout(() => resolve({ ok: false, __timedOut: true }), CAPTURE_WATCHDOG_MS);
+      _wd = setTimeout(() => { ac.abort(); resolve({ ok: false, __timedOut: true }); }, CAPTURE_WATCHDOG_MS);
     });
     const captureRes = await Promise.race([
       captureMetric(metric, {
+        signal: ac.signal,
         onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: name, ...(extra || {}) }),
       }),
       _timeout,
     ]);
     clearTimeout(_wd);
+    // Also abort on the normal path: if the race was won by the capture we
+    // want any stragglers it spawned to stop too, and an already-settled
+    // AbortController ignores a second abort().
+    ac.abort();
     if (captureRes && captureRes.__timedOut) {
       lastFail = { stage: "capture", reason: `capture hung > ${CAPTURE_WATCHDOG_MS / 1000}s (see last run-step)`, attempt };
       log.emit("capture-failed", { id: metric.id, attempt, reason: lastFail.reason });
@@ -491,9 +527,26 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
     store,
   };
   await writeStatus(metric.id, status);
-  // Do NOT mark postedRuns[runKey] on failure — we want the next tick to
-  // retry (as long as it's still within catchUpWindowMs). If the run goes
-  // stale, next tick's `run.stale` will mark it skipped.
+
+  // Record the failure. This used to be deliberately skipped so the next tick
+  // would retry — but the tick is every minute and nothing counted the
+  // retries, so a permanently-failing run re-ran until the staleness window
+  // finally closed it out: ~13 cycles x 3 attempts = ~39 captures over 65
+  // minutes, each holding a Tableau tab for the full 90s watchdog.
+  //
+  // Retrying is still right; retrying unboundedly at a fixed 1-minute poll is
+  // not. Persist a failure count and a nextRetryAt, and tick() honours both.
+  if (runKey) {
+    const entry = failureEntry((await loadPostedRuns())[runKey], status.at, status);
+    await markPostedRun(runKey, entry);
+    log.emit("run-failed", {
+      id: metric.id, runKey,
+      failures: entry.failures,
+      gaveUp: entry.gaveUp,
+      retryInMin: entry.gaveUp ? null : Math.round((entry.nextRetryAt - status.at) / 60_000),
+      stage: entry.stage, reason: entry.error,
+    });
+  }
   return status;
 }
 
@@ -507,7 +560,7 @@ async function runOne(metric, { reason, runKey, scheduledAt }) {
  */
 async function _sendVizPickFollowUp(metric, priorStatus) {
   try {
-    const scrape = await getVizPickFollowUpData();
+    const scrape = await getFollowUpSheets();
     if (!scrape.ok) {
       log.emit("followup-scrape-failed", {
         id: metric.id, errorClass: scrape.errorClass,
@@ -695,7 +748,7 @@ export const handlers = {
       // whatever's in the capture ring.
       let followUp = null;
       if (metric.id === "vizpick-score") {
-        const scrape = await getVizPickFollowUpData().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+        const scrape = await getFollowUpSheets().catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
         if (scrape.ok) {
           const text = formatUnscannedMessage({
             metricName: metric.name,
@@ -767,6 +820,15 @@ export const handlers = {
   // changes the global. Never posts.
   async "introspect-sdk"() {
     return await introspectSdk();
+  },
+
+  // Diagnostic: read the sniffer's netlog off a tab the user ALREADY has
+  // open — used to capture the real request(s) Workvivo's own UI fires when
+  // a human manually sends an image, since Sendbird's REST file-message
+  // endpoint is blocked (400) for this app and that route has never been
+  // observed. See sendbird.js::readNetlogFromOpenTab.
+  async "read-netlog"() {
+    return await readNetlogFromOpenTab();
   },
 
   async "dump-export-requests"() {
@@ -855,7 +917,7 @@ export const handlers = {
   // Debug: probe the VizQL scrape without posting. Returns the parsed rows +
   // a truncated raw-body preview so the parser can be tuned against real data.
   async "debug-scrape"() {
-    const scrape = await getVizPickFollowUpData();
+    const scrape = await getFollowUpSheets();
     return { ok: true, scrape };
   },
 
@@ -866,7 +928,7 @@ export const handlers = {
     const list = await loadMetrics();
     const metric = list.find((m) => m.id === id);
     if (!metric) return { ok: false, error: "not found" };
-    const scrape = await getVizPickFollowUpData();
+    const scrape = await getFollowUpSheets();
     if (!scrape.ok) return { ok: false, error: scrape.error, errorClass: scrape.errorClass, scrape };
     const text = formatUnscannedMessage({
       metricName: metric.name,

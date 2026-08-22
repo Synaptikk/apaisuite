@@ -14,6 +14,7 @@
 // the SW-side driveOrderResolution extraction that's still pending Phase 1
 // parity work).
 
+import { ensureAlarm } from "../../shared/alarms.js";
 import * as freshness from "./lib/freshness.js";
 import { PAGES, STATUS_UNRESOLVED, isPageResolved } from "./lib/pages_registry.js";
 
@@ -26,11 +27,16 @@ export const ALARM_NAMES = Object.freeze({
 
 const CACHE_KEY = (sourceId) => `sparkscango.cache.${sourceId}`;
 
-// ── Alarm installation (idempotent) ─────────────────────────────────
+// ── Alarm installation ──────────────────────────────────────────────
+// Genuinely idempotent now — see shared/alarms.js. The old version called
+// chrome.alarms.create() per alarm, which cancels and reschedules rather than
+// leaving an existing alarm alone, and it ran from module.js::register(), i.e.
+// on every shell page load. The 15-minute exception pulls in particular could
+// never fire for anyone who opened the suite more than once a quarter-hour.
 export async function installAlarms() {
   for (const [key, name] of Object.entries(ALARM_NAMES)) {
     const period = key.endsWith("_audits") ? 60 : 15; // minutes
-    await chrome.alarms.create(name, { periodInMinutes: period });
+    await ensureAlarm(name, { periodInMinutes: period });
   }
 }
 

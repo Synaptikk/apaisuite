@@ -75,7 +75,12 @@ export const CLAIM_RECORD_FIELDS = [
 // at runtime (or via a per-user config) when stores get provisioned.
 export const STORE_LIST = [];
 
-export const MARKET_NUMBER = 120;
+// NOTE: there is deliberately no MARKET_NUMBER constant here any more. The
+// market is a property of a *pull*, not of the module: it is resolved from
+// Settings > Defaults when the pull runs, stored on the pull record, and read
+// back from `pull.marketNumber` by load.js and the PDF cover. The old constant
+// was 120, so every analyst's report was headed "Market 120" regardless of
+// which stores they had actually pulled.
 
 // Risk flag thresholds applied to a store's composite outlier score.
 // (See lib/outliers.js)

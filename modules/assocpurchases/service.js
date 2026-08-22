@@ -6,7 +6,7 @@
 
 import { fetchMumdData }                              from "./lib/mumd.js";
 import { fetchMarkdownPurchases, probeApprissAuth }  from "./lib/appriss_purchases.js";
-import { lookupNames }                                from "./lib/userDirectory.js";
+import { lookupNames }                                from "../../shared/associateLookup.js";
 import { createAuth, APPRISS_SSO_SELECTORS }          from "../../shared/auth.js";
 
 const LOG = (...a) => console.log("[assocpurchases]", ...a);

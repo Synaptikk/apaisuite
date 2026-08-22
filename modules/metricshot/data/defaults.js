@@ -81,7 +81,11 @@ export const SEED_METRICS = [
       // SEED_URL_MIGRATIONS fingerprints stored configs on them, and because
       // dropping keys from a stored metric is a migration in its own right.
       pickGoalPct: 80,   // goal line on the department bars
-      rasterScale: 2,    // 2x for a crisp image in the Workvivo feed
+      // 1x = 980x614, matching the CDP screenshot this card render replaced
+      // (render_card.js's geometry was measured off that same real capture).
+      // Was 2x ("crisper"), but that posted 4x the pixel area of what used
+      // to get sent for no visual gain a chat thumbnail actually shows.
+      rasterScale: 1,
     },
   },
 ];
@@ -117,5 +121,14 @@ export const SEED_URL_MIGRATIONS = [
     // Migrate to zoom:0.85 + roomier padding so the full viz fits the frame.
     // Keyed on zoom===1 so it fires once then leaves user-tuned zooms alone.
     fromZoom: 1,
+  },
+  {
+    // v0.1.5 — card render posted at 2x (1960x1228), 4x the pixel area of the
+    // CDP screenshot it replaced (980x614 — see render_card.js's own
+    // "measured off a capture of the real dashboard" comment). Migrate
+    // already-seeded installs back down. Keyed on rasterScale===2 so it fires
+    // once; there's no UI to set this, so any stored 2 is definitionally the
+    // old default, never a deliberate user choice.
+    fromRasterScale: 2,
   },
 ];

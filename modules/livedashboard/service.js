@@ -12,6 +12,7 @@ import { fetchAccident, rollup as accidentRollup } from "./lib/sources/accident.
 import { fetchRecognition, rollup7d as recognitionRollup7d } from "./lib/sources/recognition.js";
 import * as freshness  from "./lib/freshness.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
+import { ensureAlarm } from "../../shared/alarms.js";
 
 // ── Storage keys ─────────────────────────────────────────────────────
 const K = {
@@ -142,9 +143,14 @@ function shouldBootstrap(fresh, staleMs) {
   return age > staleMs;
 }
 
+// Idempotent — see shared/alarms.js. Previously a bare chrome.alarms.create()
+// per source, called from module.js::register(), which runs only on shell page
+// load: each load cancelled and rescheduled every alarm, so a dashboard opened
+// more often than a source's interval kept that source's alarm permanently
+// pending and it refreshed only via bootstrapIfNeeded().
 export async function installAlarms() {
   for (const [name, periodInMinutes] of Object.entries(ALARM_INTERVAL_MIN)) {
-    await chrome.alarms.create(name, { periodInMinutes });
+    await ensureAlarm(name, { periodInMinutes });
   }
 }
 

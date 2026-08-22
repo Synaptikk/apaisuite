@@ -10,7 +10,7 @@ import { dailyStoreSeries, hourSeries, summarize, byUserAtStore, fmtMoney, fmtPc
 import { detectUserOutliers, scoreUsersAtStore } from "../lib/outliers.js";
 import { formatHour, formatDateShort } from "../lib/dates.js";
 import { createLineChart } from "../lib/chart.js";
-import { getNameSync, lookupName, warmCache, subscribe as subscribeDirectory } from "../lib/userDirectory.js";
+import { getNameSync, lookupName, warmCache, subscribe as subscribeDirectory } from "../../../shared/associateLookup.js";
 import { sellThroughTier, cvpForWindow } from "../lib/cvp.js";
 
 function mini(label, value) {

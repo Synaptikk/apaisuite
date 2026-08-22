@@ -20,6 +20,15 @@ export default {
 
     ui: {
       kind: "fullpage",
+      // Sidebar + home-card glyph: the INNER markup of a 20x20 stroke icon.
+      // The shell wraps it (app.js::iconSvgString) so every module shares one
+      // viewBox, stroke width and currentColor. Omit it and the shell falls
+      // back to the generic grid glyph.
+      icon: `
+        <path d="M5.6 3.4h7.6a1 1 0 0 1 1 1v12.2l-2-1.3-2 1.3-2-1.3-2 1.3V4.4a1 1 0 0 1 1-1z" stroke-linejoin="round"/>
+        <path d="M7.6 7.4h4M7.6 10.2h4" stroke-linecap="round"/>
+        <path d="M16.4 4.2v2.6M15.1 5.5h2.6" stroke-linecap="round"/>
+      `,
       view: () => import("./view.js"),
     },
     service: {

@@ -22,6 +22,12 @@ globalThis.v2 = { id: 2500686797, chatConfig: { app_id: "APPID" } };
 globalThis.atob = (b) => Buffer.from(b, "base64").toString("binary");
 globalThis.Blob = class { constructor(p, o) { this.parts = p; this.type = o?.type; } };
 globalThis.FormData = class { constructor() { this.d = {}; } append(k, v, n) { this.d[k] = n ? { name: n } : v; } };
+// The "file" action authenticates with the page's own CSRF pair (not a
+// Sendbird Session-key) — see sendbird.js's module header for why.
+globalThis.document = {
+  cookie: "XSRF-TOKEN=" + encodeURIComponent("xsrf-abc"),
+  querySelector: (sel) => (sel === 'meta[name="csrf-token"]' ? { content: "csrf-abc" } : null),
+};
 
 let channels = [
   { name: "1458 Leadership", channel_url: "gc_lead", members: [{ user_id: "1" }, { user_id: "2500686797" }] },
@@ -33,13 +39,38 @@ let calls = [];          // every request seen since the last reset
 let rotateArmed = false; // next message POST 401s and rotates the sniffer key
 let floodChannels = false; // channel list never ends, to exercise the page cap
 
+const S3_UPLOAD_URL = "https://fake-s3.example/upload";
+
 globalThis.fetch = async (url, opts = {}) => {
   const method = opts.method || "GET";
   const h = opts.headers || {};
   calls.push({ url, method, headers: h, body: opts.body });
-  const auth = h["Session-key"];
   const ok = (obj, status = 200) => ({ ok: true, status, json: async () => obj, text: async () => JSON.stringify(obj) });
   const err = (status, obj = {}) => ({ ok: false, status, json: async () => obj, text: async () => JSON.stringify(obj) });
+
+  // Workvivo-backend image-upload endpoints — CSRF-header auth, never a
+  // Sendbird Session-key. Matched before the Session-key gate below.
+  if (url.includes("/api/s3/signature/generate")) {
+    if (!h["X-CSRF-Token"] || !h["X-XSRF-Token"]) return err(419, { message: "csrf mismatch" });
+    return ok({
+      attributes: { action: S3_UPLOAD_URL, method: "POST", enctype: "multipart/form-data" },
+      inputs: { acl: "private", key: "uploads/1/2/fake.png", "Content-Type": "image/png", "X-Amz-Signature": "sig123" },
+      signedUrl: "https://cdn.example/uploads/1/2/fake.png",
+      wvSignature: "wv123",
+    });
+  }
+  if (url === S3_UPLOAD_URL) {
+    return { ok: true, status: 204, json: async () => ({}), text: async () => "" };
+  }
+  if (url.includes("/api/chat/message/files")) {
+    if (!h["X-CSRF-Token"] || !h["X-XSRF-Token"]) return err(419, { message: "csrf mismatch" });
+    return ok({ message_id: 5850000001, type: "MESG" });
+  }
+  if (url.includes("/api/chat/channel/notify")) {
+    return ok({ success: true });
+  }
+
+  const auth = h["Session-key"];
   if (!auth) return err(401, { message: "no key" });
   if (url.includes("/my_group_channels")) {
     if (floodChannels) {
@@ -107,10 +138,17 @@ assert(r4.ok && r4.channelUrl === "gc_self" && created, "post text to @me (auto-
 
 reset();
 const r5 = await T.IN_PAGE_SB({ action: "file", channelName: "@me", pngBase64: Buffer.from("PNGDATA").toString("base64"), fileName: "s.png", caption: "cap" });
-assert(r5.ok && r5.messageId === "5850000000", "post file to @me");
-assertRecipe("file post sends the full header recipe");
-const filePost = calls.find((r) => r.url.includes("/messages"));
-assert(!("Content-Type" in filePost.headers), "file post omits Content-Type so the browser sets the multipart boundary");
+assert(r5.ok && r5.messageId === "5850000001", "post file to @me");
+const sigCall = calls.find((r) => r.url.includes("/api/s3/signature/generate"));
+const s3Call = calls.find((r) => r.url === S3_UPLOAD_URL);
+const createCall = calls.find((r) => r.url.includes("/api/chat/message/files"));
+assert(!!sigCall && !!s3Call && !!createCall, "file post drives signature -> S3 -> message-create, in order");
+assert(sigCall.headers["X-CSRF-Token"] === "csrf-abc" && sigCall.headers["X-XSRF-Token"] === "xsrf-abc",
+  "file post authenticates with the page's CSRF pair, not a Sendbird Session-key");
+assert(!("Session-key" in sigCall.headers), "file post never sends a Sendbird Session-key");
+const createBody = JSON.parse(createCall.body);
+assert(createBody.channel_url === "gc_self" && createBody.custom_type === "GROUP_FILES", "message-create targets the resolved channel as a GROUP_FILES message");
+assert(createBody.items.media[0].file_url === "https://cdn.example/uploads/1/2/fake.png", "message-create embeds the signed CDN url from the signature step");
 
 // A key that rotates mid-post must not lose the message: sbFetch picks up the
 // newer key from the sniffer and replays the request once.

@@ -1,0 +1,68 @@
+Store 1458 · 2026-07-28
+
+psn_apiJson loads: 7
+  load 113647345 · type HVDC · details 856
+  load 112739038 · type Internalized Parcel · details 0
+  load 113822382 · type HVDC · details 73
+  load 114140753 · type MP · details 370
+  load 113800376 · type RDC · details 1772
+  load 113800286 · type RDC · details 3681
+  load 113647285 · type FDD · details 1379
+
+TOTAL full_cases: 9182
+TOTAL bkpk_units: 2742
+
+By dept (dept: cases / bkpk):
+  D2: 412 / 149
+  D3: 138 / 34
+  D4: 483 / 0
+  D5: 2 / 16
+  D6: 0 / 10
+  D7: 96 / 2
+  D8: 768 / 32
+  D9: 66 / 36
+  D10: 95 / 51
+  D11: 67 / 7
+  D12: 33 / 4
+  D13: 445 / 6
+  D14: 143 / 20
+  D16: 82 / 0
+  D17: 102 / 11
+  D19: 21 / 159
+  D20: 24 / 38
+  D22: 76 / 5
+  D23: 30 / 256
+  D24: 15 / 86
+  D25: 4 / 84
+  D26: 19 / 125
+  D29: 0 / 488
+  D31: 0 / 54
+  D32: 0 / 15
+  D33: 12 / 61
+  D34: 41 / 302
+  D40: 121 / 123
+  D46: 137 / 354
+  D49: 1 / 0
+  D56: 12 / 1
+  D67: 22 / 14
+  D71: 15 / 0
+  D72: 48 / 22
+  D74: 205 / 1
+  D79: 219 / 65
+  D80: 48 / 0
+  D81: 8 / 0
+  D82: 34 / 2
+  D87: 31 / 55
+  D90: 711 / 0
+  D91: 688 / 0
+  D92: 1436 / 53
+  D93: 175 / 0
+  D94: 447 / 0
+  D95: 1251 / 0
+  D96: 3 / 0
+  D97: 301 / 0
+  D98: 95 / 1
+
+main_json.cph present: false (0 depts)
+aisle response keys: refreshed_from_bq, aisles, locations
+  aisles: 57, locations: 12693

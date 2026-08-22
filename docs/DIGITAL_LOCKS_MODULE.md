@@ -70,18 +70,56 @@ configurable `bands` table.
 | After-hours 12 AM – 5 AM (`AFTERHOURS_DEEP`) | +50 |
 | Late/early 11 PM – 12 AM or 5 AM – 7 AM (`AFTERHOURS_EDGE`) | +35 |
 | …same, but the job code is normally on shift then **and** the event is in that role's own area (`AFTERHOURS_EDGE_EXPECTED`) | +10 |
+| …same, but *this associate* demonstrably works these hours (`AFTERHOURS_EDGE_HABITUAL`) | +0 |
 | Role / zone mismatch | +25 |
 | High-risk zone or lock (keyword hit) | +20 |
-| High per-day unlock volume (>= p95 and >= absolute floor) | +15 |
+| High per-day unlock volume | +15 |
 | Multiple zones in short window | +15 |
-| Same lock repeated in short window | +10 |
+| Same lock repeated in short window (>= `repeatedLockMinOpens`, default 3) | +10 |
 | Unusual unlock source (not the dominant one in the import) | +10 |
-| Day/hour spike (store mean + 2σ) | +10 |
+| Day/hour spike (store mean + 2σ, **and** unusual for that associate) | +10 |
 
 Bands: **0–24 Normal · 25–49 Watch · 50–74 High · 75+ Critical**.
 
 Each event always carries `riskReasons[]` — a human-readable list of every
 rule that fired. **A score without its reasons must never be displayed.**
+
+### Calibration: rules score deviation, not attributes (2026-08-22)
+
+Those weights are the *starting* values. Applying them literally produced a
+review queue containing every event in the import, for a reason worth stating
+plainly: **a reason that describes every event describes none of them.**
+
+Store 1458's 500-row export is entirely one zone (`72-ELECTRONICS DESK-TIER 2`),
+worked by the Entertainment associates whose job that case is. `HIGH_RISK_ZONE`
+fired on 100% of rows, adding a flat +20 to everything; one more +10 rule tipped
+each row past the Watch band. Meanwhile `HIGH_VOLUME` compared each associate to
+a store-wide p95 dominated by people who barely touch locks — so the two people
+who work the case most were flagged daily for doing their jobs — and
+`DAY_HOUR_SPIKE` flagged noon, the busiest hour of the day.
+
+`risk_weights.json::calibration` (fully commented, `enabled: false` restores the
+old behaviour exactly) changes four things:
+
+- **Base-rate suppression.** A rule's weight scales toward zero as the share of
+  events it fires on rises past `suppressAbove`. Rules named in
+  `pinnedRules.rules` are exempt — `AFTERHOURS_DEEP` is pinned by default,
+  because a store where 3am openings are routine is a finding, not a new normal.
+- **Per-associate volume.** Compared to that user's own median day, not the
+  store's p95.
+- **Per-associate hours.** An edge-hours or hour-spike event inside the user's
+  own learned shift envelope stops scoring. Users below
+  `userBaseline.minDaysForBaseline` / `minEventsForBaseline` get no envelope, so
+  a single 3am event can never establish 3am as somebody's pattern.
+- **Observed role/zone pairings.** A (position → zone) pairing seen
+  `minEvents` times from `minUsers` *distinct* people is how the store runs, not
+  an exception. Requiring several people is what keeps one person repeatedly
+  going somewhere they shouldn't from normalising itself.
+
+Suppressed reasons are not discarded — they move to `baselineReasons[]` and
+render as muted dashed chips, so a row still reads truthfully without implying
+the event is unusual. `_meta.fireRate` / `_meta.weightScale` expose what the
+calibration decided. Pinned by `lib/tests/risk_calibration.test.mjs`.
 
 ## Configurable rule files
 

@@ -1,4 +1,10 @@
-// modules/digitallocks/lib/xlsx.js
+// shared/xlsx.js
+//
+// Moved here from modules/digitallocks/lib/ on 2026-08-22, its second
+// consumer: vizpick's export replay gets xlsx bytes back from Tableau's
+// command endpoint (the DOM route yielded CSV via a Blob, this one does not).
+// Per README's "generalize on a second consumer" rule — the same rule that
+// keeps pdfmake module-local until something else needs it.
 //
 // Minimal in-house XLSX (OOXML) reader. No third-party deps.
 //

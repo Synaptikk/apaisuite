@@ -10,6 +10,11 @@
 //
 // Rules implemented (matches spec in module.js header + DIGITAL_LOCKS_MODULE.md):
 //   1. AFTERHOURS_DEEP / AFTERHOURS_EDGE  — Event_time hour bands
+//      1b. edge bands drop to AFTERHOURS_EDGE_EXPECTED only when the
+//          Position is in roleZone.expectedEdgeHourPositions (normally on
+//          shift across shift change) AND rule 2 says the event is in that
+//          role's own area. On shift + wrong zone keeps full weight, on
+//          top of ROLE_MISMATCH. Deep band is never discounted.
 //   2. ROLE_MISMATCH                       — Position vs. zone keywords
 //   3. HIGH_RISK_ZONE                      — Lock/zone keyword hit
 //   4. HIGH_VOLUME                         — User's per-day count > percentile + floor
@@ -48,6 +53,8 @@ export function scoreEvents(events, rules) {
   const W = rules.weights;
   const T = rules.thresholds;
   const TW = rules.timeWindows;
+  const CAL = rules.calibration ?? {};
+  const calibrating = CAL.enabled !== false;
 
   // Derived baselines (depend on the whole import, not one row).
   const meta = computeImportBaselines(events, T);
@@ -55,84 +62,348 @@ export function scoreEvents(events, rules) {
   // Per-user precomputation (volume, multi-zone-window, repeated same-lock).
   const userAggs = computeUserAggregates(events, T);
 
-  for (const e of events) {
-    const reasons = [];
+  // Per-user "normal": median day volume and the hours they actually work.
+  // This is what turns "opened a case at 6am" into "opened a case at 6am,
+  // which is when they always work" — see userNormals().
+  const normals = calibrating
+    ? userNormals(userAggs, CAL.userBaseline ?? {})
+    : new Map();
+
+  // (position → zone) pairings the store demonstrably runs on.
+  const pairings = calibrating
+    ? observedRolePairings(events, CAL.observedRolePairing ?? {})
+    : new Set();
+
+  // ── Pass 1: decide which rules fire, without scoring anything ──────
+  //
+  // Weights cannot be applied until every rule's fire-rate across the whole
+  // import is known: a rule that fires on nearly every row is describing the
+  // store, not the event, and must not contribute. That is only knowable
+  // after all rows have been evaluated, hence two passes.
+  const hits = events.map((e) => evaluateRules(e, {
+    W, T, TW, rules, meta, userAggs, normals, pairings, calibrating,
+  }));
+
+  const fireRate = computeFireRates(hits, events.length);
+  const weightScale = calibrating
+    ? baseRateScales(fireRate, events.length, CAL)
+    : new Map();
+
+  // ── Pass 2: apply scaled weights ──────────────────────────────────
+  events.forEach((e, i) => {
+    const reasons  = [];   // scored — why this event is above the line
+    const baseline = [];   // fired but suppressed — context, not signal
     let score = 0;
 
-    // Rule 1 — time of day. Skipped for unparseable timestamps.
-    if (e.eventHour != null) {
-      if (inHourRange(e.eventHour, TW.deepAfterHours)) {
-        score += W.AFTERHOURS_DEEP;
-        reasons.push(`after-hours 12am-5am (${formatHour(e.eventHour)})`);
+    for (const hit of hits[i]) {
+      const scale = weightScale.has(hit.rule) ? weightScale.get(hit.rule) : 1;
+      const points = Math.round((W[hit.rule] ?? 0) * hit.weightFactor * scale);
+      if (points > 0) {
+        score += points;
+        reasons.push(hit.reason);
       } else {
-        for (const w of TW.edgeAfterHours || []) {
-          if (inHourRange(e.eventHour, w)) {
-            score += W.AFTERHOURS_EDGE;
-            reasons.push(`edge after-hours ${formatHour(w.fromHour)}-${formatHour(w.toHour)} (${formatHour(e.eventHour)})`);
-            break;
-          }
-        }
+        baseline.push(hit.reason);
       }
-    }
-
-    // Rule 3 — high-risk zone / lock keywords.
-    if (containsAny(`${e.zoneName} ${e.lockName}`, rules.highRiskKeywords)) {
-      score += W.HIGH_RISK_ZONE;
-      reasons.push("high-risk zone/lock");
-    }
-
-    // Rule 2 — role/zone mismatch. Skipped when role is in broadAccessPositions
-    // or when no rule bucket matches the position at all (unknown role).
-    const mm = roleZoneMismatch(e.position, e.zoneName, e.lockName, rules.roleZone);
-    if (mm === true) {
-      score += W.ROLE_MISMATCH;
-      reasons.push(`role/zone mismatch (${e.position} → ${e.zoneName})`);
-    }
-
-    // Rule 4 — user volume outlier.
-    const u = userAggs.byUser.get(e.userId);
-    if (u) {
-      const dayCount = u.byDay.get(e.eventDate) || 0;
-      if (dayCount > meta.userDayP95 && dayCount >= T.volumeAbsoluteFloor) {
-        score += W.HIGH_VOLUME;
-        reasons.push(`high user volume (${dayCount}/day, p95=${meta.userDayP95})`);
-      }
-    }
-
-    // Rule 8a — multi-zone window (>= N distinct zones in K minutes).
-    if (e._multiZoneWindow) {
-      score += W.MULTI_ZONE_WINDOW;
-      reasons.push(`${e._multiZoneWindow} zones in ${T.multiZoneWindowMinutes}min`);
-    }
-    // Rule 8b — repeated same lock in short window.
-    if (e._repeatedSameLock) {
-      score += W.REPEATED_SAME_LOCK;
-      reasons.push(`same lock repeated ${e._repeatedSameLock + 1}x within ${T.repeatedLockWindowMinutes}min`);
-    }
-
-    // Rule 7 — unusual unlock source (only if there IS a dominant source).
-    if (e.unlockSource && meta.dominantSource && meta.dominantSourceShare > 0.9) {
-      if (canon(e.unlockSource) !== canon(meta.dominantSource)) {
-        score += W.UNUSUAL_SOURCE;
-        reasons.push(`unusual unlock source: ${e.unlockSource}`);
-      }
-    }
-
-    // Rule 5 — store hour spike.
-    if (e.eventHour != null && meta.hourSpikeHours.has(e.eventHour)) {
-      score += W.DAY_HOUR_SPIKE;
-      reasons.push(`store hour spike (${formatHour(e.eventHour)})`);
     }
 
     e.riskScore = score;
     e.riskReasons = reasons;
+    // Kept separate so the UI can show them muted. Merging them into
+    // riskReasons is what made "high-risk zone/lock" look like a finding on
+    // all 500 rows of a single-zone store.
+    e.baselineReasons = baseline;
     e.riskLevel = labelForScore(score, rules.bands);
-  }
+  });
 
   // _meta is intentionally not persisted — it's recomputed on the fly so a
   // rules change immediately re-bins all events without a migration.
-  events._meta = { ...meta, userP95: meta.userDayP95 };
+  events._meta = {
+    ...meta,
+    userP95: meta.userDayP95,
+    calibrated: calibrating,
+    fireRate: Object.fromEntries(fireRate),
+    weightScale: Object.fromEntries(weightScale),
+    observedPairings: [...pairings],
+  };
   return events;
+}
+
+/**
+ * Evaluate every rule for one event. Returns `[{ rule, reason, weightFactor }]`
+ * — NO scores. `weightFactor` is the rule's own discount (e.g. an edge-hours
+ * event that matches the associate's usual shift), applied before the
+ * import-wide base-rate scale.
+ */
+function evaluateRules(e, ctx) {
+  const { W, T, TW, rules, meta, userAggs, normals, pairings, calibrating } = ctx;
+  const out = [];
+  const norm = normals.get(e.userId) ?? null;
+
+  // Role/zone verdict is computed FIRST because the time rule depends on it.
+  // true = mismatch, false = positively in-zone, null = position not in
+  // roleZoneMap, so we cannot judge either way.
+  let mm = roleZoneMismatch(e.position, e.zoneName, e.lockName, rules.roleZone);
+
+  // A pairing the store visibly runs on is not a mismatch. Recorded as
+  // `false` (positively normal), not `null`, so it also earns the edge-hours
+  // discount below — if Hardlines TAs routinely work this zone, a Hardlines
+  // TA here at 6am is doubly explained.
+  const paired = pairings.has(pairingKey(e.position, e.zoneName));
+  if (mm === true && paired) mm = false;
+
+  // Rule 1 — time of day. Skipped for unparseable timestamps.
+  if (e.eventHour != null) {
+    if (inHourRange(e.eventHour, TW.deepAfterHours)) {
+      out.push({
+        rule: "AFTERHOURS_DEEP",
+        reason: `after-hours 12am-5am (${formatHour(e.eventHour)})`,
+        weightFactor: 1,
+      });
+    } else {
+      // Edge bands straddle shift change. Two independent things can excuse
+      // one: the job code being normally on shift then (config), or this
+      // associate demonstrably working these hours (learned). Either way the
+      // event must ALSO be in their own area — being scheduled at 5am
+      // explains a bakery associate at a bakery lock and explains nothing
+      // about a bakery associate at an electronics case.
+      const byRole  = positionExpectsEdgeHours(e.position, rules.roleZone);
+      const byHabit = calibrating && norm != null && hourWithinShift(e.eventHour, norm);
+      const onShift = mm === false && (byRole || byHabit);
+
+      for (const w of TW.edgeAfterHours || []) {
+        if (!inHourRange(e.eventHour, w)) continue;
+        // Two tiers of "expected", because they rest on different evidence.
+        // The role list says people with this job code are often scheduled
+        // then — a generalisation. A learned habit says THIS person has
+        // worked these hours, in their own area, across days of the import.
+        // The second is the stronger claim, so it scores nothing by default
+        // while the first keeps a small residue.
+        const expected = onShift && byHabit
+          ? (W.AFTERHOURS_EDGE_HABITUAL ?? 0)
+          : (W.AFTERHOURS_EDGE_EXPECTED ?? W.AFTERHOURS_EDGE);
+        const factor = onShift ? (expected / (W.AFTERHOURS_EDGE || 1)) : 1;
+        const why = !onShift ? ""
+          : byHabit ? ` — their usual hours (${formatHour(norm.shiftFrom)}-${formatHour(norm.shiftTo)}), own area`
+          : " — on shift, own area";
+        out.push({
+          rule: "AFTERHOURS_EDGE",
+          reason: `edge after-hours ${formatHour(w.fromHour)}-${formatHour(w.toHour)} (${formatHour(e.eventHour)})${why}`,
+          weightFactor: factor,
+        });
+        break;
+      }
+    }
+  }
+
+  // Rule 3 — high-risk zone / lock keywords. Base-rate suppression does the
+  // real work here: in a single-zone import this fires on everything.
+  if (containsAny(`${e.zoneName} ${e.lockName}`, rules.highRiskKeywords)) {
+    out.push({ rule: "HIGH_RISK_ZONE", reason: "high-risk zone/lock", weightFactor: 1 });
+  }
+
+  // Rule 2 — role/zone mismatch.
+  if (mm === true) {
+    out.push({
+      rule: "ROLE_MISMATCH",
+      reason: `role/zone mismatch (${e.position} → ${e.zoneName})`,
+      weightFactor: 1,
+    });
+  }
+
+  // Rule 4 — volume. Against the user's OWN median where we have enough of
+  // their history; the store-wide percentile is only the cold-start fallback.
+  const u = userAggs.byUser.get(e.userId);
+  if (u) {
+    const dayCount = u.byDay.get(e.eventDate) || 0;
+    if (calibrating && norm != null) {
+      const bar = Math.max(
+        norm.medianDay * (rules.calibration?.userBaseline?.volumeMultiple ?? 1.75),
+        T.volumeAbsoluteFloor,
+      );
+      if (dayCount > bar) {
+        out.push({
+          rule: "HIGH_VOLUME",
+          reason: `high volume for this user (${dayCount}/day vs their usual ${norm.medianDay})`,
+          weightFactor: 1,
+        });
+      }
+    } else if (dayCount > meta.userDayP95 && dayCount >= T.volumeAbsoluteFloor) {
+      out.push({
+        rule: "HIGH_VOLUME",
+        reason: `high user volume (${dayCount}/day, p95=${meta.userDayP95})`,
+        weightFactor: 1,
+      });
+    }
+  }
+
+  // Rule 8a — multi-zone window (>= N distinct zones in K minutes).
+  if (e._multiZoneWindow) {
+    out.push({
+      rule: "MULTI_ZONE_WINDOW",
+      reason: `${e._multiZoneWindow} zones in ${T.multiZoneWindowMinutes}min`,
+      weightFactor: 1,
+    });
+  }
+
+  // Rule 8b — repeated same lock. `_repeatedSameLock` counts PARTNERS, so
+  // opens = n + 1. Two opens of a drawer five minutes apart is what stocking
+  // freight looks like; the floor is configurable and defaults to 3.
+  if (e._repeatedSameLock) {
+    const opens = e._repeatedSameLock + 1;
+    if (opens >= (T.repeatedLockMinOpens ?? 2)) {
+      out.push({
+        rule: "REPEATED_SAME_LOCK",
+        reason: `same lock repeated ${opens}x within ${T.repeatedLockWindowMinutes}min`,
+        weightFactor: 1,
+      });
+    }
+  }
+
+  // Rule 7 — unusual unlock source (only if there IS a dominant source).
+  if (e.unlockSource && meta.dominantSource && meta.dominantSourceShare > 0.9) {
+    if (canon(e.unlockSource) !== canon(meta.dominantSource)) {
+      out.push({
+        rule: "UNUSUAL_SOURCE",
+        reason: `unusual unlock source: ${e.unlockSource}`,
+        weightFactor: 1,
+      });
+    }
+  }
+
+  // Rule 5 — hour spike. The store's busiest hour is lunch, and flagging it
+  // flags normality: it only means something if the hour is ALSO unusual for
+  // the person. Without a baseline for them, fall back to the store view.
+  if (e.eventHour != null && meta.hourSpikeHours.has(e.eventHour)) {
+    const usualForThem = calibrating && norm != null && hourWithinShift(e.eventHour, norm);
+    if (!usualForThem) {
+      out.push({
+        rule: "DAY_HOUR_SPIKE",
+        reason: `store hour spike (${formatHour(e.eventHour)})`,
+        weightFactor: 1,
+      });
+    }
+  }
+
+  return out;
+}
+
+// ── Base-rate calibration ───────────────────────────────────────────
+//
+// The premise: a reason attached to almost every event in an import is a
+// description of the store, not of the event. Store 1458's entire 500-row
+// export is one high-risk zone, so HIGH_RISK_ZONE fired on 100% of rows and
+// added a flat +20 to every score — enough, with any single +10 rule, to push
+// the whole store past the Watch band. Scaling by fire-rate removes that
+// automatically, and keeps removing it at the next store without anyone
+// editing a keyword list.
+
+function computeFireRates(hits, total) {
+  const counts = new Map();
+  for (const rowHits of hits) {
+    // A rule counts once per event even if it somehow fired twice.
+    for (const r of new Set(rowHits.map((h) => h.rule))) {
+      counts.set(r, (counts.get(r) || 0) + 1);
+    }
+  }
+  const rates = new Map();
+  for (const [rule, n] of counts) rates.set(rule, total ? n / total : 0);
+  return rates;
+}
+
+function baseRateScales(fireRate, eventCount, CAL) {
+  const br = CAL.baseRate ?? {};
+  const suppressAbove = br.suppressAbove ?? 0.6;
+  const zeroAt        = br.zeroAt ?? 0.9;
+  const minEvents     = br.minEvents ?? 50;
+  const pinned = new Set(CAL.pinnedRules?.rules ?? []);
+
+  const scales = new Map();
+  // Too small an import to know what "usual" looks like — a 12-row test file
+  // would otherwise zero every rule it happens to contain.
+  if (eventCount < minEvents) return scales;
+
+  for (const [rule, rate] of fireRate) {
+    if (pinned.has(rule)) { scales.set(rule, 1); continue; }
+    if (rate <= suppressAbove)  { scales.set(rule, 1); continue; }
+    if (rate >= zeroAt)         { scales.set(rule, 0); continue; }
+    const span = Math.max(1e-9, zeroAt - suppressAbove);
+    scales.set(rule, 1 - (rate - suppressAbove) / span);
+  }
+  return scales;
+}
+
+// ── Per-associate normal ────────────────────────────────────────────
+//
+// `medianDay` — the middle of this user's own daily counts. The store-wide
+// p95 answers "who touches locks most", which in a single-zone import is
+// permanently the people whose job that zone is.
+//
+// `shiftFrom` / `shiftTo` — the hours they demonstrably work, padded. Used to
+// excuse edge-hours and hour-spike hits, never deep after-hours: a pattern of
+// 3am openings is a finding, not a baseline (AFTERHOURS_DEEP is pinned).
+//
+// Users below the minimums get NO baseline (null), so a single 3am event can
+// never establish 3am as somebody's normal.
+
+function userNormals(userAggs, cfg) {
+  const minDays   = cfg.minDaysForBaseline ?? 3;
+  const minEvents = cfg.minEventsForBaseline ?? 8;
+  const pad       = cfg.shiftPadHours ?? 1;
+
+  const out = new Map();
+  for (const [userId, u] of userAggs.byUser) {
+    if (u.byDay.size < minDays || u.events.length < minEvents) continue;
+
+    const dayCounts = [...u.byDay.values()].sort((a, b) => a - b);
+    const medianDay = percentile(dayCounts, 0.5);
+
+    const hours = u.events.map((e) => e.eventHour).filter((h) => h != null);
+    if (!hours.length) continue;
+    // Trim the extremes so one unusual night doesn't widen someone's whole
+    // envelope — the point is their routine, not their outermost event.
+    const sorted = [...hours].sort((a, b) => a - b);
+    const shiftFrom = Math.max(0,  percentile(sorted, 0.05) - pad);
+    const shiftTo   = Math.min(23, percentile(sorted, 0.95) + pad);
+
+    out.set(userId, { medianDay, shiftFrom, shiftTo, days: u.byDay.size });
+  }
+  return out;
+}
+
+function hourWithinShift(hour, norm) {
+  if (!norm) return false;
+  return hour >= norm.shiftFrom && hour <= norm.shiftTo;
+}
+
+// ── Observed (position → zone) pairings ─────────────────────────────
+//
+// Requiring several DISTINCT people is what separates "this is how the store
+// runs" from "one person keeps going somewhere they shouldn't" — the second
+// must keep scoring, and a per-event count alone would excuse it.
+
+function pairingKey(position, zoneName) {
+  return `${canon(position)}|${canon(zoneName)}`;
+}
+
+function observedRolePairings(events, cfg) {
+  const minEvents = cfg.minEvents ?? 20;
+  const minUsers  = cfg.minUsers ?? 2;
+
+  const agg = new Map();
+  for (const e of events) {
+    if (!e.position || !e.zoneName) continue;
+    const k = pairingKey(e.position, e.zoneName);
+    let a = agg.get(k);
+    if (!a) { a = { n: 0, users: new Set() }; agg.set(k, a); }
+    a.n++;
+    if (e.userId) a.users.add(e.userId);
+  }
+
+  const out = new Set();
+  for (const [k, a] of agg) {
+    if (a.n >= minEvents && a.users.size >= minUsers) out.add(k);
+  }
+  return out;
 }
 
 /**
@@ -310,6 +581,25 @@ function computeUserAggregates(events, T) {
   return { byUser };
 }
 
+// ── Rule 1b: is this job code normally on shift at the edge hours? ──
+//
+// Only half the test — the caller ALSO requires roleZoneMismatch() === false
+// before applying the discount. On its own this answers "were they supposed
+// to be here at 5am?", not "were they supposed to be at THIS lock?".
+//
+// Deliberately scoped to the EDGE bands only. The deep band (12am-5am)
+// keeps full weight for every role: "scheduled overnight" explains being
+// in the building, not being in a locked case at 3am.
+
+function positionExpectsEdgeHours(position, roleZone) {
+  const p = canon(position);
+  if (!p) return false;
+  for (const r of roleZone?.expectedEdgeHourPositions || []) {
+    if (p.includes(canon(r))) return true;
+  }
+  return false;
+}
+
 // ── Rule 2: role/zone mismatch ──────────────────────────────────────
 
 function roleZoneMismatch(position, zoneName, lockName, roleZone) {
@@ -323,7 +613,12 @@ function roleZoneMismatch(position, zoneName, lockName, roleZone) {
 
   // First substring match wins. Configurable via roleZoneMap.
   for (const entry of roleZone.roleZoneMap || []) {
-    if (p.includes(canon(entry.position))) {
+    // Guard: a hand-edited entry with a missing/blank `position` canon()s to
+    // "", and p.includes("") is true for every position — it would swallow
+    // the whole map and silently disable this rule. Skip it instead.
+    const key = canon(entry?.position);
+    if (!key) continue;
+    if (p.includes(key)) {
       const allowed = entry.allowedZoneKeywords || [];
       if (allowed.length === 0) return false;
       return !containsAny(`${zoneName} ${lockName}`, allowed);

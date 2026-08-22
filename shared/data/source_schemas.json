@@ -1,0 +1,98 @@
+{
+  "_comment": "Approved column shapes for every scraped source. This file is the BASELINE, not a cache — shared/schema_watch.js compares each parse against it and reports anything that differs. A drift report means one of two things: the source team changed something and our parser needs to follow, or we changed the parser and forgot to re-baseline. Both want a human. See docs/SOURCE_SCHEMA_WATCH.md for the runbook.",
+  "_howToUpdate": "Do NOT edit this to silence a report. First confirm the new shape parses correctly and the numbers are still right, THEN paste the observed columns here in the same commit as the parser change, so the diff shows both halves of the decision together.",
+  "vizpick.deptBreakout": {
+    "description": "VizPickDetails -> 'Download Department Breakout (Current Day)'. One store per export.",
+    "approvedOn": "2026-08-22",
+    "note": "Renamed by Tableau on 2026-08-22: 'Suggested Picks' -> 'Suggested Picks Seen', 'Suggested Picks Completed' -> 'Suggested Picks Done'. The parser accepts BOTH spellings; this baseline is the current one. That rename broke every capture for two days and is why this file exists.",
+    "columns": [
+      "Dept",
+      "Suggested Picks Seen",
+      "Suggested Picks Done",
+      "Pick %",
+      "Total Picked",
+      "Cases Seen",
+      "Cases Expected",
+      "Cases Seen %",
+      "Overstock Exceptions",
+      "Clearance Cases",
+      "Modular Deleted Cases"
+    ]
+  },
+  "vizpick.summaryByStore": {
+    "description": "VizPick -> 'Download Summary by Store'. Every store in every market, one export.",
+    "approvedOn": "2026-08-22",
+    "note": "17 columns, not the 10 rendered on the dashboard. The trailing seven are the raw numerators/denominators behind the rounded percentages — losing them would silently downgrade the UI from real ratios to derived guesses, so their disappearance matters as much as a rename.",
+    "columns": [
+      "Store",
+      "BU",
+      "Region",
+      "Market",
+      "VizPick",
+      "Cases Seen %",
+      "Location %",
+      "Total Picked",
+      "Overstock %",
+      "Pick %",
+      "Cases Seen",
+      "Cases Expected",
+      "pallets_seen",
+      "pallets_expected",
+      "clearance_picked_tags",
+      "deleted_picked_tags",
+      "Pallets %"
+    ]
+  },
+  "digitalrollup.dashboardCard": {
+    "description": "GIF Market Dashboard -> GET /api/dashboard?market=<n>, one entry of cards[]. Dotted paths, one level of nesting (card -> group -> field).",
+    "approvedOn": "2026-08-22",
+    "note": "Captured live from market 120. Unlike the Tableau sources this one is a real API with a published /openapi.json, but it is an AI Launchpad PROTOTYPE — the disclaimer says so — so its shape is if anything less stable than a workbook's, not more. Note the FOUR-status vocabulary the app ships alongside each figure (*_status: green|yellow|red|gray): losing those is as breaking as losing a value, because this module deliberately does not compute its own bands.",
+    "columns": [
+      "dispense.early_removals", "dispense.early_removals_fmt", "dispense.exceptions",
+      "dispense.exceptions_fmt", "dispense.high_wait", "dispense.high_wait_fmt",
+      "dispense.in_queue", "dispense.in_queue_fmt", "dispense.status",
+      "dispense.status_label", "dispense.wait_time", "dispense.wait_time_fmt",
+      "dispense.wait_time_status", "live_meta.has_data", "live_meta.ring",
+      "picking.at_risk_minutes", "picking.is_at_risk", "picking.is_overdue",
+      "picking.on_time_fmt", "picking.on_time_pct", "picking.orders_raw",
+      "picking.overdue_minutes", "picking.pick_rate", "picking.pick_rate_fmt",
+      "picking.pick_rate_status", "picking.remaining", "picking.status",
+      "picking.status_label", "picking.total_picks", "picking.total_picks_raw",
+      "quality.ftp_fmt", "quality.ftp_pct", "quality.ftp_status",
+      "quality.nil_pick_fmt", "quality.nil_pick_pct", "quality.nil_status",
+      "quality.post_sub_fmt", "quality.post_sub_pct", "quality.post_sub_status",
+      "quality.pre_sub_fmt", "quality.pre_sub_pct", "quality.pre_sub_status",
+      "report_date", "report_date_fmt",
+      "staging.scan_stage_fmt", "staging.scan_stage_pct", "staging.scan_stage_status",
+      "staging.scan_staged_totes", "staging.scan_total_totes",
+      "staging.totes_to_stage", "staging.totes_to_stage_fmt", "staging.totes_to_stage_status",
+      "store_name", "store_nbr", "wm_week"
+    ]
+  },
+  "digitalrollup.dashboardSummary": {
+    "description": "GIF Market Dashboard -> GET /api/dashboard?market=<n>, the `summary` object (market averages).",
+    "approvedOn": "2026-08-22",
+    "note": "Captured live from market 120. avg_ftp / avg_nil_pick / avg_scan_stage are all '\\u2014' today — present but unpopulated, which is why they are in the baseline but not in REQUIRED_SUMMARY_PATHS.",
+    "columns": [
+      "avg_ftp", "avg_ftp_status", "avg_nil_pick", "avg_nil_status",
+      "avg_on_time_pick", "avg_on_time_pick_status", "avg_pick_rate", "avg_pick_rate_status",
+      "avg_post_sub", "avg_post_sub_status", "avg_pre_sub", "avg_pre_sub_status",
+      "avg_scan_stage", "avg_scan_stage_status", "avg_wait_status", "avg_wait_time",
+      "total_items_picked", "total_orders"
+    ]
+  },
+  "vizpick.deptGroups": {
+    "description": "VizPickDetails -> 'Department Groups Donuts Health'. Fresh/F&C/GM as Tableau scores them. One store per export.",
+    "approvedOn": "2026-08-22",
+    "note": "Two rows per group: one carries the score, one the components. Tableau's score header has a TRAILING SPACE ('New VizPick ') — the parser compares trimmed names rather than trusting it. Captured live from store 1.",
+    "columns": [
+      "Department Group",
+      "Cases Seen %",
+      "New Location %",
+      "New Overstock %",
+      "New Pick %",
+      "New VizPick",
+      "New VizPick Remaining"
+    ]
+  }
+}

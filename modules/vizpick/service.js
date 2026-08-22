@@ -7,12 +7,17 @@
 //   pull_stores → views/VizPick/VizPick        — yesterday, every store in
 //                 every market, one crosstab export. Fast.
 //   pull_today  → views/VizPick/VizPickDetails — current day, ONE store per
-//                 export cycle, so it is on-demand and takes minutes for a
-//                 whole market.
+//                 export cycle, so a whole market takes minutes. Runs on
+//                 demand for any market, and automatically on the alarm for
+//                 the home market from Settings > Defaults (see autoCheck).
 //
 // Captures are stored as versioned snapshots (lib/snapshots.js) whose roll is
 // driven by Tableau's own "Last update" stamp rather than the local calendar.
 
+import { ensureAlarm } from "../../shared/alarms.js";
+import { keepAwake } from "../../shared/sw_keepalive.js";
+import { createLogging } from "../../shared/logging.js";
+import { getUserHomeMarket } from "../../shared/userStore.js";
 import * as freshness from "./lib/freshness.js";
 import * as snapshots from "./lib/snapshots.js";
 import { fetchVizpickStoresTableau } from "./lib/sources/vizpick_stores_tableau.js";
@@ -34,14 +39,38 @@ const AUTO_PERIOD_MIN = 30;
 
 // Don't re-check on every service-worker wake. MV3 boots the SW for all sorts
 // of reasons; without this a busy browser would drive Tableau constantly.
-const BOOTSTRAP_MIN_GAP_MS = 10 * 60_000;
+//
+// Pinned to the ALARM PERIOD, not a shorter figure of its own. This was 10
+// minutes back when bootstrapIfNeeded() only ran as the shell mounted the
+// module — rare enough that a short gap was harmless. Now that it runs at
+// service-worker boot, and the SW boots on essentially every message
+// (including the view's own get_state), this gap *is* the effective refresh
+// cadence: at 10 minutes it silently overrode AUTO_PERIOD_MIN and ran a
+// multi-minute Today crawl three times as often as intended. Two constants
+// that both control the same rate must not be allowed to disagree.
+const BOOTSTRAP_MIN_GAP_MS = AUTO_PERIOD_MIN * 60_000;
+
+// Opening the suite is a much stronger signal of intent than a service-worker
+// wake, so it gets its own, far shorter gap: someone is about to look at this
+// data. Not zero, because the shell page can be reloaded repeatedly (and every
+// reload of an unpacked extension re-opens it), and each check still has to
+// find or open a Tableau tab.
+//
+// This only became reasonable once the stamp check stopped costing a crosstab
+// export — see readSourceStampFromDom(). Before that, an on-open check would
+// have driven a full export dialog every time the suite was opened.
+const OPEN_CHECK_MIN_GAP_MS = 5 * 60_000;
 
 const AUTO_DEFAULTS = {
   // Yesterday is one cheap export, so following it automatically is free.
   stores: true,
-  // Today is two exports PER STORE — minutes for a market — so it stays
-  // opt-in rather than something the browser does to you in the background.
-  today: false,
+  // Today is two exports PER STORE — minutes for a market — so it is NOT
+  // unconditional: autoCheck() only runs it for the home market set in
+  // Settings > Defaults, and skips entirely when that is unset. Naming a
+  // market there is the opt-in. Without that gate this would quietly crawl
+  // whichever market the user last looked at, which is minutes of background
+  // Tableau tabs nobody asked for.
+  today: true,
 };
 
 async function readAuto() {
@@ -65,6 +94,13 @@ const CAPTURE_BUILD = "2026-08-16d";
 function broadcast(type, payload = {}) {
   chrome.runtime.sendMessage({ module: "vizpick", type, ...payload }).catch(() => {});
 }
+
+// Telemetry. VizPick emitted NOTHING before 2026-08-22, which is why "the
+// auto-refresh isn't running" could only be answered by guessing: autoCheck
+// made a decision every 30 minutes and left no trace of it anywhere. Every
+// branch below that ends in "do nothing" now says so, so the next occurrence
+// diagnoses itself from the Settings debug panel instead of from a hunch.
+const log = createLogging("vizpick");
 
 // Guards against two overlapping Today crawls (each drives a shared Tableau
 // tab, so concurrent runs would fight over the Store parameter).
@@ -100,6 +136,17 @@ async function getState() {
 
     debug:      got[K.debug] || null,
     debugToday: got[K.debugToday] || null,
+    // What the background refresh will actually do, resolved by the same
+    // function autoCheck uses. Rendered in the Today bar so "auto-refresh is
+    // doing nothing" is always visible rather than silent.
+    autoToday:  {
+      periodMin: AUTO_PERIOD_MIN,
+      // The last silent path: a stored auto.today=false would skip the whole
+      // branch with nothing logged and nothing on screen. Surfaced so every
+      // reason the refresh might not run is visible in one place.
+      enabled: (await readAuto()).today,
+      ...resolveAutoTodayMarket(store, await getUserHomeMarket()),
+    },
     captureBuild: CAPTURE_BUILD,
     auto:       await readAuto(),
   };
@@ -107,6 +154,9 @@ async function getState() {
 
 async function pullStores(msg) {
   await freshness.startAttempt("stores");
+  // Hold the worker up for the duration. Without this the capture dies ~30s
+  // after the suite tab is closed or navigated away — see shared/sw_keepalive.js.
+  const releaseAwake = keepAwake("vizpick.pullStores");
   try {
     // Hand the capture the stamp we already hold so it can skip the export
     // entirely when Tableau has not republished. `force` bypasses the check.
@@ -166,6 +216,8 @@ async function pullStores(msg) {
     await freshness.markError("stores", err);
     broadcast("source_complete", { sourceId: "stores", ok: false, error: err });
     return { ok: false, sourceId: "stores", error: err };
+  } finally {
+    releaseAwake();
   }
 }
 
@@ -193,6 +245,10 @@ async function pullToday(msg) {
 
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
   await freshness.startAttempt("today");
+  // The Today crawl runs for minutes. It happens to survive today only because
+  // it polls chrome.tabs/chrome.scripting constantly, which resets the idle
+  // timer by accident — this makes it deliberate rather than lucky.
+  const releaseAwake = keepAwake("vizpick.pullToday");
 
   try {
     // A full crawl (changed stamp) must REPLACE the stale rows on its first
@@ -202,6 +258,9 @@ async function pullToday(msg) {
 
     const result = await fetchVizpickTodayTableau(stores, {
       knownSourceKey,
+      // Lets the source enforce a maximum staleness even when the stamp claims
+      // nothing changed — see MAX_TODAY_AGE_MS.
+      knownCapturedAt: snapStore.today?.capturedAt ?? null,
       coveredStores,
       force: !!msg?.force,
       auto: !!msg?.auto,
@@ -247,7 +306,14 @@ async function pullToday(msg) {
     if (!result.ok) {
       await freshness.markError("today", `${result.errorClass}: ${result.error}`);
       broadcast("source_complete", { sourceId: "today", ok: false, error: result.error });
-      return { ok: false, sourceId: "today", errorClass: result.errorClass, error: result.error };
+      // `debug.failures` carries the PER-STORE reason and was previously
+      // dropped here, so a total failure reported "no data for any of the 10
+      // stores" with no way to see why without digging into storage.
+      return {
+        ok: false, sourceId: "today",
+        errorClass: result.errorClass, error: result.error,
+        debug: result.debug ?? null,
+      };
     }
 
     // Upstream hasn't republished since this market's stored crawl — skip the
@@ -259,6 +325,10 @@ async function pullToday(msg) {
         ok: true, sourceId: "today", unchanged: true,
         sourceUpdate: result.sourceUpdate ?? null,
         storeCount: snapStore.today?.rows?.length ?? 0,
+        // Carried through so the telemetry can show WHY it skipped.
+        stampRead: result.stampRead ?? null,
+        stampReadVia: result.stampReadVia ?? null,
+        stampKnown: result.stampKnown ?? null,
       };
     }
 
@@ -294,6 +364,7 @@ async function pullToday(msg) {
     return { ok: false, sourceId: "today", error: err };
   } finally {
     todayRun = null;
+    releaseAwake();
   }
 }
 
@@ -309,9 +380,27 @@ function cancelToday() {
  * without re-exporting, so "poll for a new timestamp and only then update" is
  * exactly what calling them does. Nothing new to keep in sync.
  */
-async function autoCheck(reason) {
+// In-flight guard for autoCheck. Now that bootstrapIfNeeded() runs at SW top
+// level, a single wake can start two checks: the import-time bootstrap, and
+// the onAlarm handler that caused the wake in the first place. pullToday()
+// has its own `todayRun` guard, but pullStores() does not — two concurrent
+// stores captures would drive the same Tableau tab and fight over the export
+// dialog. Coalesce instead: the second caller awaits the first's result.
+let autoCheckRun = null;
+
+function autoCheck(reason) {
+  if (autoCheckRun) return autoCheckRun.then((r) => ({ ...r, coalescedInto: r.reason, reason }));
+  autoCheckRun = _autoCheck(reason).finally(() => { autoCheckRun = null; });
+  return autoCheckRun;
+}
+
+async function _autoCheck(reason) {
   const auto = await readAuto();
-  if (!auto.stores && !auto.today) return { ok: true, skipped: "auto-refresh off" };
+  log.emit("autocheck-start", { reason, stores: auto.stores, today: auto.today });
+  if (!auto.stores && !auto.today) {
+    log.emit("autocheck-skip", { reason: "both toggles off" });
+    return { ok: true, skipped: "auto-refresh off" };
+  }
 
   // Stamp the attempt BEFORE doing the work, not after. A capture can run for
   // a minute or fail outright; recording it only on success meant a slow or
@@ -323,34 +412,164 @@ async function autoCheck(reason) {
 
   if (auto.stores) {
     out.stores = await pullStores({ auto: true });
+    log.emit("autocheck-stores", {
+      ok: !!out.stores?.ok, unchanged: !!out.stores?.unchanged,
+      rows: out.stores?.storeCount ?? null, error: out.stores?.error ?? null,
+    });
+  } else {
+    log.emit("autocheck-skip", { which: "stores", reason: "toggle off" });
   }
 
   if (auto.today) {
-    // Only ever re-crawl a market we already hold, and take its store list
-    // from the yesterday roster — the same list the UI would send.
     const store = await snapshots.read();
-    const market = store.today?.market ?? null;
-    if (market) {
-      const roster = (store.days?.[0]?.rows || [])
-        .filter((r) => String(r.market) === String(market))
-        .map((r) => r.store);
-      if (roster.length) out.today = await pullToday({ stores: roster, market, auto: true });
+    const homeMarket = await getUserHomeMarket();
+    const plan = resolveAutoTodayMarket(store, homeMarket);
+    // The whole decision, in one line, including the inputs. A roster of 0 with
+    // a home market set is the case that looks most like "it just doesn't
+    // work" — usually the Yesterday capture has not succeeded yet, or the
+    // market string does not match the roster's spelling.
+    log.emit("autocheck-today-plan", {
+      homeMarket: homeMarket ?? null,
+      snapshotMarket: store?.today?.market ?? null,
+      resolved: plan.market, source: plan.source,
+      storeCount: plan.stores.length,
+      rosterDays: store?.days?.length ?? 0,
+      rosterRows: store?.days?.[0]?.rows?.length ?? 0,
+      reason: plan.reason,
+    });
+    if (plan.market) {
+      out.today = await pullToday({ stores: plan.stores, market: plan.market, auto: true });
+      // On failure the useful part is WHICH stage failed, per store — a bare
+      // "captured nothing for any of 10" is not actionable. Reasons are
+      // deduplicated because 10 stores failing the same way is one fact, not
+      // ten, and the ring is 500 entries.
+      const failures = out.today?.debug?.failures || [];
+      const reasonCounts = {};
+      for (const f of failures) {
+        const key = String(f?.reason ?? "unknown").slice(0, 120);
+        reasonCounts[key] = (reasonCounts[key] || 0) + 1;
+      }
+      log.emit("autocheck-today", {
+        ok: !!out.today?.ok, unchanged: !!out.today?.unchanged,
+        // The two values the skip decision was made from. "unchanged" with
+        // these absent is an assertion; with them it is evidence.
+        stampRead: out.today?.stampRead ?? null,
+        stampReadVia: out.today?.stampReadVia ?? null,
+        stampKnown: out.today?.stampKnown ?? null,
+        captured: out.today?.storeCount ?? null,
+        requested: out.today?.requested ?? null,
+        errorClass: out.today?.errorClass ?? null,
+        error: out.today?.error ?? null,
+        failureCount: failures.length,
+        reasons: reasonCounts,
+      });
+    } else {
+      out.today = { ok: true, skipped: plan.reason };
     }
+  } else {
+    log.emit("autocheck-skip", { which: "today", reason: "toggle off" });
   }
 
   return { ok: true, ...out };
 }
 
+/**
+ * Which market should the background Today refresh follow, and why not, if not.
+ *
+ * Shared by autoCheck() and get_state so the UI can never disagree with what
+ * the service worker will actually do. That mattered: the first version of
+ * this gated on the home market alone and, when unset, returned silently. The
+ * whole feature then did nothing with no indication anywhere on screen, which
+ * is indistinguishable from it being broken — and was reported as exactly that.
+ *
+ * Order:
+ *   1. Home market from Settings > Defaults. Explicit, survives browsing a
+ *      peer market, and works on a profile that has never crawled Today.
+ *   2. Otherwise the market of the stored Today snapshot. Loading a market by
+ *      hand IS a request for that market, so following it is not "crawling a
+ *      market nobody asked for" — the objection that motivated the original
+ *      gate. It only ever follows something the user themselves loaded.
+ *
+ * Pure apart from the two values passed in, so it is trivially testable.
+ */
+export function resolveAutoTodayMarket(store, homeMarket) {
+  const market = homeMarket || store?.today?.market || null;
+  if (!market) {
+    return {
+      market: null, stores: [], source: null,
+      reason: "no market to follow — set a home market in Settings > Defaults, or load Today for a market once",
+    };
+  }
+  const source = homeMarket ? "home-market" : "last-loaded";
+  // String-compared because the home market is stored exactly as typed
+  // (shared/userStore.js: "0120" must not become "120").
+  const stores = (store?.days?.[0]?.rows || [])
+    .filter((r) => String(r.market) === String(market))
+    .map((r) => r.store);
+  if (!stores.length) {
+    return {
+      market: null, stores: [], source,
+      // Either the Yesterday capture has not run yet, or the market string is
+      // not in it. Both look identical from the UI, so name which.
+      reason: `market ${market} has no stores in the Yesterday roster yet — refresh Yesterday first`,
+    };
+  }
+  return { market, stores, source, reason: null };
+}
+
+/**
+ * "The suite was just opened" — check now rather than waiting up to 30 minutes
+ * for the next alarm.
+ *
+ * Called via the generic `suite_opened` handler the shell dispatches to any
+ * module that implements one (see app.js). The shell does not know this module
+ * exists, which is the point: another module wanting the same behaviour adds
+ * the handler and nothing in the shell changes.
+ *
+ * Cheap in the common case: autoCheck reads Tableau's Updated stamp and stops
+ * there unless it has moved.
+ */
+export async function openCheck() {
+  try {
+    const got = await chrome.storage.local.get(K.lastAuto);
+    const sinceMs = Date.now() - (got[K.lastAuto] || 0);
+    if (sinceMs < OPEN_CHECK_MIN_GAP_MS) {
+      log.emit("open-check-skip", { sinceMs, gapMs: OPEN_CHECK_MIN_GAP_MS });
+      return { ok: true, skipped: "checked recently" };
+    }
+    log.emit("open-check", { sinceMs });
+    // Not awaited by the caller: the shell must not wait on Tableau to finish
+    // painting its first route.
+    return await autoCheck("suite-opened");
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
 /** Registered from module.js at top level — MV3 requires that for SW wake. */
 export async function onAlarm(alarm) {
   if (alarm?.name !== ALARM_NAMES.autocheck) return;
+  // Proves the alarm actually fires. Its absence from the feed is itself the
+  // diagnosis — that was the 2026-08-20 bug, and nothing recorded it then.
+  log.emit("alarm-fired", { name: alarm.name });
   try { await autoCheck("alarm"); }
   catch (e) { console.warn("[vizpick] auto-check failed:", e?.message ?? e); }
 }
 
-/** Idempotent — safe to call on every SW boot. */
+/**
+ * Idempotent — safe to call on every SW boot. See shared/alarms.js for why
+ * chrome.alarms.create() on its own is not.
+ *
+ * delayInMinutes: 1 rather than the default full period — a freshly installed
+ * alarm should get the cards current within a minute, not sit idle for half
+ * an hour. The check it runs is cheap when Tableau has not republished.
+ */
 export async function installAlarms() {
-  await chrome.alarms.create(ALARM_NAMES.autocheck, { periodInMinutes: AUTO_PERIOD_MIN });
+  const r = await ensureAlarm(ALARM_NAMES.autocheck, {
+    periodInMinutes: AUTO_PERIOD_MIN,
+    delayInMinutes: 1,
+  });
+  log.emit("alarm-ensured", { created: r.created, reason: r.reason, periodMin: AUTO_PERIOD_MIN });
 }
 
 /**
@@ -363,7 +582,11 @@ export async function bootstrapIfNeeded() {
   try {
     const got = await chrome.storage.local.get(K.lastAuto);
     const last = got[K.lastAuto] || 0;
-    if (Date.now() - last < BOOTSTRAP_MIN_GAP_MS) return { ok: true, skipped: "checked recently" };
+    const sinceMs = Date.now() - last;
+    if (sinceMs < BOOTSTRAP_MIN_GAP_MS) {
+      log.emit("bootstrap-skip", { sinceMs, gapMs: BOOTSTRAP_MIN_GAP_MS });
+      return { ok: true, skipped: "checked recently" };
+    }
     return await autoCheck("bootstrap");
   } catch (e) {
     return { ok: false, error: String(e?.message ?? e) };
@@ -382,6 +605,11 @@ export const handlers = {
     return { ok: true, auto };
   },
   async "auto_check_now"(_msg) { return await autoCheck("manual"); },
+
+  // Dispatched by the shell when the suite page opens. Any module may
+  // implement this; the shell looks for the handler rather than knowing which
+  // modules want it.
+  async "suite_opened"(_msg) { return await openCheck(); },
 
   // Everything needed to diagnose a failing capture WITHOUT asking the user to
   // open DevTools and read raw storage. Three rounds of this bug were spent
@@ -437,6 +665,10 @@ export const handlers = {
       request: {
         market,
         marketType: typeof msg?.market,
+        // What the background auto-refresh will follow for Today. Unset here
+        // means the Today auto-crawl skips every run and does so silently,
+        // which is otherwise indistinguishable from a broken capture.
+        homeMarket: await getUserHomeMarket().catch(() => null),
         storesInMarket: inMarket.length,
         sampleStores: inMarket.slice(0, 5).map((r) => r.store),
         rosterMarketSample: [...new Set(roster.slice(0, 400).map((r) => typeof r.market))],
@@ -452,6 +684,7 @@ export const handlers = {
       },
 
       auto: { ...auto, lastRun: lastAuto?.[K.lastAuto] ?? null },
+
       tableauTabs: tabs,
       lastError: { stores: got[K.debug] ?? null, today: got[K.debugToday] ?? null },
       freshness: {

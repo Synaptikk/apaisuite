@@ -4,15 +4,14 @@
 // Leaflet loaded from local bundle: lib/leaflet.js (CSP-safe, same origin).
 // Colors match APAISuite light theme (tokens.css).
 
-const PROGRESS_KEY = "orcmonitor.progress";
+// Store coordinates come from lib/store_coords.js — the same table service.js
+// and trajectory.js score against. This file used to carry its own inline copy
+// of the Market 120 subset, which meant a Region 12 store the SW could score
+// was a store the map could not pre-center on.
+import { getStoreCoords } from "./lib/store_coords.js";
+import { getUserHomeStore } from "../../shared/userStore.js";
 
-// Key Market 120 / Region 12 store coordinates for pre-centering the map
-const STORE_COORDS = {
-  "1458":[34.9362,-85.2152],"669":[34.7675,-84.9304],"5173":[34.7867,-84.9991],
-  "3660":[35.0155,-85.3765],"1469":[35.0404,-85.2032],"5251":[35.0536,-85.1454],
-  "2988":[34.7463,-85.2734],"1215":[34.4794,-84.9457],"658":[34.2754,-85.2300],
-  "5151":[34.2213,-85.1303],"756":[34.5218,-85.3165],"1089":[35.0405,-85.6820],
-};
+const PROGRESS_KEY = "orcmonitor.progress";
 
 // Inline corridor waypoints — avoids dynamic import issues
 const CORRIDORS = {  "I-75":  [[25.8,-80.2],[28.5,-81.4],[32.5,-83.7],[33.7,-84.4],[34.3,-84.0],[34.8,-84.8],
@@ -42,6 +41,13 @@ export async function mount(host, container) {
 
   container.innerHTML = await fetch(host.url("view.html")).then(r => r.text());
 
+  // Seed the store box from Settings > Defaults rather than shipping one
+  // analyst's store as the markup's value. Left blank when nothing is known —
+  // an empty box reads as "tell me a store", a wrong one reads as an answer.
+  const homeStore = await getUserHomeStore().catch(() => null);
+  const storeInput = container.querySelector("#om-store");
+  if (storeInput && !storeInput.value.trim() && homeStore) storeInput.value = homeStore;
+
   // Load local Leaflet — same extension origin, passes script-src 'self'
   await _loadLeaflet(host);
   const map = _initMap(container);
@@ -49,10 +55,10 @@ export async function mount(host, container) {
   if (map) {
     setTimeout(() => {
       map.invalidateSize();
-      // Pre-center on the default store input value
-      const { getStoreCoords } = (window._orcStoreCoords ?? {});
-      const storeVal = (container.querySelector("#om-store")?.value ?? "1458").trim();
-      const preCoords = STORE_COORDS[storeVal];
+      // Pre-center on whatever store the box ended up holding. No coords for
+      // it (or no store yet) leaves the map at its default view.
+      const storeVal = (container.querySelector("#om-store")?.value ?? "").trim();
+      const preCoords = storeVal ? getStoreCoords(storeVal) : null;
       if (preCoords) map.setView(preCoords, 7, { animate:false });
     }, 200);
     setTimeout(() => { map.invalidateSize(); }, 700);
@@ -143,7 +149,7 @@ export async function mount(host, container) {
 
   container.querySelector("#om-btn-export")?.addEventListener("click", async () => {
     if (!lastData) return;
-    const store = (container.querySelector("#om-store")?.value ?? "1458").trim();
+    const store = (container.querySelector("#om-store")?.value ?? "").trim();
     const btn = container.querySelector("#om-btn-export");
     btn.disabled = true; btn.textContent = "Capturing map…";
     const mapImg = await _captureMapImage(container, map, lastData).catch(() => null);

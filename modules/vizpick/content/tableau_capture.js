@@ -47,6 +47,44 @@
     if (ring.length > RING_MAX) ring.shift();
   }
 
+  /**
+   * Record a request body as text, INCLUDING FormData.
+   *
+   * The FormData branch is not a nicety. Tableau's own crosstab export posts
+   * multipart FormData, so while this only handled strings the export command
+   * was recorded with a null body — and lib/sources/tableau_export_replay.js
+   * ::learnSheetIds reads the sheetdocId GUID out of exactly that body. The
+   * result was a closed loop: the replay could not learn a sheet id until it
+   * had already replayed an export, and it could not replay one until it had
+   * learned the id. Every store silently paid the ~12s DOM route instead of
+   * the ~1s replay, with `sheetsLearned: 0` in the diagnostics as the only
+   * sign, for as long as the fast path had existed.
+   *
+   * The output deliberately mimics the multipart wire format rather than
+   * something tidier like URLSearchParams, because learnSheetIds' regex is
+   * written against real captured traffic and both producers should agree on
+   * one shape. Files contribute their name only — never their bytes.
+   */
+  function serializeBody(body) {
+    if (body == null) return null;
+    try {
+      if (typeof body === "string") return body;
+      if (body instanceof URLSearchParams) return body.toString();
+      if (typeof FormData !== "undefined" && body instanceof FormData) {
+        let out = "";
+        for (const [k, v] of body.entries()) {
+          const value = typeof v === "string" ? v : `[file ${v?.name ?? "blob"}]`;
+          out += `------capture\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${value}\r\n`;
+        }
+        return out || null;
+      }
+    } catch {}
+    // Blob / ArrayBuffer / ReadableStream: reading them here would consume or
+    // race the body the page is about to send. Not worth it — nothing we
+    // replay is posted that way.
+    return null;
+  }
+
   // Preserve any previously-installed fetch patch (e.g. market120's or
   // metricshot's captures on this same origin).
   const origFetch = window.fetch;
@@ -58,13 +96,7 @@
       return origFetch.apply(this, arguments);
     }
 
-    let reqBody = null;
-    if (init?.body != null) {
-      try {
-        if (typeof init.body === "string") reqBody = init.body;
-        else if (init.body instanceof URLSearchParams) reqBody = init.body.toString();
-      } catch {}
-    }
+    const reqBody = serializeBody(init?.body);
     const resp = await origFetch.apply(this, arguments);
     let respBody = null;
     try { respBody = await resp.clone().text(); } catch {}
@@ -143,7 +175,7 @@
   OrigXHR.prototype.send = function (body) {
     const url = this[S_URL];
     if (URL_MATCHER.test(url)) {
-      const reqBody = typeof body === "string" ? body : null;
+      const reqBody = serializeBody(body);
       const method = this[S_METHOD] || "GET";
       this.addEventListener("loadend", () => {
         let respBody = null;

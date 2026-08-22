@@ -68,14 +68,23 @@ const QUERY = `query CvpLast8Weeks($market: Int!, $dept: Int!) {
  * should treat CVP failures as non-fatal — the claims pull still
  * produces value without CVP, and the next pull will retry.
  */
-export async function fetchCvpForMarket({ marketNbr = 120, deptGroupNbr = 2 } = {}) {
+export async function fetchCvpForMarket({ marketNbr, deptGroupNbr = 2 } = {}) {
+  // Required, with no default: this used to fall back to 120, so a caller
+  // that forgot to pass a market got one analyst's market back and no error.
+  // `$market` is declared Int! and getUserHomeMarket() returns the string the
+  // user typed (possibly "0120"), so parse rather than pass through.
+  const market = Number.parseInt(marketNbr, 10);
+  if (!Number.isFinite(market)) {
+    throw new Error(`fetchCvpForMarket needs a numeric market (got ${JSON.stringify(marketNbr)})`);
+  }
+
   const resp = await fetch(HOOPS_GRAPHQL, {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json", "accept": "application/json" },
     body: JSON.stringify({
       query: QUERY,
-      variables: { market: marketNbr, dept: deptGroupNbr },
+      variables: { market, dept: deptGroupNbr },
     }),
   });
   if (!resp.ok) {

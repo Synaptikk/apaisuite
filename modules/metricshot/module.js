@@ -12,12 +12,25 @@
 // Statically imported so the SW's message dispatcher can reach the handlers
 // (MV3 SWs cannot use dynamic import — see the comment block at the top of
 // background/service_worker.js).
+import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { handlers, onAlarm, register } from "./service.js";
 
 // Wake-on-alarm listener MUST be registered at top-level (during initial SW
-// script execution). Same constraint as workvivo/module.js:23 and
-// closinglist/module.js:17.
-chrome.alarms.onAlarm.addListener(onAlarm);
+// script execution). Same constraint as workvivo/module.js and
+// closinglist/module.js.
+//
+// Gated to the service worker: this file is imported by the shell page too,
+// and extension pages receive alarm events as well — ungated, every tick
+// would fire tick() once in the SW and once in each open suite tab, each
+// posting its own screenshot to Workvivo.
+//
+// installTickAlarm() is NOT called here on purpose: metricshot's alarm is
+// started and stopped by the user's schedule, not installed unconditionally.
+// It already reads before creating, so it does not have the period-reset bug
+// described in shared/alarms.js.
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener(onAlarm);
+}
 
 export default {
   manifest: {
@@ -30,6 +43,14 @@ export default {
 
     ui: {
       kind: "fullpage",
+      // Sidebar + home-card glyph: the INNER markup of a 20x20 stroke icon.
+      // The shell wraps it (app.js::iconSvgString) so every module shares one
+      // viewBox, stroke width and currentColor. Omit it and the shell falls
+      // back to the generic grid glyph.
+      icon: `
+        <path d="M3 6.6V4.4a1 1 0 0 1 1-1h2.2M13.8 3.4H16a1 1 0 0 1 1 1v2.2M17 13.4v2.2a1 1 0 0 1-1 1h-2.2M6.2 16.6H4a1 1 0 0 1-1-1v-2.2" stroke-linecap="round"/>
+        <path d="M7 13.2V9.6M10 13.2V7M13 13.2v-2.4" stroke-linecap="round"/>
+      `,
       view: () => import("./view.js"),
     },
 
@@ -50,7 +71,22 @@ export default {
       ],
     },
 
-    contentScripts: [],
+    contentScripts: [
+      {
+        matches:    ["https://stores.tableau.wal-mart.com/*"],
+        js:         ["modules/metricshot/content/tableau_capture.js"],
+        run_at:     "document_start",
+        world:      "MAIN",
+        all_frames: true,
+      },
+      {
+        matches:    ["https://workvivo.walmart.com/*"],
+        js:         ["modules/metricshot/content/wv_session_sniffer.js"],
+        run_at:     "document_start",
+        world:      "MAIN",
+        all_frames: false,
+      },
+    ],
     webRequestFilters: [],
   },
 

@@ -30,13 +30,15 @@
 import { looksLikeAuthWall } from "./validate.js";
 import { SSO_SELECTORS, createAuth } from "../../../shared/auth.js";
 import { getUserHomeStore } from "../../../shared/userStore.js";
-import { getVizPickFollowUpData } from "./sources/vizpick_export.js";
+import { mapRowToRingData } from "./sources/vizpick_snapshot.js";
+import { getFollowUpSheets } from "./sources/followup_data.js";
 import { renderMetricCard } from "./render_card.js";
 import { svgToPngBase64 } from "./rasterize.js";
 
 const _auth = createAuth("metricshot");
 
 const TAG = "[metricshot capture]";
+
 
 /**
  * @param {object} metric  Metric config (see lib/metrics.js).
@@ -47,11 +49,33 @@ const TAG = "[metricshot capture]";
 export async function captureMetric(metric, opts = {}) {
   const capturedAt = Date.now();
   let tabId = null;
+  // The store this run actually points Tableau at, captured off the
+  // parameterValues resolution below. Used to look up the SAME store's
+  // already-captured ring data from vizpick's Today snapshot (see step 11).
+  let resolvedStore = null;
 
   // Progress breadcrumb hook. Lets the caller trace exactly which phase a
   // capture stalls on (preview showed "start" then silence = a hung await).
   // No-op safe if not provided.
-  const step = (name, extra) => { try { opts.onStep?.(name, extra); } catch { /* ignore */ } };
+  // Progress breadcrumb AND abort checkpoint.
+  //
+  // The abort check sits OUTSIDE the try on purpose: a caller that has given
+  // up must be able to stop this capture, and swallowing the abort would
+  // defeat that. Every phase boundary already calls step(), so this yields a
+  // cancellation point at each one without threading a signal through every
+  // helper.
+  //
+  // Why this exists (2026-08-21): service.js raced captureMetric against a 90s
+  // watchdog and, on timeout, simply moved to the next attempt. The abandoned
+  // capture kept running and kept driving the SAME Tableau tab, so attempt N+1
+  // fought attempt N over one tab — visible in telemetry as attempt 1 logging
+  // `settle-delay` and `scrape` while attempt 2 was logging `run-start`. The
+  // overlap made each successive attempt likelier to hang, which is how one
+  // screenshot became ~39 captures across 65 minutes.
+  const step = (name, extra) => {
+    if (opts.signal?.aborted) throw new CaptureAborted();
+    try { opts.onStep?.(name, extra); } catch { /* ignore */ }
+  };
 
   try {
     step("resolve-url");
@@ -144,7 +168,7 @@ export async function captureMetric(metric, opts = {}) {
     // 8. Optional required-selector gate.
     if (cap.requiredSelector) {
       step("wait-required-selector", { selector: cap.requiredSelector });
-      const ok = await _waitForSelectorVisible(tabId, cap.requiredSelector, cap.timeoutMs ?? 60_000);
+      const ok = await _waitForSelectorVisible(tabId, cap.requiredSelector, cap.timeoutMs ?? 60_000, opts.signal);
       if (!ok) return _fail(tabId, capturedAt, `requiredSelector never became visible: ${cap.requiredSelector}`);
     }
 
@@ -157,6 +181,7 @@ export async function captureMetric(metric, opts = {}) {
       for (const [k, v] of Object.entries(cap.parameterValues)) {
         resolved[k] = await _expandUrlTemplates(v);
       }
+      if (resolved.Store) resolvedStore = resolved.Store;
       // Guard: if any template token failed to resolve (e.g. home store not
       // captured yet), the literal "{{TOKEN}}" would be injected into the
       // Tableau widget, which rejects it and silently falls back to its
@@ -195,7 +220,10 @@ export async function captureMetric(metric, opts = {}) {
 
     // 9. DOM-stability + settle delay.
     step("wait-dom-stable");
-    await _waitForDomStable(tabId, 1000, Math.min(cap.timeoutMs ?? 60_000, 15_000)).catch(() => {});
+    await _waitForDomStable(tabId, 1000, Math.min(cap.timeoutMs ?? 60_000, 15_000), opts.signal)
+      // Swallow ordinary failures (this wait is best-effort) but never an
+      // abort — that has to unwind.
+      .catch((e) => { if (e instanceof CaptureAborted) throw e; });
     if (cap.settleDelayMs > 0) { step("settle-delay", { ms: cap.settleDelayMs }); await _delay(cap.settleDelayMs); }
 
     // 11. Render the card from VizPick's own numbers.
@@ -206,46 +234,94 @@ export async function captureMetric(metric, opts = {}) {
     // painting — all of which broke whenever Tableau reflowed. Reading the
     // VizQL rows the page already fetched is both steadier and honest about
     // what the numbers are.
-    step("scrape");
-    const data = await getVizPickFollowUpData({ tabId });
-    if (!data.ok) {
+    // 10b. Get VizPick's numbers — from the market rollup's own capture if it
+    // has them, and only otherwise by exporting them again ourselves.
+    //
+    // vizpick's Today crawl already exports the same sheets this module needs,
+    // for every store in the market. Re-exporting them here meant two Tableau
+    // sessions pulling identical rows minutes apart, each able to report a
+    // different "now". sources/followup_data.js owns that preference order now
+    // — shared with the three service.js handlers that used to each call the
+    // headless export directly.
+    const store = resolvedStore || (await getUserHomeStore().catch(() => null));
+    step("followup-data", { store });
+    const sheets = await getFollowUpSheets({ store, tabId });
+    if (!sheets.ok) {
       return _fail(tabId, capturedAt,
-        `no VizPick data in this capture (${data.errorClass || "NO_DATA"}): ${data.error || "no rows"}`);
+        `no VizPick data in this capture (${sheets.errorClass || "NO_DATA"}): ${sheets.error || "no rows"}`);
     }
-    step("scraped", {
-      locations: data.locationDetails?.length ?? 0,
-      departments: data.departmentBreakout?.length ?? 0,
+    const { locationDetails, departmentBreakout, snapshot: snapshotRow } = sheets;
+    step("followup-ready", {
+      locations: locationDetails.length,
+      departments: departmentBreakout.length,
+      source: sheets.source,
+      replayed: sheets.replayed,
+      refreshed: !!snapshotRow?.refreshed,
+      ageMin: Number.isFinite(snapshotRow?.ageMs) ? Math.round(snapshotRow.ageMs / 60_000) : null,
     });
 
     step("render");
+    // The headless replay above (getVizPickFollowUpData) reliably gets the
+    // Location Details + Department Breakout sheets (real, hard-coded
+    // sheetdocIds) but has never been able to resolve the "VizPick Donut
+    // Health" / "Department Groups" sheets that back the health ring, the
+    // four goal rings, and the Fresh/F&C/GM rings (see sources/vizpick_export.js's
+    // _resolveSheetIds note) — so data.health/data.metrics/data.deptRings are
+    // effectively always empty. The vizpick module's own Today capture gets
+    // those same sheets reliably, by driving the real Download UI instead of
+    // guessing at their sheetdocIds. Prefer its already-stored row for this
+    // store; fall back to whatever the headless replay produced (in case that
+    // ever starts working) and finally to render_card's own legacy derivation.
+    // health/metrics and deptRings come from INDEPENDENT exports in vizpick's
+    // Today crawl — one can fail without the other. mapRowToRingData returns
+    // null per-field (not an empty array) for whichever export failed on the
+    // last crawl, so each field below falls back to the headless source
+    // independently instead of one missing export blanking everything.
+    const ring = snapshotRow ? mapRowToRingData(snapshotRow.row) : null;
+    // The header stamp must read as "as of" the SOURCE data (Tableau's own
+    // "Last update" for the VizPickDetails view this store's Today row came
+    // from), not the moment this extension happened to run. sourceUpdate
+    // exists on the snapshot regardless of whether the donut-health sheet
+    // parsed, since it's stamped once per store crawl. Only fall back to our
+    // own capture time when there's no snapshot at all to read a real stamp
+    // from (store never crawled by VizPick's Today capture).
+    const sourceStamp = snapshotRow?.sourceUpdate?.iso
+      ? new Date(snapshotRow.sourceUpdate.iso).toLocaleString()
+      : snapshotRow?.sourceUpdate?.raw || null;
+    step("ring-source", {
+      healthSource: ring?.health != null ? "vizpick-snapshot" : "headless-export",
+      deptRingsSource: ring?.deptRings != null ? "vizpick-snapshot" : "headless-export",
+      store, snapshotAt: snapshotRow?.capturedAt ?? null, sourceStamp,
+    });
+
     // The card reproduces the Tableau dashboard, so it wants the eight ring
     // values rather than the detail sheets. getVizPickFollowUpData now returns
     // both; pass the rings through and let render_card fall back to its legacy
     // path if the donut sheets were unavailable this run.
     const card = renderMetricCard({
-      health:    data.health ?? null,
-      metrics:   data.metrics ?? [],
-      deptRings: data.deptRings ?? [],
+      health:    ring?.health ?? sheets.health ?? null,
+      metrics:   ring?.metrics ?? sheets.metrics ?? [],
+      deptRings: ring?.deptRings ?? sheets.deptRings ?? [],
       // Kept so the legacy shape still resolves if the rings are missing.
-      departmentBreakout: data.departmentBreakout ?? [],
-      locationDetails:    data.locationDetails ?? [],
+      departmentBreakout,
+      locationDetails,
     }, {
       title: metric.name || "VizPick Backroom Health",
-      store: metric.store ?? null,
-      capturedAt: new Date(capturedAt).toLocaleString(),
+      store,
+      capturedAt: sourceStamp || new Date(capturedAt).toLocaleString(),
     });
 
     step("rasterize", { width: card.width, height: card.height });
     const raster = await svgToPngBase64(card.svg, {
       width: card.width,
       height: card.height,
-      scale: cap.rasterScale ?? 2,
+      scale: cap.rasterScale ?? 1,
     });
     if (!raster.ok) return _fail(tabId, capturedAt, `render failed: ${raster.reason}`);
 
     const pngBase64 = raster.pngBase64;
-    const width  = Math.round(card.width  * (cap.rasterScale ?? 2));
-    const height = Math.round(card.height * (cap.rasterScale ?? 2));
+    const width  = Math.round(card.width  * (cap.rasterScale ?? 1));
+    const height = Math.round(card.height * (cap.rasterScale ?? 1));
     step("captured", { width, height, bytes: pngBase64.length });
 
     return {
@@ -255,8 +331,11 @@ export async function captureMetric(metric, opts = {}) {
       clipUsed: null,
       anchorRegion: null,
       rowCounts: {
-        locations: data.locationDetails?.length ?? 0,
-        departments: data.departmentBreakout?.length ?? 0,
+        locations: locationDetails.length,
+        departments: departmentBreakout.length,
+        // Which route each sheet actually came from, so a card that looks
+        // wrong can be traced to a source without re-running the capture.
+        source: sheets.source,
       },
       tabId,
       capturedAt,
@@ -380,9 +459,19 @@ async function _readAuthProbe(tabId) {
   }
 }
 
-async function _waitForSelectorVisible(tabId, selector, timeoutMs) {
+/** Thrown to unwind a capture whose caller has already given up on it. Not an
+ *  error condition — captureMetric converts it to an ordinary ok:false result
+ *  so the scheduler's accounting stays uniform. */
+class CaptureAborted extends Error {
+  constructor() { super("capture aborted by caller"); this.name = "CaptureAborted"; }
+}
+
+async function _waitForSelectorVisible(tabId, selector, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    // Checked per poll, not only at phase boundaries: this loop can consume
+    // the entire watchdog window by itself.
+    if (signal?.aborted) throw new CaptureAborted();
     try {
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId, allFrames: false },
@@ -426,11 +515,15 @@ async function _waitForSelectorVisible(tabId, selector, timeoutMs) {
   return false;
 }
 
-async function _waitForDomStable(tabId, quietMs, maxMs) {
+async function _waitForDomStable(tabId, quietMs, maxMs, signal) {
   const start = Date.now();
   let lastCount = -1;
   let quietSince = Date.now();
   while (Date.now() - start < maxMs) {
+    // Per-poll, same reason as the selector wait: this loop can hold the
+    // capture for its whole maxMs on its own, so a check only at the phase
+    // boundary would never interrupt it.
+    if (signal?.aborted) throw new CaptureAborted();
     let count;
     try {
       const [{ result }] = await chrome.scripting.executeScript({

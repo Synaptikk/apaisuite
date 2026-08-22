@@ -17,19 +17,41 @@
 > posting the wrong thing. The crop-related fields in a metric's `capture`
 > block (`mode`, `containText`, `padding`, `viewportWidth/Height`, `zoom`,
 > `hideSelectors`) are retained for config compatibility but no longer read.
+>
+> **Ring data source changed.** `vizpick_export.js`'s headless replay can
+> reliably export Location Details + Department Breakout (real, hard-coded
+> sheetdocIds), but has never been able to resolve the "VizPick Donut Health" /
+> "Department Groups" sheets that back the health ring and the four goal rings
+> — its `_resolveSheetIds()` live GUID lookup doesn't work against the live
+> host, so those rings rendered blank. `lib/capture.js` now reads that same
+> store's already-captured row out of `modules/vizpick`'s own Today snapshot
+> (`lib/sources/vizpick_snapshot.js`) instead, since VizPick's Today capture
+> gets that sheet reliably by driving the real Download UI. This means the
+> health/goal rings are only as fresh as VizPick's last Today crawl for this
+> store (stale or missing if VizPick's Today auto-refresh is off, or if that
+> store hasn't been crawled yet) — the location/department detail sections
+> still come from MetricShot's own live export.
 
 
 Scheduled screenshots of internal metric dashboards, posted into Workvivo channels using the user's already-authenticated tab. No credentials, tokens, or cookies leave the browser.
 
 **Status:** beta · **Version:** 0.1.0
 
-> **Known issue — image posting is currently broken.** Sendbird rejects multipart
-> sends on the session-key auth path with `400 "File-messages via SDK are
-> disabled"`, so the screenshot never lands. Everything up to and including the
-> capture works; only the final post fails. Text posting is unaffected. The
-> sniffer's net-recon ring buffer (`window.__APAISUITE_METRICSHOT_NETLOG`) was
-> added to discover the upload route Workvivo's own UI uses — that's the open
-> thread.
+> **Image posting fixed.** Was: Sendbird rejects `message_type:FILE` on the
+> session-key REST path with `400 "File-messages via SDK are disabled"` — an
+> app-level Sendbird setting, confirmed even with a correctly-minted key
+> (`docs/workvivo-auth.md`). Captured live 2026-08-20 (via Playwright, no
+> CDP) what Workvivo's own chat UI actually does for a real image send: it
+> **never calls Sendbird for this at all**. It POSTs
+> `/api/s3/signature/generate` (Workvivo's own backend, CSRF-header auth) to
+> get an S3 presigned-POST policy, uploads the bytes straight to that S3
+> URL, then POSTs `/api/chat/message/files` to have Workvivo's backend
+> create the chat message server-side — a plain `MESG` with
+> `custom_type:GROUP_FILES` and the image URL embedded in `data`, not a
+> Sendbird `FILE` message. That server-side path isn't subject to the
+> client-SDK restriction. `lib/sendbird.js`'s "file" action now replicates
+> this 3-request sequence directly; see its module header for the full
+> trace. Text posting was already unaffected by any of this.
 
 ---
 
@@ -40,7 +62,7 @@ Scheduled screenshots of internal metric dashboards, posted into Workvivo channe
 3. Wait for readiness (`document.readyState`, an optional `requiredSelector`, DOM-stability, then a configurable settle delay).
 4. `Page.captureScreenshot` via CDP.
 5. Sniff the PNG (signature, size, dimensions) and the page (`document.title` / `<h1>`) to refuse login/access-denied captures.
-6. Post into the configured Sendbird group channel via the Sendbird Platform REST API, run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests; the REST post then uses that key. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name. **The image leg currently fails** — see the known issue above; text sends succeed.
+6. Post into the configured Workvivo channel — text via the Sendbird Platform REST API (session-key sniffed off the tab, see below); the image via Workvivo's own S3-upload + `/api/chat/message/files` route (see the "Image posting fixed" note above) — both run from a fresh background `workvivo.walmart.com` tab. The Sendbird JS SDK is **never exposed on `window`** at workvivo.walmart.com, so a MAIN-world content script (`content/wv_session_sniffer.js`) captures the live `Session-key` off the SDK's own outbound requests for the text path. Destination `@me` (or `@self` / `(me)`) auto-finds-or-creates a 1-member self channel; any other name matches a joined channel by name.
 7. Record a deterministic run key so restarts + duplicate ticks never repost the same slot.
 
 ---
@@ -127,7 +149,7 @@ Before the first real Workvivo post:
 - [ ] Open APAISuite → sidebar → **Metric Shots**. VizPick Score is visible with a Daily 10:00 / 14:00 / 20:00 schedule.
 - [ ] Click **Preview** — confirm the returned PNG shows the VizPick dashboard, not a login page or empty viz. (If no workvivo tab is open, the module opens one in the background automatically.)
 - [ ] Click **Validate destination** in the edit form — confirm it resolves to a `sendbird_group_channel_*` URL for "1458 Leadership".
-- [ ] With explicit approval only: click **Run now**. Expect the post to fail with `400 File-messages via SDK are disabled` until the upload-route work lands — that's the known issue, not a regression. To exercise the parts that do work, use a text send.
+- [ ] With explicit approval only: click **Run now**. Expect the image AND the caption/follow-up text to both land in the destination channel — image posting is fixed as of the S3-upload route (see the note above); a failure here is a regression, not the old known issue.
 - [ ] Reload the extension (`edge://extensions` → reload icon) — the tick alarm and dedupe map survive.
 - [ ] Confirm ClosingList, QRCallBox, and Live Dashboard still work — no regression.
 

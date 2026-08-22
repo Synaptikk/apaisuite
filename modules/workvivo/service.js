@@ -22,6 +22,7 @@
 //     Firestore via the QRCallBox endpoint; storing it on the extension side
 //     would just be a stale duplicate that could leak via storage inspection.
 
+import { ensureAlarm } from "../../shared/alarms.js";
 import { readLiveTokenFromTab, hasWorkvivoTab, openWorkvivoTab, waitForLiveToken } from "./lib/extract.js";
 import { postHeartbeat, fetchConnectionInfo }  from "./lib/qrcallbox.js";
 
@@ -207,10 +208,16 @@ async function postAndRecord({ at, reason, endpointUrl, apiKey, live }) {
 
 // ── Alarm wiring (called from module.js register()) ───────────────────────
 //
-// Idempotent: replaces any existing alarm of the same name so the period
-// always reflects the latest constant in this file.
+// Idempotent — see shared/alarms.js. The previous version called
+// chrome.alarms.create() unconditionally on the belief that it "replaces any
+// prior entry", which is true and is exactly the bug: replacing restarts the
+// period. Installed from module.js::register() (shell page loads only), that
+// meant opening the suite more often than HEARTBEAT_PERIOD_MIN kept the
+// heartbeat permanently pending, and QRCallBox's Sendbird token went stale
+// with no visible cause. ensureAlarm() still re-creates when the period
+// constant changes, so editing HEARTBEAT_PERIOD_MIN takes effect next boot.
 export async function installHeartbeatAlarm() {
-  await chrome.alarms.create(ALARM_NAME, {
+  await ensureAlarm(ALARM_NAME, {
     delayInMinutes:  INITIAL_DELAY_MIN,
     periodInMinutes: HEARTBEAT_PERIOD_MIN,
   });

@@ -18,6 +18,7 @@
 // renders existing data).
 
 import { parseVizpickStoresCsv, parseGrandTotal, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
+import { watchSourceSchema } from "../../../../shared/schema_watch_report.js";
 
 const REPORT_URL  = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=1&:linktarget=_self";
 // Tableau is a hash-router: the view name lives entirely in the URL FRAGMENT
@@ -199,6 +200,10 @@ export async function fetchVizpickStoresTableau(opts = {}) {
     }
 
     const parsed = parseVizpickStoresCsv(csv.respBody);
+    // Same watcher as the department breakout — this sheet carries the seven
+    // raw numerator/denominator columns, and losing those would silently
+    // downgrade the UI to derived guesses rather than failing outright.
+    watchSourceSchema("vizpick.summaryByStore", csv.respBody, parsed.ok);
     if (!parsed.ok) {
       return {
         ok: false,

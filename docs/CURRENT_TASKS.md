@@ -224,6 +224,55 @@ work it previously only did on demand:
   as intended. It is now pinned to `AUTO_PERIOD_MIN`; two constants controlling
   one rate must not be free to disagree.
 
+**It CHECKS every 30 min; it does not crawl every 30 min (clarified 2026-08-22).**
+The current-day data republishes only every few hours, so nearly every check
+exists to discover that nothing changed. That check used to cost a full
+crosstab export of the Last-update sheet — the expensive part of the module —
+purely to read a timestamp. `readSourceStampFromDom()` now reads the
+"Updated <timestamp>" the dashboard already prints in its top right, and falls
+back to the sheet export only when the page shows nothing parseable. The
+comparison normalises through `parseLastUpdate().iso` rather than comparing raw
+strings, because the two sources can spell the same instant differently
+("2026-08-22 07:04:54" vs "8/22/2026 7:04:54 AM") and a raw compare would read
+that as "changed" on every check and re-crawl forever.
+
+**VizPick emitted no telemetry at all until 2026-08-22.** That is why "the
+auto-refresh isn't running" could only be answered by guessing — `autoCheck`
+decided something every 30 minutes and left no trace. It now emits
+`alarm-fired`, `alarm-ensured`, `bootstrap-skip`, `autocheck-start`,
+`autocheck-stores`, `autocheck-today-plan` (with the home market, the resolved
+market, and the roster size) and `autocheck-today`. Every branch that ends in
+"do nothing" says so, visible in Settings → the hidden debug panel.
+
+**COLUMN RENAME, 2026-08-22 — the actual cause of "Today stopped updating".**
+Tableau republished the workbook and renamed two department-breakout columns:
+
+| was | now |
+|---|---|
+| `Suggested Picks` | `Suggested Picks Seen` |
+| `Suggested Picks Completed` | `Suggested Picks Done` |
+
+(with an on-dashboard banner announcing a change to Pick % itself — the
+arithmetic is unchanged, `Done / Seen`, verified 54/86 = 63%.)
+
+`parseDeptBreakout` looked both up by exact name, so its required-column guard
+rejected every export: all 10 stores failed, the crawl captured nothing, and
+the Today tab sat frozen at the last good pull (2026-08-20 21:26) looking
+entirely healthy. It now accepts both spellings — a revert must not break us
+again, and renaming columns is evidently something this source does.
+`lib/tests/dept_headers.test.mjs` pins both, using the header row copied
+verbatim from the failing run's diagnostics.
+
+**Three things made a one-line breakage take two days to find**, all fixed:
+1. VizPick emitted no telemetry, so `autoCheck` decided something every 30
+   minutes and left no trace.
+2. `pullToday` dropped `result.debug` on the failure path, so even once
+   logging existed the per-store reason was invisible.
+3. A failed capture correctly leaves the stored snapshot alone — but nothing
+   said so, so a frozen tab looked normal. `todayFreshness` already knew and
+   was never rendered; the Today bar now warns when the last capture failed or
+   the snapshot is stale.
+
 Known trade-off: the auto run follows the *home* market, not the last one
 crawled by hand. Loading Today for a peer market and leaving the module open
 means the next auto run replaces `store.today` with the home market's rows.
@@ -427,6 +476,422 @@ run, so their handlers are the least-exercised code in the suite. Watch the
 first few ticks of `sparkfraud`'s watchlist poll and `sparkscango`'s
 15-minute exception pulls.
 
+### 8. Source schema watch — landed 2026-08-22, two of ~five sources wired
+
+**Why:** the VizPick column rename broke every current-day capture for two days
+and nothing noticed. Our sources are internal dashboards other teams republish
+at will, not APIs with contracts, so a shape change is an expected event and
+needs to be treated as one.
+
+**What landed:** `shared/schema_watch.js` (pure diff + dedupe, 13 tests),
+`shared/schema_watch_report.js` (baseline load, telemetry mirror, upload),
+`shared/data/source_schemas.json` (the approved shapes, in git), Firestore
+collection `suite_schema_drift`, and the runbook at
+[`SOURCE_SCHEMA_WATCH.md`](SOURCE_SCHEMA_WATCH.md). Wired into
+`vizpick.deptBreakout` and `vizpick.summaryByStore`.
+
+**Next concrete step — wire the remaining sources.** Each needs a baseline
+entry plus one `watchSourceSchema(...)` line at its parse site:
+- `digitallocks` — Power BI DAX result columns
+- `livedashboard` — Hoops tRPC / CVP field set
+- `sparkscango` — Power BI exception + audit pages
+- `metricshot` — consumes vizpick's parsers, so it inherits the two above
+
+**Then: alerting.** Detection currently lands in Firestore and the debug panel
+and waits to be looked at. A scheduled query filtered to `stillParsed: false`
+is what turns this from a record into a warning.
+
+**Known blind spot, worth naming:** this watches column NAMES. A source that
+keeps its names and changes a column's *meaning* is invisible to it — and the
+same 2026-08-22 republish carried a banner announcing a change to Pick %
+itself. Sanity ranges on known-stable ratios would be the next layer, and it is
+the layer that catches "parses fine, renders confidently wrong".
+
+### 9. Service-worker keep-alive — landed 2026-08-22, three jobs wrapped
+
+**Why:** "navigating away stops background loading, even a manual one." Not a
+cancellation — the MV3 worker is collected after ~30s of no extension-API
+activity. While the suite page is open the pending sendResponse channel holds
+it up; close or navigate that tab and the job is killed part way through with
+nothing logged.
+
+**What landed:** `shared/sw_keepalive.js` (refcounted, 7 tests) plus the rule
+in `MODULE_CONTRACT.md`. Wrapped: `vizpick.pullStores`, `vizpick.pullToday`,
+`metricshot.runOne`.
+
+**Next concrete step — audit the rest.** Any SW job over ~30s needs it. Likely
+candidates: `claimsdisposition` (Looker pulls), `livedashboard` (Hoops/CVP
+fan-out), `sparkscango` (Power BI page pulls), `digitallocks` (Power BI DAX +
+Workday directory scrapes), `aurorbuddy` (evidence + Firestore batches).
+
+**Note:** vizpick's Today crawl already survived, but only by accident — it
+polls `chrome.tabs`/`chrome.scripting` constantly and each call resets the
+idle timer. That stops being true the moment the DOM-driven export is replaced
+with the direct HTTP replay described in `dev/VIZPICK_EXPORT_FINDINGS.md`,
+which is exactly the kind of change that would have quietly reintroduced this.
+
+### 10. VizPick Associates view + export replay — landed 2026-08-22
+
+**Export replay.** `lib/sources/tableau_export_replay.js` replaces the
+Download → Crosstab dialog with the two HTTP calls it really is:
+`POST export-crosstab-to-excel-server` then `GET` the resultKey. Measured live:
+846 ms for a small sheet, 1.52 s for the 36 KB location sheet, against ~12.6 s
+of lane time per store through the DOM. `sheetdocId` is learned from the first
+DOM export of each sheet (the content script already records `reqBody`) and is
+stable across sessions — verified by replaying a GUID captured the previous day.
+Full evidence: [`../dev/VIZPICK_EXPORT_FINDINGS.md`](../dev/VIZPICK_EXPORT_FINDINGS.md).
+
+Two things only the live run caught, both of which would have shipped:
+the download lives under `/tempfile/sessions/` (the plain path 404s with an
+HTML body the parser would have been handed), and the xlsx stores percentages
+as **fractions** where the CSV gave formatted text — left alone it parsed
+perfectly and rendered every card at 0%.
+
+**Four exports per store now**, affordable only because of the replay:
+dept breakout, donut health, department groups, location details.
+
+**Department groups** are captured rather than derived. metricshot computed
+Fresh/F&C/GM locally from the breakout, which only carries Cases % and Pick % —
+70% of Tableau's weighting. Same store, same moment: local 57.9/8.2/0.05 against
+Tableau's 66/28/20. The local path stays as a fallback (the export is soft), and
+`deptGroups` is null rather than [] so the two cases are distinguishable.
+
+**Associates view.** Department | Associates tabs on each store card. Lists who
+left suggested picks behind, worst first, capped at `TOP_ASSOCIATES` (10) per
+store, expandable to the bins. Attribution is an INFERENCE — picks are assigned
+to locations at 9am, never to people, and `win` is whoever last scanned the bin
+— so every bin row carries its scan time, because a late scan is exactly where
+that inference breaks. Bins nobody scanned are listed separately: work not
+started is a different problem from work left behind.
+
+**Associate lookup consolidated.** `shared/associateLookup.js` now owns both
+resolution paths (Workvivo → name, Workday → title + tenure), promoted out of
+claimsdisposition and digitallocks; the assocpurchases near-duplicate is
+deleted. `associateDirectory.js` remains the permanent store and knows nothing
+about lookups. Do not add a fourth copy of either.
+
+Costs, measured: ~52 distinct scanners per store, so 300-500 per market before
+the cap.
+
+**Job titles are NOT fetched by this view (decided 2026-08-22).** Workday needs
+its own tab and a DOM scrape per WIN, serial because they share that tab —
+minutes of background work to decorate a list already readable from names. A
+title still renders when the directory holds one, which happens as a side
+effect of digitallocks resolving an associate a reviewer actually opened.
+`shared/associateLookup.js::lookupTitle` remains for that user-initiated path.
+If titles are ever wanted here, the cheap route is a bulk source, not a
+per-WIN scrape.
+
+**Still unexplained: the stamp.** A check reported `unchanged` against a stored
+key of 09:10:21 while a freshly loaded session reported 10:04:03, and reloading
+the reused tab did not shift it. Three hypotheses were tested and none held. The
+symptom is bounded rather than fixed: `MAX_TODAY_AGE_MS` (90 min) crawls
+regardless of the stamp, and `autocheck-today` now logs `stampRead` /
+`stampKnown` / `storedAgeMin` so the next occurrence is one line to diagnose.
+Confirmed working 2026-08-22. **Do not remove the ceiling before the root cause
+is understood** — it is the only thing preventing a silent permanent stall.
+
+**The export replay never engaged — fixed 2026-08-22.** A live run reported
+`replay: { haveContext: true, sheetsLearned: 0, replayed: 0, fellBack: 0 }` and
+took 149.9 s for ten stores, i.e. every store paid the ~12 s DOM route while
+the fast path sat there looking healthy. Cause was a closed loop:
+`learnSheetIds` reads the `sheetdocId` GUID out of a captured request body, but
+`content/tableau_capture.js` recorded only `string` and `URLSearchParams`
+bodies — and Tableau's own export posts **multipart FormData**, so that request
+landed in the ring with `reqBody: null`. The only bodies ever captured were the
+replay's own, which it could not send until it had already learned a GUID.
+`serializeBody()` now handles FormData (and both the fetch and XHR patches use
+it), emitting the same multipart shape `learnSheetIds` already parses. The two
+producers meet in one test — `export_replay.test.mjs::"learns from a body
+captured off Tableau's OWN export"`. **Watch `sheetsLearned` on the next live
+run**: it should be non-zero after the first store, and per-store time should
+drop from ~12 s to ~1–2 s.
+
+Two follow-ups from tracing that chain end to end (2026-08-22):
+
+- **Learning ran only on the success path.** `exportSheetText` bailed on
+  `no CSV captured` *before* calling `learnFromRing`, but the GUID comes from
+  the export command the page has already posted — which fires whether or not
+  a file ever comes back. So a failing store taught the crawl nothing, and the
+  next store paid the same slow dialog and could fail the same way. Learning
+  now happens before the bail.
+- **`no CSV captured` was a dead-end message.** It cannot distinguish the
+  driver never posting the command (a selector/timing bug), the server
+  rejecting it, the file never arriving (a slow store — the only case where
+  raising `EXPORT_WAIT_MS` helps), or a file arriving that did not contain the
+  needle (usually a store with no rows, or a renamed column). The ring holds
+  all four. `summariseExportAttempt(ring, needle)` in
+  `tableau_export_replay.js` reads it out and the reason string now carries it.
+  Blob captures have no filename — the download name lives on the synthetic
+  `<a>`, not the Blob — so arrived-but-unmatched files are identified by their
+  **header row**, which is also the only line safe to log (column names, never
+  anyone's data).
+
+**Store 5173 is not yet root-caused.** It failed one of its four sheets on the
+2026-08-22 run (`partial: true`, 9 of 10 stores) with the old bare message, so
+there is nothing to diagnose from retrospectively. The next occurrence will say
+which of the four cases it is.
+
+Related, not merged: `modules/metricshot/lib/sources/vizpick_export.js` is a
+second, older implementation of this same export with two sheetdocId GUIDs
+hardcoded. It would make a reasonable seed for the learner (removing the
+first-run cost entirely), but the two were written independently and
+reconciling them is its own job.
+
+**Root cause of the home store showing WINs: "has a record" ≠ "has a name"
+(fixed 2026-08-22).** `refreshDirectory()` gated its resolver on whether
+`associateDirectory.getMany()` returned anything for a WIN. But digitallocks
+writes title/tenure records with **no `name` field** for every associate a
+reviewer has opened in Workday — so those WINs looked "known", skipped the
+Workvivo lookup entirely, and rendered as bare ids. It presented as one store
+being broken (the home store — the only one with prior tool usage; stores the
+other tools had never touched resolved fine) and it survived reloads, because
+the nameless record lives in `chrome.storage.local`.
+
+`shared/associateDirectory.js::hasName(rec)` now owns that distinction and all
+four call sites in the view use it. The mount-scoped "already tried" marker
+moved from `directory.set(w, null)` to a separate `attempted` Set — the null
+sentinel conflated *tried and failed* with *hold no record*, and clobbered any
+title the record did carry. **Gate on `hasName()`, never on `get()`/`getMany()`
+returning something.**
+
+**Bare WINs in the Associates view are now explained, not silent (2026-08-22).**
+Rendering an id when name resolution fails is deliberate — better an id than a
+confidently wrong name on a list about who is not doing their picks — but three
+very different causes all looked identical on screen: Workvivo unreachable, a
+standing miss inside the 1 h `MISS_TTL_MS` backoff, and a genuine "no unique
+match". `shared/associateLookup.js` now keeps `_diag` counters
+(`attempts` / `resolved` / `definitiveMiss` / `transient` / `cachedMiss`),
+exported as `lookupDiagnostics()` + `diffLookupDiagnostics()`; the view diffs
+them across its pass, emits `vizpick.names_unresolved` to the debug feed, and
+prints the applicable cause under the table. Counters are process-lifetime
+totals and the shell page and SW keep separate ones — always diff, never read
+the absolute.
+
+**metricshot no longer re-pulls VizPick's data (2026-08-22).** Both modules
+were exporting the same four Tableau sheets for the same store, in two
+sessions, minutes apart — free to disagree about what "now" meant. The ring
+values were already shared via `vizpick_snapshot.js`; the two detail sheets
+(Location Details, Department Breakout) were not, and were being re-exported
+from **four** separate call sites (`capture.js` plus three handlers in
+`service.js`).
+
+- `modules/metricshot/lib/sources/followup_data.js::getFollowUpSheets()` is now
+  the single path. Order: vizpick's snapshot → headless replay → nothing.
+  Fallback is **per sheet** — one missing export must not blank the other.
+- `modules/vizpick/lib/ensure_today_store.js::ensureTodayRowForStore()` is the
+  single-store door into vizpick's Today pipeline. Fresh row → a storage read
+  and no tab at all. Stale (past `DEFAULT_MAX_AGE_MS`, 90 min, matching the
+  Today source's own ceiling) → that ONE store is re-captured and written back,
+  so the rollup gains from metricshot's schedule instead of racing it.
+- `snapshots.upsertTodayRow()` exists because `mergeToday()` stamps the whole
+  snapshot with one `capturedAt`. That is honest for a top-up (same run, same
+  source stamp) but not for one store re-captured hours later — it would tell
+  the rollup every store had just refreshed and suppress the crawl the others
+  needed. **Freshness lands on the row**; read it via
+  `snapshots.rowCapturedAt(row, today)`.
+- `parseLocationDetails(text, { allScans })` now optionally returns `scans` —
+  every scanned bin, `{ location, lastSeenAt }` only. metricshot's "Un-scanned
+  locations" section ranks all scanned bins by staleness, which is wider than
+  `gaps` (bins with picks still outstanding). Collected for the **user's home
+  store only**; market-wide it would be thousands of rows a day for a section
+  that only ever covers one store. Non-home stores fall back to `gaps`, which
+  is narrower but not empty. `scans` is `null` (not `[]`) when not collected,
+  so "not asked for" stays distinct from "nothing found".
+- **Hours are derived at READ time, never stored.** Staleness grows after
+  capture; baking it in at capture would under-report every bin by however long
+  the snapshot has been sitting.
+
+
+**Per-card Print / Pick list / Email (2026-08-22).** Three actions in each
+store card's header, faint until the card is hovered (always visible on touch,
+where there is no hover). All builders live in `modules/vizpick/lib/card_report.js`
+and are pure — view.js only opens the window and hands off the mailto:.
+
+The two printouts are **not the same data in two skins**, and the difference is
+the sort:
+
+| | Question it answers | Order | Names |
+|---|---|---|---|
+| Performance (🖨) | "where is this store losing it, and whose picks are being left" | severity — worst first, everything under goal marked | yes |
+| Pick list (📋) | "what do I pull next" | bin group, then location — **walk order** | **no** |
+
+A severity-ranked pull list would send whoever is holding it back and forth
+across the backroom, so both orders are pinned by tests.
+
+**"Bin group" is NOT a department (corrected 2026-08-22).** The leading segment
+of a location code — the 002 in 002/003 — is a bin prefix. The bins beginning
+002 are "the 002s"; that has nothing to do with department 2. The Location
+Details export carries **no department column at all**, so a location cannot be
+attributed to a department from this sheet; only the Department Breakout sheet
+has real dept numbers, and it has no locations. **The two cannot be joined.**
+The parser's field was called `dept`/`byDept` until this was caught, which is
+what made the mistake easy to write — so the field was renamed to
+`locGroup`/`byLocGroup`, not just the label. Grouping by the prefix is still
+correct for a walk sheet (bins sharing a prefix are physically adjacent); only
+the word was wrong. `pickList()` still reads a legacy `dept` key as a fallback,
+because a stored snapshot outlives the build that wrote it.
+
+Worth noting: `byLocGroup` is computed and stored but **nothing reads it**. It
+was intended for a per-department Locations Seen %, which the paragraph above
+rules out. It should either find a real consumer under its correct meaning or
+be deleted. The pick list carries
+no associate names by design: it goes to whoever is pulling now, and who missed
+them earlier is a separate conversation on a separate page. Bins with nothing
+left to pull are excluded; bins nobody scanned are included (the picks still
+need pulling, even though they belong to no associate).
+
+Notes:
+- **Provenance is mandatory on both.** `cardStamp()` prefers Tableau's own
+  publish time, falls back to capture time, and always says WHICH. A printed
+  page outlives the screen — yesterday's numbers read as today's next week.
+  It prefers the ROW's `capturedAt` over the snapshot's, since metricshot can
+  refresh a single store on its own schedule.
+- **Email is a draft, never a send.** `mailto:` hands off to the user's client
+  with no recipient; they address and send it.
+- **mailto: length.** Windows silently truncates past ~2 KB, so
+  `buildCardEmail()` drops whole sections to fit (associates first, then
+  departments — the rings always survive) and says it trimmed, rather than
+  letting the client cut a sentence in half.
+- **Browser print headers.** Chrome/Edge append their own URL/timestamp to
+  "Save as PDF" and there is no way to suppress it — the same reason
+  claimsdisposition abandoned `window.print()` for pdfmake. These pages are
+  designed to read fine with them present. If a header-free PDF is ever
+  required here, that means pdfmake, not a print stylesheet.
+
+
+### 10. Digital Market Rollup — new module, alpha (2026-08-22)
+
+**What it is:** `modules/digitalrollup/` — every store in a market's live OPD
+fulfilment health (picking, staging, dispense, availability) in VizPick's
+market-rollup layout. Source is the "GIF Market Dashboard", an AI Launchpad
+prototype at `ai-innovation-lab-app-bebdeibbicjffabd.walmart.com`.
+
+**The source is an actual API — this is new for us.** It is a FastAPI app and
+publishes its own contract: `/openapi.json`, Swagger UI at `/docs`. There is no
+crosstab to export, no DOM to drive, no capture ring. What we use:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/dashboard?market=<n>` | the whole rollup — `cards[]` (one per store) + `summary`. ~13 KB. |
+| `GET /api/hierarchy` | region/market tree, pre-scoped server-side to the caller |
+| `GET /api/region?region=<n>` | **identical card shape one level up** (market cards). Not used yet — a Region tab is close to free. |
+| `GET /api/trends?market=<n>` | **broken.** 500 `"Your default credentials were not found"` — the app's server-side GCP ADC is unconfigured. It is the only route to history; until it works, history has to be accumulated locally. |
+
+**Every figure arrives banded.** Each metric ships raw, formatted AND with a
+`*_status` of `green|yellow|red|gray` — so unlike VizPick this module invents
+no thresholds and computes no bands; it paints what the source decided. That is
+a real advantage (our colours cannot drift from the board's) and a real
+dependency: losing the `*_status` fields is as breaking as losing a value, and
+that is why they are in the schema baseline.
+
+**No rings, deliberately.** The headline figures sit on four different scales —
+a percentage, a pick *rate*, minutes, and queue depths. A ring implies a 0–100
+fill that most of them do not have, so the ring row is replaced by a headline
+strip and the market gauges by stat tiles. Everything else (header, picker,
+panel, `auto-fill minmax(300px,1fr)` card grid, home-store spine, show-details
+toggle) is VizPick's, on purpose.
+
+**The headline strip is five figures: on-time, pick rate, totes, avg wait,
+pre-sub** — workflow order, pick → stage → dispense → availability. Four of
+those mirror the board's own top strip; **`totes` is ours.** It is a backlog
+rather than a rate, and it *leads* dispense trouble instead of reporting it, so
+leaving it behind "Show details" meant seeing it only after the wait time had
+already moved. The API bands it (`totes_to_stage_status`), so surfacing it
+invents no threshold. Column count comes from `HEADLINE.length` via a CSS
+custom property, and the value type dropped to `--fs-sm` — at five columns in
+a 300px card, bold `100.0%` beside bold `8.0 min` no longer fits, and those
+values are `nowrap`, so they would have overflowed the card rather than wrapped.
+
+**Sorting is generated from the same list.** `lib/sorting.js::METRIC_SORTS`
+drives both the comparators and the `<select>`, so a figure cannot appear on a
+card without being sortable — 13 options: needs-attention, store ↑↓, and all
+five metrics ↑↓. Three things the 12 tests in `lib/tests/sorting.test.mjs` pin:
+sorts read the RAW numeric field (`10.0 min` vs `9.5 min` sorts wrong as a
+string); missing values sort LAST in *both* directions, because a no-data store
+is neither best nor worst; and an unrecognised mode (one persisted by an older
+build) falls back to needs-attention rather than leaving the API's own order.
+
+**Totes is shown, not weighted — settled on the analyst's call.** It was
+briefly folded into `cardStatus` and into the needs-attention tie-break; both
+were reverted. A backlog is context for judging the figures that measure
+service, not a verdict on its own, and a store with 159 totes and green
+picking/dispense should not be badged as a problem. It also meant inventing a
+label — the API bands `totes_to_stage_status` but publishes no `status_label`
+for staging — so the chip would have been putting our words in the board's
+mouth. So: the card status stays picking + dispense in the board's own
+wording, the needs-attention tie-break stays avg wait, and totes has its own
+sort for when the backlog is what you are actually looking for. Pinned by
+`staging is shown but never weighted into the card's status` in the tests, so
+it does not drift back in.
+
+**Auth is the one unresolved thing.** The app sits behind the istio ingress,
+which validates a pfedprod SAML JWT off the `AccessToken` cookie.
+`lib/gif_api.js` tries a direct SW `fetch` first and falls back to running the
+fetch inside a tab on the app's own origin, recording which path won as
+`snapshot.via`. **Nobody has yet confirmed which one actually works from a real
+profile** — that is the first thing to check on the first sideload, and the
+answer also settles the identical open question for Hoops (§3 above).
+
+There is a second gate: the AI Launchpad disclaimer sets `aiilDisclaimerAccepted`
+and a profile without it gets bounced to `innovate.walmart.com`. That is
+detected and reported as `kind: "DISCLAIMER"` with the fix in the message,
+rather than surfacing as a parse error.
+
+**Access scope, verified live:** `/api/diagnostics/headers` resolves the caller
+from the JWT and returned `allowed_markets: [120]`. So the market picker will
+normally hold exactly one entry — that is correct, not a bug, and the picker
+says so instead of looking broken.
+
+**Verification so far:** `lib/tests/normalize.test.mjs` (6 tests, real captured
+fixture) passes. `dev/preview-digitalrollup.mjs <fixture.json>` mounts the
+real `view.js` against a captured payload and screenshots both themes at three
+widths — renders 10 cards / 7 tiles / 1 home card, clean at 900px through
+1920px. **Not yet run in a real extension profile**, so the SW pull, the cookie
+fallback and the disclaimer path are all untested outside the harness.
+
+**Auto-refresh: every 10 minutes, on by default.** `digitalrollup.autorefresh`,
+installed with `ensureAlarm()` from `module.js` top level behind the
+`IS_SERVICE_WORKER` guard — the shape §7 mandates. Notes on the choices:
+
+- **10 minutes needs no change-detection.** VizPick checks a timestamp first
+  because its capture is a multi-minute crawl. Here one pull is a single
+  sub-second call for ~13 KB, so *checking* whether to pull would cost more
+  than pulling. There is deliberately no `unchanged` path.
+- `BOOTSTRAP_MIN_GAP_MS` is **pinned to `AUTO_PERIOD_MIN`**, not set
+  independently. `bootstrapIfNeeded()` runs on essentially every SW wake, so a
+  smaller constant there silently becomes the real refresh rate — the bug that
+  made VizPick crawl three times as often as intended (§6).
+- The `lastAuto` stamp is written **before** the pull, not after. Stamping only
+  on success would let a run of failures retry on every SW wake instead of once
+  per period.
+- Which market it follows: the stored snapshot's, then the home market from
+  Settings → Defaults, then the only market your access covers. With no answer
+  it logs `auto-start` with `marketFrom: "none"` and does nothing rather than
+  guessing.
+- `startPull()` is the single owner of the in-flight guard, so a background run
+  and a manual Refresh cannot open two anchor tabs at once.
+- Telemetry from the start, unlike VizPick: `alarm-fired`, `alarm-ensured`,
+  `auto-start`, `auto-skip`, `auto-set`, `bootstrap-skip`, `pull-ok`,
+  `pull-failed`. Every branch ending in "do nothing" says so. `diagnostics`
+  also reports the live alarm row and its next fire time — a missing row there
+  *is* the diagnosis for "the auto-refresh isn't running".
+- On/off switch lives in the module header (`Auto · 10m`), not Settings,
+  because the freshness pill beside it is where you notice the board has
+  stopped moving.
+
+**Next concrete steps:**
+1. Sideload and run one real pull; record whether `via` is `direct` or `tab`.
+2. If `direct` works, say so in `MEMORY.md` — it contradicts the Workvivo
+   precedent and would simplify the Hoops work. It also decides how intrusive
+   the 10-minute poll is: `direct` costs one fetch, `tab` opens and closes a
+   background tab six times an hour.
+3. Watch the first few alarm ticks. Per §7 these handlers are the
+   least-exercised code in the suite, and this one has never run in the wild.
+4. Consider the Region tab (`/api/region`) — same renderer, one endpoint.
+
+---
+
 ## Watch list (not in flight; would be picked up next)
 
 - **VizPick `Total Picked` — resolved and removed from the card (2026-08-20).**
@@ -488,12 +953,22 @@ first few ticks of `sparkfraud`'s watchlist poll and `sparkscango`'s
   Until then, leave the two config keys in place (documented as inert)
   rather than deleting them.
 
-- **User-directory lookup for ClaimsDisposition.** Probes in
-  [`../dev/DIRECTORY_FINDINGS.md`](../dev/DIRECTORY_FINDINGS.md). Most
-  promising lead: `workvivo.walmart.com/users/lookup?username=<u>` — need to
-  test with a coworker's username to see whether matched users redirect to
-  `/users/<numericId>` (distinguishable from self-redirect to `/`). If that
-  works, wire it into `lib/userDirectory.js::_fetchFromDirectory`.
+- **Promote the Workday title/tenure lookup to `shared/`.** The name resolver
+  moved to `shared/associateLookup.js` on 2026-08-22 at its third consumer
+  (claimsdisposition, assocpurchases, vizpick — the assocpurchases copy was a
+  near-duplicate and is deleted). But Workvivo's quick-search returns a NAME
+  ONLY. Job title and tenure come from Workday, and that path is still inside
+  `modules/digitallocks/service.js::lookupAssociate`.
+
+  Consequence today: vizpick's Associates view shows a job title only for WINs
+  digitallocks happens to have resolved already. Everyone else gets a name and
+  no title. Moving the Workday path next to the Workvivo one — same file, same
+  `Directory.merge()` write — closes that, and is the same three-consumer
+  argument.
+
+  Division of labour to preserve when doing it:
+  `associateDirectory.js` = the permanent store (knows nothing about lookups);
+  `associateLookup.js` = resolution. Do not add a fourth copy of either.
 - **`shared/http.js` generalization.** Stub today; modules hand-roll fetch.
   Per `README.md::Shared helper inventory`, generalization waits for a 2nd
   consumer of the AurorBuddy `appriss_http.js` retry/auth-wall pattern.

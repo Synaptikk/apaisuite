@@ -76,13 +76,22 @@ export default {
     id:          "<slug>",
     name:        "<Human Name>",
     description: "<one-line>",
-    icon:        "modules/<slug>/icon.svg",   // optional
     version:     "0.1.0",
     accent:      "#0071CE",                   // optional; sets --module-accent
     status:      "active",                    // "active" | "beta" | "deprecated"
 
     ui: {
       kind: "fullpage",
+
+      // Optional sidebar + home-card glyph. INNER markup of a 20×20 stroke
+      // icon — no <svg> wrapper. The shell adds the wrapper so every module
+      // shares one viewBox, stroke-width 1.5 and currentColor. Omit it and
+      // you get the generic four-square grid. See "Module icons" below.
+      icon: `
+        <rect x="4" y="8.8" width="12" height="8" rx="2"/>
+        <path d="M7.1 8.8V6.4a2.9 2.9 0 0 1 5.8 0v2.4"/>
+      `,
+
       view: () => import("./view.js"),        // LAZY — only loads when mounted
     },
 
@@ -161,6 +170,64 @@ too. An ungated listener runs its handler once in the SW and once in every
 open suite tab — separate module instances with separate in-flight guards,
 each driving its own background tabs and writes.
 
+### Long jobs must hold the worker awake
+
+Any service-worker job that runs for more than ~30 seconds needs
+`shared/sw_keepalive.js`:
+
+```js
+import { keepAwake } from "../../shared/sw_keepalive.js";
+
+const release = keepAwake("mymodule.pullThing");
+try { ...long job... } finally { release(); }
+// or: return withKeepAwake("mymodule.pullThing", () => doTheJob());
+```
+
+**Why it is not optional.** An extension service worker is torn down after ~30
+seconds of *inactivity*, where activity means calling an extension API — not
+awaiting a promise, and not a `fetch()` in flight. While the suite page is open
+the pending `sendResponse` channel holds the worker up, so everything looks
+fine. Close that tab or navigate it away and the port closes, the keep-alive
+goes with it, and a job that is mostly `await fetch(...)` is collected part way
+through with no error recorded anywhere. It reads as "background loading stops
+when I navigate away".
+
+Jobs that poll `chrome.tabs` / `chrome.scripting` in a loop (vizpick's Today
+crawl) survive by accident, because each call resets the timer. Do not rely on
+that — it is a property of how a capture happens to be written, and it changes
+the moment someone replaces DOM-driving with a direct HTTP call.
+
+Refcounted, so overlapping jobs share one timer and the last release stops it.
+Always release in a `finally`.
+
+### Optional hook: `suite_opened`
+
+A module may expose a `suite_opened` handler alongside its normal ones:
+
+```js
+export const handlers = {
+  async "suite_opened"(_msg) { return await openCheck(); },
+  // ...
+};
+```
+
+The shell dispatches it once per shell page load, to **every module that has
+one**, discovered from the registry — `app.js` never names a module. Adding the
+handler is the whole opt-in.
+
+Use it when opening the suite means a user is about to look at your data and
+waiting for the next alarm tick would be the wrong trade. Rules:
+
+- **Rate-limit it yourself.** The shell can be reloaded repeatedly, and every
+  reload of an unpacked extension re-opens it. `vizpick` uses a 5-minute floor
+  against the same timestamp its alarm uses.
+- **Make the no-op case cheap.** `vizpick` reads the source's own "last
+  updated" text and stops there unless it moved; it only became reasonable to
+  run this on open once that check stopped costing a full export.
+- **Never assume it is awaited.** The shell fires it after the first route and
+  ignores the result, so a module driving a background tab cannot delay the
+  first paint.
+
 ### Registration
 
 `modules/_registry.js`:
@@ -177,6 +244,45 @@ export default [
 That's it. No edits to `app.js`, `background/service_worker.js`, or anything
 in `shared/`. If you find yourself wanting to edit those files for a new
 module, the architecture has a hole — flag it before patching.
+
+### Resolving a user id to a person
+
+Use `shared/associateDirectory.js`. **Never** add a module-local directory
+cache — three of them existed at once (digitallocks 24 h, claimsdisposition
+30 d, assocpurchases 30 d), each re-pulling the same people on its own clock
+and none able to see the others' results.
+
+```js
+import * as Directory from "../../shared/associateDirectory.js";
+
+const known = await Directory.get(win);          // permanent; null = never seen
+if (!known && !await Directory.isRecentMiss(win)) {
+  const person = await yourSourceLookup(win);     // only for unknown WINs
+  if (person) await Directory.merge(win, { name: person.name,
+                                           lengthOfService: person.los,
+                                           sources: { name: "yoursource" } });
+  else        await Directory.markMiss(win);
+}
+```
+
+Three rules the store enforces, all worth knowing before you extend it:
+
+- **Hits are permanent, misses are not.** A resolved person is a fact. A "no
+  match" is usually a failure (auth wall, page not rendered, ambiguous
+  search), so it gets a 1-hour window instead of being cached forever.
+- **Never store elapsed tenure.** Workday's "Length of Service" is only true
+  on the day it was read. Hand `merge()` the raw string (or `tenureDays`) and
+  it stores a *hire date*; read tenure back with `tenureDaysFor(record)`,
+  which recomputes on every call. This is what makes "pull once, keep
+  forever" correct instead of a slow staleness bug.
+- **`merge()` never blanks a known field.** Workvivo resolves names but not
+  tenure; Workday resolves both. Whichever runs second must not erase what
+  the first learned.
+
+Transfers, promotions and name changes have no TTL that would catch them —
+call `Directory.forget(win)` (digitallocks exposes this as
+`lookupAssociate({ userId, refresh: true })`) to force one re-pull.
+`shared/tests/associateDirectory.test.mjs` pins all of the above.
 
 ---
 
@@ -344,6 +450,26 @@ Storage scope rules:
   only `opacity` between open/closed leave an invisible click-eating layer.
   Pair every opacity toggle with `pointer-events: none/auto`. (Documented in
   `MEMORY.md` after a real bite.)
+
+### Module icons
+
+`manifest.ui.icon` is the module's glyph in the sidebar nav and on its home
+card. Rules, all of them enforced by the shell owning the wrapper:
+
+- Supply **inner markup only** — paths/rects/circles, no `<svg>` element.
+  `app.js::iconSvgString()` wraps it in
+  `viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"`.
+- Draw on a **20×20 grid**. It renders at 22px on the home card and 18px in
+  the sidebar, so anything finer than ~1.5px of separation closes up.
+- **Never hard-code a colour.** `stroke` is inherited, which is what makes the
+  icon follow the active/hover/theme colour. `fill="currentColor"` is fine for
+  a solid dot; a literal hex is not.
+- Omitting `icon` is legitimate — the module gets the generic four-square
+  grid. The shell has no per-module icon table, so a folder dropped in with a
+  registry line still renders correctly with or without a glyph.
+
+`dev/icon-proposals.html` is the contact sheet for the current set (open it in
+a browser); it also carries the alternates that weren't chosen.
 
 ---
 

@@ -30,6 +30,7 @@ import { listModules, getModule } from "../shared/registry.js";
 import { setCapturedHeader }      from "../shared/captured_headers.js";
 import { checkForUpdate }         from "../shared/updater.js";
 import { ensurePushSubscription } from "../shared/push.js";
+import { ensureAlarm }            from "../shared/alarms.js";
 
 // ── Declarative webRequest filter registration (SYNCHRONOUS, TOP-LEVEL) ──
 //
@@ -198,17 +199,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   });
 });
 
-// Ensure the alarm exists. chrome.alarms.create with the same name is a no-op
-// if the alarm with identical period+delay is already scheduled; if Chrome
-// restarted and lost it, this re-creates it. Run once at install too, so the
-// first check happens within 30s instead of 6 hours.
-chrome.alarms.get(UPDATER_ALARM_NAME).then((existing) => {
-  if (!existing) {
-    chrome.alarms.create(UPDATER_ALARM_NAME, {
-      delayInMinutes: 0.5,
-      periodInMinutes: UPDATER_PERIOD_MIN,
-    });
-  }
+// Ensure the alarm exists, re-creating it only if Chrome restarted and lost
+// it. The get() is required: chrome.alarms.create with an existing name is
+// NOT a no-op — it cancels that alarm and reschedules, restarting the period
+// from zero. (An earlier version of this comment claimed the opposite, and
+// five modules were written against that belief; see shared/alarms.js.)
+// delayInMinutes puts the first check 30s out instead of 6 hours.
+ensureAlarm(UPDATER_ALARM_NAME, {
+  delayInMinutes: 0.5,
+  periodInMinutes: UPDATER_PERIOD_MIN,
 }).catch(() => {});
 
 chrome.runtime.onInstalled.addListener(() => {

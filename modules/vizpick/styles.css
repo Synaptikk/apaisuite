@@ -244,6 +244,36 @@
 }
 .vizpick-store-card:hover { border-color: var(--apai-blue); box-shadow: var(--shadow-1); }
 .vizpick-store-card:active { cursor: grabbing; }
+/* The user's own store (Settings > Defaults). Deliberately quiet: a spine on
+   the leading edge and a faint tint, the same idiom the shell uses for the
+   active nav item — enough to find at a glance in a wall of 20 cards without
+   reading as a warning or a selected state. Declared BEFORE the drag rules so
+   dragging this card still gets normal drag feedback. */
+.vizpick-store-card.is-home {
+  border-color: var(--module-accent);
+  background: var(--module-accent-bg);
+  box-shadow: inset 3px 0 0 0 var(--module-accent);
+}
+/* Keep the spine on hover — the plain :hover rule below/above would otherwise
+   replace it wholesale and the home card would lose its marker mid-scan. */
+.vizpick-store-card.is-home:hover {
+  box-shadow: inset 3px 0 0 0 var(--module-accent), var(--shadow-1);
+}
+/* --module-accent-ink, not #fff: the dark theme's accent is a LIGHT hue
+   (Molten Ember) and white on it is unreadable. The token is the per-theme
+   answer to "what colour goes on top of the accent fill". */
+.vizpick-home-chip {
+  margin-left: var(--sp-2);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--module-accent);
+  color: var(--module-accent-ink);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
 /* The card being dragged. */
 .vizpick-store-card.is-dragging { opacity: 0.4; }
 /* The card it would be dropped onto. */
@@ -260,7 +290,8 @@
    the id block taking the free space. */
 .vizpick-store-card-summary .vizpick-store-card-id { order: 0; }
 .vizpick-store-card-summary .vizpick-store-card-gauge { order: 1; }
-.vizpick-store-card-summary .vizpick-store-card-grip { order: 2; align-self: flex-start; }
+.vizpick-store-card-summary .vizpick-card-actions { order: 2; }
+.vizpick-store-card-summary .vizpick-store-card-grip { order: 3; align-self: flex-start; }
 
 .vizpick-card-toggle {
   margin-top: var(--sp-3);
@@ -287,6 +318,38 @@
   letter-spacing: -2px;
 }
 .vizpick-store-card:hover .vizpick-store-card-grip { color: var(--apai-muted); }
+
+/* Per-card Print / Pick list / Email.
+   Kept faint until the card is hovered or a button is focused: a market of 20+
+   cards showing three glyphs each would read as clutter, and these are
+   deliberate actions rather than things to reach for at a glance. Focus is
+   included so the keyboard path is not invisible. */
+.vizpick-card-actions {
+  display: flex;
+  gap: 2px;
+  align-self: flex-start;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.vizpick-store-card:hover .vizpick-card-actions,
+.vizpick-card-actions:focus-within { opacity: 1; }
+.vizpick-card-action {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 4px;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  color: var(--apai-muted);
+}
+.vizpick-card-action:hover { background: var(--apai-surface-alt, rgba(0,0,0,0.06)); color: var(--apai-fg); }
+.vizpick-card-action:focus-visible { outline: 2px solid var(--apai-focus, #0053e2); outline-offset: 1px; }
+/* Touch and reduced-motion users never get a hover, so never get the buttons.
+   Show them always rather than making the feature unreachable. */
+@media (hover: none) {
+  .vizpick-card-actions { opacity: 1; }
+}
 .vizpick-store-card-rings {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -303,6 +366,30 @@
   color: var(--apai-muted);
 }
 .vizpick-store-card-rings .vizpick-gauge { gap: 2px; }
+/* One grid cell per ring: the ring itself plus, for Cases and Picks, the raw
+   x/y underneath. Rings without a ratio have no sub-line, so the cells align
+   on their tops rather than being stretched to a common height. */
+.vizpick-gauge-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+}
+/* Smaller and muted so the percentage inside the ring stays the headline —
+   same treatment as .vizpick-ratio in the rows below.
+   margin-top:auto pins it to the bottom of its cell so all four ratios share a
+   baseline even when one label wraps to two lines — "Cases Seen" and
+   "Overstock" are wide enough at a 300px card that one of them can. */
+.vizpick-gauge-ratio {
+  margin-top: auto;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: center;
+}
 .vizpick-minigauge-na {
   width: 62px;
   height: 62px;
@@ -565,3 +652,130 @@
   font-size: var(--fs-sm);
   color: var(--apai-ink);
 }
+
+/* ── Per-department breakdown (Show details) ────────────────────────────
+   Lives inside .vizpick-store-card-details. A store can have tens of active
+   departments, so the table scrolls inside the card rather than making the
+   card itself grow without bound — a market of ten expanded cards is
+   otherwise unnavigable. */
+.vizpick-dept-wrap { margin-top: var(--sp-2); }
+.vizpick-dept-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--apai-border-soft);
+}
+.vizpick-dept-omitted { color: var(--apai-muted); opacity: 0.8; white-space: nowrap; }
+.vizpick-dept-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.vizpick-dept-table th {
+  text-align: left;
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+  padding: var(--sp-1) 0;
+  position: sticky;      /* header survives the scroll below */
+  top: 0;
+  background: var(--apai-bg-soft);
+}
+.vizpick-dept-table th:not(:first-child),
+.vizpick-dept-cell { text-align: right; }
+.vizpick-dept-table td { padding: 2px 0; }
+.vizpick-dept-num { color: var(--apai-ink); font-weight: var(--fw-semi); }
+.vizpick-dept-cell .vizpick-ratio { margin-right: var(--sp-1); }
+.vizpick-dept-na { color: var(--apai-muted); }
+/* Cap the height so an expanded card stays a card. */
+.vizpick-dept-wrap {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.vizpick-dept-none {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+}
+
+/* ── Detail pane tabs (Department | Associates) ─────────────────────────── */
+.vizpick-detail-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--apai-border-soft);
+  margin-bottom: var(--sp-1);
+}
+.vizpick-detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 2px var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  cursor: pointer;
+}
+.vizpick-detail-tab:hover { color: var(--apai-ink); }
+.vizpick-detail-tab.is-active {
+  color: var(--apai-ink);
+  font-weight: var(--fw-semi);
+  border-bottom-color: var(--module-accent);
+}
+.vizpick-detail-tabs .vizpick-dept-omitted { margin-left: auto; }
+
+/* ── Associates: who left suggested picks behind ────────────────────────── */
+.vizpick-assoc-table tbody + tbody { border-top: 1px solid var(--apai-border-soft); }
+.vizpick-assoc-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 3px 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--apai-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.vizpick-assoc-toggle:hover .vizpick-assoc-name { color: var(--apai-link); }
+.vizpick-assoc-caret { color: var(--apai-muted); width: 10px; }
+.vizpick-assoc-name { font-weight: var(--fw-semi); }
+.vizpick-assoc-title { color: var(--apai-muted); }
+/* The count is the ranking signal, so it holds the right edge where the eye
+   lands when scanning a sorted list. */
+.vizpick-assoc-count {
+  margin-left: auto;
+  color: var(--apai-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vizpick-assoc-bin td { padding-left: var(--sp-3); }
+/* Scan time is context for judging an attribution, not a headline — a late
+   scan is the case where "who last scanned it" stops meaning "who skipped it". */
+.vizpick-assoc-when { color: var(--apai-muted); }
+
+/* Bin sub-rows. Indented under their associate and self-labelling, because the
+   table header describes ASSOCIATES — the first version reused a
+   "Bin | Left | Last scan" header for both levels, so a collapsed list showed
+   names under "Bin" and "66 left · 9 bins" under "Last scan". */
+.vizpick-assoc-bin-id {
+  padding-left: var(--sp-4);
+  color: var(--apai-ink);
+  font-variant-numeric: tabular-nums;
+}
+.vizpick-assoc-bin-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+.vizpick-assoc-bin-left { color: var(--apai-ink); font-variant-numeric: tabular-nums; }

@@ -234,6 +234,56 @@ export async function mergeToday({ rows, sourceUpdate, capturedAt, partial, mark
   return store;
 }
 
+/**
+ * Refresh ONE store inside the existing Today snapshot.
+ *
+ * Distinct from mergeToday() on purpose. That merges a top-up crawl — extra
+ * stores captured in the same run, at the same source stamp — so giving the
+ * whole snapshot one `capturedAt` is honest there. This is for a single store
+ * re-captured on its own, potentially hours later (metricshot's schedule fires
+ * and finds the stored row stale). Advancing the snapshot-level `capturedAt`
+ * in that case would tell the market rollup every store had just been
+ * refreshed when only one had, and the rollup's own staleness checks would
+ * then skip the crawl the other stores actually needed.
+ *
+ * So the freshness lands on the ROW. Readers should prefer
+ * `row.capturedAt ?? today.capturedAt` — the fallback covers rows written
+ * before this existed, and by any path that still writes whole crawls.
+ *
+ * The snapshot-level fields are only initialised when there is no Today
+ * snapshot at all; otherwise they are left exactly as they were.
+ */
+export async function upsertTodayRow({ row, capturedAt, sourceUpdate, market = null }) {
+  if (!row?.store) throw new Error("upsertTodayRow: row.store is required");
+  const store = await read();
+  const existing = store.today;
+  const stamped = { ...row, capturedAt };
+
+  const byStore = new Map((existing?.rows || []).map((r) => [String(r.store), r]));
+  byStore.set(String(row.store), stamped);
+
+  store.today = existing
+    ? { ...existing, rows: [...byStore.values()] }
+    : {
+        sourceKey:    sourceUpdate?.raw ?? null,
+        sourceUpdate: sourceUpdate || null,
+        rows:         [stamped],
+        capturedAt,
+        // One store is not a market. Saying so keeps the rollup from treating
+        // this as a crawl that covered everything.
+        partial:      true,
+        market:       market ?? null,
+      };
+
+  await write(store);
+  return store;
+}
+
+/** When was this specific row captured? Falls back to the snapshot's stamp. */
+export function rowCapturedAt(row, today) {
+  return row?.capturedAt ?? today?.capturedAt ?? null;
+}
+
 export async function clearAll() {
   await chrome.storage.local.remove([KEY, LEGACY_ROWS, LEGACY_GT]);
 }

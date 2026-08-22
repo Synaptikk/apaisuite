@@ -52,6 +52,45 @@ Recovered verbatim from a caption zone in the same payload, which settles the
 
 and the header text: `On Hand Picks / Suggested Picks Goal 90% (30% wt.)`.
 
+## Answer part 1b — no, do not read the rendered image
+
+Asked twice, so it is written down here rather than re-argued. Since the viz is
+server-rendered, the picture genuinely IS all that arrives — which makes OCR
+look like the only alternative to the export. It is not a faster route, and it
+is a worse one on every axis that matters.
+
+**It would be slower, not faster.** The export turned out to be two HTTP calls
+— `POST export-crosstab-to-excel-server`, then `GET` the resultKey — measured
+at 200 ms for the POST on a live session. OCR needs the viz fully painted, the
+department table scrolled and stitched (it scrolls; only visible rows are in
+any one frame), then an inference pass per store. The cheap route the hunt was
+after exists, and it is the replay, not the image.
+
+**Screen values are lossy by construction.** The dashboard renders Pick % as
+`63%`. The export carries `54 / 86`. The module deliberately shows real
+numerator/denominator pairs and never a percentage divided back out — see the
+note at the top of `lib/parse_vizpick_stores_csv.js`. OCR would throw away
+exactly the precision the UI exists to show.
+
+**It removes the failure signal — the one that eventually saved us.** When
+Tableau renamed two columns on 2026-08-22, the CSV header gave a precise,
+machine-readable error naming both the old and new spellings, and that string
+is what identified the cause. In an image a renamed column heading is just
+different pixels: the numbers underneath would have kept being read into the
+same field positions and rendered confidently wrong, indefinitely. A misread
+`8` for a `3` has the same property. The whole `shared/schema_watch.js` layer
+is only possible because we receive named columns.
+
+**And it cannot run where it needs to.** The capture runs unattended in a
+service worker every 30 minutes. There is no vision model there. A cloud OCR
+service would mean sending Walmart operational data to a third party, which is
+not on the table.
+
+Screenshots remain the right answer for a different problem — `metricshot`
+posts a picture of a dashboard to Workvivo, and a picture is exactly what that
+wants. The distinction is whether the pixels are the deliverable or a container
+someone hopes to get data back out of.
+
 ## Answer part 2 — but the export IS being driven the slow way
 
 The export is not an opaque UI flow. It is three plain HTTP steps, all caught
@@ -156,6 +195,45 @@ is for, and the plumbing already exists:
    logic in `shared/auth.js`.
 
 So the cost becomes one DOM dialog per market instead of two per store.
+
+### BUILT AND VERIFIED LIVE — 2026-08-22
+
+Implemented in `lib/sources/tableau_export_replay.js`, wired into the Today
+crawl via `exportSheetText()`. Measured against the live workbook:
+
+| | |
+|---|---|
+| POST + GET, end to end | **733 ms** (POST 618 ms, GET 115 ms) |
+| Returned | real xlsx, 4,756 bytes, 41 departments |
+| Parsed | `parseDeptBreakout` ok, 70/105 = 66.67% — matches the dashboard |
+| vs the DOM route | ~12.6 s of lane time per store |
+
+**`sheetdocId` survives across sessions — confirmed.** A GUID captured on
+08-21 replayed successfully in a brand-new session on 08-22 and returned the
+right sheet. Learning it once per market is therefore correct; it does not
+need re-learning per session.
+
+Two things the captured traffic alone did NOT reveal, both found only by
+running it:
+
+1. **The download is under `/tempfile/sessions/`, not `/sessions/`.** This
+   document originally said the latter — a mis-transcription. The plain path
+   answers HTTP 404 with an HTML error body, which the parser would have been
+   handed as though it were a sheet.
+2. **The xlsx stores percentages as fractions.** The CSV export renders
+   formatted text (`"67%"` → `num()` → 67); the xlsx holds `0.6667` with a
+   percent *display format* that `readXlsxFile` does not apply. Left alone it
+   parsed perfectly and every card rendered 0% — the "confidently wrong"
+   failure no schema check catches. `cellText()` scales any `%`-suffixed
+   column, and refuses to scale a value that already contains `%` (double
+   scaling would turn 67% into 6700%, equally invisible).
+
+   Side benefit: the xlsx values are unrounded, so the replay is marginally
+   more precise than the CSV route (66.67 vs Tableau's pre-rounded 67).
+
+The first attempt at the percent fix was itself a no-op — it guarded on
+`typeof value === "number"`, but `readXlsxFile` returns every cell as a
+string. Worth knowing before touching that helper.
 
 ### Risks before building it
 

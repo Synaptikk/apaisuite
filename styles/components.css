@@ -472,3 +472,64 @@
 .shell-nav-item[draggable="true"]:active {
   cursor: grabbing;
 }
+
+/* ── Hidden debug panel (Settings → tap the heading) ──────────────────────
+   A dense, console-like feed. Monospace and tabular numerals so timestamps
+   form a straight column and a burst of activity is readable as a shape
+   rather than a wall. */
+.dbg-feed {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-soft);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.dbg-row {
+  display: grid;
+  grid-template-columns: 92px 34px 110px 150px minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border-bottom: 1px solid var(--apai-border-soft);
+  white-space: nowrap;
+}
+.dbg-row:last-child { border-bottom: none; }
+.dbg-ts { color: var(--apai-muted); font-variant-numeric: tabular-nums; }
+/* Which pipe the line came down: a live broadcast, or the service worker's
+   telemetry ring catching us up. Worth distinguishing — "sw" lines can be a
+   few hundred ms behind because that ring flushes on a debounce. */
+.dbg-src {
+  text-align: center;
+  border-radius: var(--rad-sm);
+  font-size: 10px;
+  align-self: center;
+  padding: 0 4px;
+}
+.dbg-src-msg { background: var(--apai-info-bg); color: var(--apai-info); }
+.dbg-src-sw  { background: var(--apai-bg-elev); color: var(--apai-muted); border: 1px solid var(--apai-border-soft); }
+.dbg-mod { color: var(--apai-ink); font-weight: var(--fw-semi); overflow: hidden; text-overflow: ellipsis; }
+.dbg-evt { color: var(--apai-link); overflow: hidden; text-overflow: ellipsis; }
+.dbg-detail { color: var(--apai-muted); overflow: hidden; text-overflow: ellipsis; }
+
+.dbg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.dbg-table th {
+  text-align: left;
+  font-weight: var(--fw-regular);
+  color: var(--apai-muted);
+  padding: 2px var(--sp-2) 2px 0;
+  border-bottom: 1px solid var(--apai-border-soft);
+}
+.dbg-table td { padding: 2px var(--sp-2) 2px 0; }
+.dbg-alarms { max-width: 520px; }
+
+/* The heading is a tap target for the unlock gesture but must not look like a
+   button — the panel is meant to stay out of the way until someone is looking
+   for it. Only the cursor hints, and only on hover. */
+#settings-heading { cursor: default; user-select: none; }

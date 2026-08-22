@@ -24,17 +24,32 @@ import { toCsv } from "./lib/looker_csv.js";
 import { putPull, pruneOldPulls, getPullById } from "./lib/db.js";
 import { fetchCvpForMarket } from "./lib/cvp.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
+import { getUserHomeMarket } from "../../shared/userStore.js";
+import { getMarketRoster } from "../../shared/marketRoster.js";
 
 const MODULE_ID = "claimsdisposition";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Fallback store list used when the view omits `stores` in its message.
-// Set to the Market 120 store roster Shane investigates by default —
-// matches the store set in the user's most-recent successful pull. If
-// you operate in a different market, override by passing `stores` in
-// the pull message (the view's "stores" picker also passes it through).
-export const DEFAULT_STORES = [658, 669, 756, 1089, 1215, 1458, 2988, 3660, 5151, 5173];
+/**
+ * Fallback store list used when the view omits `stores` in its message.
+ *
+ * Resolved from the user's home market (Settings > Defaults) through the
+ * shared roster table rather than a literal array — this module used to
+ * carry its own copy of the Market 120 roster, which meant an analyst in
+ * any other market silently pulled someone else's stores.
+ *
+ * Returns null when the market is unset or has no roster in
+ * shared/marketRoster.js. Callers must treat that as an error: a pull with
+ * no stores returns zero rows, which reads as "nothing happened this month"
+ * rather than as a misconfiguration.
+ */
+async function defaultStores() {
+  const market = await getUserHomeMarket().catch(() => null);
+  if (!market) return null;
+  const roster = getMarketRoster(market);
+  return roster?.length ? roster : null;
+}
 
 // Where per-store CSVs land in Downloads. Subfolder makes it trivial for
 // the user to clean up + visually group successive pulls.
@@ -276,7 +291,19 @@ export const handlers = {
   // via chrome.storage.onChanged. Pulled rows land in IndexedDB via db.js;
   // the view reloads from db.getLatestPull on completion.
   async pull(msg) {
-    const stores = (msg?.stores?.length ? msg.stores : DEFAULT_STORES).map(String);
+    // The market this pull belongs to. Recorded on the pull record so every
+    // downstream surface (records, PDF cover, report footer) labels itself
+    // with the market the data actually came from instead of a constant.
+    const marketNumber = await getUserHomeMarket().catch(() => null);
+
+    const rosterStores = msg?.stores?.length ? msg.stores : await defaultStores();
+    if (!rosterStores?.length) {
+      return {
+        ok: false,
+        error: "No stores to pull. Pick stores in the dashboard, or set your home market in Settings > Defaults.",
+      };
+    }
+    const stores = rosterStores.map(String);
     const days   = Math.max(1, Math.min(365, Number(msg?.days) || 30));
     const appVersion = msg?.appVersion || DEFAULT_APP_VERSION;
     const { startDate, endDate } = lastNDaysRange(days);
@@ -363,16 +390,21 @@ export const handlers = {
       // lands without CVP and the user just sees blank Sell-Through cells
       // until the next pull retries.
       let cvp = null;
-      try {
-        cvp = await fetchCvpForMarket({ marketNbr: 120 });
-        LOG(`CVP fetched: latestWeek=${cvp.latestWeek} stores=${Object.keys(cvp.byStore).length}`);
-      } catch (e) {
-        LOG(`CVP fetch failed (non-fatal): ${e?.message ?? e}`);
+      if (!marketNumber) {
+        LOG("CVP skipped: no home market set (Settings > Defaults)");
+      } else {
+        try {
+          cvp = await fetchCvpForMarket({ marketNbr: marketNumber });
+          LOG(`CVP fetched: market=${marketNumber} latestWeek=${cvp.latestWeek} stores=${Object.keys(cvp.byStore).length}`);
+        } catch (e) {
+          LOG(`CVP fetch failed (non-fatal): ${e?.message ?? e}`);
+        }
       }
 
       const pullRecord = {
         pullId,
         pulledAt: Date.now(),
+        marketNumber,   // null when unset — every consumer must handle that
         days,
         startDate, endDate,
         totalRows,

@@ -116,7 +116,10 @@ function _detectOutliersUncached(records) {
             actualValue: fmtMoney(s.disposalValue),
             severity: severityFromZ(z),
             zScore: z,
-            explanation: `Store ${s.storeNumber} disposal value is ${z.toFixed(1)} SD above the Market 120 average (${fmtMoney(marketDispMean)}).`,
+            // "the market average" — the mean is computed across whichever
+            // stores are in this pull, so naming a market number here was
+            // wrong for anyone whose roster wasn't Market 120's.
+            explanation: `Store ${s.storeNumber} disposal value is ${z.toFixed(1)} SD above the market average (${fmtMoney(marketDispMean)}).`,
           });
         }
       }

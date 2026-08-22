@@ -284,6 +284,16 @@
   white-space: nowrap;
 }
 
+/* A reason that fired but scored nothing: it fires on nearly every event in
+   this import, so it describes the store rather than the event. Rendered
+   flat and dashed so it reads as context, never as a finding. */
+.dl-chip-baseline {
+  background: transparent;
+  border-style: dashed;
+  color: var(--apai-ink-faint, var(--apai-ink-soft));
+  opacity: .65;
+}
+
 /* Status pills */
 .dl-status {
   display: inline-block;

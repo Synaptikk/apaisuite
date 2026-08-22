@@ -27,6 +27,9 @@
 //                                 persistence pipeline as the manual XLSX
 //                                 import.
 
+import { ensureAlarm } from "../../shared/alarms.js";
+import * as Directory from "../../shared/associateDirectory.js";
+import { lookupTitle } from "../../shared/associateLookup.js";
 import { decodeDsr } from "./lib/dsrDecode.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
 import { fetchAllLocksFromPage } from "./lib/buildCaseMap.js";
@@ -40,8 +43,12 @@ const STORE_KEY         = "digitallocks.homeStore";
 const AUTO_REFRESH_KEY  = "digitallocks.autoRefresh";
 const DAILY_ALARM_NAME  = "digitallocks.daily-refresh";
 
+// Idempotent — see shared/alarms.js. This used to call chrome.alarms.create()
+// unconditionally from module.js::register(), which runs on every shell page
+// load; each load cancelled the pending alarm and restarted the 24-hour
+// countdown, so for anyone who opened the suite daily it could never fire.
 export function installDailyRefreshAlarm() {
-  return chrome.alarms.create(DAILY_ALARM_NAME, {
+  return ensureAlarm(DAILY_ALARM_NAME, {
     delayInMinutes:  24 * 60,
     periodInMinutes: 24 * 60,
   });
@@ -73,14 +80,17 @@ export async function onAlarm(alarm) {
 }
 const GSCOPE_ORDER_URL = "https://gscope.walmartlabs.com/mfe/ordermanagement/orderresolution";
 const OMS_BASE = "https://gscope.walmartlabs.com/api/gateway/provider-oms/orders";
-const WORKDAY_SEARCH = "https://wd504.myworkday.com/walmart/d/search.htmld?q=";
+const WORKDAY_ORIGIN = "https://wd504.myworkday.com";
+const WORKDAY_SEARCH = `${WORKDAY_ORIGIN}/walmart/d/search.htmld?q=`;
 
 // Autonomous-reauth attempts when Power BI returns 401 / login HTML.
 const MAX_REAUTH_ATTEMPTS = 2;
 
-// Associate directory cache TTL: 24 hours.
-const ASSOC_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ASSOC_CACHE_PREFIX = "digitallocks.assoc.";
+// Associate tenure is cached PERMANENTLY in shared/associateDirectory.js, not
+// here. The old module-local cache (`digitallocks.assoc.<win>`, 24 h TTL) meant
+// the same associates were re-scraped from Workday every day, and nothing else
+// in the suite could see the result. Stale keys from that cache are harmless
+// and unread; the suite has unlimitedStorage.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -311,30 +321,92 @@ export const handlers = {
 
   // ── Associate hire date / tenure ──────────────────────────────────────────
 
-  // lookupAssociate({ userId: string })
+  // lookupAssociate({ userId: string, refresh?: boolean })
   //   -> { ok, name?, title?, tenureDays?, lengthOfSvc?, fromCache? }
+  //
+  // Reads shared/associateDirectory.js, which is PERMANENT: a WIN we have
+  // resolved before never hits Workday again. Tenure is recomputed from the
+  // stored hire date on every call, so a cached record does not go stale.
+  // Pass refresh:true to force a re-scrape (transfer, promotion, name change)
+  // — there is no TTL that would catch those, and inventing one would mean
+  // re-pulling everybody on the off chance.
   async lookupAssociate(msg) {
     const userId = String(msg?.userId ?? "").trim();
     if (!userId) throw new Error("userId required");
 
-    // Cache check is outside the queue — no I/O that touches the shared tab.
-    const cacheKey = ASSOC_CACHE_PREFIX + userId;
-    const cached = await chrome.storage.local.get(cacheKey).catch(() => ({}));
-    if (cached[cacheKey]?.fetchedAt && Date.now() - cached[cacheKey].fetchedAt < ASSOC_CACHE_TTL_MS) {
-      return { ok: true, ...cached[cacheKey], fromCache: true };
+    if (msg?.refresh) await Directory.forget(userId);
+
+    // Permanent hit — no network, no tab, regardless of how old it is.
+    const known = await Directory.get(userId);
+    if (known && known.hireDateApprox) {
+      return {
+        ok: true,
+        name:        known.name ?? null,
+        title:       known.title ?? null,
+        tenureDays:  Directory.tenureDaysFor(known),
+        lengthOfSvc: Directory.tenureLabelFor(known),
+        fromCache:   true,
+      };
     }
 
-    // Serialise tab navigation: one lookup at a time, one shared tab.
+    // A lookup that just failed backs off briefly rather than re-driving the
+    // tab on the next render.
+    if (!msg?.refresh && await Directory.isRecentMiss(userId)) {
+      return { ok: false, error: "Associate not found in directory (recent miss)" };
+    }
+
+    // Hard gate before any tab is opened or navigated. If the Workday host
+    // permission is ever removed from manifest.json, executeScript throws on
+    // every poll — the lookup would navigate a tab, spend 12s failing, cache
+    // nothing, and be asked again on the next render. Checking first means a
+    // missing permission costs zero navigations instead of one per associate.
+    const allowed = await chrome.permissions
+      .contains({ origins: [`${WORKDAY_ORIGIN}/*`] })
+      .catch(() => false);
+    if (!allowed) {
+      return {
+        ok: false,
+        error: `No host permission for ${WORKDAY_ORIGIN} — Workday tenure lookup is disabled. ` +
+               `Add it to manifest.json host_permissions to enable.`,
+      };
+    }
+
+    // Serialise tab navigation: one lookup at a time, one tab we own.
     return enqueueAssocLookup(async () => {
-      const tab = await ensureWorkdayTab();
-      if (!tab) return { ok: false, error: "Could not open Workday tab" };
+      // Re-check inside the queue: a burst of lookups for the same WIN would
+      // otherwise each pass the check above before the first one writes.
+      const now = await Directory.get(userId);
+      if (now?.hireDateApprox) {
+        return {
+          ok: true,
+          name:        now.name ?? null,
+          title:       now.title ?? null,
+          tenureDays:  Directory.tenureDaysFor(now),
+          lengthOfSvc: Directory.tenureLabelFor(now),
+          fromCache:   true,
+        };
+      }
 
-      const result = await scrapeDirectoryForUser(tab.id, userId);
-      if (!result) return { ok: false, error: "Associate not found in directory" };
+      // Delegated to shared/associateLookup.js, which owns the Workday tab
+      // and the scrape now that every module needs job titles. It handles the
+      // permission gate, the miss-marking and the Directory.merge() itself.
+      const record = await lookupTitle(userId);
+      if (!record || (!record.name && !record.title)) {
+        return { ok: false, error: "Associate not found in directory" };
+      }
 
-      const payload = { ...result, fetchedAt: Date.now() };
-      await chrome.storage.local.set({ [cacheKey]: payload }).catch(() => {});
-      return { ok: true, ...payload, fromCache: false };
+      // lookupTitle already performed the Directory.merge(), so `record` is
+      // the stored row. Tenure is recomputed from the stored hire date rather
+      // than echoing the scraper's point-in-time figure, which would be wrong
+      // the moment it was read back on another day.
+      return {
+        ok: true,
+        name:        record?.name ?? null,
+        title:       record?.title ?? null,
+        tenureDays:  Directory.tenureDaysFor(record),
+        lengthOfSvc: Directory.tenureLabelFor(record),
+        fromCache:   false,
+      };
     });
   },
 
@@ -953,80 +1025,19 @@ function driveShopliftingForm(data) {
   })();
 }
 
-async function ensureWorkdayTab() {
-  const existing = await chrome.tabs.query({ url: "https://wd504.myworkday.com/*" });
-  if (existing?.length) return existing[0];
-  const tab = await chrome.tabs.create({ url: "https://wd504.myworkday.com/walmart/d/home.htmld", active: false });
-  await sleep(2000);
-  return tab;
-}
+// Tab id of the background Workday tab this module opened, kept in
+// storage.session so it survives the service worker going idle.
+// WORKDAY_TAB_KEY / ensureWorkdayTab / scrapeDirectoryForUser moved to
+// shared/associateLookup.js on 2026-08-22 — every module needs job titles,
+// not just this one. The handler below now delegates.
 
-async function scrapeDirectoryForUser(tabId, userId) {
-  try {
-    const searchUrl = `${WORKDAY_SEARCH}${encodeURIComponent(userId)}`;
-    await chrome.tabs.update(tabId, { url: searchUrl });
-
-    // Poll until the SPA renders search results or timeout (12 s).
-    const deadline = Date.now() + 12_000;
-    while (Date.now() < deadline) {
-      await sleep(1200);
-      let result = null;
-      try {
-        const exec = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => {
-            const body = document.body?.innerText ?? "";
-            if (!body.match(/length of service/i)) {
-              if (body.match(/People\s*\n\s*0\b/)) return { noResults: true };
-              return { notReady: true, bodySnippet: body.slice(0, 300) };
-            }
-
-            const losIdx = body.search(/length of service/i);
-            const losSnippet = body.slice(losIdx, losIdx + 200);
-
-            // Match any leading time unit: "2 years 3 months", "7 months", "14 days", etc.
-            const losMatch = body.match(/Length of Service\s+([\d]+\s+(?:year|month|day)[^\n]*)/i);
-            if (!losMatch) return { noMatch: true, losSnippet };
-            const lengthOfSvc = losMatch[1].trim();
-
-            const y = Number(lengthOfSvc.match(/(\d+)\s*year/i)?.[1] ?? 0);
-            const m = Number(lengthOfSvc.match(/(\d+)\s*month/i)?.[1] ?? 0);
-            const d = Number(lengthOfSvc.match(/(\d+)\s*day/i)?.[1] ?? 0);
-            const tenureDays = Math.round(y * 365.25 + m * 30.44 + d);
-
-            // Name — line immediately after "Result link and actions" in Workday
-            const nameMatch = body.match(/Result link and actions\n([^\n]+)/);
-            const name = nameMatch ? nameMatch[1].trim() : null;
-
-            // Title — Workday puts a blank line between "Associate" role label and the title
-            const titleMatch = body.match(/\bAssociate\n\n([^\n]+)/);
-            const title = titleMatch ? titleMatch[1].trim() : null;
-
-            return { name, title, lengthOfSvc, tenureDays };
-          },
-        });
-        result = exec?.[0]?.result ?? null;
-      } catch {
-        // Tab still loading — keep polling
-        continue;
-      }
-      if (!result) return null;
-      if (result.noResults) return null;
-      if (result.noMatch) {
-        console.warn("[digitallocks] LOS text found but regex failed. Snippet:", result.losSnippet);
-        return null;
-      }
-      if (!result.notReady) return result;
-      // Log notReady body snippet only on first poll (avoids spam)
-      if (Date.now() < deadline - 10_800) {
-        console.warn("[digitallocks] waiting for LOS — page so far:", result.bodySnippet);
-      }
-    }
-    console.warn("[digitallocks] scrapeDirectoryForUser timed out for", userId);
-    return null;
-  } catch (e) {
-    console.warn("[digitallocks] scrapeDirectoryForUser failed:", e?.message);
-    return null;
-  }
-}
+/**
+ * Get (or open) the module's OWN background Workday tab.
+ *
+ * This used to `chrome.tabs.query({ url: "https://wd504.myworkday.com/*" })`
+ * and adopt whatever it found — which meant the user's own Workday tab. Every
+ * lookup then `chrome.tabs.update()`d that tab to a directory search, so a
+ * queue of associates walked the user's live Workday session from one WIN to
+ * the next while they were using it. Never adopt a tab we did not open.
+ */
 

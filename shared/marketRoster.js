@@ -5,6 +5,16 @@
 // and STORE_COORDS keys in orcmonitor. New markets can be added here
 // without touching consumer modules.
 //
+// Consumers pair it with getUserHomeMarket() from shared/userStore.js —
+// the market comes from Settings > Defaults, the roster comes from here.
+// Both claimsdisposition/service.js (pull fallback roster) and
+// claimsdisposition/view.js (first-run store picker) go through that pair;
+// neither holds a store list of its own any more.
+//
+// getMarketRoster() returns null for a market with no entry. That is a
+// normal state, not an error — callers must ask the user for stores rather
+// than substituting a market they happen to know.
+//
 // Roster values are integers so consumers can pass them straight into
 // numeric filter APIs (Looker _STORE_ filter, Hoops POST bodies, etc.).
 

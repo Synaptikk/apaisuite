@@ -55,6 +55,7 @@
     "https://api.hoops.wal-mart.com/*",
     "https://pfedprod.wal-mart.com/*",
     "https://prod.liveaccess.invue.walmart.com/*",
+    "https://wd504.myworkday.com/*",
     "https://gscope.walmartlabs.com/*",
     "https://gscope.walmart.com/*",
     "https://swift.walmart.com/*",
@@ -75,7 +76,8 @@
     "https://securetoken.googleapis.com/*",
     "https://api-*.sendbird.com/*",
     "https://wismo-dashboard.walmart.com/*",
-    "https://wismo.walmart.com/*"
+    "https://wismo.walmart.com/*",
+    "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*"
   ],
   "content_scripts": [
     {
@@ -257,6 +259,17 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://workvivo.walmart.com/*"
+      ],
+      "js": [
+        "modules/metricshot/content/wv_session_sniffer.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [

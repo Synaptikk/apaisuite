@@ -155,12 +155,18 @@ const DEPT_CSV = [
   ["Total","739","343","46%","452","5,953","10,816","55%","39","76","124"].join("\t"),
   ["1","7","0","0%","0","62","68","91%","","0","0"].join("\t"),
   ["2","12","5","42%","9","104","150","69%","3","1","2"].join("\t"),
+  // In play on cases but with nothing suggested to pick — must be KEPT, with
+  // no pick ratio to rank on.
+  ["3","0","0","100%","0","80","95","84%","1","0","0"].join("	"),
+  // Idle on both counts — Tableau's 100% here is a 0-of-0 artefact, not a
+  // result, so this row must be dropped from `depts` but still counted.
+  ["4","0","0","100%","0","0","0","100%","0","0","0"].join("	"),
 ].join("\r\n");
 
 test("extracts the current-day store rollup from the Total row", () => {
   const r = parseDeptBreakout(DEPT_CSV);
   assert.equal(r.ok, true);
-  assert.equal(r.deptCount, 2);
+  assert.equal(r.deptCount, 4);
   assert.equal(r.total.suggestedPicks, 739);
   assert.equal(r.total.suggestedPicksCompleted, 343);
   assert.equal(r.total.totalPicked, 452);
@@ -244,6 +250,8 @@ test("donut health: header-only or all-spacer input is rejected", () => {
   assert.equal(r.ok, false);
   assert.match(r.reason, /no populated/);
 });
+
+
 
 // ── bandFor: goal-relative colour scale ───────────────────────────────────
 test("bandFor: blue at/above goal, orange within 5, RED for a clear miss", () => {
@@ -379,4 +387,33 @@ test("VizPick composite: hitting every goal scores exactly 100", () => {
   assert.equal(composite({ cases: 100, location: 100, pick: 100, overstock: 100 }), 100);
   // One metric short of goal drags it below, so the ring stops being blue.
   assert.ok(composite({ cases: 95, location: 95, pick: 72, overstock: 90 }) < 100);
+});
+
+test("dept rows: idle departments are dropped, in-play ones kept", () => {
+  const { depts, deptCount } = parseDeptBreakout(DEPT_CSV);
+  assert.equal(deptCount, 4, "deptCount counts every department row");
+  assert.deepEqual(depts.map((d) => d.dept), ["1", "2", "3"],
+    "dept 4 has no suggested picks and no expected cases — its 100% is 0-of-0");
+});
+
+test("dept rows carry the real numerators, not just the rounded percentages", () => {
+  const { depts } = parseDeptBreakout(DEPT_CSV);
+  const d2 = depts.find((d) => d.dept === "2");
+  assert.equal(d2.suggestedPicks, 12);
+  assert.equal(d2.suggestedPicksCompleted, 5);
+  assert.equal(d2.casesSeen, 104);
+  assert.equal(d2.casesExpected, 150);
+  assert.equal(d2.overstockExceptions, 3);
+});
+
+test("worst-picks-first ranks on the ratio, not Tableau's rounded Pick %", () => {
+  // The card sorts with this rule (view.js::deptBreakdownHtml). 1/2 and 97/194
+  // both display 50%; ranking on the ratio keeps that meaningful, and a
+  // department with nothing suggested has no rank at all so it must fall to
+  // the end rather than to the top of a worst-first list.
+  const { depts } = parseDeptBreakout(DEPT_CSV);
+  const rank = (d) => (d.suggestedPicks > 0 ? d.suggestedPicksCompleted / d.suggestedPicks : Infinity);
+  const order = [...depts].sort((a, b) => rank(a) - rank(b) || Number(a.dept) - Number(b.dept))
+                          .map((d) => d.dept);
+  assert.deepEqual(order, ["1", "2", "3"]);  // 0/7 -> 5/12 -> (no picks)
 });

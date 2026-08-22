@@ -195,7 +195,13 @@ find "$STAGED_EXT" -type d -name node_modules -prune -exec rm -rf {} +
 # only catches ./dev, so modules/digitallocks/dev/smoke.mjs and every
 # lib/tests/ directory were shipping to users. scripts/pack-cws.sh already
 # strips both, so leaving them here made the two builds diverge for no reason.
-find "$STAGED_EXT" -type d \( -name dev -o -name tests \) -prune -exec rm -rf {} +
+#
+# `tools/` joined the list after an audit found modules/stockingplan/tools/
+# shipping 5.3 MB of captured API payloads — including a CaseVisibility
+# response with ~100 real associates' names. Investigation captures are
+# working notes, never runtime data: no module loads anything from tools/,
+# and a module that needs a fixture at runtime should put it in data/.
+find "$STAGED_EXT" -type d \( -name dev -o -name tests -o -name tools \) -prune -exec rm -rf {} +
 find "$STAGED_EXT" -type f -name '*.test.mjs' -delete
 find "$STAGED_EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 

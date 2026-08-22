@@ -31,7 +31,17 @@
 // a view is per-session unless explicitly saved as a custom view, which we
 // never do).
 
-import { parseDeptBreakout, parseDonutHealth, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
+import {
+  parseDeptBreakout, parseDonutHealth, parseDepartmentGroups,
+  parseLocationDetails, parseLastUpdate,
+} from "../parse_vizpick_stores_csv.js";
+import { watchSourceSchema } from "../../../../shared/schema_watch_report.js";
+import { readXlsxFile } from "../../../../shared/xlsx.js";
+import { getUserHomeStore } from "../../../../shared/userStore.js";
+import {
+  readVizqlContext, replayExport, learnSheetIds, normaliseSheetName, summariseExportAttempt,
+  base64ToBytes, base64ToText,
+} from "./tableau_export_replay.js";
 
 const DETAILS_URL = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
 // See the note in vizpick_stores_tableau.js: Tableau's view name lives in the
@@ -57,6 +67,25 @@ const INSTALL_GRACE_MS  = 3_000;
 // legitimately runs for minutes — but it must still be guaranteed to end.
 const OVERALL_BUDGET_MS = 25 * 60_000;
 
+// Hard ceiling on how stale the Today snapshot may get, REGARDLESS of what the
+// stamp says.
+//
+// The stamp is an optimisation, not a guarantee. It has now been wrong twice in
+// ways that were invisible from outside: on 2026-08-22 a check reported
+// "unchanged" against a stored key of 09:10:21 while a freshly loaded session
+// reported 10:04:03, and no amount of reloading the reused tab shifted it. The
+// underlying reason is still not fully understood.
+//
+// Rather than keep refining a signal that can silently pin the data forever,
+// bound the damage: past this age the crawl runs whether or not the stamp
+// moved. Worst case we re-crawl a market that had not changed — minutes of
+// background work — against a failure mode where the tab shows hours-old
+// numbers and says it is current.
+//
+// Set below the ~2-3h cadence the current-day data actually republishes at, so
+// a genuine update is never more than this late.
+const MAX_TODAY_AGE_MS = 90 * 60_000;
+
 // How many background tabs share the crawl. Wall-clock per store (~18s) is
 // almost entirely Tableau round-trips — set parameter, wait for the re-query,
 // two export dialogs — with the extension idle in between, so the work divides
@@ -70,6 +99,16 @@ const DEPT_SHEET   = { match: "download department breakout (current day)", fall
 // only this sheet carries the current-day equivalents of the dashboard rings,
 // which is why each store costs two exports rather than one.
 const DONUT_SHEET  = { match: "vizpick donut health", fallbackIndex: 11 };
+// Fresh / F&C / GM, exactly as Tableau scores them. metricshot used to derive
+// these from the department breakout because a third DOM export cost 5-8s per
+// store; at ~700ms via the replay that trade no longer holds, and the derived
+// version was badly low (57.9/8.2/0.05 against Tableau's 66/28/20 on the same
+// store). Sheet index confirmed live 2026-08-22.
+const GROUP_SHEET  = { match: "department groups donuts health", fallbackIndex: 1 };
+// Per-location detail: Locations Seen % per department, and which bins still
+// hold un-pulled suggested picks with who last scanned them. Sheet index
+// confirmed live 2026-08-22.
+const LOC_SHEET    = { match: "download location details", fallbackIndex: 4 };
 const UPDATE_SHEET = { match: "last update",                                fallbackIndex: 6 };
 
 // Header unique to the department-breakout export; "Suggested Picks" does not
@@ -77,6 +116,11 @@ const UPDATE_SHEET = { match: "last update",                                fall
 const DEPT_CSV_NEEDLE = "Suggested Picks";
 // Unique to the donut-health sheet.
 const DONUT_CSV_NEEDLE = "New VizPick";
+// Unique to the department-groups sheet. "New VizPick" also appears there, so
+// this must key off the group column instead or the two cross-match.
+const GROUP_CSV_NEEDLE = "Department Group";
+// Unique to the location-details sheet.
+const LOC_CSV_NEEDLE = "last_seen_timestamp";
 
 /**
  * Capture current-day figures for a list of stores.
@@ -103,6 +147,12 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
   if (!wanted.length) {
     return { ok: false, errorClass: "INPUT", error: "No stores requested for the Today capture." };
   }
+
+  // Resolved once for the whole crawl: it decides whether a store keeps its
+  // full location-scan list (see the note at the parseLocationDetails call).
+  // A failure here is not fatal — it just means nobody gets the wider list,
+  // and metricshot falls back to the outstanding-picks bins.
+  const homeStore = await getUserHomeStore().catch(() => null);
 
   const opened = await findOrOpenReportTab();
   if (!opened) {
@@ -187,6 +237,31 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // Read on the primary tab BEFORE fanning out: it is one export, every lane
     // would return the same answer, and the skip decision below may mean no
     // extra tabs need opening at all.
+    // A REUSED tab reports the stamp of ITS OWN vizql session, not the
+    // server's current state. A tab left open since 09:10 keeps exporting
+    // "09:10:21" however many hours pass, so the skip check compares a stale
+    // reading against the stored key it produced, matches, and skips forever —
+    // observed 2026-08-22, where the stored key was 09:10:21 while a freshly
+    // loaded session reported 10:04:03.
+    //
+    // So: reload before reading, unless this run opened the tab itself. One
+    // page load per check, against a check that otherwise cannot ever notice
+    // new data. `didOpen` is already tracked by findOrOpenReportTab().
+    if (!opened.didOpen) {
+      stage("Refreshing the Tableau session");
+      try {
+        await chrome.tabs.reload(primaryId, { bypassCache: false });
+        await waitForTabLoad(primaryId, LOAD_TIMEOUT_MS);
+        if (!(await waitForVizReady(primaryId, REUSED_TAB_READY_MS))) {
+          // Not fatal: a stale stamp is still better than no capture, and the
+          // per-store exports below re-render anyway.
+          failures.push({ store: "(session)", reason: "viz did not return after the session refresh", soft: true });
+        }
+      } catch (e) {
+        failures.push({ store: "(session)", reason: `session refresh: ${String(e?.message ?? e)}`, soft: true });
+      }
+    }
+
     stage("Reading Tableau's last-update time");
     const sourceUpdate = await readSourceStamp(primaryId);
 
@@ -205,15 +280,49 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // Changed stamp  -> everything is stale, crawl the lot.
     let toVisit = wanted;
     let topUp = false;
-    const stampUnchanged =
-      !opts.force && opts.knownSourceKey && sourceUpdate?.raw && sourceUpdate.raw === opts.knownSourceKey;
+    // Compared on the NORMALISED iso, falling back to the raw string. The
+    // stamp can now arrive from two places — the dashboard's own "Updated"
+    // text or the Last-update sheet export — and those could render the same
+    // instant differently ("2026-08-22 07:04:54" vs "8/22/2026 7:04:54 AM").
+    // A raw-only compare would read that as "changed" on every check and
+    // re-crawl the whole market forever.
+    const knownIso = opts.knownSourceKey ? (parseLastUpdate(opts.knownSourceKey).iso || null) : null;
+    const stampMatches =
+      !opts.force && !!opts.knownSourceKey && !!sourceUpdate && (
+        (knownIso && sourceUpdate.iso && sourceUpdate.iso === knownIso) ||
+        (!!sourceUpdate.raw && sourceUpdate.raw === opts.knownSourceKey)
+      );
+
+    // The stamp says nothing changed — but how old is what we are holding?
+    const storedAgeMs = opts.knownCapturedAt
+      ? Date.now() - new Date(opts.knownCapturedAt).getTime()
+      : Infinity;
+    const tooOldToTrust = storedAgeMs > MAX_TODAY_AGE_MS;
+    const stampUnchanged = stampMatches && !tooOldToTrust;
+    if (stampMatches && tooOldToTrust) {
+      stage(`Stamp unchanged but the stored data is ${Math.round(storedAgeMs / 60_000)}min old — refreshing anyway`);
+    }
 
     if (stampUnchanged) {
       const covered = new Set((opts.coveredStores || []).map((x) => String(x).trim()));
       const missing = wanted.filter((st) => !covered.has(st));
       if (!missing.length) {
         succeeded = true;
-        return { ok: true, unchanged: true, sourceUpdate, checkedAt: new Date().toISOString() };
+        return {
+          ok: true, unchanged: true, sourceUpdate, checkedAt: new Date().toISOString(),
+          // BOTH sides of the comparison that produced this decision. Without
+          // them "unchanged: true" is unfalsifiable from the outside: on
+          // 2026-08-22 the server reported 10:04:03 while the stored key was
+          // 09:10:21 — plainly different — and the crawl still skipped, with
+          // no way to see which value it had actually read. Never report a
+          // skip without showing what was compared.
+          stampRead: sourceUpdate?.raw ?? null,
+          stampReadIso: sourceUpdate?.iso ?? null,
+          stampReadVia: sourceUpdate?.via ?? null,
+          stampKnown: opts.knownSourceKey ?? null,
+          stampKnownIso: knownIso,
+          storedAgeMin: Number.isFinite(storedAgeMs) ? Math.round(storedAgeMs / 60_000) : null,
+        };
       }
       toVisit = missing;
       topUp = true;
@@ -259,6 +368,11 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // snapshot and the later write would silently drop the earlier lane's row,
     // so the crawl would quietly come up short. One chain, one writer at a
     // time — the lanes stay parallel, only the persist is serialised.
+    // Shared across every lane: the first lane to drive a DOM dialog learns the
+    // sheetdocIds, and the rest replay. One dialog per sheet per market rather
+    // than one per store per sheet.
+    const replay = makeReplayState();
+
     let publishChain = Promise.resolve();
     const publish = (info) => {
       publishChain = publishChain.then(() => opts.onStore?.(info)).catch(() => {});
@@ -295,7 +409,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           lanes: lanes.length,
         });
 
-        const row = await captureStore(rec.tab.id, store, failures);
+        const row = await captureStore(rec.tab.id, store, failures, replay, sameStore(store, homeStore));
         done++;
         if (!row) continue;
         rows.push(row);
@@ -348,6 +462,16 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         elapsedMs: Date.now() - startedAt,
         captured: rows.length,
         withHealth: rows.filter((r) => r.hasHealth).length,
+        // How much of this crawl avoided the dialog. `replayed` should climb to
+        // roughly 2x(stores-1) once the GUIDs are learned; if it stays at 0 the
+        // learning step is failing and every store is paying the slow route.
+        replay: {
+          sheetsLearned: replay.learned,
+          replayed: replay.replayed,
+          fellBack: replay.fellBack,
+          replayMs: replay.ms,
+          haveContext: !!replay.ctx,
+        },
         failures,
       },
     };
@@ -370,7 +494,16 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
  * Lanes never share a tab, so this needs no locking — all its state is the
  * capture ring inside the tab it was handed.
  */
-async function captureStore(tabId, store, failures) {
+// Compared NUMERICALLY: getUserHomeStore() strips leading zeros ("...s01458"
+// -> "1458") while the Tableau Store column is passed through verbatim, so a
+// string compare would miss a store the export writes padded.
+function sameStore(a, b) {
+  if (a == null || b == null) return false;
+  const x = Number(a), y = Number(b);
+  return Number.isFinite(x) && Number.isFinite(y) && x === y;
+}
+
+async function captureStore(tabId, store, failures, replay, isHomeStore = false) {
   try {
     // Clear first so "a new vizql response arrived" is an unambiguous
     // signal that THIS store's re-query completed.
@@ -402,14 +535,14 @@ async function captureStore(tabId, store, failures) {
       await sleep(SETTLE_MS);
     }
 
-    await clearRing(tabId);
-    const triggered = await triggerCrosstabExport(tabId, DEPT_SHEET);
-    if (!triggered.ok) { failures.push({ store, reason: `export UI: ${triggered.reason}` }); return null; }
+    const dept = await exportSheetText(tabId, DEPT_SHEET, DEPT_CSV_NEEDLE, replay);
+    if (!dept.ok) { failures.push({ store, reason: dept.reason }); return null; }
 
-    const csv = await pollForCsv(tabId, EXPORT_WAIT_MS, DEPT_CSV_NEEDLE);
-    if (!csv) { failures.push({ store, reason: "no department-breakout CSV captured" }); return null; }
-
-    const parsed = parseDeptBreakout(csv.respBody);
+    const parsed = parseDeptBreakout(dept.text);
+    // Watch the header row whether or not the parse succeeded. The valuable
+    // signal is a shape change that STILL parses — the warning shot before the
+    // change that breaks us. Fire-and-forget; cannot affect this capture.
+    watchSourceSchema("vizpick.deptBreakout", dept.text, parsed.ok);
     if (!parsed.ok) { failures.push({ store, reason: `parse: ${parsed.reason}` }); return null; }
 
     // Second export for this same store: the donut-health sheet, which is the
@@ -424,34 +557,82 @@ async function captureStore(tabId, store, failures) {
       // while it is up Tableau removes the viz toolbar from the DOM — so
       // firing the next export immediately finds no Download button and
       // silently does nothing. Wait for the toolbar to come back first.
-      await sleep(SETTLE_MS);
-      const toolbarBack = await waitForVizReady(tabId, DIALOG_SETTLE_MS);
-      if (!toolbarBack) {
-        failures.push({ store, reason: "toolbar did not return after the first export", soft: true });
-      } else {
-        await clearRing(tabId);
-        const dt = await triggerCrosstabExport(tabId, DONUT_SHEET);
-        if (!dt.ok) {
-          // Previously this branch was silent, so a failed second export
-          // looked like a clean run that just happened to have no health
-          // data. Always record it.
-          failures.push({ store, reason: `donut export UI: ${dt.reason}`, soft: true });
+      // No toolbar wait here any more — exportSheetText does it, and only when
+      // it is actually about to drive the dialog. A replay never opens one, so
+      // waiting unconditionally would have burned up to DIALOG_SETTLE_MS (20s)
+      // per store for nothing once the GUIDs are learned.
+      {
+        const donut = await exportSheetText(tabId, DONUT_SHEET, DONUT_CSV_NEEDLE, replay);
+        if (!donut.ok) {
+          // Never silent: a failed second export used to look like a clean run
+          // that merely happened to have no health data.
+          failures.push({ store, reason: `donut: ${donut.reason}`, soft: true });
         } else {
-          const dcsv = await pollForCsv(tabId, EXPORT_WAIT_MS, DONUT_CSV_NEEDLE);
-          if (dcsv) {
-            const dh = parseDonutHealth(dcsv.respBody);
-            if (dh.ok) health = dh.health;
-            else failures.push({ store, reason: `donut parse: ${dh.reason}`, soft: true });
-          } else {
-            failures.push({ store, reason: "no donut-health CSV captured", soft: true });
-          }
+          const dh = parseDonutHealth(donut.text);
+          if (dh.ok) health = dh.health;
+          else failures.push({ store, reason: `donut parse: ${dh.reason}`, soft: true });
         }
       }
     } catch (e) {
       failures.push({ store, reason: `donut: ${String(e?.message ?? e)}`, soft: true });
     }
 
-    return { store, ...parsed.total, ...(health || {}), deptCount: parsed.deptCount, hasHealth: !!health };
+    // `depts` is part of the stored row: it drives the card's Show-details
+    // breakdown. Already filtered to departments in play (see
+    // parseDeptBreakout), so this is tens of small rows per store, not ninety.
+    // Third export: Fresh/F&C/GM as Tableau scores them. Soft — the card
+    // still renders its four rings without these, and metricshot falls back to
+    // deriving them from `depts`. Only affordable because of the replay; via
+    // the dialog this cost 5-8s per store and was rightly reverted.
+    let deptGroups = null;
+    try {
+      const grp = await exportSheetText(tabId, GROUP_SHEET, GROUP_CSV_NEEDLE, replay);
+      if (!grp.ok) {
+        failures.push({ store, reason: `groups: ${grp.reason}`, soft: true });
+      } else {
+        const g = parseDepartmentGroups(grp.text);
+        watchSourceSchema("vizpick.deptGroups", grp.text, g.ok);
+        if (g.ok) deptGroups = g.groups;
+        else failures.push({ store, reason: `groups parse: ${g.reason}`, soft: true });
+      }
+    } catch (e) {
+      failures.push({ store, reason: `groups: ${String(e?.message ?? e)}`, soft: true });
+    }
+
+    // Fourth export: per-location detail. Soft — everything above still
+    // renders without it. Affordable only via the replay (~700ms); through the
+    // dialog this would be another 5-8s per store.
+    let locations = null;
+    try {
+      const loc = await exportSheetText(tabId, LOC_SHEET, LOC_CSV_NEEDLE, replay);
+      if (!loc.ok) {
+        failures.push({ store, reason: `locations: ${loc.reason}`, soft: true });
+      } else {
+        // The full scan list is kept for the user's OWN store only. metricshot
+        // reads it to build the "Un-scanned locations" section of its Workvivo
+        // post, which ranks every scanned bin by staleness — a wider set than
+        // `gaps`, which holds only bins with picks still outstanding. Keeping
+        // it market-wide would be thousands of rows a day for a section that
+        // only ever covers one store; making metricshot re-export the same
+        // sheet to get it is the duplicate pull this replaces.
+        const L = parseLocationDetails(loc.text, { allScans: isHomeStore });
+        watchSourceSchema("vizpick.locationDetails", loc.text, L.ok);
+        if (L.ok) locations = { byDept: L.byDept, gaps: L.gaps, scans: L.scans, locationCount: L.locationCount };
+        else failures.push({ store, reason: `locations parse: ${L.reason}`, soft: true });
+      }
+    } catch (e) {
+      failures.push({ store, reason: `locations: ${String(e?.message ?? e)}`, soft: true });
+    }
+
+    return {
+      store, ...parsed.total, ...(health || {}),
+      depts: parsed.depts || [], deptCount: parsed.deptCount, hasHealth: !!health,
+      // Per-department location rollup + the bins still holding picks.
+      locations,
+      // Tableau's own group scores. null (not []) when the export failed, so
+      // the consumer can tell "no data" from "genuinely empty".
+      deptGroups,
+    };
   } catch (e) {
     failures.push({ store, reason: String(e?.message ?? e) });
     return null;
@@ -535,8 +716,65 @@ async function waitForStoreParam(tabId, timeoutMs) {
   return false;
 }
 
+/**
+ * The dashboard prints its own "Updated <timestamp>" in the top right. Reading
+ * that text is nearly free; exporting the Last-update sheet to learn the same
+ * thing costs a full crosstab cycle — open the dialog, match the sheet, export,
+ * poll for the blob — which is the expensive part of this whole module.
+ *
+ * That mattered because the current-day data only republishes every few hours,
+ * so the overwhelming majority of scheduled checks exist purely to discover
+ * that nothing changed. Paying an export for each of those was the waste.
+ *
+ * allFrames: the portal URL renders the viz inside an iframe, the ?:embed=y URL
+ * does not — see dev/VIZPICK_EXPORT_FINDINGS.md.
+ *
+ * Matched by shape rather than by a Tableau class name: the markup is generated
+ * and its class names are not a contract, but "a date near the word Updated" is
+ * what the dashboard is actually promising the reader.
+ */
+async function readSourceStampFromDom(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const RE = /(\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(?::\d{2})?|\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?)/i;
+        if (!document.body) return null;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const text = (node.nodeValue || "").trim();
+          if (!text) continue;
+          const m = RE.exec(text);
+          if (!m) continue;
+          // ONLY a date that is actually labelled counts. An earlier version
+          // fell back to the first date found anywhere on the page, which is a
+          // silent-wrong-answer machine: an unrelated but stable date would be
+          // read as the source stamp and every future check would report
+          // "unchanged" while real data moved underneath. Returning null here
+          // costs one sheet export and is always correct.
+          let ctx = "";
+          try { ctx = node.parentElement?.closest("div,span,td,th")?.innerText || ""; } catch {}
+          if (/updated|last\s*update/i.test(ctx)) return m[1];
+        }
+        return null;
+      },
+    });
+    for (const r of results || []) if (r?.result) return r.result;
+  } catch { /* fall through to the export */ }
+  return null;
+}
+
 /** Tableau's own "Last update" stamp for the current-day view, or null. */
 async function readSourceStamp(tabId) {
+  // Cheap path first. If it yields a parseable stamp we trust it: it is the
+  // number the dashboard itself is showing the user.
+  const fromDom = await readSourceStampFromDom(tabId);
+  if (fromDom) {
+    const p = parseLastUpdate(fromDom);
+    if (p.ok) return { raw: p.raw, iso: p.iso, hasTime: p.hasTime, via: "dom" };
+  }
+  // Fallback: the authoritative sheet. Costs an export cycle, so it only runs
+  // when the page did not show a stamp we could read.
   try {
     await clearRing(tabId);
     const t = await triggerCrosstabExport(tabId, UPDATE_SHEET);
@@ -544,7 +782,7 @@ async function readSourceStamp(tabId) {
     const lu = await pollForCsv(tabId, UPDATE_WAIT_MS, "\t");
     if (!lu) return null;
     const p = parseLastUpdate(lu.respBody);
-    return p.ok ? { raw: p.raw, iso: p.iso, hasTime: p.hasTime } : null;
+    return p.ok ? { raw: p.raw, iso: p.iso, hasTime: p.hasTime, via: "export" } : null;
   } catch {
     return null;   // metadata only — never fail the crawl over it
   }
@@ -890,6 +1128,168 @@ async function pollForCsv(tabId, timeoutMs, needle) {
     await sleep(POLL_MS);
   }
   return null;
+}
+
+// ── Export: replay if we can, drive the dialog if we must ────────────────
+//
+// See tableau_export_replay.js. The GUID a replay needs is learned from the
+// first DOM export of each sheet, so a market pays one dialog per sheet
+// instead of one per store per sheet.
+//
+// Scoped to a single crawl deliberately. The session id is only valid while
+// the tab lives, and a stale one costs a 410 and a fallback — cheap, but
+// pointless to carry between runs.
+function makeReplayState() {
+  return { ctx: null, sheetIds: {}, learned: 0, replayed: 0, fellBack: 0, ms: 0 };
+}
+
+/** Rebuild tab-separated text so the existing parsers stay the single place
+ *  that knows about columns — including the alias handling and the schema
+ *  watch. The replay returns xlsx where the Blob route returned CSV. */
+function rowsToTsv(headers, rows) {
+  const line = (cells) => cells.map((c) => (c == null ? "" : String(c))).join("\t");
+  return [line(headers), ...rows.map((r) => line(headers.map((h) => cellText(h, r[h]))))].join("\r\n");
+}
+
+/**
+ * The one genuine difference between the two routes, found by diffing a live
+ * replay against the dialog output on 2026-08-22.
+ *
+ * The CSV export renders a percentage as FORMATTED TEXT — "67%" — which the
+ * parser's num() turns into 67. The xlsx stores the underlying value, 0.6667,
+ * with a percent *display format* that readXlsxFile does not apply. Passing
+ * that straight through produced pickPct 0.6667 where the CSV gave 67: it
+ * parses cleanly, every check passes, and every card renders 0%. Precisely the
+ * "confidently wrong" failure no schema check can catch.
+ *
+ * The scaling is deterministic, not a heuristic: for a column whose header ends
+ * in "%", the stored xlsx value IS the fraction, so x100 is always correct.
+ * Strings pass through untouched, in case a future export formats them itself.
+ *
+ * Side benefit: the xlsx values are unrounded, so this route is slightly more
+ * precise than the CSV one (66.67 against Tableau's pre-rounded 67).
+ */
+function cellText(header, value) {
+  if (!String(header).trim().endsWith("%")) return value;
+  const raw = String(value ?? "").trim();
+  // Already formatted (a future export, or the CSV route) — leave it alone.
+  // Scaling twice would turn 67% into 6700%, which is the same class of bug in
+  // the opposite direction and just as invisible.
+  if (!raw || raw.includes("%")) return value;
+  // readXlsxFile hands every cell back as a STRING, so a typeof check for
+  // "number" here silently did nothing — which is how this was missed the
+  // first time. Parse it.
+  const n2 = Number(raw);
+  return Number.isFinite(n2) ? `${n2 * 100}%` : value;
+}
+
+/**
+ * Read the ring back and summarise why an export produced nothing.
+ *
+ * Best-effort by construction: this runs only on a path that has ALREADY
+ * failed, so anything it throws would replace a real failure reason with a
+ * diagnostic's own stack trace.
+ */
+async function describeExportAttempt(tabId, needle) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      func: () => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || [],
+    });
+    // Frames without the viz report an empty ring; the viz frame is whichever
+    // one saw anything at all.
+    const ring = (results || [])
+      .map((r) => r?.result || [])
+      .reduce((best, cur) => (cur.length > best.length ? cur : best), []);
+    return summariseExportAttempt(ring, needle);
+  } catch (e) {
+    return `ring unreadable: ${e?.message ?? e}`;
+  }
+}
+
+/** Learn any sheetdocIds the page has revealed since the last look. */
+async function learnFromRing(tabId, replay) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      func: () => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || [],
+    });
+    for (const r of results || []) {
+      const found = learnSheetIds(r?.result || []);
+      for (const [name, guid] of Object.entries(found)) {
+        if (!replay.sheetIds[name]) { replay.sheetIds[name] = guid; replay.learned++; }
+      }
+    }
+  } catch { /* learning is best-effort; the DOM path still works */ }
+}
+
+/**
+ * Get a sheet's contents as text, by whichever route is available.
+ *
+ * Replay first when we have both a session context and this sheet's GUID;
+ * otherwise the DOM dialog, followed by an attempt to learn the GUID from the
+ * request the page just made. A replay failure ALWAYS falls back — the worst
+ * case is wasted work, never a capture that would otherwise have succeeded.
+ */
+async function exportSheetText(tabId, sheet, needle, replay) {
+  const key = normaliseSheetName(sheet.match);
+
+  if (replay && replay.ctx && replay.sheetIds[key]) {
+    const r = await replayExport(tabId, { base: replay.ctx.base, sheetdocId: replay.sheetIds[key] });
+    if (r.ok) {
+      try {
+        const text = r.isZip
+          ? await readXlsxFile(base64ToBytes(r.base64)).then((s2) => rowsToTsv(s2.headers, s2.rows))
+          : base64ToText(r.base64);
+        if (text && text.includes(needle)) {
+          replay.replayed++;
+          replay.ms += r.ms || 0;
+          return { ok: true, text, via: "replay" };
+        }
+      } catch { /* fall through to the dialog */ }
+    }
+    // A dead session invalidates the whole context, not just this sheet.
+    if (r.sessionDead) replay.ctx = null;
+    replay.fellBack++;
+  }
+
+  // While a crosstab dialog is up Tableau removes the viz toolbar from the
+  // DOM, so firing the next DOM export immediately finds no Download button
+  // and silently does nothing. This wait used to live at the donut call site
+  // only; adding the groups and locations exports meant two more dialog-driven
+  // exports with no wait at all, which is a soft failure on every one of them
+  // for the store that has to learn the GUIDs. It belongs here, where we know
+  // a dialog is about to be driven.
+  if (!(await waitForVizReady(tabId, DIALOG_SETTLE_MS))) {
+    return { ok: false, reason: "viz toolbar did not return before the export" };
+  }
+  await clearRing(tabId);
+  const triggered = await triggerCrosstabExport(tabId, sheet);
+  if (!triggered.ok) return { ok: false, reason: `export UI: ${triggered.reason}` };
+  const blob = await pollForCsv(tabId, EXPORT_WAIT_MS, needle);
+
+  // Learn BEFORE deciding whether this export succeeded. The GUID comes from
+  // the export command the page has just posted, and that request fires
+  // whether or not a file ever comes back — so bailing first threw away the
+  // one thing a failed store could still contribute. Worse, it made failures
+  // self-perpetuating: a store that times out teaches the crawl nothing, so
+  // the next store pays the same slow dialog and can time out the same way.
+  if (replay) {
+    if (!replay.ctx) replay.ctx = await readVizqlContext(tabId);
+    await learnFromRing(tabId, replay);
+  }
+
+  if (!blob) {
+    // "no CSV captured" on its own is a dead end — it cannot distinguish the
+    // export command never firing, firing and erroring, or succeeding into a
+    // file whose contents did not match `needle`. The ring knows all three;
+    // ask it, so the next occurrence is diagnosable instead of a shrug.
+    const ev = await describeExportAttempt(tabId, needle);
+    return { ok: false, reason: `no CSV captured (${ev})` };
+  }
+  return { ok: true, text: blob.respBody, via: "dom" };
 }
 
 async function triggerCrosstabExport(tabId, sheet) {

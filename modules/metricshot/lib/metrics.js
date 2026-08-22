@@ -272,5 +272,8 @@ export function migrationMatches(migration, existing) {
   if (migration.fromZoom !== undefined) {
     checks.push((existing.capture?.zoom ?? 1) === migration.fromZoom);
   }
+  if (migration.fromRasterScale !== undefined) {
+    checks.push((existing.capture?.rasterScale ?? 2) === migration.fromRasterScale);
+  }
   return checks.length > 0 && checks.every(Boolean);
 }

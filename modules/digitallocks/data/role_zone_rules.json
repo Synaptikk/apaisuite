@@ -1,5 +1,5 @@
 {
-  "_comment": "DigitalLocks role→zone expectations. Editable. Position is matched case-insensitively against the substring keys below; the first match wins, so order the keys from most-specific to least-specific. Each entry's `allowedZoneKeywords` is matched (case-insensitive) against the concatenated zone+lock name. If at least one keyword matches, the role/zone is considered NORMAL. If none match, the event is flagged role/zone mismatch. Roles listed in `broadAccessPositions` are exempt from this rule entirely (AP, TLs, Coaches, Store Managers, generic stocking roles).",
+  "_comment": "DigitalLocks role→zone expectations. Editable. Position is matched case-insensitively against the substring keys below; the first match wins, so order the keys from most-specific to least-specific. Each entry's `allowedZoneKeywords` is matched (case-insensitive) against the concatenated zone+lock name. If at least one keyword matches, the role/zone is considered NORMAL. If none match, the event is flagged role/zone mismatch. Roles listed in `broadAccessPositions` are exempt from this rule entirely (AP, TLs, Coaches, Store Managers, vendor/contractor roles).",
   "broadAccessPositions": [
     "ap team lead",
     "asset protection",
@@ -9,12 +9,42 @@
     "gm coach",
     "people lead",
     "people partner",
-    "stocking",
-    "overnight",
-    "o/n",
-    "maintenance",
     "service technician",
     "install"
+  ],
+  "_exBroadAccessComment": "The stocking / o/n / overnight / maint entries at the END of roleZoneMap are written against the CLOSED zone vocabulary this report actually emits (12 values, all locked high-value cases). The split is: TIER 1 general merchandise = stockable overnight; TIER 2 + Pharmacy + New Devices = restricted, staffed counters where merchandise is handed to a customer. Their keywords are deliberately ANCHORED ('electronics-tier 1', not 'electronics') so the TIER 2 desk does not match. Re-check them if the Power BI zone naming changes. Do NOT add comment objects inside the roleZoneMap array — an entry without a `position` matches every position and would silently disable the whole rule.",
+  "_verifiedDecisions": [
+    "PHARMACY IS EXCLUDED FROM THE STOCKING MAPS ON PURPOSE (confirmed with the analyst 2026-08-20). 38-PHARMACY-TIER 1 is the behind-the-counter dispensing area, not an OTC salesfloor case, so an overnight stocker opening it is real signal — it produced 10 flags across the May 2026 export, 4 of them Critical. If this list ever gets 'cleaned up', do not add 'pharmacy' to the stocking / o/n / overnight entries.",
+    "'Fashion Stocking TA' resolves to the `fashion` entry, NOT `stocking`, because first-substring-match wins and `fashion` is earlier in the array. Fashion therefore keeps jewelry access for its stockers. Confirmed intended 2026-08-20 — do not reorder the array to make `stocking` win."
+  ],
+  "_droppedFromBroadAccess": "stocking / overnight / o/n / maintenance were removed from broadAccessPositions on 2026-08-20. They are not broad-access: every zone in this report is a locked high-value case, so 'exempt from the mismatch rule' meant a stocker or maintenance associate could open the jewelry case at any hour and never be flagged. They now have explicit roleZoneMap entries below. `service technician` and `install` are kept exempt because they are vendor/contractor roles dispatched to any fixture in the building.",
+  "_edgeHoursComment": "Job codes that are normally ON SHIFT across the edge after-hours bands (23:00-24:00 and 05:00-07:00) — overnight/CAP1, evening/CAP3 closers, maintenance, early-start fresh areas (bakery/deli/produce/meat), receiving/freight truck unload, OGP order filling, fuel, and front-end openers. Matched case-insensitively as a SUBSTRING of the Position column, same as broadAccessPositions. BEING ON THIS LIST IS NOT ENOUGH: the discounted AFTERHOURS_EDGE_EXPECTED weight applies only when the role/zone check ALSO passes (roleZoneMap allows the zone, or the role is broad-access). A bakery associate at a bakery lock at 5am is discounted; the same associate at an electronics case at 5am pays full AFTERHOURS_EDGE plus ROLE_MISMATCH. A position with no roleZoneMap entry can never be confirmed in-area and so never earns the discount — if you add a job code here, give it a roleZoneMap entry too. This does NOT affect the deep band (00:00-05:00), which stays at full weight for every role.",
+  "expectedEdgeHourPositions": [
+    "overnight",
+    "o/n",
+    "stocking",
+    "stocker",
+    "cap 1",
+    "cap1",
+    "cap 3",
+    "cap3",
+    "maint",
+    "backroom",
+    "receiving",
+    "freight",
+    "unloader",
+    "bakery",
+    "deli",
+    "produce",
+    "meat",
+    "food & consumables",
+    "food and consumables",
+    "online order filling",
+    "digital personal",
+    "personal shopper",
+    "fuel",
+    "front end",
+    "cash office"
   ],
   "roleZoneMap": [
     { "position": "entertainment",         "allowedZoneKeywords": ["electronics", "entertainment", "media", "gaming", "photo", "camera", "phones", "wireless"] },
@@ -26,6 +56,18 @@
     { "position": "fashion",               "allowedZoneKeywords": ["fashion", "apparel", "shoes", "accessories", "intimates", "jewelry"] },
     { "position": "apparel",               "allowedZoneKeywords": ["fashion", "apparel", "shoes", "accessories", "intimates", "jewelry"] },
     { "position": "food",                  "allowedZoneKeywords": ["grocery", "food", "dairy", "meat", "produce", "frozen", "deli", "bakery", "consumables"] },
+    { "position": "delivery",              "allowedZoneKeywords": ["pickup", "ogp", "staging", "backroom"] },
+    { "position": "inhome",                "allowedZoneKeywords": ["pickup", "ogp", "staging", "backroom"] },
+    { "position": "bakery",                "allowedZoneKeywords": ["bakery", "deli", "grocery", "food", "consumables", "frozen", "dairy", "backroom", "receiving"] },
+    { "position": "deli",                  "allowedZoneKeywords": ["deli", "bakery", "grocery", "food", "consumables", "frozen", "dairy", "meat", "backroom", "receiving"] },
+    { "position": "produce",               "allowedZoneKeywords": ["produce", "grocery", "food", "consumables", "frozen", "backroom", "receiving"] },
+    { "position": "meat",                  "allowedZoneKeywords": ["meat", "grocery", "food", "consumables", "frozen", "backroom", "receiving"] },
+    { "position": "receiving",             "allowedZoneKeywords": ["receiving", "backroom", "freight", "dock", "claims"] },
+    { "position": "backroom",              "allowedZoneKeywords": ["receiving", "backroom", "freight", "dock", "claims"] },
+    { "position": "unloader",              "allowedZoneKeywords": ["receiving", "backroom", "freight", "dock", "claims"] },
+    { "position": "fuel",                  "allowedZoneKeywords": ["fuel", "gas", "station"] },
+    { "position": "cash office",           "allowedZoneKeywords": ["cash office", "front end", "frontend", "checkout"] },
+    { "position": "online order filling",  "allowedZoneKeywords": ["grocery", "food", "produce", "frozen", "dairy", "ogp", "pickup"] },
     { "position": "consumables",           "allowedZoneKeywords": ["health", "beauty", "hba", "cosmetics", "personal care", "pharmacy", "consumables"] },
     { "position": "health & beauty",       "allowedZoneKeywords": ["health", "beauty", "hba", "cosmetics", "personal care"] },
     { "position": "auto care",             "allowedZoneKeywords": ["auto", "automotive", "tle", "tire"] },
@@ -38,6 +80,11 @@
     { "position": "front end",             "allowedZoneKeywords": ["frontend", "front end", "checkout", "cash office", "self checkout"] },
     { "position": "cashier",               "allowedZoneKeywords": ["frontend", "front end", "checkout"] },
     { "position": "personal shopper",      "allowedZoneKeywords": ["grocery", "food", "produce", "frozen", "dairy", "ogp", "pickup"] },
-    { "position": "digital personal",      "allowedZoneKeywords": ["grocery", "food", "produce", "frozen", "dairy", "ogp", "pickup"] }
+    { "position": "digital personal",      "allowedZoneKeywords": ["grocery", "food", "produce", "frozen", "dairy", "ogp", "pickup"] },
+
+    { "position": "stocking",            "allowedZoneKeywords": ["electronics-tier 1", "cosmetics", "skincare", "pets", "media", "gaming", "camera", "photo", "sporting goods-tier 1", "auto care"] },
+    { "position": "o/n",                   "allowedZoneKeywords": ["electronics-tier 1", "cosmetics", "skincare", "pets", "media", "gaming", "camera", "photo", "sporting goods-tier 1", "auto care"] },
+    { "position": "overnight",             "allowedZoneKeywords": ["electronics-tier 1", "cosmetics", "skincare", "pets", "media", "gaming", "camera", "photo", "sporting goods-tier 1", "auto care"] },
+    { "position": "maint",                 "allowedZoneKeywords": ["maintenance", "janitorial", "chemical", "compactor", "backroom", "receiving", "dock"] }
   ]
 }

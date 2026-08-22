@@ -10,7 +10,7 @@
 // column casing may vary slightly. We resolve via case-insensitive alias
 // lookup so the parser tolerates "USER ID"/"User ID"/"user id", etc.
 
-import { readXlsxFile } from "./xlsx.js";
+import { readXlsxFile } from "../../../shared/xlsx.js";
 
 // Header aliases. First entry is the canonical name we use internally.
 // All comparisons are case- and whitespace-insensitive (see normalizeKey).

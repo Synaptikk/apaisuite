@@ -9,7 +9,7 @@
 // The same file can cover multiple stores — leave `store` blank to treat the
 // entry as chain-wide (matched when event.store is not present in the file).
 
-import { readXlsxFile } from "./xlsx.js";
+import { readXlsxFile } from "../../../shared/xlsx.js";
 
 const HEADER_ALIASES = {
   zoneName:    ["zone name", "zone", "zonename"],

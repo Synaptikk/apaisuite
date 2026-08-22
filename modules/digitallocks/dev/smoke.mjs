@@ -3,7 +3,7 @@
 // reload. Run with:  node modules/digitallocks/dev/smoke.mjs <path-to.xlsx>
 
 import { readFile } from "node:fs/promises";
-import { readXlsxFile }     from "../lib/xlsx.js";
+import { readXlsxFile }     from "../../../shared/xlsx.js";
 import { parseLockEventsFile, parseCsv, resolveHeaders, parseTimestamp, makeEventId } from "../lib/parseLockEvents.js";
 import { scoreEvents, groupIntoEpisodes } from "../lib/riskScoring.js";
 

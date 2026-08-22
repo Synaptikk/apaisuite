@@ -9,7 +9,7 @@
 // The canonical record shape lives in data/schema.js::CLAIM_RECORD_FIELDS;
 // the actual field-mapping (raw → canonical) is `rowToRecord` below.
 
-import { normalizeDisposition, MARKET_NUMBER } from "../data/schema.js";
+import { normalizeDisposition } from "../data/schema.js";
 import { toIsoDate } from "./dates.js";
 
 /**
@@ -30,13 +30,16 @@ export function loadDatasetFromPull(pull) {
   const realStoreNumbers = Object.keys(pull.storesByNumber)
     .map(Number).filter(Number.isFinite).sort((a, b) => a - b);
 
+  // The market travels on the pull record (written by service.js::pull from
+  // Settings > Defaults). Pulls taken before that field existed have none, so
+  // their records carry null rather than an inherited "120".
+  const marketNumber = pull.marketNumber ?? null;
+
   const out = [];
   for (const storeNumber of realStoreNumbers) {
     const rows = pull.storesByNumber[String(storeNumber)] ?? [];
     for (let i = 0; i < rows.length; i++) {
-      const rec = rowToRecord(rows[i], {
-        storeNumber, marketNumber: MARKET_NUMBER, index: i,
-      });
+      const rec = rowToRecord(rows[i], { storeNumber, marketNumber, index: i });
       if (rec) out.push(rec);
     }
   }

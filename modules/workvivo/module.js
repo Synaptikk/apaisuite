@@ -13,14 +13,20 @@
 // QRCallBox/Workvivo/WORKVIVO.md for the auth discovery that motivated it.
 
 // Statically imported (MV3 SW contract — see service_worker.js notes).
+import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { handlers, installHeartbeatAlarm, onAlarm } from "./service.js";
 
-// Alarm listener registration MUST happen at top-level (during the SW's
-// initial script execution) so Chrome will wake the SW on a matching alarm
-// event later. Same constraint as webRequest listeners — see
+// Alarm wiring is service-worker-only and lives at top level — during the
+// SW's initial script execution — so Chrome will wake the SW on a matching
+// alarm event later. Same constraint as webRequest listeners; see
 // service_worker.js::"Side effect: every module's top-level work runs at SW
-// boot".
-chrome.alarms.onAlarm.addListener(onAlarm);
+// boot", and shared/alarms.js for why the INSTALL has to be here too rather
+// than in register(), which only ever runs in the shell page.
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener(onAlarm);
+  installHeartbeatAlarm().catch((e) =>
+    console.warn("[workvivo] installHeartbeatAlarm failed:", e?.message ?? e));
+}
 
 export default {
   manifest: {
@@ -32,6 +38,16 @@ export default {
 
     ui: {
       kind: "fullpage",
+      // Sidebar + home-card glyph: the INNER markup of a 20x20 stroke icon.
+      // The shell wraps it (app.js::iconSvgString) so every module shares one
+      // viewBox, stroke width and currentColor. Omit it and the shell falls
+      // back to the generic grid glyph.
+      icon: `
+        <rect x="2.8" y="2.8" width="5.4" height="5.4" rx="1.2"/>
+        <rect x="11.8" y="2.8" width="5.4" height="5.4" rx="1.2"/>
+        <rect x="2.8" y="11.8" width="5.4" height="5.4" rx="1.2"/>
+        <path d="M11.8 11.8h2.4v2.4h-2.4zM15 15h2.2v2.2H15z" stroke-linejoin="round"/>
+      `,
       view: () => import("./view.js"),
     },
 
@@ -66,10 +82,8 @@ export default {
     webRequestFilters: [],
   },
 
-  async register(_host) {
-    // Install/refresh the periodic alarm. Idempotent — chrome.alarms.create
-    // replaces any prior entry with the same name, so changing the period
-    // constant in service.js takes effect on next shell boot.
-    await installHeartbeatAlarm();
-  },
+  // The heartbeat alarm is installed at top level above, in the service
+  // worker. Kept as a no-op: register() is part of the module contract and
+  // shell-side setup belongs here, not the alarm.
+  async register(_host) {},
 };

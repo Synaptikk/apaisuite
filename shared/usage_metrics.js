@@ -166,6 +166,12 @@ export async function recordUsage(opts) {
     // Only drain on a proven-good connection, so the queue isn't retried
     // pointlessly on every event while offline.
     flushUsageQueue().catch(() => {});
+    // Piggyback the schema-drift queue on the same proven connection rather
+    // than giving it an alarm of its own. Drift is rare and never urgent — it
+    // just has to arrive before someone asks "what changed this week".
+    import("./schema_watch_report.js")
+      .then((m) => m.flushSchemaDrift())
+      .catch(() => {});
     return { ok: true };
   } catch {
     return { ok: false };

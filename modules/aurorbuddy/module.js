@@ -16,11 +16,20 @@ import { handlers as serviceHandlers } from "./service.js";
 // top level for Chrome to wake the SW when the alarm fires — registering
 // inside a message handler defeats the purpose. See MEMORY rule
 // "Static import service.js + declarative webRequestFilters".
+import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { onAlarm as onFirestoreAlarm } from "./lib/firestore.js";
 import { onAlarm as onMetricsAlarm }   from "./lib/usage_metrics.js";
 import { onAlarm as onWorkflowAlarm, scheduleCleanupAlarm } from "./lib/workflow_status.js";
 
-if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
+// Gated to the service worker as well: this file is imported by the shell
+// page too, and extension pages receive alarm events — ungated, each tick
+// would run the queue flush and the expiry sweep once in the SW and once in
+// every open suite tab, double-writing to Firestore. See shared/alarms.js.
+//
+// All three of these schedulers already read before creating, so none has the
+// period-reset bug that hit vizpick/digitallocks/workvivo/livedashboard/
+// sparkscango/sparkfraud.
+if (IS_SERVICE_WORKER && typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     onFirestoreAlarm(alarm?.name);
     onMetricsAlarm(alarm?.name);
@@ -42,6 +51,16 @@ export default {
 
     ui: {
       kind: "fullpage",
+      // Sidebar + home-card glyph: the INNER markup of a 20x20 stroke icon.
+      // The shell wraps it (app.js::iconSvgString) so every module shares one
+      // viewBox, stroke width and currentColor. Omit it and the shell falls
+      // back to the generic grid glyph.
+      icon: `
+        <circle cx="9.1" cy="9.1" r="5.9"/>
+        <path d="M13.4 13.4L17 17" stroke-linecap="round"/>
+        <circle cx="9.1" cy="7.6" r="1.7"/>
+        <path d="M6.4 12.2a3.1 3.1 0 0 1 5.4 0" stroke-linecap="round"/>
+      `,
       view: () => import("./view.js"),
     },
     service: {

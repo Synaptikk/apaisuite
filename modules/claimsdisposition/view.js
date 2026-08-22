@@ -23,8 +23,9 @@ import { getDateRange,
          formatDateFmt }           from "./lib/dates.js";
 import { getPullById,
          listPulls }               from "./lib/db.js";
-import { DEFAULT_STORES }          from "./service.js";
-import { getUserHomeStore }        from "../../shared/userStore.js";
+import { getUserHomeStore,
+         getUserHomeMarket }       from "../../shared/userStore.js";
+import { getMarketRoster }         from "../../shared/marketRoster.js";
 
 import { createHeader }            from "./components/header.js";
 import { createFilterBar }         from "./components/filterBar.js";
@@ -100,29 +101,38 @@ export async function mount(host, container) {
     selectedPullId:  null,   // pullId currently rendered, or null when empty
     inFlightPull:    false,  // SW pull in progress
     pullDays:        30,
-    // Synchronous seed shown for a few hundred ms until the async read of
-    // chrome.storage.sync (kicked off below) replaces it with the user's
-    // saved roster, or — for first-run users — with their detected home
-    // store via getDefaultRoster(). DEFAULT_STORES is the worst-case
-    // fallback when we can't identify the user.
-    pullStores:      new Set(DEFAULT_STORES),
+    // Empty until the async read of chrome.storage.sync (kicked off below)
+    // replaces it with the user's saved roster, or — for first-run users —
+    // with getDefaultRoster(). This used to seed a literal 10-store list,
+    // which meant a first-run analyst in another market saw someone else's
+    // stores selected for a few hundred ms and could pull them by reflex.
+    pullStores:      new Set(),
   };
 
-  // Whichever roster the user gets seeded with on first run (their detected
-  // home store, or the Market 120 fallback) is also what "Reset to default"
-  // returns to. Memoized on first read of the user's identity.
+  // Whichever roster the user gets seeded with on first run is also what
+  // "Reset to default" returns to. Their home market's roster first (a
+  // market-level user wants the whole market), then their own store, then
+  // nothing — an empty picker asks a question; a wrong one answers it.
+  // Memoized on first read.
   let defaultRosterCache = null;
   async function getDefaultRoster() {
     if (defaultRosterCache) return defaultRosterCache;
-    const detected = await getUserHomeStore().catch(() => null);
-    defaultRosterCache = detected ? [Number(detected)] : DEFAULT_STORES.slice();
+    const [market, detected] = await Promise.all([
+      getUserHomeMarket().catch(() => null),
+      getUserHomeStore().catch(() => null),
+    ]);
+    const roster = market ? getMarketRoster(market) : null;
+    defaultRosterCache = roster?.length ? roster.slice()
+                       : detected      ? [Number(detected)]
+                       : [];
     return defaultRosterCache;
   }
 
   // Read saved store roster from chrome.storage.sync. If present, override
-  // the default; if absent (first run on this profile), use getDefaultRoster()
-  // so the user gets their own store seeded (or Market 120 as fallback).
-  // Persist whichever default we pick so the user can edit subsequently.
+  // the default; if absent (first run on this profile), use getDefaultRoster().
+  // Persist whichever default we pick so the user can edit subsequently — but
+  // only when it's non-empty, so an unidentifiable user isn't handed a saved
+  // empty roster they then have to notice and undo.
   chrome.storage.sync.get(USER_STORES_KEY).then(async (got) => {
     if (cancelled) return;
     const saved = got?.[USER_STORES_KEY];
@@ -131,8 +141,11 @@ export async function mount(host, container) {
       return;
     }
     const seed = await getDefaultRoster();
+    if (cancelled) return;
     setState({ pullStores: new Set(seed) });
-    chrome.storage.sync.set({ [USER_STORES_KEY]: [...seed] }).catch(() => {});
+    if (seed.length) {
+      chrome.storage.sync.set({ [USER_STORES_KEY]: [...seed] }).catch(() => {});
+    }
   }).catch((e) => console.warn("[claimsdisposition] couldn't read saved stores:", e?.message));
 
   // Persist any change to the store roster.
@@ -427,10 +440,28 @@ export async function mount(host, container) {
   // ── Pull → render flow ────────────────────────────────────────
   async function doPull() {
     if (state.inFlightPull) return;
+
+    // The cold-start auto-pull can fire before the async roster read below
+    // has landed, and the state seed is deliberately empty. Resolve the
+    // default here rather than shipping an empty `stores` the SW rejects.
+    let stores = [...state.pullStores];
+    if (!stores.length) {
+      stores = await getDefaultRoster();
+      if (cancelled) return;
+      if (stores.length) setState({ pullStores: new Set(stores) });
+    }
+    if (!stores.length) {
+      setState({
+        loading: false,
+        error: "No stores selected. Pick stores above, or set your home market in Settings > Defaults.",
+      });
+      return;
+    }
+
     setState({ inFlightPull: true });
     try {
       const resp = await sendSW("pull", {
-        stores: [...state.pullStores],
+        stores,
         days:   state.pullDays,
       }, 600_000);
       // If the view was unmounted mid-pull, bail before touching DOM /
@@ -521,6 +552,9 @@ export async function mount(host, container) {
       startDate: pull.startDate,
       endDate:   pull.endDate,
       days:      pull.days,
+      // Null on pulls taken before the field existed; the PDF omits the
+      // market line rather than printing a market this data isn't from.
+      marketNumber: pull.marketNumber ?? null,
     };
     setState({
       records,

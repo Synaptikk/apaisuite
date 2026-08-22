@@ -16,6 +16,7 @@
 //     Edge workaround SparkFraud documented in its registries/auth_modes.json)
 
 import { createAuth } from "../../shared/auth.js";
+import { ensureAlarm, IS_SERVICE_WORKER } from "../../shared/alarms.js";
 
 const MODULE_ID = "sparkfraud";
 
@@ -1267,30 +1268,44 @@ async function _getWatchlistConfig() {
   return _watchlistConfig;
 }
 
-// Register / refresh the periodic alarm. Called on every watchlist_add and
-// on SW boot (see below). chrome.alarms is idempotent — re-creating an alarm
-// with the same name replaces the previous one with the new period.
+// Register / refresh the periodic alarm. Called on every watchlist_add and at
+// SW boot (see below).
+//
+// This used to call chrome.alarms.create() directly, on the stated belief that
+// "chrome.alarms is idempotent — re-creating an alarm with the same name
+// replaces the previous one". Both halves are true and together they are the
+// bug: replacing RESTARTS the period from zero. Since this also runs at the
+// top level of a file the shell page imports, every suite page load reset the
+// poll countdown — a watchlist with a 15-minute interval never polled for
+// anyone who opened the suite more often than that. ensureAlarm() only writes
+// when the alarm is missing or the configured interval actually changed, which
+// is still exactly what watchlist_add needs. See shared/alarms.js.
 async function _ensureWatchlistAlarm() {
   const cfg = await _getWatchlistConfig();
-  await chrome.alarms.create(ALARM_NAME, {
-    periodInMinutes: cfg.poll_interval_minutes,
-  });
+  await ensureAlarm(ALARM_NAME, { periodInMinutes: cfg.poll_interval_minutes });
 }
 
 // ── Alarm listener — MUST be registered synchronously at module top level
-// so chrome.alarms wakes the SW on tick. Same rule as chrome.webRequest. ──
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== ALARM_NAME) return;
-  pollWatchlist({ trigger: "alarm" }).catch(e => {
-    console.error("[SparkFraud watchlist] poll threw:", e);
+// so chrome.alarms wakes the SW on tick. Same rule as chrome.webRequest.
+//
+// Gated to the service worker: this file is imported by the shell page too,
+// and extension pages receive alarm events as well — an ungated listener
+// polls the watchlist twice per tick, once here and once in every open suite
+// tab, each driving its own Dispatcher queries.
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== ALARM_NAME) return;
+    pollWatchlist({ trigger: "alarm" }).catch(e => {
+      console.error("[SparkFraud watchlist] poll threw:", e);
+    });
   });
-});
 
-// Create the alarm at SW boot too (idempotent). chrome.alarms.create can
-// run after async work has begun — Chrome remembers the alarm regardless.
-_ensureWatchlistAlarm().catch(e => {
-  console.warn("[SparkFraud watchlist] alarm setup failed:", e);
-});
+  // Create the alarm at SW boot too. chrome.alarms.create can run after async
+  // work has begun — Chrome remembers the alarm regardless.
+  _ensureWatchlistAlarm().catch(e => {
+    console.warn("[SparkFraud watchlist] alarm setup failed:", e);
+  });
+}
 
 // ── Headers for the SW-side Dispatcher query ─────────────────────────
 // Mirrors the buildHeaders() function in view.js but executes inside the

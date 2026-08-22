@@ -93,6 +93,7 @@ export async function mount(host, container) {
       bands:            weights.bands,
       timeWindows:      weights.timeWindows,
       thresholds:       weights.thresholds,
+      calibration:      weights.calibration,
       highRiskKeywords: highRisk.keywords,
       roleZone,
     };
@@ -944,7 +945,11 @@ export async function mount(host, container) {
 
     filtered = sortRows(filtered);
     replace(els.content, makeEventTable(filtered));
-    setTimeout(() => batchTriggerAssocLookups(filtered.map((e) => e.userId)), 0);
+    // No batch tenure prefetch here. Each lookup drives a real browser tab to
+    // a Workday directory search, and this ran on EVERY render of the table —
+    // every filter change, sort, and remount — queueing one navigation per
+    // visible row. The event table renders no tenure data anyway; the drawer
+    // fetches on open (renderDrawerTenure), which is the only place it shows.
   }
 
   // ── Users audit tab ─────────────────────────────────────────────────────────
@@ -1130,7 +1135,7 @@ export async function mount(host, container) {
       return;
     }
     replace(els.content, makeEventTable(filtered, /* historyMode */ true));
-    setTimeout(() => batchTriggerAssocLookups(filtered.map((e) => e.userId)), 0);
+    // Same as the events tab: no batch tenure prefetch. See renderEventsTab.
   }
 
   function renderChecklist() {
@@ -1236,6 +1241,12 @@ export async function mount(host, container) {
       h("td", null,
         h("div", { class: "dl-cell-reasons" },
           ...(e.riskReasons || []).map((r) => h("span", { class: "dl-chip" }, r)),
+          // Reasons that fired but scored nothing because they fire on nearly
+          // every event in this import (see riskScoring.js base-rate
+          // calibration). Shown muted so the row still reads truthfully
+          // without implying the event is unusual.
+          ...(e.baselineReasons || []).map((r) =>
+            h("span", { class: "dl-chip dl-chip-baseline", title: "Normal for this import — not scored" }, r)),
         ),
       ),
       h("td", null,
@@ -1594,27 +1605,6 @@ export async function mount(host, container) {
         if (cancelled) return;
         setState({ assocCtx: { ...state.assocCtx, [userId]: { ok: false, error: err?.message ?? String(err) } } });
       });
-  }
-
-  // Batch-kick tenure lookups for a list of userIds — one setState for all the
-  // "loading" states so we don't trigger N re-renders before any result arrives.
-  function batchTriggerAssocLookups(userIds) {
-    const toFetch = userIds.filter((uid) => uid && !state.assocCtx[uid]);
-    if (!toFetch.length) return;
-    const newCtx = { ...state.assocCtx };
-    for (const uid of toFetch) newCtx[uid] = { loading: true };
-    setState({ assocCtx: newCtx });
-    for (const userId of toFetch) {
-      host.messaging.sendRaw("lookupAssociate", { userId }, { timeoutMs: 20_000 })
-        .then((resp) => {
-          if (cancelled) return;
-          setState({ assocCtx: { ...state.assocCtx, [userId]: resp } });
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          setState({ assocCtx: { ...state.assocCtx, [userId]: { ok: false, error: err?.message ?? String(err) } } });
-        });
-    }
   }
 
   function retriggerAssocLookup(userId) {

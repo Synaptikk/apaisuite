@@ -1,9 +1,9 @@
 // modules/metricshot/lib/sendbird.js
 //
-// Posts screenshots + text to a Workvivo/Sendbird group channel via the
-// Sendbird Platform REST API.
+// Posts screenshots + text to a Workvivo/Sendbird group channel using the
+// user's already-authenticated workvivo.walmart.com tab.
 //
-// ── Why REST, not the SDK ──────────────────────────────────────────────────
+// ── Two different auth paths for two different message types ───────────────
 // The Sendbird JS SDK is NEVER exposed on `window` at workvivo.walmart.com
 // (confirmed 2026-07-28 via CDP: no global, no iframe, v2.chat=false). Every
 // SDK-detection strategy was therefore doomed. But the SDK talks to
@@ -24,17 +24,30 @@
 //   Session-key, App-Id, Content-Type: application/json; charset=utf-8,
 //   SendBird: JS,web,4.22.0,{appId}, SB-User-Agent: JS/c4.22.0///oweb
 // All four are load-bearing and asserted in lib/tests/sendbird_rest.test.mjs.
+// Used for: resolving a channel name → channel_url, and text messages.
 //
 // The Session-key rotates. Every request goes through sbFetch(), which on a
 // 401/403 waits up to 3s for the sniffer to observe a newer key and replays
 // the request once — a rotation between channel-resolve and send used to lose
 // the whole post.
 //
-// KNOWN BROKEN: the "file" action. Sendbird rejects multipart sends on this
-// auth path with 400 "File-messages via SDK are disabled", so screenshot
-// posting does not currently work. The sniffer's net-recon ring buffer
-// (window.__APAISUITE_METRICSHOT_NETLOG) exists to discover the upload route
-// Workvivo's own UI uses. Text sends are unaffected and work.
+// IMAGES DO NOT GO THROUGH SENDBIRD AT ALL. Posting message_type:FILE on the
+// session-key auth path above returns 400 "File-messages via SDK are
+// disabled" — an app-level Sendbird setting for this application, confirmed
+// live even with a correctly-minted session key (docs/workvivo-auth.md::
+// "Still open"). Workvivo's own chat UI never uses that endpoint for images
+// either — captured live 2026-08-20 from a real UI send (dev trace via
+// Playwright, no CDP): it uploads to S3 via a presigned POST policy, then
+// asks Workvivo's OWN backend (workvivo.walmart.com/api/chat/message/files)
+// to create the message server-side — a regular MESG with
+// custom_type:GROUP_FILES and the image URL embedded in `data`, not a
+// Sendbird FILE message at all. That server-side path isn't subject to the
+// client-SDK restriction. Auth for this half is the page's own CSRF/XSRF
+// pair (meta[name=csrf-token] + the XSRF-TOKEN cookie — same convention as
+// GET /api/chat/config, see docs/workvivo-auth.md), not the Sendbird
+// session-key. See IN_PAGE_SB's "file" action for the exact 3-request
+// sequence: POST /api/s3/signature/generate → POST to the returned S3 URL →
+// POST /api/chat/message/files.
 //
 // Channel targeting:
 //   - "@me" / "@self" / "(me)"  → find-or-create the 1-member self channel
@@ -143,6 +156,30 @@ export async function introspectSdk() {
   } finally {
     await _closeIfOwn(tabId, openedFresh);
   }
+}
+
+/**
+ * Diagnostic: read the sniffer's netlog off a tab the USER already has open
+ * and has been interacting with — never opens a new tab, unlike introspectSdk().
+ * That distinction matters here: the whole point is to capture the request(s)
+ * Workvivo's own UI fires when a human attaches + sends a file (image posting
+ * via Sendbird REST is blocked with 400 "File-messages via SDK are disabled" —
+ * see docs/workvivo-auth.md::"Still open" — so finding the route the UI itself
+ * uses is the only non-CDP path forward). A freshly-opened tab would have an
+ * empty netlog because nothing happened in it.
+ *
+ * Usage: open workvivo.walmart.com/chat yourself, manually attach + send an
+ * image (ideally to your own @me channel), then call this — no tab lifecycle
+ * to manage since we never created one.
+ */
+export async function readNetlogFromOpenTab() {
+  const tabs = await chrome.tabs.query({ url: "https://workvivo.walmart.com/*" }).catch(() => []);
+  const tab = tabs.find((t) => typeof t.id === "number");
+  if (!tab) {
+    return { ok: false, errorClass: "NO_TAB", error: "no open workvivo.walmart.com tab found — open one, send a test image, then retry" };
+  }
+  const r = await _runInTab(tab.id, IN_PAGE_INTROSPECT, []);
+  return { ok: true, tabId: tab.id, tabUrl: tab.url, ...(r || {}) };
 }
 
 // ── Tab lifecycle ────────────────────────────────────────────────────────────
@@ -438,25 +475,118 @@ async function IN_PAGE_SB(arg) {
   }
 
   if (arg.action === "file") {
+    // Image posting NEVER goes through Sendbird — see the module header.
+    // Auth here is the page's own CSRF pair, the same convention Workvivo
+    // uses for GET /api/chat/config (docs/workvivo-auth.md), not the
+    // Sendbird Session-key used by every other action in this function.
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrf = csrfMeta ? csrfMeta.content : "";
+    const xsrfCookieMatch = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+    const xsrf = xsrfCookieMatch ? decodeURIComponent(xsrfCookieMatch[1]) : "";
+    if (!csrf || !xsrf) {
+      return { ok: false, errorClass: "NO_CSRF", error: "missing CSRF/XSRF token on the Workvivo page — reload the tab" };
+    }
+    const wvHeaders = (extra) => Object.assign({
+      "X-CSRF-Token": csrf,
+      "X-XSRF-Token": xsrf,
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept": "application/json, text/plain, */*",
+    }, extra || {});
+
     const bin = atob(arg.pngBase64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // PNG IHDR: 8-byte signature + 4-byte chunk length + 4-byte "IHDR" type,
+    // then 4-byte width + 4-byte height, big-endian. validate.js already
+    // guarantees this shape before capture.js ever calls us.
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = bytes.length >= 24 ? dv.getUint32(16) : 0;
+    const height = bytes.length >= 24 ? dv.getUint32(20) : 0;
+    const fileName = arg.fileName || "screenshot.png";
     const blob = new Blob([bytes], { type: "image/png" });
-    const form = new FormData();
-    form.append("message_type", "FILE");
-    form.append("user_id", c.userId);
-    if (arg.caption) form.append("message", String(arg.caption));
-    form.append("file", blob, arg.fileName || "screenshot.png");
-    // NOTE: do NOT set Content-Type for multipart — the browser adds the boundary.
-    const r = await sbFetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
-      method: "POST",
-      body: form,
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      return { ok: false, errorClass: classify(r.status), error: "post " + r.status + ": " + (j.message || ""), keyAgeMs: c.ageMs };
+
+    // 1. Mint an S3 presigned-POST policy for this upload.
+    let sigRes;
+    try {
+      sigRes = await fetch("/api/s3/signature/generate?extension=png&cacheBust=" + Math.random() + "&duration=", {
+        method: "POST",
+        credentials: "include",
+        headers: wvHeaders({ "Content-Type": "application/x-www-form-urlencoded" }),
+      });
+    } catch (e) {
+      return { ok: false, errorClass: "S3_SIG_FAIL", error: "signature request threw: " + (e && e.message || e) };
     }
-    return { ok: true, channelUrl: channel.channel_url, messageId: String(j.message_id || "sent") };
+    if (!sigRes.ok) return { ok: false, errorClass: "S3_SIG_FAIL", error: "signature request HTTP " + sigRes.status };
+    const sig = await sigRes.json().catch(() => null);
+    if (!sig || !sig.attributes || !sig.attributes.action || !sig.inputs || !sig.signedUrl) {
+      return { ok: false, errorClass: "S3_SIG_FAIL", error: "malformed signature response" };
+    }
+
+    // 2. Upload the bytes straight to S3 using that policy. Field order
+    //    matters here: a presigned-POST form ignores anything appended
+    //    after "file", so the policy fields must come first.
+    const s3form = new FormData();
+    for (const k of Object.keys(sig.inputs)) s3form.append(k, sig.inputs[k]);
+    s3form.append("file", blob, fileName);
+    let s3res;
+    try {
+      s3res = await fetch(sig.attributes.action, { method: sig.attributes.method || "POST", body: s3form });
+    } catch (e) {
+      return { ok: false, errorClass: "S3_UPLOAD_FAIL", error: "S3 upload threw: " + (e && e.message || e) };
+    }
+    if (!s3res.ok) return { ok: false, errorClass: "S3_UPLOAD_FAIL", error: "S3 upload HTTP " + s3res.status };
+
+    // 3. Ask Workvivo's own backend to create the chat message server-side —
+    //    this server-side path is what sidesteps the client-SDK file-message
+    //    block. It is a plain MESG with custom_type:GROUP_FILES, not a
+    //    Sendbird FILE message.
+    const media = {
+      name: fileName, size: bytes.length, lastModified: Date.now(), type: "image/png",
+      file: {}, id: String(Date.now()) + String(Math.floor(Math.random() * 1e6)),
+      width, height, isGif: false,
+      originalFile: {}, compressedFile: {},
+      file_url: sig.signedUrl, file_name: fileName, file_type: "image/png",
+      path: sig.inputs.key, wv_signature: sig.wvSignature, amz_signature: sig.inputs["X-Amz-Signature"],
+      fileLoaded: true, duration: null, metering: null,
+      thumbnail: null, thumbnail_path: null, thumbnail_wv_signature: null, thumbnail_amz_signature: null,
+      gif_still: null, gif_still_path: null, gif_still_wv_signature: null, gif_still_amz_signature: null,
+      is_gif: "", is_voice_note: "", pdf_url: "", pdf_path: "", pdf_wv_signature: "", pdf_amz_signature: "",
+    };
+    let msgRes;
+    try {
+      msgRes = await fetch("/api/chat/message/files", {
+        method: "POST",
+        credentials: "include",
+        headers: wvHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          channel_url: channel.channel_url,
+          message: arg.caption ? String(arg.caption) : "",
+          items: { media: [media] },
+          parent_message_id: null,
+          mention_type: "users",
+          mentioned_user_ids: [],
+          custom_type: "GROUP_FILES",
+        }),
+      });
+    } catch (e) {
+      return { ok: false, errorClass: "POST_FAIL", error: "message create threw: " + (e && e.message || e) };
+    }
+    const msgJson = await msgRes.json().catch(() => ({}));
+    if (!msgRes.ok) {
+      return { ok: false, errorClass: "POST_FAIL", error: "message create HTTP " + msgRes.status + ": " + (msgJson.message || "") };
+    }
+
+    // Best-effort push notification, same as the real UI fires after a send.
+    // Never fails the post — the message is already delivered by this point.
+    try {
+      await fetch("/api/chat/channel/notify", {
+        method: "POST", credentials: "include",
+        headers: wvHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ channel_url: channel.channel_url, message_id: msgJson.message_id }),
+      });
+    } catch (_) { /* best-effort */ }
+
+    return { ok: true, channelUrl: channel.channel_url, messageId: String(msgJson.message_id || "sent") };
   }
 
   return { ok: false, errorClass: "INPUT", error: "unknown action: " + arg.action };

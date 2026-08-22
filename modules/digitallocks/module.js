@@ -21,12 +21,21 @@
 //     mutable review-status overlay. Status edits don't rewrite the
 //     entire import blob; the table merges import + overlay at render.
 
+import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { handlers as serviceHandlers, installDailyRefreshAlarm, onAlarm } from "./service.js";
 
-// Alarm listener MUST be registered at top-level (SW initial execution) so
-// Chrome can wake the SW on a matching alarm event. Same constraint as
-// webRequest listeners — see service_worker.js for the full rationale.
-chrome.alarms.onAlarm.addListener(onAlarm);
+// Alarm wiring is service-worker-only, and lives at top level rather than in
+// register(). Both halves matter — see shared/alarms.js:
+//   · top level, because register() is called from app.js when the shell
+//     mounts a module and never runs in the SW at all;
+//   · gated, because this file is imported by the shell page too, and
+//     extension pages receive chrome.alarms events — an ungated listener
+//     would run onAlarm once in the SW and once in every open suite tab.
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener(onAlarm);
+  installDailyRefreshAlarm().catch((e) =>
+    console.warn("[digitallocks] installDailyRefreshAlarm failed:", e?.message ?? e));
+}
 
 export default {
   manifest: {
@@ -38,6 +47,16 @@ export default {
 
     ui: {
       kind: "fullpage",
+      // Sidebar + home-card glyph: the INNER markup of a 20x20 stroke icon.
+      // The shell wraps it (app.js::iconSvgString) so every module shares one
+      // viewBox, stroke width and currentColor. Omit it and the shell falls
+      // back to the generic grid glyph.
+      icon: `
+        <rect x="4" y="8.8" width="12" height="8" rx="2"/>
+        <path d="M7.1 8.8V6.4a2.9 2.9 0 0 1 5.8 0v2.4"/>
+        <circle cx="10" cy="12.4" r="1.15" fill="currentColor" stroke="none"/>
+        <path d="M10 13.5v1.3" stroke-linecap="round"/>
+      `,
       view: () => import("./view.js"),
     },
     service: {
@@ -50,18 +69,28 @@ export default {
     // flow. chrome.downloads.onCreated captures the resulting .xlsx and
     // hands the bytes back to the view's existing parser. Same pattern as
     // claimsdisposition's tab-driven Looker pull.
+    // wd504.myworkday.com is the tenure lookup (lookupAssociate): the SW
+    // drives its OWN background Workday tab to a directory search and reads
+    // "Length of Service" out of the rendered page. It is read-only — nothing
+    // is submitted, and the tab is never one the user opened.
+    // liveaccess.invue.walmart.com backs the Users-audit tab's InVue fetch;
+    // it was already granted in the top-level manifest but missing from this
+    // informational list.
     permissions: {
       needs: ["storage", "tabs", "scripting", "downloads", "cookies", "alarms"],
-      hosts: ["https://app.powerbi.com/*"],
+      hosts: [
+        "https://app.powerbi.com/*",
+        "https://prod.liveaccess.invue.walmart.com/*",
+        "https://wd504.myworkday.com/*",
+      ],
     },
 
     contentScripts: [],
     webRequestFilters: [],
   },
 
-  async register(_host) {
-    // Install/refresh the daily auto-refresh alarm. Idempotent — chrome.alarms.create
-    // replaces any prior entry with the same name.
-    await installDailyRefreshAlarm();
-  },
+  // The daily auto-refresh alarm is installed at top level above, in the
+  // service worker. Kept as a no-op: register() is part of the module
+  // contract and shell-side setup belongs here, not the alarm.
+  async register(_host) {},
 };

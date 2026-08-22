@@ -22,6 +22,10 @@ import {
   isHomeHeaderAllowedForRole,
   OVERRIDE_KEY,
 } from "./shared/userStore.js";
+import {
+  isDebugUnlocked, setDebugUnlocked, startDebugFeed, readAlarms,
+  UNLOCK_TAPS, UNLOCK_HINT_AT, FEED_MAX,
+} from "./shared/debug_feed.js";
 
 const $nav  = $("#shell-nav");
 const $main = $("#shell-main");
@@ -252,7 +256,7 @@ function moduleNavItem(mod) {
   const a = navItem({
     href: `#/${mod.manifest.id}`,
     label: mod.manifest.name,
-    icon: iconModule(),
+    icon: iconModule(mod),
     statusClass: mod.manifest.status === "beta" ? "beta"
                : mod.manifest.status === "deprecated" ? "deprecated"
                : "",
@@ -437,7 +441,7 @@ function moduleCard(mod) {
   card.className = "module-card";
   card.innerHTML = `
     <div class="module-card-head">
-      <span class="module-card-icon">${iconModuleSvg()}</span>
+      <span class="module-card-icon">${iconModuleSvg(mod)}</span>
       <div class="stack" style="gap:2px">
         <span class="module-card-name">${escapeHtml(m.name)}</span>
         <span class="muted tiny">v${escapeHtml(m.version)} · ${escapeHtml(m.status)}</span>
@@ -538,7 +542,8 @@ function renderSettings() {
   const current = localStorage.getItem("shell.theme") || "system";
   $main.innerHTML = `
     <div class="stack" style="max-width:900px;margin:0 auto">
-      <h1>Settings</h1>
+      <h1 id="settings-heading" title="Settings">Settings</h1>
+      <p class="muted tiny" id="settings-unlock-hint" style="margin:-8px 0 0" hidden></p>
       <div class="card">
         <h2 class="card-title">Appearance</h2>
         <div class="stack stack-sm">
@@ -618,6 +623,47 @@ function renderSettings() {
           </div>
         </div>
       </div>
+
+      <!-- Hidden until the Settings heading is tapped UNLOCK_TAPS times.
+           Not a security boundary — it keeps a firehose of internal events out
+           of the way of ordinary use, nothing more. -->
+      <div class="card" id="settings-debug" hidden>
+        <h2 class="card-title">Background activity</h2>
+        <div class="stack stack-sm">
+          <p class="muted" style="margin:0">
+            Live feed of what the extension is doing when you aren't looking —
+            captures, scheduled refreshes, and errors, newest first. Read-only:
+            watching this never starts work of its own. Values that look like
+            credentials are redacted before they reach the screen.
+          </p>
+
+          <div class="cluster">
+            <button class="btn btn-secondary btn-sm" id="dbg-pause">Pause</button>
+            <button class="btn btn-secondary btn-sm" id="dbg-clear">Clear</button>
+            <button class="btn btn-secondary btn-sm" id="dbg-copy">Copy</button>
+            <label class="check" style="margin-left:auto">
+              <span class="muted tiny" style="margin-right:6px">Module</span>
+              <select class="input" id="dbg-filter" style="max-width:190px"></select>
+            </label>
+          </div>
+
+          <div class="stack stack-sm">
+            <span class="field-label">Scheduled work</span>
+            <p class="muted tiny" style="margin:0">
+              What is queued to run on its own. An empty table here means
+              nothing is scheduled — which looks identical to "idle" in the
+              feed below, and is how the alarm bug went unnoticed.
+            </p>
+            <div id="dbg-alarms" class="dbg-alarms"></div>
+          </div>
+
+          <div class="dbg-feed" id="dbg-feed" aria-live="off" aria-label="Background activity feed"></div>
+          <div class="cluster">
+            <span class="muted tiny" id="dbg-count"></span>
+            <button class="btn btn-ghost btn-sm" id="dbg-lock" style="margin-left:auto">Hide this panel</button>
+          </div>
+        </div>
+      </div>
     </div>
   `;
   // Wire the radios to apply + persist.
@@ -631,6 +677,179 @@ function renderSettings() {
   }
 
   wireDefaults();
+  wireDebugPanel();
+}
+
+// ── Hidden debug panel ────────────────────────────────────────────────────
+//
+// Revealed by tapping the Settings heading UNLOCK_TAPS times, the same gesture
+// Android uses for developer options. Deliberately NOT a security boundary —
+// everything it shows is already readable from DevTools by anyone who wants
+// it. The point is to keep a firehose of internal events away from ordinary
+// use while leaving it one gesture away when something is misbehaving, instead
+// of asking an analyst to open DevTools and read raw storage.
+//
+// Unlock state persists in chrome.storage.local["shell.debug.unlocked"], so it
+// survives a reload once found, and "Hide this panel" puts it back.
+function wireDebugPanel() {
+  const heading = $("#settings-heading");
+  const card    = $("#settings-debug");
+  const hint    = $("#settings-unlock-hint");
+  if (!heading || !card) return;   // settings route replaced mid-flight
+
+  let taps = 0;
+  let tapTimer = null;
+  let feed = null;
+  let alarmTimer = null;
+  const events = [];
+
+  const fmtTime = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString(undefined, { hour12: false }) +
+           "." + String(d.getMilliseconds()).padStart(3, "0");
+  };
+
+  function renderFeed() {
+    const host = $("#dbg-feed");
+    const countEl = $("#dbg-count");
+    if (!host) return;
+    const filter = $("#dbg-filter")?.value || "";
+    const shown = filter ? events.filter((e) => e.module === filter) : events;
+
+    host.innerHTML = shown.length
+      ? shown.slice(0, FEED_MAX).map((e) => {
+          const detail = e.detail && Object.keys(e.detail).length
+            ? JSON.stringify(e.detail)
+            : "";
+          return `<div class="dbg-row">
+            <span class="dbg-ts">${escapeHtml(fmtTime(e.ts))}</span>
+            <span class="dbg-src dbg-src-${escapeHtml(e.source)}" title="${
+              e.source === "sw" ? "from the service worker's telemetry ring" : "live broadcast"
+            }">${escapeHtml(e.source)}</span>
+            <span class="dbg-mod">${escapeHtml(e.module)}</span>
+            <span class="dbg-evt">${escapeHtml(e.event)}</span>
+            <span class="dbg-detail" title="${escapeHtml(detail)}">${escapeHtml(detail.slice(0, 160))}</span>
+          </div>`;
+        }).join("")
+      : `<p class="muted tiny" style="margin:8px">Nothing yet. Background work appears here as it happens.</p>`;
+
+    if (countEl) {
+      countEl.textContent = events.length
+        ? `${shown.length}${filter ? ` of ${events.length}` : ""} event${shown.length === 1 ? "" : "s"}`
+        : "";
+    }
+  }
+
+  function refreshFilter() {
+    const sel = $("#dbg-filter");
+    if (!sel) return;
+    const mods = [...new Set(events.map((e) => e.module))].sort();
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">All</option>` +
+      mods.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+    if (mods.includes(cur)) sel.value = cur;
+  }
+
+  async function renderAlarms() {
+    const host = $("#dbg-alarms");
+    if (!host) return;
+    const alarms = await readAlarms();
+    host.innerHTML = alarms.length
+      ? `<table class="dbg-table"><thead><tr><th>Alarm</th><th>Every</th><th>Next</th></tr></thead><tbody>${
+          alarms.map((a) => {
+            const mins = Math.round(a.inMs / 60000);
+            const next = a.inMs < 0 ? "due" : mins < 1 ? "< 1 min" : `${mins} min`;
+            return `<tr><td>${escapeHtml(a.name)}</td><td>${
+              a.periodInMinutes ? escapeHtml(String(a.periodInMinutes)) + " min" : "one-shot"
+            }</td><td>${escapeHtml(next)}</td></tr>`;
+          }).join("")
+        }</tbody></table>`
+      : `<p class="muted tiny" style="margin:0">No alarms scheduled.</p>`;
+  }
+
+  async function openPanel() {
+    card.hidden = false;
+    if (hint) hint.hidden = true;
+    if (feed) return;                        // already running
+
+    feed = await startDebugFeed({
+      onEvents(fresh) {
+        // Newest first: no autoscroll to fight, and the latest line is always
+        // the one already on screen.
+        events.unshift(...fresh.reverse());
+        if (events.length > FEED_MAX) events.length = FEED_MAX;
+        refreshFilter();
+        renderFeed();
+      },
+    });
+
+    refreshFilter();
+    renderFeed();
+    await renderAlarms();
+    alarmTimer = setInterval(renderAlarms, 15_000);
+
+    $("#dbg-pause")?.addEventListener("click", (ev) => {
+      const on = !feed.isPaused();
+      feed.setPaused(on);
+      ev.currentTarget.textContent = on ? "Resume" : "Pause";
+    });
+    $("#dbg-clear")?.addEventListener("click", () => { events.length = 0; renderFeed(); });
+    $("#dbg-filter")?.addEventListener("change", renderFeed);
+    $("#dbg-copy")?.addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      const was = btn.textContent;
+      const text = events.map((e) =>
+        `${new Date(e.ts).toISOString()}  ${e.source}  ${e.module}.${e.event}  ${JSON.stringify(e.detail)}`
+      ).join("\n");
+      try {
+        await navigator.clipboard.writeText(text || "(empty)");
+        btn.textContent = "Copied ✓";
+      } catch { btn.textContent = "Copy failed"; }
+      setTimeout(() => { btn.textContent = was; }, 2000);
+    });
+    $("#dbg-lock")?.addEventListener("click", async () => {
+      await setDebugUnlocked(false);
+      stopPanel();
+      card.hidden = true;
+      taps = 0;
+    });
+  }
+
+  function stopPanel() {
+    try { feed?.stop(); } catch {}
+    feed = null;
+    if (alarmTimer) { clearInterval(alarmTimer); alarmTimer = null; }
+  }
+
+  // Already unlocked from a previous visit?
+  isDebugUnlocked().then((on) => { if (on) openPanel(); }).catch(() => {});
+
+  heading.addEventListener("click", async () => {
+    taps++;
+    // Taps must be a deliberate run, not ten stray clicks over a session.
+    if (tapTimer) clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => { taps = 0; if (hint) hint.hidden = true; }, 3000);
+
+    if (taps >= UNLOCK_TAPS) {
+      taps = 0;
+      clearTimeout(tapTimer);
+      await setDebugUnlocked(true);
+      await openPanel();
+      return;
+    }
+    if (taps >= UNLOCK_HINT_AT && hint) {
+      const left = UNLOCK_TAPS - taps;
+      hint.textContent = `${left} more tap${left === 1 ? "" : "s"} to show background activity.`;
+      hint.hidden = false;
+    }
+  });
+
+  // The shell awaits this on the next route change — without it the feed's
+  // two listeners would outlive the page and keep a detached DOM alive.
+  currentMount = {
+    moduleId: "settings",
+    cleanup: () => { stopPanel(); if (tapTimer) clearTimeout(tapTimer); },
+  };
 }
 
 function wireDefaults() {
@@ -803,23 +1022,37 @@ function iconHome() {
   </svg>`;
   return tpl.content.firstElementChild;
 }
-function iconModule() {
+// Modules supply only the INNER markup of their glyph (manifest.ui.icon);
+// the shell owns the wrapper so every icon shares one viewBox, stroke width
+// and currentColor. A module that ships no icon — including one dropped in
+// later — falls back to this generic grid, so nothing here is keyed on a
+// module id.
+const GENERIC_GLYPH = `
+  <rect x="3" y="3" width="6" height="6" rx="1"></rect>
+  <rect x="11" y="3" width="6" height="6" rx="1"></rect>
+  <rect x="3" y="11" width="6" height="6" rx="1"></rect>
+  <rect x="11" y="11" width="6" height="6" rx="1"></rect>`;
+
+function moduleGlyph(mod) {
+  const icon = mod?.manifest?.ui?.icon;
+  return typeof icon === "string" && icon.trim() ? icon : GENERIC_GLYPH;
+}
+
+function iconSvgString(glyph) {
+  return `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${glyph}</svg>`;
+}
+
+function iconSvgElement(glyph) {
   const tpl = document.createElement("template");
-  tpl.innerHTML = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-    <rect x="3" y="3" width="6" height="6" rx="1"></rect>
-    <rect x="11" y="3" width="6" height="6" rx="1"></rect>
-    <rect x="3" y="11" width="6" height="6" rx="1"></rect>
-    <rect x="11" y="11" width="6" height="6" rx="1"></rect>
-  </svg>`;
+  tpl.innerHTML = iconSvgString(glyph);
   return tpl.content.firstElementChild;
 }
-function iconModuleSvg() {
-  return `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-    <rect x="3" y="3" width="6" height="6" rx="1"></rect>
-    <rect x="11" y="3" width="6" height="6" rx="1"></rect>
-    <rect x="3" y="11" width="6" height="6" rx="1"></rect>
-    <rect x="11" y="11" width="6" height="6" rx="1"></rect>
-  </svg>`;
+
+function iconModule(mod) {
+  return iconSvgElement(moduleGlyph(mod));
+}
+function iconModuleSvg(mod) {
+  return iconSvgString(moduleGlyph(mod));
 }
 
 // ── Boot ──────────────────────────────────────────────────────
@@ -910,3 +1143,27 @@ route().catch((e) => {
   console.error("[shell] boot route failed:", e);
   $main.innerHTML = `<div class="state-error">Shell boot failed: ${escapeHtml(String(e?.message ?? e))}</div>`;
 });
+
+// ── "The suite was opened" ────────────────────────────────────────────────
+//
+// Opening the suite is a strong signal that someone is about to look at this
+// data, and waiting up to a module's full alarm period for a refresh they are
+// standing in front of is the wrong trade. Modules that care can freshen
+// themselves now instead.
+//
+// Registry-driven ON PURPOSE: the shell asks every module whether it has a
+// `suite_opened` handler and dispatches to those that do. It does not know
+// which modules want this, so a new module opts in by adding the handler and
+// nothing here changes. (Hard-coding module ids in the shell is the one thing
+// the plugin contract exists to prevent.)
+//
+// Fire-and-forget and deliberately AFTER route(): a module that goes off to
+// drive a background tab must never delay the first paint. Each module is
+// responsible for its own rate limiting — the shell can be reloaded often, and
+// every reload of an unpacked extension re-opens it.
+for (const mod of listModules()) {
+  const id = mod?.manifest?.id;
+  if (!id || typeof mod?.manifest?.service?.handlers?.suite_opened !== "function") continue;
+  chrome.runtime.sendMessage({ module: id, type: "suite_opened" })
+    .catch(() => { /* SW asleep or handler threw — never the shell's problem */ });
+}

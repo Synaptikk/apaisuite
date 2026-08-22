@@ -26,6 +26,7 @@ import orcmonitor        from "./orcmonitor/module.js";
 import market120         from "./market120/module.js";
 import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
+import digitalrollup     from "./digitalrollup/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -38,6 +39,7 @@ export default [
   market120,         // Market 120 Clearance & ISA Review — Pass 1 skeleton
   metricshot,        // Scheduled screenshots → Workvivo
   vizpick,           // VizPick Market Rollup — every store in a market at once
+  digitalrollup,     // Digital Market Rollup — live OPD fulfilment, same layout
   aurorbuddy,
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,

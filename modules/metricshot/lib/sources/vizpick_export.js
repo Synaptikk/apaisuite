@@ -77,8 +77,13 @@ export async function exportVizPickSheets(opts = {}) {
   if (!ctx.ok) return { ok: false, errorClass: "NO_SESSION", error: ctx.error, debug: ctx.debug };
 
   // Re-derive sheetdocIds live from the export dialog if we can; fall back to
-  // the captured defaults. Best-effort — a failure here just uses defaults.
-  const liveIds = await _resolveSheetIds(tabId, ctx).catch(() => null);
+  // the captured defaults. Only worth the round trip when something in `which`
+  // actually needs it (a null default sheetdocId) — every attempt so far has
+  // come back 500 "Command parse error: parsing parameter thumbnail-uris" (see
+  // dev trace 2026-08-20), so skipping it for the two sheets that already have
+  // known-good GUIDs saves a guaranteed-failing request on every run.
+  const needsLiveIds = which.some((k) => SHEETS[k] && SHEETS[k].sheetdocId == null);
+  const liveIds = needsLiveIds ? await _resolveSheetIds(tabId, ctx).catch(() => null) : null;
 
   const sheets = {};
   const errors = [];
@@ -124,13 +129,21 @@ export async function exportVizPickSheets(opts = {}) {
  * that format_message.js consumes. Same result contract so callers don't care
  * how the data was obtained.
  *
- * @param {object} [opts]  passed through to exportVizPickSheets (format, tabId)
+ * Only requests locationDetails + departmentBreakout by default — the two
+ * sheets behind the dashboard rings (donutHealth, departmentGroups) are
+ * unreachable here (see the SHEETS comment above and _resolveSheetIds'
+ * consistent 500) and unused now that lib/capture.js sources ring data from
+ * modules/vizpick's own snapshot instead. Pass `which` to override, e.g. for
+ * the "try-export" debug tool that still wants to probe all four.
+ *
+ * @param {object} [opts]  passed through to exportVizPickSheets (format, tabId, which)
  * @returns {Promise<{ ok:boolean, locationDetails?:object[],
  *   departmentBreakout?:object[], error?:string, errorClass?:string,
  *   debug?:object }>}
  */
 export async function getVizPickFollowUpData(opts = {}) {
-  const res = await exportVizPickSheets(opts);
+  const which = opts.which ?? ["locationDetails", "departmentBreakout"];
+  const res = await exportVizPickSheets({ ...opts, which });
   if (!res.ok) {
     return { ok: false, errorClass: res.errorClass || "EXPORT_FAILED", error: res.error, debug: res.debug };
   }

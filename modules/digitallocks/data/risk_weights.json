@@ -1,8 +1,10 @@
 {
-  "_comment": "DigitalLocks risk weights. Editable. Sum determines riskScore; bands map score to riskLevel. Weights match the V1 spec in DIGITAL_LOCKS_MODULE.md.",
+  "_comment": "DigitalLocks risk weights. Editable. Sum determines riskScore; bands map score to riskLevel. Weights match the V1 spec in DIGITAL_LOCKS_MODULE.md. AFTERHOURS_EDGE has TWO discounted forms, because they rest on different evidence: AFTERHOURS_EDGE_EXPECTED (10) applies when the Position matches role_zone_rules.json::expectedEdgeHourPositions — a generalisation about a job code — while AFTERHOURS_EDGE_HABITUAL (0) applies when calibration has learned that THIS associate actually works these hours, in their own area, across days of the import. A demonstrated pattern is the stronger claim, so it scores nothing; the job-code guess keeps a small residue. Both require the role/zone check to ALSO pass. Delete either key to fall back to the full AFTERHOURS_EDGE weight. Neither ever applies to the deep 12am-5am band.",
   "weights": {
     "AFTERHOURS_DEEP":    50,
     "AFTERHOURS_EDGE":    35,
+    "AFTERHOURS_EDGE_EXPECTED": 10,
+    "AFTERHOURS_EDGE_HABITUAL": 0,
     "ROLE_MISMATCH":      25,
     "HIGH_RISK_ZONE":     20,
     "HIGH_VOLUME":        15,
@@ -13,6 +15,7 @@
     "ORDER_NO_MATCH":     50,
     "NEW_HIRE_CONTEXT":   10
   },
+  "_inertWeights": "NEW_HIRE_CONTEXT (and thresholds.newHireThresholdDays) are NOT read by any rule — no code path applies them, so editing the number changes nothing. The Power BI export carries no hire date, so the rule needs a tenure source first. Kept rather than deleted so the intent isn't lost. See CURRENT_TASKS.md::Watch list. ORDER_NO_MATCH is live but is applied in view.js during the order cross-reference, not in riskScoring.js::scoreEvents.",
   "bands": [
     { "min":  0, "label": "Normal"   },
     { "min": 25, "label": "Watch"    },
@@ -28,14 +31,46 @@
     ]
   },
   "thresholds": {
-    "_comment": "Volume rule kicks in when a user's per-day unlock count exceeds BOTH the high-water percentile across all (user,day) pairs in the import AND the absolute floor (so a 5-event day in a quiet file isn't flagged).",
+    "_comment": "Volume rule kicks in when a user's per-day unlock count exceeds BOTH the high-water percentile across all (user,day) pairs in the import AND the absolute floor (so a 5-event day in a quiet file isn't flagged). The percentile is only the FALLBACK now — see calibration.userBaseline.",
     "volumePercentile": 0.95,
     "volumeAbsoluteFloor": 15,
     "multiZoneWindowMinutes": 30,
     "multiZoneCountThreshold": 3,
     "repeatedLockWindowMinutes": 5,
+    "repeatedLockMinOpens": 3,
     "hourSpikeStdDevs": 2,
     "newHireThresholdDays": 90,
     "orderLookupWindowHours": 4
+  },
+
+  "calibration": {
+    "_comment": "Makes rules score DEVIATION FROM OBSERVED NORMAL instead of absolute attributes. Added 2026-08-22 after a 500-event store-1458 import in which every single row was in one high-risk zone: HIGH_RISK_ZONE fired on 100% of rows, adding a flat +20 to everything and pushing the whole store past the Watch band. A reason that describes every event describes none of them. Set enabled=false to restore the old absolute behaviour exactly.",
+    "enabled": true,
+
+    "baseRate": {
+      "_comment": "Scales a rule's weight down as the share of events it fires on rises. At or below suppressAbove the weight is untouched; at or above zeroAt it contributes nothing; linear in between. Suppressed reasons are still shown on the event as CONTEXT (baselineReasons) — they are just not scored. minEvents stops a 12-row test import from zeroing every rule.",
+      "suppressAbove": 0.60,
+      "zeroAt": 0.90,
+      "minEvents": 50
+    },
+
+    "pinnedRules": {
+      "_comment": "Rule names listed here keep their full weight no matter how often they fire — the config override on top of the learned behaviour. Use it for anything that must always score, e.g. [\"AFTERHOURS_DEEP\"]. Deep after-hours is pinned by default: a store where 3am openings are routine is a finding, not a new baseline.",
+      "rules": ["AFTERHOURS_DEEP"]
+    },
+
+    "userBaseline": {
+      "_comment": "Per-associate normal, learned from the import. volumeMultiple: flag a day only when it exceeds this multiple of THAT user's own median day (Ashley at 20/day against her own median of 19 is not an outlier; the old store-wide p95 flagged her every day for doing her job). shiftPadHours widens the learned first/last working hour before an edge-hours event counts as outside their pattern. minDaysForBaseline / minEventsForBaseline: below these a user has too little history to have a 'normal', and the store-wide fallback is used instead — this is what stops one 3am event from establishing 3am as someone's pattern.",
+      "minDaysForBaseline": 3,
+      "minEventsForBaseline": 8,
+      "volumeMultiple": 1.75,
+      "shiftPadHours": 1
+    },
+
+    "observedRolePairing": {
+      "_comment": "A (position → zone) pairing seen this often, from this many distinct people, is how the store actually runs — not a mismatch. At store 1458 Hardlines TAs open the electronics desk constantly because those areas overlap and TAs cover each other; 116 events across multiple associates is an operating pattern, and calling each one an exception buries the one that isn't. Rarer pairings still score. Set minEvents very high to disable.",
+      "minEvents": 20,
+      "minUsers": 2
+    }
   }
 }
