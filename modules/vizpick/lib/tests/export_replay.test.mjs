@@ -252,3 +252,53 @@ test("never throws, whatever it is handed", () => {
   }
   assert.equal(typeof summariseExportAttempt([blob(null)], null), "string");
 });
+
+// ── Both export command formats ───────────────────────────────────────────
+//
+// The reason `sheetsLearned` sat at 0 while the DOM route worked perfectly.
+// Tableau posts a different command name per radio button, and exportDriverFn
+// clicks CSV — so every DOM export posted the csv command while the learner
+// matched only the excel one. The path that exists to teach the replay could
+// never teach it.
+
+import { isExportCommand } from "../sources/tableau_export_replay.js";
+
+test("both command spellings are recognised", () => {
+  // Note the asymmetry in Tableau's own naming: "excel-server" is hyphenated,
+  // "csvserver" is not. Easy to normalise into a regex that misses one.
+  assert.ok(isExportCommand("/vizql/t/x/commands/tabsrv/export-crosstab-to-excel-server"));
+  assert.ok(isExportCommand("/vizql/t/x/commands/tabsrv/export-crosstab-to-csvserver"));
+});
+
+test("unrelated vizql commands are not mistaken for exports", () => {
+  for (const u of [
+    "/vizql/bootstrapSession",
+    "/commands/tabsrv/set-port-size",
+    "/commands/tabsrv/export-crosstab-options",
+    "", null, undefined,
+  ]) assert.equal(isExportCommand(u), false, String(u));
+});
+
+test("a CSV export teaches the learner, same as an xlsx one", () => {
+  // The whole regression in one assertion: same body, only the command name
+  // differs, and that difference alone used to mean nothing was learned.
+  const map = learnSheetIds([
+    { url: "/commands/tabsrv/export-crosstab-to-csvserver", reqBody: REAL_REQ, respBody: REAL_RESP },
+  ]);
+  assert.equal(
+    map[normaliseSheetName("download department breakout (current day)")],
+    "{95A7AC48-BC4F-432B-9590-5A424FF72939}",
+  );
+});
+
+test("a CSV command counts as 'sent' in the failure summary too", () => {
+  // Otherwise a store that DID post a csv export would be reported as
+  // "export command never sent" — pointing at the driver when the driver was
+  // fine. That is a wrong diagnosis, which is worse than a vague one.
+  const s = summariseExportAttempt(
+    [{ url: "/commands/tabsrv/export-crosstab-to-csvserver", status: 200, reqBody: "x", respBody: "{}" }],
+    "Suggested Picks",
+  );
+  assert.doesNotMatch(s, /never sent/);
+  assert.match(s, /no file arrived/);
+});

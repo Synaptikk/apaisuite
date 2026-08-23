@@ -1293,19 +1293,34 @@ async function exportSheetText(tabId, sheet, needle, replay) {
 }
 
 async function triggerCrosstabExport(tabId, sheet) {
+  // executeScript awaits a promise returned by the injected function, which is
+  // what lets the driver report whether it actually clicked Export rather than
+  // just whether it found a toolbar.
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     world:  "MAIN",
     args:   [sheet.match, sheet.fallbackIndex],
     func:   exportDriverFn,
   });
-  for (const r of (results || [])) if (r?.result && r.result.ran) return r.result;
+  for (const r of (results || [])) {
+    const res = r?.result;
+    if (!res?.ran) continue;
+    if (res.ok) return res;
+    // Name the stage it stalled on. Previously this path did not exist — the
+    // driver always claimed success, so a stall surfaced 45 s later as the
+    // uninformative "no CSV captured".
+    return {
+      ...res,
+      ok: false,
+      reason: `stalled at "${res.stalledAt}" (${res.reason || res.error || "no detail"})`,
+    };
+  }
   return { ok: false, reason: "viz frame with toolbar not found" };
 }
 
 // Same staged driver as the yesterday source; kept local so this file stays
 // self-contained when injected.
-function exportDriverFn(sheetMatch, fallbackIndex) {
+async function exportDriverFn(sheetMatch, fallbackIndex) {
   const steps = {};
   const rc = (el) => {
     if (!el) return false;
@@ -1340,21 +1355,55 @@ function exportDriverFn(sheetMatch, fallbackIndex) {
     { name: "export",   find: () => tid("export-crosstab-export-Button"), ready: (el) => !el.disabled },
   ];
 
-  let i = 0, ticks = 0;
-  const MAX_TICKS = 120;   // 120 * 200ms = 24s, same ceiling at twice the resolution
+  // AWAIT the stage machine rather than returning the moment it is kicked off.
+  //
+  // This used to `advance(); return { ran: true, ok: true, steps }` — a chain of
+  // setTimeouts started, then an immediate unconditional success. So
+  // `triggered.ok` meant "we found a toolbar", never "we clicked Export", and
+  // `steps.reached` was serialised back empty because nothing had run yet. When
+  // the machine stalled the caller learned nothing: it just waited out the full
+  // 45 s poll and reported "no CSV captured". Four stores in ten failed that way
+  // and there was no way to see where.
+  //
+  // The budget is now PER STAGE. It was one shared counter, so a slow first
+  // dialog ate the allowance for every stage after it and the machine gave up
+  // mid-sequence — which is exactly the shape of a failure that gets worse with
+  // more lanes competing for the same Tableau backend.
+  const PER_STAGE_TICKS = 60;   // 60 * 200ms = 12s per stage
   steps.reached = {};
-  const advance = () => {
-    if (i >= stages.length) return;
-    if (ticks++ > MAX_TICKS) return;
-    const st = stages[i];
-    const el = st.find();
-    if (el && (!st.ready || st.ready(el))) {
-      rc(st.pick ? st.pick(el) : el);
-      steps.reached[st.name] = true;
-      i++;
-    }
-    if (i < stages.length) setTimeout(advance, 200);
-  };
-  advance();
-  return { ran: true, ok: true, steps };
+
+  const clickThrough = () => new Promise((resolve) => {
+    let i = 0;
+    let ticks = 0;
+    const step = () => {
+      if (i >= stages.length) return resolve({ ok: true, stalledAt: null });
+      const st = stages[i];
+      let el = null;
+      try { el = st.find(); } catch (e) { steps[`${st.name}Error`] = String(e?.message ?? e); }
+      if (el && (!st.ready || st.ready(el))) {
+        try { rc(st.pick ? st.pick(el) : el); }
+        catch (e) { return resolve({ ok: false, stalledAt: st.name, error: String(e?.message ?? e) }); }
+        steps.reached[st.name] = true;
+        i++;
+        ticks = 0;                       // fresh budget for the next stage
+        return setTimeout(step, 200);
+      }
+      if (++ticks > PER_STAGE_TICKS) {
+        // Name the stage. "stalled waiting for the sheet thumbnail" and
+        // "stalled waiting for the Export button to enable" have completely
+        // different fixes, and both used to surface as "no CSV captured".
+        return resolve({
+          ok: false,
+          stalledAt: st.name,
+          found: !!el,
+          reason: el ? "found but never became ready" : "never appeared",
+        });
+      }
+      setTimeout(step, 200);
+    };
+    step();
+  });
+
+  const outcome = await clickThrough();
+  return { ran: true, ok: outcome.ok, steps, ...outcome };
 }

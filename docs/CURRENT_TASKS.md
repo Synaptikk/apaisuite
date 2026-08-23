@@ -638,6 +638,33 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**Two more root causes found from the 2026-08-23 run (6 of 10 stores).**
+
+1. **`exportDriverFn` lied about success.** It ended `advance(); return { ran:
+   true, ok: true, steps }` — kicking off a chain of `setTimeout`s and then
+   returning an immediate unconditional success. `triggered.ok` therefore meant
+   "a toolbar exists", never "Export was clicked", and `steps.reached`
+   serialised back empty because nothing had run yet. When the machine stalled,
+   the caller waited out the full 45 s poll and reported the useless "no CSV
+   captured". Compounding it, the 24 s tick budget was **shared across all five
+   stages**, so a slow first dialog starved every stage after it — a failure
+   shape that gets worse with more lanes competing for the same backend, which
+   is exactly what 3 lanes × 10 stores produced. The driver is now `async`,
+   awaits the stage machine (executeScript awaits a returned promise), budgets
+   **12 s per stage**, and names the stage it stalled on. "stalled at sheet
+   (never appeared)" and "stalled at export (found but never became ready)"
+   have different fixes; both used to read as "no CSV captured".
+
+2. **`learnSheetIds` matched only the xlsx command.** Tableau posts
+   `export-crosstab-to-excel-server` **or** `export-crosstab-to-csvserver`
+   depending on the radio button — note the asymmetric hyphenation — and
+   `exportDriverFn` clicks **CSV**. So every DOM export posted the csv command
+   while the learner matched only excel: the one path that exists to teach the
+   replay could never teach it. `isExportCommand()` now owns the match and both
+   `learnSheetIds` and `summariseExportAttempt` use it. This, not the FormData
+   capture gap, is why `sheetsLearned` stayed at 0 — the FormData fix was
+   necessary but on its own changed nothing.
+
 **Root cause of the home store showing WINs: "has a record" ≠ "has a name"
 (fixed 2026-08-22).** `refreshDirectory()` gated its resolver on whether
 `associateDirectory.getMany()` returned anything for a WIN. But digitallocks

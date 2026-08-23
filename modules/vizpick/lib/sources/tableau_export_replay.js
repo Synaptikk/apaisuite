@@ -66,6 +66,24 @@ export function parseExportResponse(text) {
 }
 
 /**
+ * Is this ring entry the crosstab export command, in EITHER format?
+ *
+ * Tableau posts two different command names depending on the radio button:
+ *   export-crosstab-to-excel-server   (xlsx)
+ *   export-crosstab-to-csvserver      (csv — note: no hyphen before "server")
+ *
+ * Matching only the excel one is why `sheetsLearned` sat at 0 for days while
+ * the DOM route worked perfectly: exportDriverFn clicks the CSV radio, so
+ * every DOM export posted the csv command and the learner ignored all of them.
+ * The replay could therefore never be taught by the very path that exists to
+ * teach it — and the FormData capture fix, though also required, did nothing
+ * on its own.
+ */
+export function isExportCommand(url) {
+  return /export-crosstab-to-(?:excel-|csv)server/i.test(String(url || ""));
+}
+
+/**
  * Learn sheet name → sheetdocId from the capture ring.
  *
  * Pairs each export command REQUEST (which carries sheetdocId) with its
@@ -78,7 +96,7 @@ export function parseExportResponse(text) {
 export function learnSheetIds(ring) {
   const out = {};
   for (const entry of ring || []) {
-    if (!String(entry?.url || "").includes("export-crosstab-to-excel-server")) continue;
+    if (!isExportCommand(entry?.url)) continue;
     const guid = (String(entry.reqBody || "").match(/name="sheetdocId"\r?\n\r?\n(\{[^}]+\})/) || [])[1];
     const fileName = (String(entry.respBody || "").match(/"fileName"\s*:\s*"([^"]+)"/) || [])[1];
     if (!guid || !fileName) continue;
@@ -103,8 +121,7 @@ export function learnSheetIds(ring) {
 export function summariseExportAttempt(ring, needle) {
   try {
     const entries = Array.isArray(ring) ? ring : [];
-    const cmds = entries.filter((e) =>
-      String(e?.url || "").includes("export-crosstab-to-excel-server"));
+    const cmds = entries.filter((e) => isExportCommand(e?.url));
     const blobs = entries.filter((e) => e?.via === "blob");
 
     if (!cmds.length) {
