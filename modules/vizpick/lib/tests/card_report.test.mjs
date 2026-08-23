@@ -114,13 +114,13 @@ test("a department with no pick % sorts last, not first", () => {
 test("the pick list carries no associate names", () => {
   // It goes to whoever is pulling now. Who missed them earlier is a separate
   // conversation on a separate page.
-  const html = buildPickListHtml(ROW, { market: "120" }, { autoPrint: false });
+  const html = buildPickListHtml(ROW, { market: "120" });
   for (const win of ["aaa", "bbb"]) assert.ok(!html.includes(win), `leaked ${win}`);
   assert.ok(!/Associate/i.test(html));
 });
 
 test("the performance page marks what is below goal", () => {
-  const html = buildPerformanceHtml(ROW, {}, { autoPrint: false });
+  const html = buildPerformanceHtml(ROW, {});
   assert.match(html, /Below goal/);
   assert.match(html, /Picks 42%/);          // 42 < 90
   assert.ok(!/Cases Seen 96%<\/span>/.test(html), "96% is above its 95 goal");
@@ -128,18 +128,25 @@ test("the performance page marks what is below goal", () => {
 
 test("a store at goal everywhere says so rather than showing an empty banner", () => {
   const good = { ...ROW, casesSeenPct: 99, locationPct: 99, pickPct: 99, overstockPct: 99 };
-  assert.match(buildPerformanceHtml(good, {}, { autoPrint: false }), /at or above goal/);
+  assert.match(buildPerformanceHtml(good, {}), /at or above goal/);
 });
 
 test("a store with nothing outstanding gets a clear pick list, not an empty table", () => {
-  const html = buildPickListHtml({ store: "1", locations: { gaps: [] } }, {}, { autoPrint: false });
+  const html = buildPickListHtml({ store: "1", locations: { gaps: [] } }, {});
   assert.match(html, /No outstanding picks/);
   assert.ok(!html.includes("<tbody>"));
 });
 
-test("autoPrint is opt-out, so tests never trigger a print dialog", () => {
-  assert.ok(!buildPickListHtml(ROW, {}, { autoPrint: false }).includes("window.print"));
-  assert.ok(buildPickListHtml(ROW, {}).includes("window.print"));
+test("the page carries NO script — the opener prints, not the page", () => {
+  // A window opened from an extension page inherits the extension's CSP (MV3
+  // default: script-src 'self'), so an inline <script> in the report is
+  // blocked and the print dialog silently never opens. That is how printing
+  // "worked" for a day while producing no dialog at all. view.js calls
+  // w.print() from its own context instead.
+  for (const html of [buildPickListHtml(ROW, {}), buildPerformanceHtml(ROW, {})]) {
+    assert.ok(!html.includes("<script"), "report must not contain a script tag");
+    assert.ok(!html.includes("window.print"));
+  }
 });
 
 test("store numbers and group labels are escaped into the page", () => {
@@ -148,7 +155,7 @@ test("store numbers and group labels are escaped into the page", () => {
     // snapshots written before the rename, which a stored row can still carry.
     { dept: `<img onerror=x>`, location: `A"B`, skipped: 1 },
   ] } };
-  const html = buildPickListHtml(evil, {}, { autoPrint: false });
+  const html = buildPickListHtml(evil, {});
   assert.ok(!html.includes("<script>alert"), "store number was not escaped");
   assert.ok(!html.includes("<img onerror"), "group label was not escaped");
 });
@@ -241,7 +248,7 @@ test("a resolver puts real names on the associates", () => {
 });
 
 test("the performance page prints names, not ids, when they resolve", () => {
-  const html = buildPerformanceHtml(ROW, {}, { autoPrint: false, names: resolver });
+  const html = buildPerformanceHtml(ROW, {}, { names: resolver });
   assert.match(html, /Jane Doe/);
   assert.match(html, /John Smith/);
   assert.ok(!/>aaa</.test(html), "printed the WIN even though a name resolved");
@@ -250,7 +257,7 @@ test("the performance page prints names, not ids, when they resolve", () => {
 test("an unresolved WIN still prints as the WIN, not as blank or 'null'", () => {
   // Better an id than a confidently wrong name on a list about who is not
   // doing their picks — and far better than an empty cell.
-  const html = buildPerformanceHtml(ROW, {}, { autoPrint: false, names: () => null });
+  const html = buildPerformanceHtml(ROW, {}, { names: () => null });
   assert.match(html, />aaa</);
   assert.ok(!/>null</.test(html));
   assert.ok(!/<td><\/td>/.test(html));
@@ -280,7 +287,7 @@ test("the old positional limit still works, so a stale caller degrades safely", 
 });
 
 test("the pick list is unaffected — it has no names to resolve", () => {
-  const html = buildPickListHtml(ROW, {}, { autoPrint: false, names: resolver });
+  const html = buildPickListHtml(ROW, {}, { names: resolver });
   assert.ok(!html.includes("Jane Doe"), "a name reached the walk sheet");
   assert.ok(!html.includes("aaa"), "a WIN reached the walk sheet");
 });

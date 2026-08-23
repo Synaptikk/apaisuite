@@ -272,7 +272,12 @@ function shortTime(ts) {
 // are `var(--x, #fallback)` — with no stylesheet the fallbacks apply, which is
 // why the gauges still look right on a bare page.
 
-function pageShell({ title, heading, stamp, body, autoPrint = true }) {
+// NOTE: emits NO <script>. A window opened from an extension page inherits the
+// extension's CSP (MV3 default: script-src 'self'), so the
+// `<script>setTimeout(window.print)</script>` this used to carry was blocked on
+// every single print — the report rendered and the dialog never appeared. The
+// OPENER calls w.print() instead, which runs in its own context and is allowed.
+function pageShell({ title, heading, stamp, body }) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
 <style>
@@ -310,7 +315,6 @@ function pageShell({ title, heading, stamp, body, autoPrint = true }) {
 <h1>${heading}</h1>
 <div class="stamp">${escapeHtml(stamp)}</div>
 ${body}
-${autoPrint ? `<script>setTimeout(function(){window.print();},400);<\/script>` : ""}
 </body></html>`;
 }
 
@@ -329,8 +333,9 @@ function headingFor(store, market, suffix) {
  *
  * @param {object} r
  * @param {object} [meta] { sourceUpdate, capturedAt, isToday, market }
- * @param {object} [opts] { autoPrint = true, names }. `names` is a WIN →
- *   display-name resolver; without it every associate prints as a bare id.
+ * @param {object} [opts] { names }. `names` is a WIN → display-name resolver;
+ *   without it every associate prints as a bare id. The caller triggers the
+ *   print dialog — see pageShell().
  */
 export function buildPerformanceHtml(r, meta = {}, opts = {}) {
   const store = String(r?.store ?? "?");
@@ -384,7 +389,6 @@ export function buildPerformanceHtml(r, meta = {}, opts = {}) {
     title: `VizPick Performance — Store ${store}`,
     heading: headingFor(store, meta.market, "Performance"),
     stamp: cardStamp(meta),
-    autoPrint: opts.autoPrint,
     body: `
 <div class="overall">Overall VizPick score: <strong>${pct(r?.vizpick)}</strong></div>
 ${missHtml}
@@ -431,7 +435,6 @@ listed in location order, so the sheet can be walked front to back.</p>
     title: `VizPick Pick List — Store ${store}`,
     heading: headingFor(store, meta.market, "Bins to pull"),
     stamp: cardStamp(meta),
-    autoPrint: opts.autoPrint,
     body,
   });
 }

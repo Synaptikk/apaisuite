@@ -638,6 +638,36 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**Inline scripts are blocked suite-wide — two fixed, three still broken
+(2026-08-23).** `manifest.json` declares no `content_security_policy`, so MV3's
+default `script-src 'self'` applies to every extension page. Any inline
+`<script>` is blocked and silently does nothing; the only sign is a console
+error that reads like noise.
+
+Fixed:
+- `app.html`'s theme anti-flash script → `theme_boot.js`. It had **never run**,
+  so dark-preference users got a flash of light theme on every single open.
+  Loaded as a classic script (not `type="module"`) before the stylesheets —
+  modules defer, which would let the sheets paint first and reintroduce the
+  flash.
+- VizPick's printouts carried `<script>setTimeout(window.print)</script>`. A
+  window opened from an extension page inherits the extension's CSP, so it was
+  blocked on every print: the report rendered and the dialog never appeared.
+  `pageShell()` now emits no script at all and **view.js calls `w.print()`**
+  from its own context, where it is allowed.
+
+**Still broken, same cause, not swept:** `modules/orcmonitor/report.js` (:166
+print button, :174 auto-print), `modules/sparkfraud/view.js:785`,
+`modules/stockingplan/lib/render.js:179`. Every one of those print dialogs
+silently never opens. Same fix each time: drop the inline script, print from
+the opener.
+
+**Separately, `[push] subscribe failed: no active Service Worker`.**
+`ensurePushSubscription()` runs at SW top-level, but `pushManager.subscribe()`
+needs the registration to be ACTIVE — a boot race. It degrades correctly (the
+polling alarm is the documented fallback) and recovers on a later wake, so it
+is noise rather than breakage, but it fires on every cold boot.
+
 **CROSS-STORE CONTAMINATION — introduced and fixed 2026-08-23. Any Today
 snapshot captured between the `isExportCommand` fix and this one is SUSPECT and
 should be force-re-pulled.**

@@ -4,22 +4,11 @@
   <meta charset="utf-8">
   <title>APAISuite</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Apply saved theme BEFORE any stylesheet loads — avoids a flash of
-       light theme on dark-preference users. The async chrome.storage.sync
-       read happens in app.js and may overwrite this if it differs (e.g.,
-       user toggled on another device). localStorage is the fast-path. -->
-  <script>
-    (function () {
-      try {
-        var saved = localStorage.getItem("shell.theme") || "system";
-        var resolved = saved;
-        if (saved === "system") {
-          resolved = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        }
-        document.documentElement.setAttribute("data-theme", resolved);
-      } catch (e) {}
-    })();
-  </script>
+  <!-- Applies the saved theme before any stylesheet loads, avoiding a flash of
+       light theme for dark-preference users. External, not inline: MV3's
+       default CSP is script-src 'self', so the inline version this replaces
+       was blocked on every load and never ran. -->
+  <script src="theme_boot.js"></script>
   <link rel="stylesheet" href="styles/tokens.css">
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/layout.css">

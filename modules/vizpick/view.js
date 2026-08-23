@@ -1378,6 +1378,12 @@ export async function mount(host, container) {
       w.document.open();
       w.document.write(html);
       w.document.close();
+      // Print from HERE, not from a script inside the page. That window
+      // inherits this extension page's CSP (MV3 default: script-src 'self'),
+      // so an inline <script> in the report is blocked and the dialog never
+      // opens — which is how printing "worked" while producing nothing. The
+      // short delay lets the gauges lay out before the print snapshot.
+      setTimeout(() => { try { w.focus(); w.print(); } catch { /* user closed it */ } }, 350);
       log.emit("card_printed", { store: String(r?.store ?? ""), tab: activeTab, kind });
     } catch (e) {
       // Never leave the placeholder window sitting there saying "Preparing".
