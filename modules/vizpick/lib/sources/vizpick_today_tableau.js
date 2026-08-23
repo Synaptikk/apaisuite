@@ -443,14 +443,32 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     }
 
     succeeded = true;
+    // Coverage is decided by what came back, not by what went wrong. A store
+    // is missing only if it produced no row.
+    const capturedStores = new Set(rows.map((r) => String(r.store)));
+    const missingStores = toVisit.map(String).filter((s2) => !capturedStores.has(s2));
     return {
       ok: true,
       rows,
       sourceUpdate,
       capturedAt: new Date().toISOString(),
-      // Partial success is normal here: a market can contain a store the
-      // user's Tableau row-level security doesn't cover.
-      partial: failures.length > 0,
+      // Partial means STORES ARE MISSING — a requested store produced no row
+      // at all. It does NOT mean "something went wrong somewhere".
+      //
+      // This used to be `failures.length > 0`, which counts SOFT failures too:
+      // a store whose donut sheet failed still yields a row, it just renders
+      // without its health rings. One soft failure therefore made a complete
+      // 10-of-10 capture announce "Some stores could not be captured", which is
+      // simply false and sends the reader hunting for a store that is right
+      // there on screen. The two conditions need different words, so they need
+      // different fields.
+      //
+      // Partial success is normal here for a real reason: a market can contain
+      // a store the user's Tableau row-level security doesn't cover.
+      partial: missingStores.length > 0,
+      missingStores,
+      // Captured, but thin — present in `rows` with some sheet absent.
+      incompleteStores: rows.filter((r) => !r.hasHealth).map((r) => String(r.store)),
       // The caller must MERGE rather than replace when this is a top-up, or it
       // throws away the stores it already had.
       topUp,

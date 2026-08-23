@@ -882,12 +882,28 @@ export async function mount(host, container) {
 
     const n = todayRows().length;
     const roster = rosterRows().length;
-    const partial = state?.today?.partial;
+
+    // Derived from what is ON SCREEN, not from the stored `partial` flag.
+    //
+    // That flag is a property of the last RUN, and a later top-up that filled
+    // every gap did not clear it — so a complete 10-of-10 capture kept
+    // announcing "Some stores could not be captured", sending the reader
+    // hunting for a store sitting right in front of them. Counting rows cannot
+    // disagree with the cards beside it.
+    const missing = Math.max(0, roster - n);
+    // Captured but thin is a DIFFERENT problem and deserves different words:
+    // the store is there, some of its rings are not.
+    const thin = todayRows().filter((r) => !r.hasHealth).length;
+    const coverageNote = missing
+      ? ` ${missing} store${missing === 1 ? "" : "s"} could not be captured — see the capture details below.`
+      : thin
+        ? ` ${thin} store${thin === 1 ? " is" : "s are"} missing health rings — see the capture details below.`
+        : "";
+
     renderTodayBar(
       null,
       (n
-        ? `Showing ${n} of ${roster} stores in this market.` +
-          (partial ? " Some stores could not be captured — see the capture details below." : "") +
+        ? `Showing ${n} of ${roster} stores in this market.` + coverageNote +
           " Today is captured one store at a time, so reloading takes a couple of minutes."
         : `Today's numbers come from Tableau's VizPick Details view, which reports one store at a time. ` +
           `Loading this market means ${roster} exports, spread across 3 background tabs — about two minutes.`)

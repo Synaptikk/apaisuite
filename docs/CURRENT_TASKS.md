@@ -638,6 +638,28 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**The driver fix worked — 10 of 10 on 2026-08-23 18:43, no failures.** Per-stage
+budgets and the awaited stage machine cleared the 4-in-10 export stalls.
+`sheetsLearned` is still unverified: that run short-circuited on an unchanged
+stamp (`debug: null`), so it never crawled. **Check `replay.sheetsLearned` on
+the next real crawl** — it should be non-zero after the first store, with
+per-store time dropping from ~19 s to ~2 s.
+
+**The "some stores could not be captured" banner was lying (fixed 2026-08-23).**
+It showed on a complete 10-of-10 capture. Two causes, both now fixed:
+
+1. `partial` was `failures.length > 0`, and `failures` includes **soft** ones.
+   Store 5173's donut sheet failed while the store captured fine — a row with
+   no health rings, not a missing store. One soft failure made a full capture
+   announce that stores were missing. `partial` now means **a requested store
+   produced no row**, computed from coverage; soft failures are reported
+   separately as `incompleteStores`.
+2. The banner read the stored flag, which is a property of the last RUN. A
+   later top-up that filled every gap never cleared it. The banner now derives
+   from `roster - rows`, so it cannot contradict the cards next to it, and says
+   "N missing health rings" when that is the actual condition — a different
+   sentence for a different problem.
+
 **Two more root causes found from the 2026-08-23 run (6 of 10 stores).**
 
 1. **`exportDriverFn` lied about success.** It ended `advance(); return { ran:
