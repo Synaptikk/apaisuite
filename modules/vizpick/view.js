@@ -1299,6 +1299,25 @@ export async function mount(host, container) {
     };
   }
 
+  // How long a report will wait for names before printing what it has.
+  //
+  // Not a performance tweak — a correctness one. refreshDirectory() ultimately
+  // awaits chrome.scripting.executeScript into a Workvivo tab, and the function
+  // it injects does a plain fetch with no timeout of its own. One stalled
+  // request and that promise never settles, so the print window sat on
+  // "Preparing the report…" indefinitely. A report is a user-initiated action;
+  // it must ALWAYS produce a page. Unresolved names print as WINs, which is the
+  // documented fallback anyway.
+  const REPORT_NAME_WAIT_MS = 6_000;
+
+  /** Resolve with the promise's value, or with `fallback` once ms elapse. */
+  function withDeadline(promise, ms, fallback = null) {
+    return Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((res) => setTimeout(() => res(fallback), ms)),
+    ]);
+  }
+
   /**
    * WIN → display name, for the report builders.
    *
@@ -1330,7 +1349,8 @@ export async function mount(host, container) {
       // returns immediately once every shown WIN has a name. The pick list
       // carries no names, so it never waits.
       if (kind !== "picklist") {
-        try { if (await refreshDirectory()) render(); } catch { /* print what we have */ }
+        const changed = await withDeadline(refreshDirectory(), REPORT_NAME_WAIT_MS);
+        if (changed) render();
       }
       const meta = cardMeta(r);
       const html = kind === "picklist"
@@ -1357,7 +1377,7 @@ export async function mount(host, container) {
     `Preparing the report…</body>`;
 
   async function emailCard(r) {
-    try { if (await refreshDirectory()) render(); } catch { /* send what we have */ }
+    if (await withDeadline(refreshDirectory(), REPORT_NAME_WAIT_MS)) render();
     const { subject, body, truncated } = buildCardEmail(r, cardMeta(r), { names: nameResolver() });
     // Opens the user's mail client with a DRAFT. Nothing is sent from here —
     // the recipient list and the send are theirs.

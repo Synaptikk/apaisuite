@@ -746,6 +746,31 @@ the sort:
 A severity-ranked pull list would send whoever is holding it back and forth
 across the backroom, so both orders are pinned by tests.
 
+**The report hung on "Preparing the report…" (fixed 2026-08-23).** Regression
+from the fix below: `printCard()` awaits `refreshDirectory()`, which ultimately
+awaits `chrome.scripting.executeScript` into a Workvivo tab — and the injected
+`_workvivoSearchInTab` did a plain `fetch` with **no timeout**. One stalled
+request and that promise never settles, so `lookupName` never settles, so
+`lookupNames`' `allSettled` never settles, and every caller waits forever. The
+print window had no way out.
+
+Bounded at three levels, deliberately:
+- `AbortSignal.timeout(8000)` on the in-page fetch. It sits inside the existing
+  `try`, so an engine without `AbortSignal.timeout` degrades to `__err` rather
+  than throwing.
+- A 12 s race on `executeScript` itself — a discarded or frozen tab leaves it
+  pending, which the injected signal cannot rescue because the injected code
+  never runs. It **rejects** rather than resolving empty: the caller treats a
+  throw as transient and retries, where a definitive "no match" would poison
+  the cache for an hour.
+- `REPORT_NAME_WAIT_MS` (6 s) in view.js. A report is user-initiated and must
+  ALWAYS produce a page; unresolved names print as WINs, the documented
+  fallback. This one is the guarantee — the other two are hygiene.
+
+The same unbounded wait was always present in `refreshDirectory()`'s
+fire-and-forget call on paint. It simply never surfaced, because nothing was
+waiting on it.
+
 **Names on the printout need an injected resolver (fixed 2026-08-22).** The
 first release of this printed a column of WINs. `cardAssociates()` rolls up
 from the location export, which carries only a WIN; the display name lives in

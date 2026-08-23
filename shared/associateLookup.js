@@ -326,6 +326,13 @@ async function _workvivoSearchInTab(term) {
     const r = await fetch("/api/quick-search", {
       method: "POST",
       credentials: "include",
+      // Bounded on purpose. Without this the fetch can hang indefinitely (a
+      // stalled request, a tab mid-SSO-redirect, a throttled background tab),
+      // and because executeScript awaits whatever this function returns, the
+      // hang propagates all the way up: lookupName never settles, so
+      // lookupNames' allSettled never settles, so every caller waits forever.
+      // That is what left VizPick's print window on "Preparing the report…".
+      signal: AbortSignal.timeout(8000),
       headers: {
         "content-type": "application/json",
         "accept": "application/json",
@@ -356,12 +363,22 @@ async function _fetchFromDirectory(username) {
 
   let results;
   try {
-    results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: _workvivoSearchInTab,
-      args: [username],
-    });
+    // Belt and braces over the in-page timeout above: a discarded or frozen
+    // tab can leave executeScript itself pending, which the injected fetch's
+    // AbortSignal cannot rescue because the injected code never runs.
+    // Rejecting here is correct rather than resolving empty — the caller
+    // treats a throw as TRANSIENT and will retry, where a definitive "no
+    // match" would poison the cache for an hour.
+    results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN",
+        func: _workvivoSearchInTab,
+        args: [username],
+      }),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("executeScript timed out after 12s")), 12000)),
+    ]);
   } catch (e) {
     // Tab might have navigated away or been closed mid-query — drop the
     // cached id so the next attempt rediscovers/reopens.
