@@ -638,6 +638,36 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**0.9.7 is HELD, on the analyst's call 2026-08-23.** Live stays on **0.9.6**.
+
+Why: live 0.9.6 predates the `isExportCommand` fix, so the replay has never
+engaged on it. It is slow and drops some stores, but its data is correct.
+Shipping this branch would turn the replay on for every user, and that is the
+change the donut-health regression rode in on. **Do not release until the
+donut bug below is root-caused.**
+
+Everything else on the branch is wanted and ready — the export driver (10/10
+instead of 6/10), real names on printouts, the print dialog opening at all,
+the theme flash, the honest banner. None of them depend on the replay, so if
+the donut bug proves slow to solve, shipping with the replay defaulted OFF is
+the fallback.
+
+**Release notes, already authored — use verbatim when it does ship:**
+
+> • VizPick Today now captures every store in the market — exports were
+>   silently stalling on roughly four stores in ten.
+> • Printed reports show associate names instead of IDs, and the print dialog
+>   now actually opens.
+> • Fixed a flash of light theme on every open for dark-mode users.
+> • The capture banner no longer claims stores are missing when they are not.
+
+Release mechanics for whoever picks this up: `QRCALLBOX_DIR` must be passed
+explicitly — `release.sh` defaults to `../../QRCallBox`, which does not exist;
+the repo is at `Desktop/Projects/QRCallBox`. And **check `public/extension/`
+holds every previously-published zip before deploying** — it is untracked, so a
+checkout that missed a release will silently delete those versions from the
+live site. See the 0.9.6 entry.
+
 **OPEN: donut-health export failing for ~80% of stores (2026-08-23).** On
 screen this is 8 of 10 cards with no composite ring, no Locations and no
 Overstock. Cases Seen and Picks are fine everywhere — those come from the
