@@ -488,7 +488,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           replayed: replay.replayed,
           fellBack: replay.fellBack,
           replayMs: replay.ms,
-          haveContext: !!replay.ctx,
+          haveContext: replay.ctxByTab.size,
         },
         failures,
       },
@@ -1158,7 +1158,25 @@ async function pollForCsv(tabId, timeoutMs, needle) {
 // the tab lives, and a stale one costs a 410 and a fallback — cheap, but
 // pointless to carry between runs.
 function makeReplayState() {
-  return { ctx: null, sheetIds: {}, learned: 0, replayed: 0, fellBack: 0, ms: 0 };
+  return {
+    // sheetdocId GUIDs are WORKBOOK-scoped, so learning them once serves every
+    // lane — that is the whole value of sharing this object.
+    sheetIds: {},
+    // The vizql context is NOT shareable. It embeds a session id belonging to
+    // ONE tab, and replaying against it exports THAT tab's current viz state.
+    //
+    // This was a single `ctx` field, set by whichever lane happened to finish
+    // its first DOM export, and then used by all three. Lanes 2 and 3 replayed
+    // into lane 1's session and got lane 1's store's rows back, labelled as
+    // their own — associate names and bins filed under the wrong store, with
+    // nothing about the output to show it was wrong. It stayed dormant only
+    // because the replay had never once engaged; the moment learning started
+    // working, every multi-lane crawl began mixing stores.
+    //
+    // Keyed by tabId, and a lane never shares a tab.
+    ctxByTab: new Map(),
+    learned: 0, replayed: 0, fellBack: 0, ms: 0,
+  };
 }
 
 /** Rebuild tab-separated text so the existing parsers stay the single place
@@ -1254,8 +1272,15 @@ async function learnFromRing(tabId, replay) {
 async function exportSheetText(tabId, sheet, needle, replay) {
   const key = normaliseSheetName(sheet.match);
 
-  if (replay && replay.ctx && replay.sheetIds[key]) {
-    const r = await replayExport(tabId, { base: replay.ctx.base, sheetdocId: replay.sheetIds[key] });
+  const ctx = replay?.ctxByTab?.get(tabId) || null;
+  // Refuse a context belonging to another tab. Replaying against another
+  // lane's session returns THAT lane's store's rows under this store's name.
+  if (ctx && ctx.tabId != null && ctx.tabId !== tabId) {
+    throw new Error(
+      `replay context tab mismatch: ctx is for tab ${ctx.tabId}, exporting on ${tabId}`);
+  }
+  if (ctx && replay.sheetIds[key]) {
+    const r = await replayExport(tabId, { base: ctx.base, sheetdocId: replay.sheetIds[key] });
     if (r.ok) {
       try {
         const text = r.isZip
@@ -1268,8 +1293,8 @@ async function exportSheetText(tabId, sheet, needle, replay) {
         }
       } catch { /* fall through to the dialog */ }
     }
-    // A dead session invalidates the whole context, not just this sheet.
-    if (r.sessionDead) replay.ctx = null;
+    // A dead session invalidates THIS TAB's context, not every lane's.
+    if (r.sessionDead) replay.ctxByTab.delete(tabId);
     replay.fellBack++;
   }
 
@@ -1295,7 +1320,13 @@ async function exportSheetText(tabId, sheet, needle, replay) {
   // self-perpetuating: a store that times out teaches the crawl nothing, so
   // the next store pays the same slow dialog and can time out the same way.
   if (replay) {
-    if (!replay.ctx) replay.ctx = await readVizqlContext(tabId);
+    if (!replay.ctxByTab.has(tabId)) {
+      const fresh = await readVizqlContext(tabId);
+      // Stamp the owning tab INTO the context so misuse is detectable rather
+      // than silent. The bug this replaces produced perfectly well-formed rows
+      // belonging to the wrong store — nothing about the output said so.
+      if (fresh) replay.ctxByTab.set(tabId, { ...fresh, tabId });
+    }
     await learnFromRing(tabId, replay);
   }
 

@@ -638,6 +638,36 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**CROSS-STORE CONTAMINATION — introduced and fixed 2026-08-23. Any Today
+snapshot captured between the `isExportCommand` fix and this one is SUSPECT and
+should be force-re-pulled.**
+
+Symptoms: associate names and bins filed under the wrong store, and health
+rings missing on many stores.
+
+Cause: `makeReplayState()` returned a single `ctx`, and one replay state is
+shared by all three lanes. `ctx` embeds a **vizql session id belonging to one
+tab**, set by whichever lane finished its first DOM export. Lanes 2 and 3 then
+called `replayExport(tabId, { base: replay.ctx.base })` — their own tabId, but
+another tab's session — so they exported **lane 1's current store's rows** and
+labelled them with their own store. The output was perfectly well-formed; there
+was nothing in it to show it was wrong.
+
+This was latent for as long as the replay existed and only fired once the
+replay actually engaged — i.e. the moment `isExportCommand()` made learning
+work. A fix that "turned on" a fast path turned on a data-integrity bug with it.
+
+- `sheetIds` stays shared: sheetdocId GUIDs are **workbook**-scoped, and
+  sharing them is the entire point of the learned state.
+- `ctx` is now `ctxByTab: Map<tabId, ctx>`; a lane never shares a tab.
+- Each context is stamped with its owning `tabId` and `exportSheetText` throws
+  on a mismatch. The failure mode was silently-wrong attribution data, so it
+  gets an assertion, not a comment.
+
+**Rule for anything added to the replay state: ask whether it is workbook-
+scoped or session-scoped.** Workbook-scoped may be shared; session-scoped must
+be keyed by tab.
+
 **The driver fix worked — 10 of 10 on 2026-08-23 18:43, no failures.** Per-stage
 budgets and the awaited stage machine cleared the 4-in-10 export stalls.
 `sheetsLearned` is still unverified: that run short-circuited on an unchanged
