@@ -211,3 +211,76 @@ test("email tolerates an empty row", () => {
   assert.match(subject, /Store \?/);
   assert.equal(typeof body, "string");
 });
+
+// ── Associate names on the printout ───────────────────────────────────────
+//
+// The bug this pins: cardAssociates() rolled up from the location export,
+// which carries only a WIN, and the builders were called with the row and
+// nothing else. `a.name` was therefore never defined and every printed sheet
+// showed a column of ids. Names live in shared/associateDirectory.js and are
+// resolved asynchronously by the view, so they can only reach these pure
+// builders as an injected resolver.
+
+import { cardAssociates } from "../card_report.js";
+
+const NAMES = { aaa: "Jane Doe", bbb: "John Smith" };
+const resolver = (win) => NAMES[win] ?? null;
+
+test("without a resolver there is no name to show — only the WIN", () => {
+  // Not a defect, but the reason the parameter has to exist: the row simply
+  // does not contain names. Asserting it stops anyone "simplifying" the
+  // resolver away on the assumption the row carries them.
+  const [a] = cardAssociates(ROW);
+  assert.equal(a.name, null);
+  assert.equal(a.win, "aaa");
+});
+
+test("a resolver puts real names on the associates", () => {
+  const list = cardAssociates(ROW, { names: resolver });
+  assert.deepEqual(list.map((a) => a.name), ["Jane Doe", "John Smith"]);
+});
+
+test("the performance page prints names, not ids, when they resolve", () => {
+  const html = buildPerformanceHtml(ROW, {}, { autoPrint: false, names: resolver });
+  assert.match(html, /Jane Doe/);
+  assert.match(html, /John Smith/);
+  assert.ok(!/>aaa</.test(html), "printed the WIN even though a name resolved");
+});
+
+test("an unresolved WIN still prints as the WIN, not as blank or 'null'", () => {
+  // Better an id than a confidently wrong name on a list about who is not
+  // doing their picks — and far better than an empty cell.
+  const html = buildPerformanceHtml(ROW, {}, { autoPrint: false, names: () => null });
+  assert.match(html, />aaa</);
+  assert.ok(!/>null</.test(html));
+  assert.ok(!/<td><\/td>/.test(html));
+});
+
+test("a resolver returning whitespace is treated as unresolved", () => {
+  const [a] = cardAssociates(ROW, { names: () => "   " });
+  assert.equal(a.name, null);
+});
+
+test("a throwing or absent resolver does not take the page down", () => {
+  // It runs on a user-initiated print; a directory hiccup must degrade to ids.
+  assert.doesNotThrow(() => cardAssociates(ROW, { names: null }));
+  assert.doesNotThrow(() => cardAssociates(ROW, { names: "not a function" }));
+});
+
+test("the email body uses resolved names too", () => {
+  const { body } = buildCardEmail(ROW, {}, { names: resolver });
+  assert.match(body, /Jane Doe: 13 left/);
+  assert.ok(!/^\s+aaa:/m.test(body));
+});
+
+test("the old positional limit still works, so a stale caller degrades safely", () => {
+  // cardAssociates(r, 10) was the original signature.
+  const list = cardAssociates(ROW, 1);
+  assert.equal(list.length, 1);
+});
+
+test("the pick list is unaffected — it has no names to resolve", () => {
+  const html = buildPickListHtml(ROW, {}, { autoPrint: false, names: resolver });
+  assert.ok(!html.includes("Jane Doe"), "a name reached the walk sheet");
+  assert.ok(!html.includes("aaa"), "a WIN reached the walk sheet");
+});

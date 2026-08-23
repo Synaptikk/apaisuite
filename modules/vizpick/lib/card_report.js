@@ -11,10 +11,11 @@
 // THREE OUTPUTS, DELIBERATELY NOT ONE
 // -----------------------------------
 // buildPerformanceHtml — what is bad and who. Ranked by severity, everything
-//   under goal marked. A sheet to be READ, in a meeting or on a wall.
-// buildPickListHtml — the bins that still hold picks, grouped by department
-//   and ordered by location. A sheet to be WALKED, with a tick box per bin
-//   and no names on it.
+//   under goal marked. A sheet to be READ, in a meeting or on a wall. Needs an
+//   opts.names resolver to show names rather than WINs — see cardAssociates().
+// buildPickListHtml — the bins that still hold picks, grouped by bin group and
+//   ordered by location. A sheet to be WALKED, with a tick box per bin and no
+//   names on it.
 // buildCardEmail — plain text, because a mailto: body cannot carry markup and
 //   half the recipients read it on a phone.
 //
@@ -74,11 +75,38 @@ export function cardDepts(r, limit = Infinity) {
     .slice(0, limit);
 }
 
-/** Associates with picks left behind, worst first. */
-export function cardAssociates(r, limit = 10) {
+/**
+ * Associates with picks left behind, worst first, with real names attached.
+ *
+ * `names` is REQUIRED to get names at all, and that is the whole point of it
+ * being a parameter. The roll-up works off the location export, which carries
+ * only a WIN — the display name lives in shared/associateDirectory.js, resolved
+ * asynchronously by the view. Without a resolver these builders literally
+ * cannot know anyone's name, which is why the first version of this printed a
+ * column of ids: it took the row and nothing else, and `a.name` was never
+ * going to be defined on it.
+ *
+ * Falling back to the WIN stays correct when a lookup genuinely failed —
+ * better an id than a confidently wrong name on a list about who is not doing
+ * their picks.
+ *
+ * @param {object} r
+ * @param {object} [opts]
+ * @param {number} [opts.limit=10]
+ * @param {(win:string)=>string|null|undefined} [opts.names]  WIN → display name.
+ */
+export function cardAssociates(r, opts = {}) {
+  // Tolerate the old positional signature (a bare limit) so a stale caller
+  // degrades to "no names" rather than crashing on opts.limit of a number.
+  const { limit = 10, names = null } = typeof opts === "number" ? { limit: opts } : opts;
   const gaps = r?.locations?.gaps;
   if (!Array.isArray(gaps) || !gaps.length) return [];
-  return rollUpSkippedByAssociate(gaps).associates.slice(0, limit);
+  return rollUpSkippedByAssociate(gaps).associates
+    .slice(0, limit)
+    .map((a) => {
+      const resolved = typeof names === "function" ? names(a.win) : null;
+      return { ...a, name: (resolved && String(resolved).trim()) || a.name || null };
+    });
 }
 
 /**
@@ -103,7 +131,9 @@ export function cardStamp({ sourceUpdate, capturedAt, isToday } = {}) {
  *
  * @param {object} r      A vizpick store row.
  * @param {object} [meta] { sourceUpdate, capturedAt, isToday, market }
- * @param {object} [opts] { maxLen } — trims sections to fit, worst-value first.
+ * @param {object} [opts] { maxLen, names }. `names` is a WIN → display-name
+ *   resolver; without it the associate lines print bare WINs, because the row
+ *   itself carries no names. See cardAssociates().
  * @returns {{subject:string, body:string, truncated:boolean}}
  */
 export function buildCardEmail(r, meta = {}, opts = {}) {
@@ -124,7 +154,7 @@ export function buildCardEmail(r, meta = {}, opts = {}) {
     `  Dept ${d.dept}: ${pct(d.pickPct)} pick` +
     (ratio(d.suggestedPicksCompleted, d.suggestedPicks) ? ` (${ratio(d.suggestedPicksCompleted, d.suggestedPicks)})` : ""));
 
-  const assoc = cardAssociates(r);
+  const assoc = cardAssociates(r, { names: opts.names });
   const assocLines = assoc.map((a) =>
     `  ${a.name || a.win}: ${a.skipped} left in ${a.bins.length} bin${a.bins.length === 1 ? "" : "s"}`);
 
@@ -299,7 +329,8 @@ function headingFor(store, market, suffix) {
  *
  * @param {object} r
  * @param {object} [meta] { sourceUpdate, capturedAt, isToday, market }
- * @param {object} [opts] { autoPrint = true }
+ * @param {object} [opts] { autoPrint = true, names }. `names` is a WIN →
+ *   display-name resolver; without it every associate prints as a bare id.
  */
 export function buildPerformanceHtml(r, meta = {}, opts = {}) {
   const store = String(r?.store ?? "?");
@@ -334,7 +365,7 @@ export function buildPerformanceHtml(r, meta = {}, opts = {}) {
         </tr>`).join("")}</tbody>
     </table>` : "";
 
-  const assoc = cardAssociates(r);
+  const assoc = cardAssociates(r, { names: opts.names });
   const assocHtml = assoc.length ? `
     <h2>Associates with picks left behind</h2>
     <table>

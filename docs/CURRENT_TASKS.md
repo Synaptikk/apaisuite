@@ -719,6 +719,27 @@ the sort:
 A severity-ranked pull list would send whoever is holding it back and forth
 across the backroom, so both orders are pinned by tests.
 
+**Names on the printout need an injected resolver (fixed 2026-08-22).** The
+first release of this printed a column of WINs. `cardAssociates()` rolls up
+from the location export, which carries only a WIN; the display name lives in
+`shared/associateDirectory.js` and is resolved asynchronously by the view. The
+builders were called with the row and nothing else, so `a.name` was never
+defined. They now take an `opts.names` WIN → name resolver, and view.js passes
+`(win) => directory.get(win)?.name`. Falling back to the WIN stays correct when
+a lookup genuinely failed.
+
+Two mechanics that go with it:
+- `printCard()` awaits `refreshDirectory()` before building, so a print fired
+  seconds after the card appears does not commit ids to paper — unlike the
+  screen, a printed page never repaints.
+- Because of that await, **the print window is opened synchronously in the
+  click handler** and passed in. `window.open()` after an await has lost the
+  user gesture and gets blocked as a popup. The placeholder written into it is
+  replaced via `document.open()` first — a bare second `write()` appends to the
+  still-open stream rather than replacing it.
+
+The pick list is unaffected: it carries no names by design, so it never waits.
+
 **"Bin group" is NOT a department (corrected 2026-08-22).** The leading segment
 of a location code — the 002 in 002/003 — is a bin prefix. The bins beginning
 002 are "the 002s"; that has nothing to do with department 2. The Location

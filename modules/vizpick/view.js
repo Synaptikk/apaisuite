@@ -449,9 +449,12 @@ export async function mount(host, container) {
     const store = d.cardPrint ?? d.cardPicklist ?? d.cardEmail;
     const row = rowsForActiveTab().find((x) => String(x.store) === String(store));
     if (!row) return;
-    if (d.cardPrint != null) printCard(row, "performance");
-    else if (d.cardPicklist != null) printCard(row, "picklist");
-    else emailCard(row);
+    if (d.cardEmail != null) { emailCard(row).catch(() => {}); return; }
+    // Opened HERE, synchronously, while the click's user activation is still
+    // live — printCard awaits name resolution and by then it would be blocked.
+    const w = window.open("", "_blank", "width=820,height=900");
+    try { w?.document.write(PRINT_PLACEHOLDER); } catch { /* about:blank is fine */ }
+    printCard(row, d.cardPicklist != null ? "picklist" : "performance", w).catch(() => {});
   });
 
   // Department / Associates tab swap. Delegated because the grid is rebuilt on
@@ -1296,25 +1299,66 @@ export async function mount(host, container) {
     };
   }
 
-  function printCard(r, kind) {
-    const meta = cardMeta(r);
-    const html = kind === "picklist"
-      ? buildPickListHtml(r, meta)
-      : buildPerformanceHtml(r, meta);
-    // A blocked popup returns null rather than throwing — say so, because a
-    // button that silently does nothing reads as broken code.
-    const w = window.open("", "_blank", "width=820,height=900");
+  /**
+   * WIN → display name, for the report builders.
+   *
+   * They cannot resolve names themselves: the location export carries only a
+   * WIN, and the name lives in this view's `directory`, filled asynchronously
+   * by refreshDirectory(). Handing them the row alone is exactly why the first
+   * printouts were a column of ids.
+   */
+  function nameResolver() {
+    return (win) => directory.get(win)?.name ?? null;
+  }
+
+  /**
+   * @param {Window|null} w  Pre-opened window. MUST be opened synchronously by
+   *   the click handler: this function awaits name resolution before it can
+   *   build the page, and a window.open() after an await has lost the user
+   *   gesture and gets blocked as a popup.
+   */
+  async function printCard(r, kind, w) {
     if (!w) {
       renderTodayBar(null, "Print window was blocked — allow pop-ups for this extension, then try again.");
       return;
     }
-    w.document.write(html);
-    w.document.close();
-    log.emit("card_printed", { store: String(r?.store ?? ""), tab: activeTab, kind });
+    try {
+      // Resolve names BEFORE building the page. A print fired within a second
+      // of the card appearing would otherwise catch the directory mid-flight
+      // and commit the ids to paper, where — unlike the screen — they never
+      // repaint. Cheap when everything is already known: refreshDirectory()
+      // returns immediately once every shown WIN has a name. The pick list
+      // carries no names, so it never waits.
+      if (kind !== "picklist") {
+        try { if (await refreshDirectory()) render(); } catch { /* print what we have */ }
+      }
+      const meta = cardMeta(r);
+      const html = kind === "picklist"
+        ? buildPickListHtml(r, meta)
+        : buildPerformanceHtml(r, meta, { names: nameResolver() });
+      // open() resets the stream. The placeholder was written without a
+      // close(), so the document is still open and a bare write() would
+      // APPEND the report to "Preparing…" rather than replace it.
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      log.emit("card_printed", { store: String(r?.store ?? ""), tab: activeTab, kind });
+    } catch (e) {
+      // Never leave the placeholder window sitting there saying "Preparing".
+      try { w.close(); } catch { /* already gone */ }
+      renderTodayBar(null, `Could not build the printout: ${e?.message ?? e}`);
+    }
   }
 
-  function emailCard(r) {
-    const { subject, body, truncated } = buildCardEmail(r, cardMeta(r));
+  /** Placeholder for the window opened before its contents exist. */
+  const PRINT_PLACEHOLDER =
+    `<!doctype html><meta charset="utf-8"><title>Preparing…</title>` +
+    `<body style="font:14px -apple-system,'Segoe UI',sans-serif;color:#555;margin:2rem">` +
+    `Preparing the report…</body>`;
+
+  async function emailCard(r) {
+    try { if (await refreshDirectory()) render(); } catch { /* send what we have */ }
+    const { subject, body, truncated } = buildCardEmail(r, cardMeta(r), { names: nameResolver() });
     // Opens the user's mail client with a DRAFT. Nothing is sent from here —
     // the recipient list and the send are theirs.
     window.open(
