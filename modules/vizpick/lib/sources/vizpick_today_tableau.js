@@ -371,7 +371,18 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // Shared across every lane: the first lane to drive a DOM dialog learns the
     // sheetdocIds, and the rest replay. One dialog per sheet per market rather
     // than one per store per sheet.
-    const replay = makeReplayState();
+    // A/B switch on the replay (2026-08-23). The donut-health export started
+    // failing for ~80% of stores in the same change that first made the replay
+    // engage, and the two are indistinguishable from the outside — a store
+    // with no health rings looks identical whichever route dropped it. Set
+    // `vizpick.debug.noReplay` in chrome.storage.local to force every export
+    // down the DOM dialog and compare. Default off; this is an instrument, not
+    // a feature.
+    const noReplay = !!(await chrome.storage.local
+      .get("vizpick.debug.noReplay")
+      .then((g) => g?.["vizpick.debug.noReplay"])
+      .catch(() => false));
+    const replay = noReplay ? null : makeReplayState();
 
     let publishChain = Promise.resolve();
     const publish = (info) => {
@@ -483,13 +494,13 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         // How much of this crawl avoided the dialog. `replayed` should climb to
         // roughly 2x(stores-1) once the GUIDs are learned; if it stays at 0 the
         // learning step is failing and every store is paying the slow route.
-        replay: {
+        replay: replay ? {
           sheetsLearned: replay.learned,
           replayed: replay.replayed,
           fellBack: replay.fellBack,
           replayMs: replay.ms,
           haveContext: replay.ctxByTab.size,
-        },
+        } : { disabled: true },
         failures,
       },
     };

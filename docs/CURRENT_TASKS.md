@@ -638,6 +638,30 @@ hardcoded. It would make a reasonable seed for the learner (removing the
 first-run cost entirely), but the two were written independently and
 reconciling them is its own job.
 
+**OPEN: donut-health export failing for ~80% of stores (2026-08-23).** On
+screen this is 8 of 10 cards with no composite ring, no Locations and no
+Overstock. Cases Seen and Picks are fine everywhere — those come from the
+department breakout; the other three come from the **donut-health** export, so
+it is that second export dropping, not the crawl.
+
+Not yet root-caused, and deliberately not guessed at. What is known:
+- At 17:47 the donut export succeeded for 5 of the 6 stores that captured.
+- It is now failing for 8 of 10, and the change in between is the one that
+  first made the **replay actually engage** (`isExportCommand`). That is the
+  prime suspect but it is not proof.
+
+**A/B instrument:** set `vizpick.debug.noReplay` to `true` in
+`chrome.storage.local` and force a Today refresh. That routes every export
+through the DOM dialog. If the rings come back, the replay is the cause; if
+they do not, it is not, and the per-store `failures[]` reasons say what is.
+`replay: { disabled: true }` appears in the diagnostics when the switch is on,
+so a run cannot be misread as a normal one.
+
+Candidates, all unverified: the replayed xlsx not containing `DONUT_CSV_NEEDLE`
+("New VizPick") so it falls back and then the toolbar wait fails; a learned
+sheetdocId keyed to the wrong sheet; the donut GUID never being learned at all
+because the dept export now replays and never opens a dialog to learn from.
+
 **Inline scripts are blocked suite-wide — two fixed, three still broken
 (2026-08-23).** `manifest.json` declares no `content_security_policy`, so MV3's
 default `script-src 'self'` applies to every extension page. Any inline
