@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// APAISuite — rules for the (default) database of the `apaisuite` project.
+//
+// This database holds SUITE-WIDE telemetry only. Per-module data lives in its
+// own named database in the same project (digitalmetrics, and one per module
+// added later), each with its own rules file. One project keeps a single
+// anonymous-auth identity; separate databases keep a rules mistake in one
+// module from reaching another's data.
+//
+// Both collections here are APPEND-ONLY BY DESIGN, and the rules say so rather
+// than relying on clients behaving:
+//
+//   suite_usage_events  — which tools get used, by store/market/role.
+//                         Pseudonymous: a random installation id, never a
+//                         name, email or WIN. See shared/usage_metrics.js.
+//   suite_schema_drift  — column-shape changes in the dashboards we scrape.
+//                         See shared/schema_watch_report.js + docs/SOURCE_SCHEMA_WATCH.md.
+//
+// NO CLIENT READS. Nothing in the extension reads either collection — the
+// debug panel renders local telemetry, not these rows. Analysis happens in the
+// console or via a service account, both of which bypass rules entirely. So
+// read stays closed: an install that can read every other install's usage is
+// a deanonymising tool, and the only thing it would buy is a feature nobody
+// asked for.
+//
+// NO UPDATES, NO DELETES. An event is a fact about a moment. Being able to
+// rewrite or remove one turns the collection from a record into an assertion,
+// and undercounting silently is worse than not counting — it still looks like
+// data.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Cheap structural gate. Rules cannot prove a field is pseudonymous, but
+    // they CAN refuse the obvious PII field names outright, so a future caller
+    // has to defeat the rule deliberately rather than leak by forgetting.
+    function noObviousPii() {
+      return !request.resource.data.keys().hasAny(
+        ["name", "email", "win", "winId", "associateName", "userName", "fullName"]
+      );
+    }
+
+    function reasonableSize() {
+      return request.resource.data.keys().size() < 40;
+    }
+
+    match /suite_usage_events/{eventId} {
+      allow create: if signedIn() && noObviousPii() && reasonableSize();
+      allow read, update, delete: if false;
+    }
+
+    match /suite_schema_drift/{driftId} {
+      allow create: if signedIn() && reasonableSize();
+      allow read, update, delete: if false;
+    }
+
+    // Everything else in this database is closed. A new module gets its own
+    // named database, not a collection here — see the header.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

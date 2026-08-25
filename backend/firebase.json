@@ -1,0 +1,13 @@
+{
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "firestore.suite.rules"
+    },
+    {
+      "database": "digitalmetrics",
+      "rules": "../modules/digitalmetrics/backend/firestore.rules",
+      "indexes": "../modules/digitalmetrics/backend/firestore.indexes.json"
+    }
+  ]
+}

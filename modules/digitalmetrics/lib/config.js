@@ -5,30 +5,37 @@
 // should ever mention a project id, an api key, or a host.
 //
 // ┌──────────────────────────────────────────────────────────────────────┐
-// │ INTERIM TARGET — NOT the project this module will ship against.      │
+// │ Provisioned 2026-08-25. The legacy standalone project                │
+// │ (digitalmetrics-fe0f3) is no longer referenced anywhere and its data │
+// │ was deliberately NOT migrated — this database starts empty.          │
 // │                                                                      │
-// │ The migrated version uses a different Firebase project, not yet      │
-// │ provisioned. This points at the legacy standalone project purely so  │
-// │ the port can be built and exercised against real data.               │
+// │ One project, one database per module. `apaisuite` also holds the     │
+// │ (default) database with suite-wide telemetry; this module gets its   │
+// │ own named database so a rules mistake in one cannot reach the other, │
+// │ and so `stores` here can never collide with a future module's        │
+// │ `stores`. Anonymous auth is per PROJECT, so both databases share one │
+// │ Firebase identity and one token cache.                               │
 // │                                                                      │
-// │ Consequence worth planning around: anything this module WRITES here  │
-// │ before the real project exists has to be migrated twice. Prefer      │
-// │ read-only use of the legacy project until the target is known —      │
-// │ see WRITER_ENABLED_KEY below, which turns writes off wholesale.      │
+// │ Rules + indexes: modules/digitalmetrics/backend/, deployed from      │
+// │ unified-extension-suite/backend/ — see the README there.             │
 // └──────────────────────────────────────────────────────────────────────┘
 
 export const BACKEND = {
-  // INTERIM. Swap this (and apiKey) for the real project — it is the only
-  // place either value appears anywhere in the module.
-  projectId: "digitalmetrics-fe0f3",
+  projectId: "apaisuite",
+
+  // The module's own named database inside that project — NOT "(default)",
+  // which holds suite-wide telemetry and whose rules deny everything else.
+  // Pointing this at (default) would fail closed rather than corrupt anything,
+  // but it would fail confusingly, so it is named here rather than inlined.
+  databaseId: "digitalmetrics",
 
   // Public web apiKey. Not a secret — it identifies the project to Google's
   // REST endpoints and is safe in a client. It is NOT the name-encryption key;
   // that lives in crypto_config.js and is a different kind of thing entirely.
-  apiKey: "AIzaSyCHPePjy-jHsFnywlp3U8_zJy6r_zsC7GA",
+  apiKey: "AIzaSyAxRJ7qjWqm9XgGtNHr1hUyW8IJgcndj_s",
 
   get root() {
-    return `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/(default)/documents`;
+    return `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents`;
   },
 };
 
