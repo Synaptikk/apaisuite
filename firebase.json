@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "Deploy config for the `apaisuite` Firebase project. Lives at the suite root",
+    "rather than in backend/ because the Firebase CLI refuses rules/index paths",
+    "outside the directory holding firebase.json — a backend/ copy could not",
+    "reference ../modules/digitalmetrics/backend/ at all.",
+    "",
+    "Stripped from the shipped extension by scripts/release.sh; see backend/README.md."
+  ],
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "backend/firestore.suite.rules"
+    },
+    {
+      "database": "digitalmetrics",
+      "rules": "modules/digitalmetrics/backend/firestore.rules",
+      "indexes": "modules/digitalmetrics/backend/firestore.indexes.json"
+    }
+  ]
+}

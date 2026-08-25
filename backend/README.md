@@ -40,7 +40,12 @@ firebase deploy --only firestore --project apaisuite
 
 ## Deploying
 
-From this directory:
+`firebase.json` and `.firebaserc` live at the **suite root**, not here. The
+Firebase CLI rejects any rules or indexes path outside the directory holding
+`firebase.json` ("is outside of project directory"), so a copy in this folder
+could not reference `../modules/digitalmetrics/backend/` at all.
+
+From `unified-extension-suite/`:
 
 ```bash
 firebase deploy --only firestore --project apaisuite
@@ -48,6 +53,11 @@ firebase deploy --only firestore --project apaisuite
 
 Both databases' rules go up together. To do one:
 `--only firestore:digitalmetrics`.
+
+`scripts/release.sh` strips `backend/` directories plus `firebase.json` and
+`.firebaserc` from the shipped extension. Rules describe exactly which
+documents are reachable and under what conditions; shipping them hands that map
+to anyone who unzips the package, and nothing loads a `.rules` file at runtime.
 
 ## Not in here
 

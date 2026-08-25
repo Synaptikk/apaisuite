@@ -201,8 +201,16 @@ find "$STAGED_EXT" -type d -name node_modules -prune -exec rm -rf {} +
 # response with ~100 real associates' names. Investigation captures are
 # working notes, never runtime data: no module loads anything from tools/,
 # and a module that needs a fixture at runtime should put it in data/.
-find "$STAGED_EXT" -type d \( -name dev -o -name tests -o -name tools \) -prune -exec rm -rf {} +
+#
+# `backend/` joined for the same reason when the apaisuite Firebase project was
+# provisioned: it holds Firestore rules, and rules describe exactly which
+# documents are reachable and on what conditions. Shipping them tells anyone
+# who unzips the extension where the soft spots are, and no module reads a
+# .rules file at runtime — they are deployed to Google, not loaded by the
+# browser. firebase.json / .firebaserc go with them.
+find "$STAGED_EXT" -type d \( -name dev -o -name tests -o -name tools -o -name backend \) -prune -exec rm -rf {} +
 find "$STAGED_EXT" -type f -name '*.test.mjs' -delete
+rm -f "$STAGED_EXT/firebase.json" "$STAGED_EXT/.firebaserc"
 find "$STAGED_EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 
 # ─── 3. Zip source ──────────────────────────────────────────────────
