@@ -28,6 +28,7 @@
 //                                 import.
 
 import { ensureAlarm } from "../../shared/alarms.js";
+import { findOrOpenTracked, closeIfOpened } from "../../shared/tabs.js";
 import * as Directory from "../../shared/associateDirectory.js";
 import { lookupTitle } from "../../shared/associateLookup.js";
 import { decodeDsr } from "./lib/dsrDecode.js";
@@ -109,39 +110,32 @@ export const handlers = {
     const INVUE_MATCH = "https://prod.liveaccess.invue.walmart.com/app/locks*";
     const INVUE_URL   = "https://prod.liveaccess.invue.walmart.com/app/locks";
 
-    let tabs = await chrome.tabs.query({ url: INVUE_MATCH });
-    if (!tabs.length) {
-      const tab = await chrome.tabs.create({ url: INVUE_URL, active: false });
-      // Wait for the page to finish loading before injecting.
-      await new Promise((resolve) => {
-        const listener = (id, _info, updated) => {
-          if (id === tab.id && updated.status === "complete") {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-        setTimeout(resolve, 20_000); // hard cap — don't hang forever
-      });
-      tabs = [{ id: tab.id }];
-    }
-
-    let result;
+    // If the user already has InVue open we borrow their tab and leave it
+    // alone; if we open one it's ours to close, including on the throw paths
+    // below (a failed injection used to leave a tab behind every attempt).
+    const state = await findOrOpenTracked(INVUE_URL, { match: INVUE_MATCH });
     try {
-      result = await chrome.scripting.executeScript({
-        target: { tabId: tabs[0].id },
-        world: "MAIN",
-        func: fetchAllLocksFromPage,
-      });
-    } catch (e) {
-      throw new Error(`InVue script injection failed: ${e?.message ?? e}. Make sure the InVue Locks page is loaded and you are logged in.`);
-    }
+      if (state.opened) await waitForTabLoad(state.tab.id, 20_000);
 
-    const locks = result?.[0]?.result;
-    if (!Array.isArray(locks)) {
-      throw new Error("InVue page returned no lock data — ensure you are logged into prod.liveaccess.invue.walmart.com.");
+      let result;
+      try {
+        result = await chrome.scripting.executeScript({
+          target: { tabId: state.tab.id },
+          world: "MAIN",
+          func: fetchAllLocksFromPage,
+        });
+      } catch (e) {
+        throw new Error(`InVue script injection failed: ${e?.message ?? e}. Make sure the InVue Locks page is loaded and you are logged in.`);
+      }
+
+      const locks = result?.[0]?.result;
+      if (!Array.isArray(locks)) {
+        throw new Error("InVue page returned no lock data — ensure you are logged into prod.liveaccess.invue.walmart.com.");
+      }
+      return { ok: true, locks, count: locks.length };
+    } finally {
+      await closeIfOpened(state);
     }
-    return { ok: true, locks, count: locks.length };
   },
 
   // ── InVue user audit ──────────────────────────────────────────────────────
@@ -156,38 +150,29 @@ export const handlers = {
     const INVUE_MATCH = "https://prod.liveaccess.invue.walmart.com/app/*";
     const INVUE_URL   = "https://prod.liveaccess.invue.walmart.com/app/users";
 
-    let tabs = await chrome.tabs.query({ url: INVUE_MATCH });
-    if (!tabs.length) {
-      const tab = await chrome.tabs.create({ url: INVUE_URL, active: false });
-      await new Promise((resolve) => {
-        const listener = (id, _info, updated) => {
-          if (id === tab.id && updated.status === "complete") {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-        setTimeout(resolve, 20_000);
-      });
-      tabs = [{ id: tab.id }];
-    }
-
-    let result;
+    const state = await findOrOpenTracked(INVUE_URL, { match: INVUE_MATCH });
     try {
-      result = await chrome.scripting.executeScript({
-        target: { tabId: tabs[0].id },
-        world:  "MAIN",
-        func:   fetchAllUsersFromPage,
-      });
-    } catch (e) {
-      throw new Error(`InVue user fetch failed: ${e?.message ?? e}. Ensure you are logged into InVue.`);
-    }
+      if (state.opened) await waitForTabLoad(state.tab.id, 20_000);
 
-    const users = result?.[0]?.result;
-    if (!Array.isArray(users)) {
-      throw new Error("InVue returned no user data — ensure you are logged into prod.liveaccess.invue.walmart.com.");
+      let result;
+      try {
+        result = await chrome.scripting.executeScript({
+          target: { tabId: state.tab.id },
+          world:  "MAIN",
+          func:   fetchAllUsersFromPage,
+        });
+      } catch (e) {
+        throw new Error(`InVue user fetch failed: ${e?.message ?? e}. Ensure you are logged into InVue.`);
+      }
+
+      const users = result?.[0]?.result;
+      if (!Array.isArray(users)) {
+        throw new Error("InVue returned no user data — ensure you are logged into prod.liveaccess.invue.walmart.com.");
+      }
+      return { ok: true, users, count: users.length };
+    } finally {
+      await closeIfOpened(state);
     }
-    return { ok: true, users, count: users.length };
   },
 
   // deleteInvueUser({ invueUserId })
@@ -231,48 +216,53 @@ export const handlers = {
     // Persist the home store so the daily-refresh alarm can read it from SW context.
     chrome.storage.local.set({ [STORE_KEY]: storeNumber }).catch(() => {});
 
-    const tab = await ensurePowerBiTab({ openIfMissing: msg?.openIfMissing !== false });
-    if (!tab) throw new Error("Could not open Power BI tab");
+    const state = await ensurePowerBiTab({ openIfMissing: msg?.openIfMissing !== false });
+    if (!state) throw new Error("Could not open Power BI tab");
+    const tab = state.tab;
 
     let reauthAttempts = 0;
-    while (true) {
-      const pipeline = await runSearchPipeline(tab.id, storeNumber, msg?.waitMs ?? 60_000);
-      if (pipeline.ok) {
-        return { ...pipeline, ms: Date.now() - t0, reauthAttempts };
+    try {
+      while (true) {
+        const pipeline = await runSearchPipeline(tab.id, storeNumber, msg?.waitMs ?? 60_000);
+        if (pipeline.ok) {
+          return { ...pipeline, ms: Date.now() - t0, reauthAttempts };
+        }
+        if (pipeline.errorClass !== "AUTH" || reauthAttempts >= MAX_REAUTH_ATTEMPTS) {
+          return {
+            ok: false,
+            error:        pipeline.error || "Power BI search failed",
+            errorClass:   pipeline.errorClass || null,
+            authStatus:   pipeline.authStatus || null,
+            authExhausted: pipeline.errorClass === "AUTH",
+            reauthAttempts,
+            ms:           Date.now() - t0,
+            storeNumber,
+          };
+        }
+        reauthAttempts++;
+        console.log(`[digitallocks] auth-shaped response; reloading Power BI tab (autonomous reauth ${reauthAttempts}/${MAX_REAUTH_ATTEMPTS})`);
+        const reloaded = await reloadTabAndWait(tab.id, {
+          settleMs: 4000,
+          timeoutMs: 35_000,
+          waitForReady: async (tabId) => {
+            const t = await chrome.tabs.get(tabId).catch(() => null);
+            return !!t?.url && t.url.includes("app.powerbi.com") && t.status === "complete";
+          },
+        });
+        if (!reloaded.ok) {
+          return {
+            ok: false,
+            error:         `Power BI auth refresh failed: ${reloaded.reason}`,
+            errorClass:    "AUTH",
+            authExhausted: true,
+            reauthAttempts,
+            ms:            Date.now() - t0,
+            storeNumber,
+          };
+        }
       }
-      if (pipeline.errorClass !== "AUTH" || reauthAttempts >= MAX_REAUTH_ATTEMPTS) {
-        return {
-          ok: false,
-          error:        pipeline.error || "Power BI search failed",
-          errorClass:   pipeline.errorClass || null,
-          authStatus:   pipeline.authStatus || null,
-          authExhausted: pipeline.errorClass === "AUTH",
-          reauthAttempts,
-          ms:           Date.now() - t0,
-          storeNumber,
-        };
-      }
-      reauthAttempts++;
-      console.log(`[digitallocks] auth-shaped response; reloading Power BI tab (autonomous reauth ${reauthAttempts}/${MAX_REAUTH_ATTEMPTS})`);
-      const reloaded = await reloadTabAndWait(tab.id, {
-        settleMs: 4000,
-        timeoutMs: 35_000,
-        waitForReady: async (tabId) => {
-          const t = await chrome.tabs.get(tabId).catch(() => null);
-          return !!t?.url && t.url.includes("app.powerbi.com") && t.status === "complete";
-        },
-      });
-      if (!reloaded.ok) {
-        return {
-          ok: false,
-          error:         `Power BI auth refresh failed: ${reloaded.reason}`,
-          errorClass:    "AUTH",
-          authExhausted: true,
-          reauthAttempts,
-          ms:            Date.now() - t0,
-          storeNumber,
-        };
-      }
+    } finally {
+      await closeIfOpened(state);
     }
   },
 
@@ -530,11 +520,16 @@ async function runSearchPipeline(tabId, storeNumber, waitMs) {
   return { ok: true, rows, count: rows.length, storeNumber, capturedAt: cap.capturedAt };
 }
 
+// Returns { tab, opened } — or null when nothing is open and we were told not
+// to open one. `opened` decides cleanup: a Power BI tab the user was already
+// working in must survive the search; one we opened must not outlive it,
+// because the daily alarm runs this unattended and would otherwise leave a new
+// background tab behind every single day.
 async function ensurePowerBiTab({ openIfMissing }) {
   const existing = await chrome.tabs.query({ url: REPORT_TAB_FILTER });
-  if (existing?.length) return existing[0];
+  if (existing?.length) return { tab: existing[0], opened: false };
   if (!openIfMissing) return null;
-  return await chrome.tabs.create({ url: POWER_BI_URL, active: false });
+  return { tab: await chrome.tabs.create({ url: POWER_BI_URL, active: false }), opened: true };
 }
 
 async function waitForCapture(tabId, timeoutMs) {

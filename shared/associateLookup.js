@@ -57,6 +57,7 @@
 //   after it was filled in.
 
 import * as Directory from "./associateDirectory.js";
+import { registerSessionTab, touchSessionTab } from "./tabSessions.js";
 
 const _mem      = new Map();   // username → {name} | null (negative)
 const _inflight = new Map();   // username → Promise<string|null>
@@ -273,7 +274,10 @@ async function _ensureWorkvivoTab() {
   if (_workvivoTabId != null) {
     try {
       const t = await chrome.tabs.get(_workvivoTabId);
-      if (t && /^https:\/\/workvivo\.walmart\.com\//.test(t.url || "")) return _workvivoTabId;
+      if (t && /^https:\/\/workvivo\.walmart\.com\//.test(t.url || "")) {
+        await touchSessionTab(_workvivoTabId);
+        return _workvivoTabId;
+      }
     } catch { /* tab closed */ }
     _workvivoTabId = null;
   }
@@ -308,6 +312,10 @@ async function _ensureWorkvivoTab() {
       chrome.tabs.onUpdated.addListener(onUpdated);
     });
     _workvivoTabId = tab.id;
+    // Ours. Kept between lookups on purpose — one pass resolves 300-500 names
+    // through this single tab, so closing per name would be absurd — but it
+    // now expires instead of living until the browser does.
+    await registerSessionTab("associateLookup", tab.id);
     return _workvivoTabId;
   })().finally(() => { _workvivoTabInFlight = null; });
 
@@ -454,12 +462,18 @@ async function ensureWorkdayTab() {
     // Still open, and still ours (the user may have reused the tab for
     // something else, in which case we leave it alone and open a new one).
     const tab = await chrome.tabs.get(knownId).catch(() => null);
-    if (tab && String(tab.url ?? tab.pendingUrl ?? "").startsWith(WORKDAY_ORIGIN)) return tab;
+    if (tab && String(tab.url ?? tab.pendingUrl ?? "").startsWith(WORKDAY_ORIGIN)) {
+      await touchSessionTab(knownId);
+      return tab;
+    }
     await chrome.storage.session.remove(WORKDAY_TAB_KEY).catch(() => {});
   }
 
   const tab = await chrome.tabs.create({ url: `${WORKDAY_ORIGIN}/walmart/d/home.htmld`, active: false });
   await chrome.storage.session.set({ [WORKDAY_TAB_KEY]: tab.id }).catch(() => {});
+  // Same deal as the Workvivo tab: reused across a run of title lookups, so
+  // the reaper owns its end-of-life rather than a per-call finally.
+  await registerSessionTab("associateLookup", tab.id);
   await sleep(2000);
   return tab;
 }

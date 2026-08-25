@@ -153,7 +153,26 @@ de-facto reference.
 
 ## Bugs grouped by reported symptom
 
-### (a) Auth tabs left open after success
+### (a) Auth tabs left open after success — SWEPT 2026-08-25
+
+All seven are now handled, via two different fixes. `shared/tabs.js` grew
+`findOrOpenTracked()` / `closeIfOpened()` / `withTempTab()` so the
+did-we-open-it fact is carried by the return value instead of being re-derived
+(and dropped) at each site; `shared/tabSessions.js` + the `_suite_tabreap`
+alarm reap tabs that must stay alive between calls. See
+`MODULE_CONTRACT.md::Every background tab must have an owner and an end`.
+
+Closed on completion: digitallocks (InVue locks, InVue users, Power BI),
+closinglist IVR, metricshot capture, assocpurchases MUMD.
+Reaped when idle: claimsdisposition Looker embed, livedashboard Hoops,
+sparkfraud gscope, associateLookup Workvivo + Workday, workvivo heartbeat.
+
+Deliberately untouched: tabs opened `active: true` **for** the user
+(aurorbuddy `/event/new`, digitallocks `createAurorEvent`, sparkfraud
+`openOrderInGscope` / `openOrderInDispatcher`). Those are the output.
+
+Original findings, kept for context:
+
 - **aurorbuddy Auror tab** — never closed (intentional? but the
   long-lived tab accumulates if user closes it and reauth opens
   another)

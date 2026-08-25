@@ -12,6 +12,8 @@
 // session cookies carry automatically when host_permissions covers
 // *.wal-mart.com (already present in top-level manifest).
 
+import { registerSessionTab } from "../../../../shared/tabSessions.js";
+
 const ENDPOINT = "https://hoops.wal-mart.com/ops-portal/v1/trpc/metric.cvp.megaCard.CVPOverview";
 // Direct ops-portal URL — bypasses the soteria/login redirect for users
 // without a session, but lands authenticated users straight on the app.
@@ -102,8 +104,12 @@ async function tryFetchInsideHoopsTab(url) {
     // own tab-lifecycle (close idle tabs we opened after N minutes); for
     // now we accept one persistent background hoops tab per session.
     // See docs/AUTH_AUDIT.md::Recommendation.
-    try { await chrome.tabs.create({ url: HOOPS_OPS_PORTAL_URL, active: false }); }
+    let openedTab;
+    try { openedTab = await chrome.tabs.create({ url: HOOPS_OPS_PORTAL_URL, active: false }); }
     catch (e) { return { ok: false, errorClass: "TAB", error: `Could not open hoops tab: ${e?.message ?? e}` }; }
+    // Ours, and kept alive on purpose — but now on the reaper's clock rather
+    // than forever. See shared/tabSessions.js.
+    await registerSessionTab("livedashboard", openedTab.id);
     // Wait for the tab to land on ops-portal (after any SAML round-trip).
     const tab = await waitForOpsPortalTab(25_000);
     if (!tab) return { ok: false, errorClass: "AUTH", error: "Hoops session not active. Open hoops.wal-mart.com/ops-portal/ in a tab, sign in, then click Refresh." };

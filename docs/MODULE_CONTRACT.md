@@ -502,6 +502,39 @@ Per-domain SSO entry-points worth knowing about:
 
 - gscope SSO: open `https://pfedprod.wal-mart.com/idp/startSSO.ping?PartnerSpId=https://gscope.walmartlabs.com/sp`
   in background, click "Go" — faster than the `/login` flow.
+- Secure/APPRISS: import the origin from `shared/appriss.js`. It is
+  `apps.apprissretail.com/walmart-usa` and the tenant prefix is mandatory —
+  the bare path 403s. Never hardcode it; it has been renamed once already.
+
+### Every background tab must have an owner and an end
+
+A background tab you opened is yours to close. A tab the user already had open
+is not — never close it, and never navigate it out from under them. Which of
+the two you have is a **fact you must not drop**, because both look identical
+by the time cleanup runs.
+
+Do not re-derive it with a local flag. Two helpers carry it for you:
+
+| Situation | Use |
+|---|---|
+| One-shot job: open page, do work, done | `withTempTab(url, fn)` — or `findOrOpenTracked()` + `closeIfOpened(state)` in a `finally` |
+| Tab must survive between calls (session/CSRF/SAML anchored) | `registerSessionTab(moduleId, tabId)` + `touchSessionTab(tabId)` on each use |
+
+Both live in `shared/tabs.js` / `shared/tabSessions.js` and are covered by
+`shared/tests/tabs.test.mjs` and `shared/tests/tabSessions.test.mjs`.
+
+The second row is not an escape hatch for "closing is inconvenient" — it is for
+tabs where closing costs a real reauth (claimsdisposition's Looker embed,
+livedashboard's Hoops portal, sparkfraud's post-SSO gscope tab,
+`associateLookup`'s Workvivo/Workday tabs). Registered tabs are swept by the
+suite-level `_suite_tabreap` alarm once they have been idle past their window
+(default 15 min), so "keep it alive" never again means "keep it forever".
+
+Note the trap that made this a suite-wide bug: a module-scope `let _tabId`
+cache is discarded when the MV3 worker idles out after ~30s — **the tab is
+not**. The pointer goes away and the window stays, so the next wake opens
+another one. Any tab pointer that must outlive a single call belongs in
+`chrome.storage.session`, which is what `tabSessions.js` uses.
 
 ---
 

@@ -18,6 +18,7 @@
 //     auto-progression begins.
 
 import { createAuth, SSO_SELECTORS } from "../../shared/auth.js";
+import { findOrOpenTracked, closeIfOpened } from "../../shared/tabs.js";
 
 const MODULE_ID       = "closinglist";
 const IVR_ROOT_URL    = "https://ivrattcloud-prod.wal-mart.com/";
@@ -35,10 +36,12 @@ const auth = createAuth(MODULE_ID);
 // second simply replaces the first (the first will time out naturally).
 let pendingIvrResolver = null;
 
+// Returns { tab, opened }. `opened` matters because collectIvrAbsences
+// NAVIGATES the tab (resetIvrTab) — so when the user already had IVR open we
+// are borrowing their tab and must leave it where we found it, whereas a tab
+// we opened is scratch space and gets closed when the collection ends.
 async function findOrOpenIvrTab() {
-  const existing = await chrome.tabs.query({ url: IVR_TAB_PATTERN });
-  if (existing.length > 0) return existing[0];
-  return chrome.tabs.create({ url: IVR_ROOT_URL, active: false });
+  return findOrOpenTracked(IVR_ROOT_URL, { match: IVR_TAB_PATTERN });
 }
 
 async function resetIvrTab(tabId) {
@@ -107,12 +110,13 @@ async function collectIvrAbsences() {
     }, FLOW_TIMEOUT_MS);
   });
 
+  let state = null;
   try {
-    const tab = await findOrOpenIvrTab();
-    await resetIvrTab(tab.id);
+    state = await findOrOpenIvrTab();
+    await resetIvrTab(state.tab.id);
     // Full-automation: if the tab redirected to SSO, auto-click + wait for
     // round-trip back to IVR before the content-script flow takes over.
-    await ensureIvrAuth(tab.id);
+    await ensureIvrAuth(state.tab.id);
     const result = await resultPromise;
     await chrome.storage.local.set({
       [FLOW_KEY]:   { active: false },
@@ -123,6 +127,11 @@ async function collectIvrAbsences() {
     pendingIvrResolver = null;
     await chrome.storage.local.set({ [FLOW_KEY]: { active: false } });
     return { ok: false, error: String(e?.message ?? e) };
+  } finally {
+    // Covers the timeout path too: resultPromise RESOLVES on timeout rather
+    // than rejecting, so a stalled collection returned through the success
+    // branch above and left its tab behind.
+    await closeIfOpened(state);
   }
 }
 

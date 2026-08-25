@@ -57,6 +57,12 @@ let _row0KeysLogged = false;
 
 let _mumdTabId      = null;
 let _mumdTabInFlight = null;
+// True only when WE created the tab, so releaseMumdTab() can close ours and
+// leave a tab the user already had open alone. Note this flag lives in module
+// scope, which the MV3 worker discards after ~30s idle — the tab does not.
+// That mismatch is what made this a leak rather than a cache: the pointer went
+// away, the window did not.
+let _mumdTabOpened  = false;
 
 async function _ensureMumdTab() {
   // Re-use a known good tab.
@@ -74,6 +80,7 @@ async function _ensureMumdTab() {
     const readyTab = tabs.find(t => _isOnMumdDomain(t.url) && !_isLoginUrl(t.url));
     if (readyTab) {
       _mumdTabId = readyTab.id;
+      _mumdTabOpened = false;
       return _mumdTabId;
     }
 
@@ -83,10 +90,28 @@ async function _ensureMumdTab() {
 
     await _waitAndHandleAuth(tab.id, 25_000);
     _mumdTabId = tab.id;
+    _mumdTabOpened = true;
     return _mumdTabId;
   })().finally(() => { _mumdTabInFlight = null; });
 
   return _mumdTabInFlight;
+}
+
+// Close the MUMD tab if we opened it. Called once the whole pull is done —
+// NOT per API page, since one pull makes many paged calls against the same
+// tab and closing between them would re-pay the SSO round-trip each time.
+export async function releaseMumdTab() {
+  const id = _mumdTabId;
+  const wasOurs = _mumdTabOpened;
+  _mumdTabId = null;
+  _mumdTabOpened = false;
+  if (!wasOurs || id == null) return false;
+  try {
+    await chrome.tabs.remove(id);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function _isLoginUrl(url) {
@@ -193,6 +218,16 @@ async function _mumdApiFetch(apiUrl, body) {
  * @returns {{ headers, rows, rowCount, filterText, capturedAt, error? }}
  */
 export async function fetchMumdData(storeNo, startDate, endDate) {
+  try {
+    return await _fetchMumdData(storeNo, startDate, endDate);
+  } finally {
+    // One pull = one tab lifetime. The paging loop inside shares the tab; the
+    // close happens once, out here, on both the success and failure paths.
+    await releaseMumdTab();
+  }
+}
+
+async function _fetchMumdData(storeNo, startDate, endDate) {
   let tabId;
   try {
     tabId = await _ensureMumdTab();

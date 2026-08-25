@@ -13,6 +13,8 @@
 // script is wasted bytes for periodic reads, and would need its own messaging
 // hop to forward the value back to the SW.
 
+import { registerSessionTab } from "../../../shared/tabSessions.js";
+
 const WORKVIVO_URL_PATTERN = "https://workvivo.walmart.com/*";
 
 /**
@@ -87,15 +89,22 @@ export async function hasWorkvivoTab() {
  *
  * Background tab (active:false) so we don't yank focus away from whatever
  * the user was doing. The tab is left open after the heartbeat so future
- * periodic alarms can also read the token without re-opening.
+ * periodic alarms can also read the token without re-opening — but it is
+ * registered with the suite's idle reaper (shared/tabSessions.js), so "left
+ * open" now means "until nothing has used it for a while" rather than "until
+ * the user notices and closes it". The heartbeat is hourly and the reaper's
+ * default grace is 15 minutes, so a heartbeat that opens its own tab gets it
+ * swept before the next one — which is correct: each heartbeat can re-open.
  *
  * @returns {Promise<chrome.tabs.Tab>}
  */
 export async function openWorkvivoTab() {
-  return chrome.tabs.create({
+  const tab = await chrome.tabs.create({
     url:    "https://workvivo.walmart.com/chat",
     active: false,
   });
+  await registerSessionTab("workvivo", tab.id);
+  return tab;
 }
 
 /**

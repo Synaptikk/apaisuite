@@ -17,6 +17,7 @@
 
 import { createAuth } from "../../shared/auth.js";
 import { ensureAlarm, IS_SERVICE_WORKER } from "../../shared/alarms.js";
+import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
 
 const MODULE_ID = "sparkfraud";
 
@@ -357,6 +358,7 @@ async function ensureGscopeAuthTab() {
   if (stored) {
     try {
       await chrome.tabs.get(stored);
+      await touchSessionTab(stored);
       await _spoofVisibility(stored);
       const arrived = await driveGscopeAuthChain(stored, 10_000);
       await _unspoofVisibility(stored);
@@ -384,6 +386,10 @@ async function ensureGscopeAuthTab() {
   // Go-clicks on pfedprod → wmstoresso → /apphome chain.
   const tab = await chrome.tabs.create({ url: "about:blank", active: false });
   await chrome.storage.session.set({ [STORAGE_AUTH_TAB_KEY]: tab.id });
+  // This tab BECOMES the working gscope tab once the SSO chain lands, so it
+  // can't be closed when auth finishes — but it also shouldn't outlive the
+  // session, which is what it used to do. Hand it to the idle reaper.
+  await registerSessionTab(MODULE_ID, tab.id);
   await _spoofVisibility(tab.id);
   try {
     await chrome.tabs.update(tab.id, { url: SSO_START_URL, active: false });

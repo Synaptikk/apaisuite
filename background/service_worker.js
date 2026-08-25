@@ -31,6 +31,7 @@ import { setCapturedHeader }      from "../shared/captured_headers.js";
 import { checkForUpdate }         from "../shared/updater.js";
 import { ensurePushSubscription } from "../shared/push.js";
 import { ensureAlarm }            from "../shared/alarms.js";
+import { reapIdleTabs }          from "../shared/tabSessions.js";
 
 // ── Declarative webRequest filter registration (SYNCHRONOUS, TOP-LEVEL) ──
 //
@@ -192,12 +193,39 @@ chrome.action.onClicked.addListener(async () => {
 const UPDATER_ALARM_NAME = "_suite_updater";
 const UPDATER_PERIOD_MIN = 360; // 6 hours — slow on purpose; the SW idle/wake cost dwarfs the wire fetch.
 
+// Idle-tab reaper. Some modules must keep a background tab alive between calls
+// (Looker's CSRF chain, Hoops' SAML session, gscope's post-SSO tab) — closing
+// those in a `finally` re-pays a 30s reauth on every use. They register with
+// shared/tabSessions.js instead and this sweep closes whatever went quiet.
+// Runs oftener than the updater because the cost of being late here is a tab
+// sitting in the user's strip.
+const TABREAP_ALARM_NAME = "_suite_tabreap";
+const TABREAP_PERIOD_MIN = 5;
+
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== UPDATER_ALARM_NAME) return;
-  checkForUpdate().catch((e) => {
-    console.warn("[APAISuite SW] updater check threw:", e);
-  });
+  if (alarm.name === UPDATER_ALARM_NAME) {
+    checkForUpdate().catch((e) => {
+      console.warn("[APAISuite SW] updater check threw:", e);
+    });
+    return;
+  }
+  if (alarm.name === TABREAP_ALARM_NAME) {
+    reapIdleTabs()
+      .then(({ closed, kept, dropped }) => {
+        // Only speak up when something happened. A reaper that closes tabs
+        // silently is indistinguishable from a crash from the user's side.
+        if (closed.length || dropped.length) {
+          console.log("[APAISuite SW] tab reap:", { closed, kept, dropped });
+        }
+      })
+      .catch((e) => console.warn("[APAISuite SW] tab reap threw:", e));
+  }
 });
+
+ensureAlarm(TABREAP_ALARM_NAME, {
+  delayInMinutes: 1,
+  periodInMinutes: TABREAP_PERIOD_MIN,
+}).catch(() => {});
 
 // Ensure the alarm exists, re-creating it only if Chrome restarted and lost
 // it. The get() is required: chrome.alarms.create with an existing name is

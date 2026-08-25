@@ -49,6 +49,11 @@ const TAG = "[metricshot capture]";
 export async function captureMetric(metric, opts = {}) {
   const capturedAt = Date.now();
   let tabId = null;
+  // Hoisted out of the try so the finally can act on it. This flag has always
+  // been tracked correctly — it was just never used for anything but a
+  // breadcrumb, so every capture that opened its own Tableau tab left it
+  // behind. Scheduled captures run unattended, so those piled up.
+  let openedFresh = false;
   // The store this run actually points Tableau at, captured off the
   // parameterValues resolution below. Used to look up the SAME store's
   // already-captured ring data from vizpick's Today snapshot (see step 11).
@@ -85,7 +90,6 @@ export async function captureMetric(metric, opts = {}) {
     const originPattern = `${target.origin}/*`;
     const existing = await chrome.tabs.query({ url: originPattern });
     let tab;
-    let openedFresh = false;
     if (existing.length) {
       // Only reuse a tab that's already on the exact viz + filters we want.
       // Otherwise we'd hijack the user's own Tableau tab (navigating it to
@@ -342,6 +346,12 @@ export async function captureMetric(metric, opts = {}) {
     };
   } catch (err) {
     return _fail(tabId, capturedAt, String(err?.message ?? err));
+  } finally {
+    // Only ours. A Tableau tab the user already had open on this exact viz was
+    // adopted above, and adopting someone's tab must never mean closing it.
+    if (openedFresh && tabId != null) {
+      try { await chrome.tabs.remove(tabId); } catch { /* already gone */ }
+    }
   }
 }
 

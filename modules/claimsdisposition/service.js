@@ -26,6 +26,7 @@ import { fetchCvpForMarket } from "./lib/cvp.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
 import { getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster } from "../../shared/marketRoster.js";
+import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
 
 const MODULE_ID = "claimsdisposition";
 
@@ -97,16 +98,19 @@ async function findEmbedTab() {
 
 async function ensureEmbedTab({ openIfMissing = true } = {}) {
   const existing = await findEmbedTab();
-  if (existing) return { ok: true, tabId: existing.id, opened: false };
+  if (existing) {
+    // Keeps the reaper's clock honest: an embed tab being pulled through every
+    // few minutes is in use, whoever originally opened it.
+    await touchSessionTab(existing.id);
+    return { ok: true, tabId: existing.id, opened: false };
+  }
   if (!openIfMissing) return { ok: false, error: "no embed tab open" };
 
-  // NOTE: this tab is intentionally LEFT OPEN after a successful pull —
-  // Looker's anti-CSRF cookie chain is anchored to it, and closing forces
-  // a 30s reauth on every subsequent pull. The trade-off (one persistent
-  // background tab vs latency on every refresh) is acceptable today.
-  // See docs/AUTH_AUDIT.md::Recommendation — the Pass-2 sessionManager
-  // will own tab-lifecycle ("close idle tabs we opened after N minutes")
-  // so this site no longer has to make the call.
+  // This tab is intentionally left open after a successful pull — Looker's
+  // anti-CSRF cookie chain is anchored to it, and closing it forces a 30s
+  // reauth on every subsequent pull. It is registered with the suite's idle
+  // reaper below instead, which closes it once nobody has pulled for a while.
+  // That is the sessionManager this comment used to be waiting for.
   const tab = await chrome.tabs.create({ url: EMBED_URL, active: false });
   // Wait for SSO + initial JS to settle. The embed itself loads in ~2-3s
   // but the same-origin fetch only succeeds once Looker's bootstrap has
@@ -118,6 +122,7 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
     const t = await chrome.tabs.get(tab.id).catch(() => null);
     if (t?.status === "complete" && (t.url ?? "").includes("/embed/reporting/")) {
       await sleep(1500); // one more breath for the bootstrap
+      await registerSessionTab("claimsdisposition", tab.id);
       return { ok: true, tabId: tab.id, opened: true };
     }
   }
