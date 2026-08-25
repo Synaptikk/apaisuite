@@ -358,11 +358,11 @@ export function parseDeptBreakout(text) {
       total = {
         suggestedPicks:          num(c[idx.suggested]),
         suggestedPicksCompleted: num(c[idx.completed]),
-        pickPct:                 num(c[idx.pickPct]),
+        pickPct:                 pct(c[idx.pickPct]),
         totalPicked:             num(c[idx.totalPicked]),
         casesSeen:               num(c[idx.casesSeen]),
         casesExpected:           num(c[idx.casesExpected]),
-        casesSeenPct:            num(c[idx.casesSeenPct]),
+        casesSeenPct:            pct(c[idx.casesSeenPct]),
         overstockExceptions:     num(c[idx.overstockExc]),
         clearanceCases:          num(c[idx.clearanceCases]),
         deletedCases:            num(c[idx.deletedCases]),
@@ -378,10 +378,10 @@ export function parseDeptBreakout(text) {
         dept,
         suggestedPicks,
         suggestedPicksCompleted: num(c[idx.completed]),
-        pickPct:                 num(c[idx.pickPct]),
+        pickPct:                 pct(c[idx.pickPct]),
         casesSeen:               num(c[idx.casesSeen]),
         casesExpected,
-        casesSeenPct:            num(c[idx.casesSeenPct]),
+        casesSeenPct:            pct(c[idx.casesSeenPct]),
         overstockExceptions:     num(c[idx.overstockExc]),
       });
     }
@@ -532,6 +532,28 @@ function num(s) {
   const n = Number(str);
   if (!Number.isFinite(n)) return 0;
   return negParen ? -Math.abs(n) : n;
+}
+
+/**
+ * A percentage, as a whole number.
+ *
+ * The two export routes disagree about precision and always have: the crosstab
+ * dialog hands back Tableau's OWN formatting ("96%"), while the HTTP replay
+ * returns the underlying xlsx cell (96.3911399243652). Both are the same
+ * measure, so leaving them as they arrive put "96%" on one card and
+ * "96.3911399243652%" on the next depending only on which route that store
+ * happened to take — observed live 2026-08-24, 5 of 10 stores affected.
+ *
+ * Rounding here rather than at render is deliberate: every surface in this
+ * module already prints whole percents, and lib/charts.js::bandFor bands the
+ * ROUNDED value, so a stored raw would be a number nothing ever uses and that
+ * only the replay route could produce. The real numerators and denominators
+ * are stored separately and are untouched — the x/y ratios on the cards stay
+ * exact.
+ */
+function pct(s) {
+  const n = num(s);
+  return Number.isFinite(n) ? Math.round(n) : n;
 }
 
 /**

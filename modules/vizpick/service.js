@@ -81,7 +81,19 @@ async function readAuto() {
 // Stamped into every capture envelope. A stored error outlives the code that
 // produced it, and we have twice been misled by an old envelope's wording
 // after the extension was reloaded — this makes the provenance explicit.
-const CAPTURE_BUILD = "2026-08-16d";
+// Derived, not hand-written. The literal that used to live here said
+// "2026-08-16d" for over a week of daily changes, so every failure record
+// carried a build stamp that was simply false — and the comment above promises
+// exactly the provenance it was failing to give. A stamp nobody remembers to
+// bump is worse than none: it reads as evidence. Read once at module scope;
+// getManifest() is synchronous and available in the service worker.
+// Guarded: this runs at module scope, and the node tests import service.js
+// against a chrome stub that has no getManifest. A build stamp must never be
+// the reason a module fails to load.
+const CAPTURE_BUILD = (() => {
+  try { return `v${chrome.runtime.getManifest().version}`; }
+  catch { return "unknown"; }
+})();
 
 // Payload is SPREAD, not nested under a `payload` key. shared/messaging.js's
 // on(type, handler) hands the whole flat message to the handler, so nesting

@@ -97,6 +97,7 @@ const FIXES = {
   WRONG_VIEW:        "Close the stray Tableau tab so a fresh one can be opened on the right view, then Refresh.",
   TABLEAU_ERROR:     "Tableau itself errored. Open the tab that was left open to see its message.",
   EXPORT_UI:         "Tableau's Download → Crosstab dialog changed or did not open. Check the sheet list in the debug details below.",
+  NO_TOOLBAR:        "A Tableau tab with its toolbar suppressed (:toolbar=n) was adopted — there is no Download button to export through. Close any embedded VizPick Details tabs, then Refresh.",
   NO_CAPTURE:        "The export was triggered but no CSV came back. Check the captured URLs in the debug details below.",
   PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
 };

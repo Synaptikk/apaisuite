@@ -154,7 +154,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
   // and metricshot falls back to the outstanding-picks bins.
   const homeStore = await getUserHomeStore().catch(() => null);
 
-  const opened = await findOrOpenReportTab();
+  // Not const: replaced if the tab we adopted turns out to be
+  // toolbar-suppressed (see the recovery below).
+  let opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open the Tableau VizPick Details tab." };
   }
@@ -168,7 +170,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
   // open, in which case didOpen is false and we must leave it exactly as
   // found; the extra lanes are always ours to close.
   const tabs = [opened];
-  const primaryId = opened.tab.id;
+  // Not const: a reused tab that turns out to be toolbar-suppressed is
+  // abandoned and replaced with one of ours. See the recovery below.
+  let primaryId = opened.tab.id;
 
   // A run the USER started leaves a failed tab open so they can look at it.
   // A background auto-check must not: the user never asked for a tab, so an
@@ -210,6 +214,26 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // So: reload it once and try again before giving up. Only for reused tabs
     // — a tab we just created has nothing stale to shed, and a second
     // VIZ_READY_WAIT_MS would just double the wait before the real error.
+    // A toolbar-suppressed tab is NOT stale and reloading cannot help — it
+    // comes back with the same `:toolbar=n` url. It belongs to another module
+    // (MetricShot opens exactly this view embedded), so leave it untouched and
+    // open one of our own instead of failing the whole crawl.
+    //
+    // Before this, adopting that tab was terminal: every store in the market
+    // failed, the Today tab sat frozen at its last good pull, and the error
+    // said "still rendering — retrying often works".
+    if (!primaryReady.ok && primaryReady.toolbarSuppressed && !opened.didOpen) {
+      stage("The open tab has no toolbar — opening our own");
+      const fresh = await chrome.tabs.create({ url: DETAILS_URL, active: false }).catch(() => null);
+      if (fresh?.id != null) {
+        opened = { tab: fresh, didOpen: true };
+        tabs[0] = opened;
+        primaryId = fresh.id;
+        await keepAwake(primaryId);
+        primaryReady = await prepareTab(primaryId, { readyWaitMs: VIZ_READY_WAIT_MS });
+      }
+    }
+
     if (!primaryReady.ok && !opened.didOpen) {
       stage("Reloading a stale Tableau tab");
       await chrome.tabs.reload(primaryId, { bypassCache: true }).catch(() => {});
@@ -572,7 +596,19 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
     // signal is a shape change that STILL parses — the warning shot before the
     // change that breaks us. Fire-and-forget; cannot affect this capture.
     watchSourceSchema("vizpick.deptBreakout", dept.text, parsed.ok);
-    if (!parsed.ok) { failures.push({ store, reason: `parse: ${parsed.reason}` }); return null; }
+    if (!parsed.ok) {
+      // Name the SHEET, not just the columns. "unexpected columns; got: Dept,
+      // Suggested Picks Seen, …" is the department breakout's own header row —
+      // so a reason like that means some other sheet's parser ran on this
+      // text, or this text is some other sheet. Without `via` and the first
+      // line there is no way to tell which, and the two have opposite fixes.
+      failures.push({
+        store,
+        reason: `dept parse (via ${dept.via || "?"}): ${parsed.reason}`,
+        firstLine: String(dept.text || "").split(/\r?\n/)[0].slice(0, 200),
+      });
+      return null;
+    }
 
     // Second export for this same store: the donut-health sheet, which is the
     // only current-day source of Location %, Overstock % and the VizPick
@@ -591,15 +627,41 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
       // waiting unconditionally would have burned up to DIALOG_SETTLE_MS (20s)
       // per store for nothing once the GUIDs are learned.
       {
-        const donut = await exportSheetText(tabId, DONUT_SHEET, DONUT_CSV_NEEDLE, replay);
+        let donut = await exportSheetText(tabId, DONUT_SHEET, DONUT_CSV_NEEDLE, replay);
         if (!donut.ok) {
           // Never silent: a failed second export used to look like a clean run
           // that merely happened to have no health data.
           failures.push({ store, reason: `donut: ${donut.reason}`, soft: true });
         } else {
-          const dh = parseDonutHealth(donut.text);
+          let dh = parseDonutHealth(donut.text);
+
+          // The replay can come back with a DIFFERENT SHAPE than the dialog
+          // does for this sheet — a two-column "VizPick, 93.33…" instead of the
+          // five ring columns — and it still contains the needle, so the
+          // needle check inside exportSheetText passes it through. Measured
+          // 2026-08-24: 8 of 10 stores lost their health rings this way, and
+          // the two that kept them were exactly the two that had driven the
+          // dialog to learn the sheet ids.
+          //
+          // The dialog demonstrably returns the right shape, so fall back to it
+          // once rather than dropping the rings. Costs one dialog for the store
+          // that hits it; the alternative is a card with three blank rings.
+          if (!dh.ok && donut.via === "replay") {
+            const viaDom = await exportSheetText(tabId, DONUT_SHEET, DONUT_CSV_NEEDLE, null);
+            if (viaDom.ok) {
+              const retry = parseDonutHealth(viaDom.text);
+              if (retry.ok) { dh = retry; donut = viaDom; }
+            }
+          }
+
           if (dh.ok) health = dh.health;
-          else failures.push({ store, reason: `donut parse: ${dh.reason}`, soft: true });
+          else {
+            failures.push({
+              store,
+              reason: `donut parse (via ${donut.via || "?"}): ${dh.reason}`,
+              soft: true,
+            });
+          }
         }
       }
     } catch (e) {
@@ -695,7 +757,16 @@ async function prepareTab(tabId, opts = {}) {
     await waitForCaptureInstalled(tabId, INSTALL_GRACE_MS);
   }
 
-  if (!(await waitForVizReady(tabId, opts.readyWaitMs ?? VIZ_READY_WAIT_MS))) {
+  // A `:toolbar=n` tab renders the viz perfectly and simply has no toolbar —
+  // and the export is driven through the toolbar's Download button. Detected
+  // from the DOM rather than the url (see waitForVizReadyOrSuppressed), and
+  // bailed on after a short grace instead of burning the full 120s budget per
+  // lane and then reporting "still rendering — retrying often works".
+  const ready = await waitForVizReadyOrSuppressed(tabId, opts.readyWaitMs ?? VIZ_READY_WAIT_MS);
+  if (ready === "suppressed") {
+    return { ok: false, reason: "toolbar suppressed", toolbarSuppressed: true };
+  }
+  if (!ready) {
     return { ok: false, reason: "the viz never rendered" };
   }
 
@@ -896,6 +967,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // it from this side regardless of what any other module opens.
 const TOOLBAR_SUPPRESSED = /[?&](?::|%3A)toolbar=n\b/i;
 
+// How long a rendered viz may go without a toolbar before we call it
+// suppressed. Tableau paints the toolbar and the parameter controls at
+// slightly different times, so this must be long enough to absorb that gap and
+// short enough to beat the 120s render budget it exists to avoid.
+const TOOLBAR_GRACE_MS = 20_000;
+
+/**
+ * Is this tab one we cannot drive?
+ *
+ * Read the tab's CURRENT url rather than the one chrome.tabs.query handed us.
+ * That query is a snapshot, and a tab that is still loading reports its
+ * pre-redirect url — so a MetricShot tab could pass the filter below and only
+ * resolve to `:toolbar=n` afterwards. Observed live 2026-08-24: the filter was
+ * correct, matched nothing, and the crawl adopted the tab anyway.
+ */
+async function isToolbarSuppressed(tabId) {
+  const t = await chrome.tabs.get(tabId).catch(() => null);
+  return TOOLBAR_SUPPRESSED.test(t?.url || "");
+}
+
 async function findOrOpenReportTab() {
   const all = await chrome.tabs.query({ url: TAB_PATTERN });
   const existing = all.filter((t) =>
@@ -918,7 +1009,14 @@ async function findOrOpenReportTab() {
     // frozen:true while the Yesterday tab — used minutes earlier — was not,
     // which is exactly why Yesterday kept working and Today never did.
     const live = existing.find((t) => !t.discarded && !t.frozen) || existing[0];
-    return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
+    // Re-check at the moment of use, not at query time. See
+    // isToolbarSuppressed: the url in a query result can still be the
+    // pre-redirect one, which is how a `:toolbar=n` tab slipped past the
+    // filter above and cost every store a 120s timeout.
+    if (!(await isToolbarSuppressed(live.id))) {
+      return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
+    }
+    // Fall through and open our own rather than driving a tab with no toolbar.
   }
   // active:false — the capture runs entirely in the background and must
   // never pull the user off the page they are on.
@@ -1060,6 +1158,17 @@ async function diagnoseUnrenderedTab(tabId, stageReason) {
   } else if (page?.hasToolbar && !page?.hasStoreParam) {
     errorClass = "NO_PARAM";
     message = "The viz rendered but its Store parameter box never appeared, so no store could be selected. Check that the VizPick Details view still exposes a \"Store\" parameter.";
+  } else if (TOOLBAR_SUPPRESSED.test(url) || TOOLBAR_SUPPRESSED.test(page?.url || "")
+             || (page?.hasStoreParam && !page?.hasToolbar)) {
+    // The viz DID render — the Store box is right there. What is missing is the
+    // toolbar, and the export is driven through its Download button.
+    //
+    // Reported as SLOW_RENDER until 2026-08-24, whose message ends "retrying
+    // often works". Retrying can never work: the tab is `:toolbar=n` and will
+    // never grow a toolbar. That wording sent three separate investigations
+    // looking at Tableau's speed instead of at which tab was adopted.
+    errorClass = "NO_TOOLBAR";
+    message = "The Tableau tab has its toolbar suppressed (:toolbar=n), so there is no Download button to export through. The viz itself rendered fine. This is usually MetricShot's tab being adopted — close any embedded VizPick Details tabs and Refresh again.";
   } else if (page?.loading || page?.testIdCount > 0) {
     errorClass = "SLOW_RENDER";
     message = `Tableau was still rendering after ${Math.round(VIZ_READY_WAIT_MS / 1000)}s (the page shell loaded but the viz never finished). Usually a cold session or a slow upstream — retrying often works.`;
@@ -1102,6 +1211,48 @@ async function waitForCaptureInstalled(tabId, graceMs) {
     } catch {}
     await sleep(250);
   } while (Date.now() < deadline);
+  return false;
+}
+
+/**
+ * Wait for the viz, distinguishing "not ready yet" from "will never be ready".
+ *
+ * @returns {Promise<"ok"|"suppressed"|false>}
+ *
+ * The url is NOT a reliable test for a toolbar-suppressed tab, which is what
+ * the first version of this fix got wrong. chrome.tabs.get can still report a
+ * tab's pre-redirect url well after its document has settled, so a MetricShot
+ * `:toolbar=n` tab passes a url check and is adopted anyway — then costs the
+ * full 120s budget, per lane, on every crawl.
+ *
+ * The DOM is authoritative: if the Store parameter box is present the viz HAS
+ * rendered, so a toolbar that is still absent after the grace below is absent
+ * by design, not by slowness. Bail then rather than waiting out the budget.
+ */
+async function waitForVizReadyOrSuppressed(tabId, timeoutMs, graceMs = TOOLBAR_GRACE_MS) {
+  const deadline = Date.now() + timeoutMs;
+  const graceEnds = Date.now() + graceMs;
+  while (Date.now() < deadline) {
+    let frames = [];
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world:  "MAIN",
+        func:   () => ({
+          toolbar: !!document.querySelector('[data-tb-test-id="viz-viewer-toolbar-button-download"]'),
+          store:   !!(document.querySelector('textarea[aria-label="Store"], input[aria-label="Store"]')
+            || [...document.querySelectorAll("textarea,input")].some(
+              (n) => (n.getAttribute("aria-label") || "").trim().toLowerCase() === "store")),
+        }),
+      });
+      frames = (results || []).map((r) => r?.result).filter(Boolean);
+    } catch { /* frame torn down mid-poll; try again */ }
+
+    if (frames.some((f) => f.toolbar)) return "ok";
+    // Rendered (Store box is there) but no toolbar anywhere, past the grace.
+    if (Date.now() > graceEnds && frames.some((f) => f.store)) return "suppressed";
+    await sleep(POLL_MS);
+  }
   return false;
 }
 

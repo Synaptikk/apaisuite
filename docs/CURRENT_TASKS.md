@@ -263,6 +263,73 @@ again, and renaming columns is evidently something this source does.
 `lib/tests/dept_headers.test.mjs` pins both, using the header row copied
 verbatim from the failing run's diagnostics.
 
+**TODAY CAPTURED NOTHING AT ALL, 2026-08-24 — root-caused and fixed.** The
+symptom was a card showing numbers that disagreed with Tableau. It was not a
+parsing problem: the capture had been failing outright for every store, and a
+failed capture correctly leaves the stored snapshot alone, so the tab kept
+serving an old pull and looked healthy.
+
+The crawl was adopting **MetricShot's `:embed=y&:toolbar=n` tab**. That tab
+renders the viz perfectly — the Store parameter box is right there — and has no
+toolbar; the export is driven through the toolbar's Download button. So
+`waitForVizReady` polled 120s for a button that cannot exist, per lane, and the
+result was classified `SLOW_RENDER`, whose message ends *"retrying often
+works"*. Retrying can never work. Three separate investigations went looking at
+Tableau's speed instead of at which tab was adopted.
+
+There WAS a guard (`TOOLBAR_SUPPRESSED`, added in `ccead37`) and it was
+correct — but it filtered `chrome.tabs.query` results, and that result is a
+snapshot: a tab still loading reports its PRE-REDIRECT url, so the tab passed
+the filter and only resolved to `:toolbar=n` afterwards. **A url is not a
+usable test for this.** What landed instead:
+
+- `waitForVizReadyOrSuppressed()` decides from the **DOM**: the Store box being
+  present proves the viz rendered, so a toolbar still missing after a 20s grace
+  is missing by design. Returns `"suppressed"` distinctly from a timeout.
+- On suppression the crawl **opens its own tab** rather than failing. Reloading
+  cannot help — the tab comes back `:toolbar=n` — and it belongs to another
+  module, so it is left untouched.
+- New `NO_TOOLBAR` error class, so this can never again read as slowness.
+- `modules/vizpick/lib/tests/toolbar_suppressed.test.mjs` (9 tests) pins the url
+  forms, the DOM-based detection, the ordering, and the classification.
+
+**Two bugs the tab failure had been masking**, both fixed in the same pass:
+
+- **The donut-health regression (what 0.9.7 was held for).** The HTTP replay
+  returns a DIFFERENT SHAPE for that sheet than the dialog does — a two-column
+  `VizPick, 93.33…` instead of the five ring columns — and it still contains the
+  needle, so `exportSheetText`'s needle check passes it through. Measured: 8 of
+  10 stores lost their health rings, and the two that kept them were exactly the
+  two that had driven the dialog to learn the sheet ids. The dialog returns the
+  right shape, so a failed replay-parse now falls back to it once. **10/10 with
+  health**, verified live.
+- **Raw floats leaking onto the cards.** The dialog returns Tableau's own
+  formatting (`96%`); the replay returns the xlsx cell (`96.3911399243652`).
+  Same measure, so a store printed `96%` or `96.3911399243652%` depending only
+  on which route it took — 5 of 10 affected. Percentages now round at the parse
+  boundary (`pct()`), which is where the DOM route already effectively did. The
+  raw numerators/denominators are untouched, so the x/y ratios stay exact.
+
+**`CAPTURE_BUILD` was lying, and that is what cost the most time.** It was a
+hand-written `"2026-08-16d"` sitting under a comment promising it "makes the
+provenance explicit" — while a week of daily changes shipped under that stamp.
+Three times in one session a stale failure record was read as current. It is now
+derived from the manifest version (guarded, because the node tests import
+`service.js` against a chrome stub with no `getManifest`). **A stamp nobody
+remembers to bump is worse than none: it reads as evidence.**
+
+*Testing note that matters:* re-launching Edge with `--load-extension` on a
+profile that already has that extension **re-registers it without recompiling**
+— `chrome.runtime.getURL` serves fresh source from disk while the worker keeps
+executing the cached module graph. Every "verification" run against that profile
+was silently testing old code; the truthful build stamp is what exposed it. To
+test capture changes for real, load the suite from a **different path** so it
+gets a new extension id, or use a fresh `--user-data-dir`.
+
+Verified live 2026-08-24, market 120, with a `:toolbar=n` tab deliberately open:
+10 of 10 stores captured, 10 with health, no failures, 134s across 3 lanes.
+Store 1458 matched the dashboard exactly on Cases/Locations/Overstock.
+
 **Three things made a one-line breakage take two days to find**, all fixed:
 1. VizPick emitted no telemetry, so `autoCheck` decided something every 30
    minutes and left no trace.
@@ -460,7 +527,7 @@ an alarm.
 | `livedashboard` | ✅ fixed | ✅ fixed |
 | `sparkscango` | ✅ fixed | ✅ fixed |
 | `sparkfraud` | ✅ fixed | ✅ fixed |
-| `metricshot` | no — already read-before-create | ✅ fixed |
+| `metricshot` | no — already read-before-create | ✅ fixed | ⚠️ **install site missed — see below** |
 | `aurorbuddy` (×3) | no — already read-before-create | ✅ fixed |
 | shell updater | no — already correct | n/a (SW-only file) |
 
@@ -475,6 +542,48 @@ being viewed is the entire point of that module.
 run, so their handlers are the least-exercised code in the suite. Watch the
 first few ticks of `sparkfraud`'s watchlist poll and `sparkscango`'s
 15-minute exception pulls.
+
+**metricshot was half-swept, and it cost the module its whole schedule
+(found + fixed 2026-08-25).** The sweep checked each module for the two bugs
+above; metricshot had neither (it read before creating, and its listener got
+the guard), so it was ticked off. But bug 2 has **two** halves — the listener
+site *and* the install site — and only the listener was moved. `installTickAlarm()`
+stayed in `service.js::register()`, i.e. the shell page.
+
+So the 1-minute tick alarm existed only after someone opened the Metric Shots
+page, and Chrome drops every alarm on extension update/reload. Between a reload
+and the next visit to that page there was no tick at all, and a metric that
+never ticks never posts — scheduled slots simply passed, then aged out of the
+60-minute catch-up window. **"Run now" always worked**, which is what made it
+read as a Workvivo/destination problem rather than a scheduling one.
+
+Two things made it survive that long:
+
+- The module's own comment asserted the omission was deliberate — *"metricshot's
+  alarm is started and stopped by the user's schedule, not installed
+  unconditionally"*. Nothing started or stopped it: `clearTickAlarm()` had no
+  callers anywhere in the tree. **A comment claiming an omission is intentional
+  is not evidence that anything implements the intent.**
+- Checking the symptom healed it. The UI's tick-state line does say
+  `Tick alarm not scheduled` — but reading it means opening the page, and
+  opening the page ran `register()` and installed the alarm. Every look found a
+  healthy alarm that had been created by the looking.
+
+What landed: `installTickAlarm()` is called at `module.js` top level under
+`IS_SERVICE_WORKER`, matching all seven other alarm-driven modules, and now goes
+through `ensureAlarm()` so a drifted period is repaired rather than preserved.
+It also emits `alarm-ensured`, so "does the alarm exist" is answerable from the
+log instead of by opening the page that fixes it. `ensureSeed()` deliberately
+stays in `register()` — seeding from SW boot would start posting to Workvivo for
+someone who has never opened the module; an empty metrics list just makes
+`tick()` a no-op.
+
+`shared/tests/alarm_install_sites.test.mjs` scans every `modules/*/module.js`
+and fails if one registers an alarm listener without installing an alarm beside
+it, or puts either outside the guard. It is a source scan on purpose: the thing
+that regressed is a call site, and importing each `module.js` to observe the
+effect needs a chrome stub wide enough for every transitive import in that
+module's `service.js`.
 
 ### 8. Source schema watch — landed 2026-08-22, two of ~five sources wired
 
