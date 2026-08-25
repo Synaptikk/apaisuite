@@ -29,6 +29,7 @@ import { normalizeMetric, readyForSave, validateMetric, shortScheduleSummary, me
 import { expandDueRuns, nextRun, isFirstOfDay, partsInZone, resolveZone } from "./lib/scheduler.js";
 import { captureMetric } from "./lib/capture.js";
 import { withKeepAwake } from "../../shared/sw_keepalive.js";
+import { ensureAlarm } from "../../shared/alarms.js";
 import { runDecision, failureEntry } from "./lib/retry_policy.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk,
          readNetlogFromOpenTab, listWorkvivoChannels } from "./lib/sendbird.js";
@@ -220,12 +221,18 @@ async function applyScheduleMigrations(current) {
 // ── Alarm ────────────────────────────────────────────────────────────────
 
 export async function installTickAlarm() {
-  const existing = await chrome.alarms.get(ALARM_NAME);
-  if (existing) return;                                                    // preserve schedule across resumes
-  await chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: 0.5,
+  // ensureAlarm() reads before creating (chrome.alarms.create on an existing
+  // name CANCELS and reschedules — see shared/alarms.js) but unlike the local
+  // read-then-return it had before, it also repairs a period that has drifted
+  // from TICK_PERIOD_MIN.
+  const res = await ensureAlarm(ALARM_NAME, {
     periodInMinutes: TICK_PERIOD_MIN,
+    delayInMinutes: 0.5,
   });
+  // Every branch says what it decided. Nothing scheduled these runs and left
+  // no trace for weeks; "the alarm exists" must be answerable from the log.
+  log.emit("alarm-ensured", { created: res.created, reason: res.reason, periodMin: TICK_PERIOD_MIN });
+  return res;
 }
 
 export async function clearTickAlarm() {

@@ -13,7 +13,7 @@
 // (MV3 SWs cannot use dynamic import — see the comment block at the top of
 // background/service_worker.js).
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
-import { handlers, onAlarm, register } from "./service.js";
+import { handlers, onAlarm, register, installTickAlarm } from "./service.js";
 
 // Wake-on-alarm listener MUST be registered at top-level (during initial SW
 // script execution). Same constraint as workvivo/module.js and
@@ -24,12 +24,27 @@ import { handlers, onAlarm, register } from "./service.js";
 // would fire tick() once in the SW and once in each open suite tab, each
 // posting its own screenshot to Workvivo.
 //
-// installTickAlarm() is NOT called here on purpose: metricshot's alarm is
-// started and stopped by the user's schedule, not installed unconditionally.
-// It already reads before creating, so it does not have the period-reset bug
-// described in shared/alarms.js.
+// The INSTALL has to be here too, for the same reason (fixed 2026-08-25).
+//
+// This file used to carry a comment claiming installTickAlarm() was omitted on
+// purpose because "metricshot's alarm is started and stopped by the user's
+// schedule". Nothing ever started or stopped it: installTickAlarm() was called
+// from service.js::register() and clearTickAlarm() was called from nowhere at
+// all. register() runs in the SHELL PAGE only (app.js::mountModule), so the
+// tick alarm came into existence when the user opened the Metric Shots page —
+// and Chrome drops every alarm on extension update/reload. Between a reload
+// and the next visit to that page there was no tick, so no scheduled slot ever
+// fired. This is exactly the class of bug swept out of six other modules on
+// 2026-08-20 (CURRENT_TASKS.md §7); metricshot was skipped because its
+// read-before-create made the OTHER half of that bug (period reset) absent.
+//
+// The seed install stays in register(): a first-run user who has never opened
+// the module should not start posting to Workvivo because the worker booted.
+// An empty metrics list just makes tick() a no-op.
 if (IS_SERVICE_WORKER) {
   chrome.alarms.onAlarm.addListener(onAlarm);
+  installTickAlarm().catch((e) =>
+    console.warn("[metricshot] installTickAlarm failed:", e?.message ?? e));
 }
 
 export default {
