@@ -213,6 +213,75 @@ find "$STAGED_EXT" -type f -name '*.test.mjs' -delete
 rm -f "$STAGED_EXT/firebase.json" "$STAGED_EXT/.firebaserc"
 find "$STAGED_EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 
+# ─── 2b. Inject the digitalmetrics master key ───────────────────────
+#
+# The key that encrypts associate display names and derives their join tokens.
+# It is fetched from Secret Manager and written into the STAGED copy only —
+# never the working tree, so it cannot be committed by accident. The repo keeps
+# the REPLACE_ME placeholder, which lib/crypto.js refuses to derive from.
+#
+# Why it ships at all: the tokens are deterministic so they join across
+# installs, which means every install needs the SAME key. The module's own
+# threat model concedes this — the key protects names at rest in Firestore
+# (a misconfigured database, a console reader, an export), never against
+# somebody holding the extension. Keeping it out of a PUBLIC git repo is still
+# worth doing: git history is forever and forks are permanent, while the zip
+# reaches people you handed a link to.
+#
+# Secret Manager rather than a file on this laptop because the real hazard is
+# LOSS, not disclosure. Changing the token derivation orphans every historical
+# record (see lib/names.js), so this key is effectively permanent — and a
+# permanent key living only on one machine is one disk failure from making
+# every stored week unreadable.
+#
+# Retrieve it yourself any time with:
+#   firebase functions:secrets:access DIGITALMETRICS_MASTER_KEY --project apaisuite
+DM_CRYPTO_CONFIG="$STAGED_EXT/modules/digitalmetrics/lib/crypto_config.js"
+if [[ -f "$DM_CRYPTO_CONFIG" ]]; then
+  echo "[2b/5] injecting digitalmetrics master key from Secret Manager ..."
+  DM_KEY="$(firebase functions:secrets:access DIGITALMETRICS_MASTER_KEY --project apaisuite 2>/dev/null | tr -d '\r\n')"
+
+  # Hard failure, never a warning. Shipping the placeholder would hand every
+  # install the same publicly-known "key" — and because crypto.js throws on it,
+  # the module would be visibly broken for every user instead of quietly
+  # insecure. Both outcomes are worse than a failed build.
+  if [[ -z "$DM_KEY" ]]; then
+    echo "error: could not read DIGITALMETRICS_MASTER_KEY from Secret Manager." >&2
+    echo "       Check 'firebase login:list' and that the apaisuite project is reachable." >&2
+    exit 1
+  fi
+  if [[ ${#DM_KEY} -ne 44 ]]; then
+    echo "error: DIGITALMETRICS_MASTER_KEY is ${#DM_KEY} chars, expected 44 (32 bytes base64)." >&2
+    exit 1
+  fi
+
+  # Rewrite via node, not sed: base64 contains / and +, which sed would treat
+  # as delimiters or escapes depending on the value. A key that happened to
+  # contain the wrong character would corrupt the file silently.
+  node -e '
+    const fs = require("fs");
+    const [file, key] = process.argv.slice(1);
+    const src = fs.readFileSync(file, "utf8");
+    const out = src.replace(
+      /export const MASTER_SECRET_B64 = "[^"]*";/,
+      "export const MASTER_SECRET_B64 = " + JSON.stringify(key) + ";",
+    );
+    if (out === src) {
+      console.error("error: MASTER_SECRET_B64 assignment not found in " + file);
+      process.exit(1);
+    }
+    fs.writeFileSync(file, out);
+  ' "$DM_CRYPTO_CONFIG" "$DM_KEY" || exit 1
+
+  # Prove the placeholder is gone without printing the key.
+  if grep -q "REPLACE_ME" "$DM_CRYPTO_CONFIG"; then
+    echo "error: placeholder still present after injection." >&2
+    exit 1
+  fi
+  echo "      key injected (44 chars, value not logged)"
+  unset DM_KEY
+fi
+
 # ─── 3. Zip source ──────────────────────────────────────────────────
 echo "[3/5] zipping source -> $ZIP_NAME ..."
 ZIP_OUT="$STAGE_ROOT/$ZIP_NAME"
