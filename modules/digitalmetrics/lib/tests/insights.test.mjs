@@ -101,14 +101,14 @@ test("only 5:00-5:50 AM scans count as 5am starts", () => {
   assert.deepEqual(out.people.map((p) => p.name), ["A"]);
 });
 
-test("Store Help and Fashion are excluded from late starts", () => {
-  // The donor's tab description says both are excluded; its code excluded only
-  // Store Help. This asserts the documented behaviour.
+test("Store Help is excluded from late starts", () => {
+  // Fashion was excluded here too until the category was retired 2026-08-25;
+  // apparel pickers now classify as Store Help, so they are still excluded —
+  // by the surviving rule rather than a second one.
   const out = lateStarts([
     row({ Associate: "SH", "Min. First Scan": "12/1/25 5:30 AM" }),
-    row({ Associate: "FA", "Min. First Scan": "12/1/25 5:30 AM" }),
     row({ Associate: "DG", "Min. First Scan": "12/1/25 5:30 AM" }),
-  ], [], { SH: "Store Help", FA: "Fashion", DG: "Digital" });
+  ], [], { SH: "Store Help", DG: "Digital" });
   assert.deepEqual(out.people.map((p) => p.name), ["DG"]);
 });
 

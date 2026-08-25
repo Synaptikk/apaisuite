@@ -1,0 +1,129 @@
+// modules/digitalmetrics/lib/tests/job_classify.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  classificationForJob, deriveClassifications, isValidClassification, MANUAL_ONLY,
+} from "../data/job_classify.js";
+
+// Real job titles from the store 1458 roster, 2026-08-25.
+const DIGITAL   = "Digital Personal Shopper 1-936-1451";
+const FASHION_J = "Fashion TL 1-625-7200";
+const STOCKING  = "Stocking ON TA 1-635-7440";
+const AUTO      = "Auto Care Ctr Serv Tech 6-37-823";
+
+test("a digital job title means Digital", () => {
+  assert.equal(classificationForJob(DIGITAL), "Digital");
+  assert.equal(classificationForJob("DIGITAL PERSONAL SHOPPER"), "Digital");
+});
+
+test("every other job title means Store Help", () => {
+  for (const j of [FASHION_J, STOCKING, AUTO, "Cashier"]) {
+    assert.equal(classificationForJob(j), "Store Help", j);
+  }
+});
+
+test("no job title implies nothing", () => {
+  assert.equal(classificationForJob(""), null);
+  assert.equal(classificationForJob(null), null);
+});
+
+test("'digital' must be a whole word, not a substring", () => {
+  // Guards against a future title like "Digitalis" quietly counting as digital.
+  assert.equal(classificationForJob("Digitalis Handler"), "Store Help");
+});
+
+test("derived values are all real classifications", () => {
+  for (const j of [DIGITAL, STOCKING]) assert.ok(isValidClassification(classificationForJob(j)));
+});
+
+// ── deriveClassifications ─────────────────────────────────────────────────
+
+const sched = (rows) => rows.map(([name, jobName]) => ({ name, jobName }));
+
+test("Store Help is only assigned to people who actually picked", () => {
+  // The rule as stated: "anyone with picks not digital will be store help".
+  const r = deriveClassifications(
+    sched([["ADA LOVELACE", STOCKING], ["GRACE HOPPER", STOCKING]]),
+    { pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.map["ADA LOVELACE"], "Store Help");
+  assert.equal(r.map["GRACE HOPPER"], undefined, "a non-picker must not be classified");
+});
+
+test("Digital is assigned from the title alone, picks or not", () => {
+  const r = deriveClassifications(sched([["ADA LOVELACE", DIGITAL]]), { pickers: [] });
+  assert.equal(r.map["ADA LOVELACE"], "Digital");
+});
+
+test("a manual Exceptions classification is never overwritten", () => {
+  const existing = { "ADA LOVELACE": "Exceptions" };
+  const r = deriveClassifications(
+    sched([["ADA LOVELACE", DIGITAL]]),
+    { existing, pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.map["ADA LOVELACE"], "Exceptions");
+  assert.equal(r.skippedManual, 1);
+  assert.equal(r.changes.length, 0);
+});
+
+test("an apparel job title classifies as Store Help now that Fashion is retired", () => {
+  const r = deriveClassifications(
+    sched([["GRACE HOPPER", FASHION_J]]),
+    { pickers: ["GRACE HOPPER"] },
+  );
+  assert.equal(r.map["GRACE HOPPER"], "Store Help");
+});
+
+test("MANUAL_ONLY is the one category a job title cannot express", () => {
+  assert.deepEqual([...MANUAL_ONLY], ["Exceptions"]);
+});
+
+test("a previously auto-set Store Help can be upgraded to Digital", () => {
+  const r = deriveClassifications(
+    sched([["ADA LOVELACE", DIGITAL]]),
+    { existing: { "ADA LOVELACE": "Store Help" }, pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.map["ADA LOVELACE"], "Digital");
+  assert.deepEqual(r.changes, [{ name: "ADA LOVELACE", from: "Store Help", to: "Digital" }]);
+});
+
+test("Digital wins when someone covered a non-digital shift that week", () => {
+  // The roster carries a title PER SHIFT. Covering one stocking shift does not
+  // make a digital associate store help.
+  const r = deriveClassifications(
+    sched([["ADA LOVELACE", STOCKING], ["ADA LOVELACE", DIGITAL], ["ADA LOVELACE", STOCKING]]),
+    { pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.map["ADA LOVELACE"], "Digital");
+});
+
+test("names are matched case-insensitively against the picker list", () => {
+  const r = deriveClassifications(
+    sched([["Ada Lovelace", STOCKING]]),
+    { pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.map["ADA LOVELACE"], "Store Help");
+});
+
+test("no change means nothing to write", () => {
+  const r = deriveClassifications(
+    sched([["ADA LOVELACE", DIGITAL]]),
+    { existing: { "ADA LOVELACE": "Digital" }, pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.changes.length, 0);
+});
+
+test("pickers with no scheduled shift are reported as unresolved", () => {
+  const r = deriveClassifications(sched([["ADA LOVELACE", DIGITAL]]), { pickers: ["ADA LOVELACE", "ALAN TURING"] });
+  assert.deepEqual(r.unresolved, ["ALAN TURING"]);
+});
+
+test("rows without a name or a title are ignored", () => {
+  const r = deriveClassifications(
+    [{ name: "", jobName: DIGITAL }, { name: "ADA LOVELACE", jobName: null }],
+    { pickers: ["ADA LOVELACE"] },
+  );
+  assert.equal(r.derivedFrom, 0);
+  assert.equal(r.changes.length, 0);
+});

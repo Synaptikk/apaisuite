@@ -258,19 +258,21 @@ if [[ -f "$DM_CRYPTO_CONFIG" ]]; then
   # Rewrite via node, not sed: base64 contains / and +, which sed would treat
   # as delimiters or escapes depending on the value. A key that happened to
   # contain the wrong character would corrupt the file silently.
+  # Assert the PATTERN matched, not that the text changed. "Unchanged" is a
+  # perfectly valid outcome — a developer who has run dev/inject-dev-key.sh has
+  # the same key in their working tree already, and the staged copy inherits
+  # it. Treating that as "assignment not found" aborted the release for no
+  # reason, on exactly the machine that releases get cut from.
   node -e '
     const fs = require("fs");
     const [file, key] = process.argv.slice(1);
     const src = fs.readFileSync(file, "utf8");
-    const out = src.replace(
-      /export const MASTER_SECRET_B64 = "[^"]*";/,
-      "export const MASTER_SECRET_B64 = " + JSON.stringify(key) + ";",
-    );
-    if (out === src) {
+    const RE = /export const MASTER_SECRET_B64 = "[^"]*";/;
+    if (!RE.test(src)) {
       console.error("error: MASTER_SECRET_B64 assignment not found in " + file);
       process.exit(1);
     }
-    fs.writeFileSync(file, out);
+    fs.writeFileSync(file, src.replace(RE, "export const MASTER_SECRET_B64 = " + JSON.stringify(key) + ";"));
   ' "$DM_CRYPTO_CONFIG" "$DM_KEY" || exit 1
 
   # Prove the placeholder is gone without printing the key.

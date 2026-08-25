@@ -29,5 +29,11 @@ digitallocks-*.json
 *-probe.json
 *-capture.json
 
+# Screenshots taken against LIVE reports show real associate names — the
+# digitalmetrics grid renders ~60 of them per frame, and this repo is public.
+# The handful already tracked predate this rule and stay tracked; anything new
+# needs `git add -f` and a look at what is actually in the frame first.
+dev/screenshots/*.png
+
 # Local tooling only — playwright for dev/cws-drive.mjs, never shipped.
 node_modules/

@@ -14,6 +14,90 @@
   gap: var(--sp-4);
 }
 
+/* Header — same arrangement as modules/digitalrollup's .dmr-header so the two
+   read as one product: identity on the left, live controls on the right. */
+.module-digitalmetrics .dm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.module-digitalmetrics .dm-title h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+  margin: 0;
+}
+
+.module-digitalmetrics .dm-subtitle {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+}
+
+.module-digitalmetrics .dm-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.module-digitalmetrics .dm-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.module-digitalmetrics .dm-auto input {
+  accent-color: var(--module-accent);
+  cursor: pointer;
+}
+
+.module-digitalmetrics .dm-freshness {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  padding: 2px var(--sp-2);
+  border-radius: var(--rad-pill);
+}
+/* A sync that partly failed is not a success and not a crash — it needs its
+   own colour, or the pill reads green while a source is silently broken. */
+.module-digitalmetrics .dm-freshness[data-kind="warn"] {
+  color: var(--apai-warn-ink, var(--apai-ink));
+  border-color: var(--apai-warn, var(--apai-border));
+}
+.module-digitalmetrics .dm-freshness[data-kind="error"] {
+  color: var(--apai-danger-ink, var(--apai-ink));
+  border-color: var(--apai-danger, var(--apai-border));
+}
+
+/* `hidden` is only a UA-stylesheet `display: none`, which a class selector
+   outranks — so without this the spinner sits there spinning forever while
+   idle, which reads as "permanently syncing". */
+.module-digitalmetrics .dm-spinner[hidden],
+.module-digitalmetrics .dm-freshness[hidden] { display: none; }
+
+.module-digitalmetrics .dm-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: var(--sp-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: dm-spin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes dm-spin { to { transform: rotate(360deg); } }
+
+/* Pushes the import controls away from the two pickers, so the toolbar reads
+   as "what am I looking at" then "what can I do to it". */
+.module-digitalmetrics .dm-toolbar-gap { flex: 1 1 auto; }
+
 .module-digitalmetrics .dm-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -79,37 +163,67 @@
 
 .module-digitalmetrics .dm-section { margin-bottom: var(--sp-6); }
 
+/* Section headings are titles, not eyebrow labels. The web app sets these at
+   24px/700 sentence case, and that hierarchy is what stops the page reading as
+   one undifferentiated field of tiles — the small uppercase version competed
+   with the tile labels, which are themselves small uppercase. */
 .module-digitalmetrics .dm-section-title {
   margin: 0 0 var(--sp-3);
-  font-size: var(--fs-sm, 13px);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--apai-muted);
+  font-size: var(--fs-lg, 18px);
+  font-weight: var(--fw-semi, 600);
+  letter-spacing: -0.01em;
+  color: var(--apai-heading);
 }
 
+/* Tile geometry follows the standalone web app (digitalmetrics-fe0f3.web.app):
+   compact tiles that PACK LEFT rather than stretching across the row, a small
+   uppercase letter-spaced label, and a large numeral that carries the tile.
+
+   `auto-fit … 1fr` was the wrong tool — with seven tiles on a wide screen it
+   stretched each one to a third of the viewport, so a two-character number sat
+   marooned in a huge card. `auto-fill` with a max width keeps them tile-sized
+   and lets the row end where the data ends.
+
+   Colour still comes from tokens.css; only the shapes are borrowed. */
 .module-digitalmetrics .dm-stat-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  /* 156px is not arbitrary: the Overview row has seven tiles, and seven at
+     168px plus gaps overflowed the suite's content width, orphaning AVG FTPR
+     on a row of its own. Narrower screens still wrap, just evenly. */
+  grid-template-columns: repeat(auto-fill, minmax(126px, 156px));
   gap: var(--sp-3);
+  justify-content: start;
 }
 
 .module-digitalmetrics .dm-stat {
-  padding: var(--sp-4);
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + 2px);
   border: 1px solid var(--apai-border);
-  border-radius: var(--rad-md);
+  border-radius: var(--rad-lg, 10px);
   background: var(--apai-bg-elev);
   box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 92px;
+  justify-content: center;
 }
 
 .module-digitalmetrics .dm-stat-label {
-  font-size: var(--fs-sm, 12px);
+  font-size: 11px;
+  font-weight: var(--fw-semi, 600);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--apai-muted);
 }
 
 .module-digitalmetrics .dm-stat-value {
   margin-top: var(--sp-1);
-  font-size: 24px;
-  font-weight: 600;
+  /* The web app's headline numeral is 32px; that is what makes a tile read as
+     a figure rather than a form field. */
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--apai-ink);
 }
 

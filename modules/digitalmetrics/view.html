@@ -1,8 +1,33 @@
 <div class="dm-shell">
+  <!-- Header mirrors modules/digitalrollup: title left, live controls right.
+       The suite's own .btn / .badge / .field classes do the visual work — a
+       module that rolls its own buttons reads as a bolt-on. -->
+  <header class="dm-header">
+    <div class="dm-title">
+      <h1>Digital Metrics</h1>
+      <p class="dm-subtitle muted">Fulfilment performance, schedules and daily assignments.</p>
+    </div>
+
+    <div class="dm-actions">
+      <label class="dm-auto" title="Sync Tableau metrics and the schedule hourly in the background">
+        <input type="checkbox" id="dm-pull-enabled">
+        <span>Auto-sync</span>
+      </label>
+      <span class="dm-freshness" id="dm-pull-status" hidden></span>
+      <button class="btn btn-primary" id="dm-pull-now" type="button">
+        <span class="btn-label">Sync now</span>
+        <span class="dm-spinner" id="dm-pull-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
   <nav class="dm-tabs" id="dm-tabs">
     <button class="dm-tab is-active" data-dm-page="dashboard">Dashboard</button>
     <button class="dm-tab" data-dm-page="insights">Insights</button>
-    <button class="dm-tab" data-dm-page="classify">Classify</button>
+<!-- Classify was retired 2026-08-25. Digital / Store Help come from the
+         scheduler's job titles (lib/data/job_classify.js), and Exceptions is
+         set by assigning the EXC task on the Assignments grid. The page module
+         still exists and still works; it is simply no longer a tab. -->
     <button class="dm-tab" data-dm-page="comparison">Compare Groups</button>
     <button class="dm-tab" data-dm-page="opportunities">Opportunities</button>
     <button class="dm-tab" data-dm-page="leaderboard">Leaderboard</button>
@@ -11,24 +36,26 @@
     <button class="dm-tab" data-dm-page="faq">FAQ</button>
   </nav>
 
+  <!-- Import is automatic (Sync now / Auto-sync). The manual .xlsx uploads and
+       the separate "Add store" button are gone: typing a store number here is
+       now the way to add one, and the sync fetches whatever it needs. -->
   <div class="dm-toolbar">
     <label class="field">
-      <span>Store</span>
-      <select id="dm-store"><option value="">Loading…</option></select>
+      <span class="field-label">Store</span>
+      <!-- A free-text input with a datalist rather than a <select>: any store
+           number can be typed, and known ones are offered as suggestions. -->
+      <input class="input dm-store-input" id="dm-store" list="dm-store-list"
+             inputmode="numeric" autocomplete="off" placeholder="Store #" size="8">
+      <datalist id="dm-store-list"></datalist>
     </label>
     <label class="field">
-      <span>Week</span>
-      <select id="dm-week"><option value="">—</option></select>
+      <span class="field-label">Week</span>
+      <select class="input" id="dm-week"><option value="">—</option></select>
     </label>
-    <label class="btn dm-upload">
-      Upload metrics
-      <input type="file" id="dm-upload-metrics" accept=".xlsx" hidden>
-    </label>
-    <label class="btn dm-upload">
-      Import Daily Board
-      <input type="file" id="dm-upload-board" accept=".xlsx" hidden>
-    </label>
-    <span class="pill" id="dm-status">idle</span>
+
+    <span class="dm-toolbar-gap"></span>
+
+    <span class="badge badge-muted" id="dm-status">idle</span>
   </div>
 
   <section class="dm-page" id="dm-page"></section>

@@ -9,11 +9,13 @@ import { parsePickDate } from "./parse.js";
 const LATE_FLAG_MINUTES = 5;    // >5:05 counts as late for the day count
 const LATE_MAX_MINUTE   = 50;   // 5:51+ is an early 6am start, not a late 5am one
 
-// Documented behaviour (see the donor's tab description) is to exclude both
-// Store Help and Fashion from late starts: they work different schedules and
-// are not expected at 5am. The donor's CODE excluded only Store Help, so this
-// is a deliberate correction, not an accidental divergence.
-const LATE_START_EXCLUDED = new Set(["Store Help", "Fashion"]);
+// Store Help is excluded from late starts: they work different schedules and
+// are not expected at 5am.
+//
+// Fashion was also excluded until 2026-08-25, when the category was retired
+// (data/classify.js) — apparel pickers now classify as Store Help, so they are
+// still excluded, just by the surviving rule rather than a second one.
+const LATE_START_EXCLUDED = new Set(["Store Help"]);
 
 const picksOf = (row) =>
   (row["Picked As Req Qty"] || 0) + (row["Exception Picked As Req Qty"] || 0);

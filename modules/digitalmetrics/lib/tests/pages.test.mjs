@@ -88,7 +88,7 @@ test("dashboard prompts for a store when none is selected", () => {
 
 test("comparison renders a card per classification, including empty groups", () => {
   const html = comparison.render(ctx());
-  for (const group of ["Digital", "Exceptions", "Fashion", "Store Help"]) {
+  for (const group of ["Digital", "Exceptions", "Store Help"]) {
     assert.ok(html.includes(group), `missing ${group} card`);
   }
   assert.match(html, /No associates in this group/, "empty groups say so");
@@ -135,7 +135,7 @@ test("leaderboard sorts ascending for metrics where lower is better", () => {
 
 test("classify shows a radio per category for each associate", () => {
   const html = classifyPage.render(ctx());
-  for (const c of ["Digital", "Exceptions", "Fashion", "Store Help", "Unclassified"]) {
+  for (const c of ["Digital", "Exceptions", "Store Help", "Unclassified"]) {
     assert.ok(html.includes(`value="${c}"`), `missing ${c} option`);
   }
   assert.match(html, /checked/, "current classification is pre-selected");
@@ -144,11 +144,11 @@ test("classify shows a radio per category for each associate", () => {
 test("classify search and filter narrow the list", () => {
   const two = ctx({
     associates: [assoc({ name: "ALICE" }), assoc({ name: "BOB" })],
-    classifications: { ALICE: "Digital", BOB: "Fashion" },
+    classifications: { ALICE: "Digital", BOB: "Store Help" },
   });
   assert.ok(classifyPage.render({ ...two, ui: { classifySearch: "ALI" } }).includes("ALICE"));
   assert.ok(!classifyPage.render({ ...two, ui: { classifySearch: "ALI" } }).includes(">BOB<"));
-  assert.ok(!classifyPage.render({ ...two, ui: { classifyFilter: "Fashion" } }).includes(">ALICE<"));
+  assert.ok(!classifyPage.render({ ...two, ui: { classifyFilter: "Store Help" } }).includes(">ALICE<"));
 });
 
 test("FAQ documents the metric definitions the other modules implement", () => {

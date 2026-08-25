@@ -66,11 +66,11 @@ export function render(ctx) {
 export function wire(ctx, root) {
   const { host, onClassify, onUiChange } = ctx;
 
-  const offRadio = host.ui.delegate(root, "[data-dm-classify]", "change", (_e, el) => {
+  const offRadio = host.ui.delegate(root, "change", "[data-dm-classify]", (_e, el) => {
     onClassify?.(el.dataset.dmClassify, el.value);
   });
 
-  const offFilter = host.ui.delegate(root, "[data-dm-filter]", "click", (_e, el) => {
+  const offFilter = host.ui.delegate(root, "click", "[data-dm-filter]", (_e, el) => {
     onUiChange?.({ classifyFilter: el.dataset.dmFilter });
   });
 

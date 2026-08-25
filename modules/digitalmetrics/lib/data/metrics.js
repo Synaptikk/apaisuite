@@ -131,19 +131,23 @@ const mean = (list, key) =>
   list.length ? list.reduce((s, a) => s + a[key], 0) / list.length : 0;
 
 /**
- * Group averages. `classifications` maps associate name → classification and
- * is only consulted to exclude Fashion from the pick-rate benchmark.
+ * Group averages.
+ *
+ * `classifications` used to be consulted here to keep Fashion out of the
+ * pick-rate benchmark. That category was retired 2026-08-25 (see
+ * data/classify.js) — apparel pickers now fall out as Store Help — so the
+ * filter had become a no-op reading a value nothing sets. The parameter stays
+ * for call-site compatibility and for the next benchmark that needs it.
  */
 export function benchmarks(associates, classifications = {}) {
   const regular   = associates.filter((a) => !a.isExceptionsPicker);
   const exception = associates.filter((a) =>  a.isExceptionsPicker);
-  const nonFashion = regular.filter((a) => classifications[a.name] !== "Fashion");
 
   return {
     ftpr:      round1(mean(regular, "ftpr")),
     nil_rate:  round1(mean(regular, "nil_rate")),
     sub_rate:  round1(mean(regular, "sub_rate")),
-    pick_rate: round1(mean(nonFashion, "pick_rate")),
+    pick_rate: round1(mean(regular, "pick_rate")),
 
     exc_ftpr:      round1(mean(exception, "ftpr")),
     exc_nil_rate:  round1(mean(exception, "nil_rate")),

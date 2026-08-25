@@ -97,14 +97,27 @@ test("exception pickers are benchmarked only against each other", () => {
   assert.equal(b.exc_ftpr, 50);
 });
 
-test("Fashion is excluded from the pick-rate benchmark but not from FTPR", () => {
+test("every regular picker counts toward the pick-rate benchmark", () => {
+  // Fashion used to be filtered out here. The category was retired 2026-08-25
+  // (data/classify.js) and nothing sets it any more, so the exclusion was
+  // reading a value that never appears — the benchmark now includes everyone
+  // who is not an exceptions picker.
   const list = aggregate([
     row({ Associate: "DIG", "Pick Rate": 100 }),
-    row({ Associate: "FSH", "Pick Rate": 20 }),
+    row({ Associate: "OTH", "Pick Rate": 20 }),
   ]);
-  const b = benchmarks(list, { FSH: "Fashion" });
-  assert.equal(b.pick_rate, 100, "Fashion's rate would drag this to 60");
-  assert.equal(b.ftpr, 90, "but Fashion still counts toward FTPR");
+  const b = benchmarks(list, {});
+  assert.equal(b.pick_rate, 60, "the mean of 100 and 20");
+  assert.equal(b.ftpr, 90);
+});
+
+test("benchmarks ignore a classifications map it no longer consults", () => {
+  const list = aggregate([
+    row({ Associate: "DIG", "Pick Rate": 100 }),
+    row({ Associate: "OTH", "Pick Rate": 20 }),
+  ]);
+  // A legacy stored "Fashion" must not resurrect the old filtering.
+  assert.equal(benchmarks(list, { OTH: "Fashion" }).pick_rate, 60);
 });
 
 test("benchmarks over an empty list are zero, not NaN", () => {

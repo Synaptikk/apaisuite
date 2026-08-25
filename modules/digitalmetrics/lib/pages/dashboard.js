@@ -18,13 +18,17 @@ export function render(ctx) {
   const t      = totals(associates);
 
   return [
+    // Fashion is retired (data/classify.js). Unclassified is no longer a
+    // standing tile either — classification comes from the scheduler now, so
+    // it should be zero — but it still APPEARS when it isn't, because a picker
+    // the scheduler has no title for is a real gap worth seeing rather than a
+    // number to hide.
     section("Overview", statRow([
       statCard("Total Associates", t.associates),
       statCard("Digital",      counts.Digital),
       statCard("Exceptions",   counts.Exceptions,   { tone: "warn" }),
-      statCard("Fashion",      counts.Fashion,      { tone: "fashion" }),
       statCard("Store Help",   counts["Store Help"], { tone: "help" }),
-      statCard("Unclassified", counts.Unclassified, { tone: "warn" }),
+      ...(counts.Unclassified ? [statCard("Unclassified", counts.Unclassified, { tone: "warn" })] : []),
       statCard("Avg FTPR", `${benchmarks.ftpr ?? 0}%`),
     ])),
 

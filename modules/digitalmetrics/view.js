@@ -24,13 +24,14 @@ import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
-import { parseWorkbook } from "./lib/data/xlsx.js";
-import { parseDailyBoard } from "./lib/data/daily_board.js";
 import { parseSchedulePayload } from "./lib/data/schedule_import.js";
 
 const PAGES = {
   dashboard,
   insights,
+  // Retired as a tab 2026-08-25 (see view.html) but kept registered: the page
+  // still renders correctly, so restoring it is one line of markup rather than
+  // a re-port. Unreachable until a .dm-tab points at it.
   classify:      classifyPage,
   comparison,
   opportunities,
@@ -41,6 +42,32 @@ const PAGES = {
 };
 
 export async function mount(host, container) {
+  // ── Inject the module stylesheet, and WAIT for it ──────────────────────
+  //
+  // The shell loads styles/{tokens,base,layout,components}.css and nothing
+  // else — each module links its own sheet from here (same as
+  // digitalrollup/view.js and vizpick/view.js). The port omitted this
+  // entirely, so every rule in styles.css was dead: tabs rendered as default
+  // browser buttons, the stat grid laid out as stacked block text, and the
+  // module looked unstyled because it WAS unstyled.
+  //
+  // Awaiting matters as much as adding: without it the first render happens
+  // before the sheet applies, and the grid lays out with default block rules
+  // until something forces a reflow.
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = host.url("styles.css");
+  link.dataset.module = host.id;
+  const cssReady = new Promise((resolve) => {
+    if (link.sheet) return resolve();
+    link.addEventListener("load", resolve, { once: true });
+    // Render unstyled rather than not at all.
+    link.addEventListener("error", resolve, { once: true });
+    setTimeout(resolve, 3000);
+  });
+  document.head.appendChild(link);
+  await cssReady;
+
   container.innerHTML = await fetch(host.url("view.html")).then((r) => r.text());
 
   const $ = (sel) => container.querySelector(sel);
@@ -73,8 +100,20 @@ export async function mount(host, container) {
   // ── Messaging helper ─────────────────────────────────────────────────────
   // Every SW call funnels through here so one failure path handles them all;
   // the donor let Firebase errors vanish into console.log.
+  // host.messaging.send REJECTS on a non-ok response (shared/messaging.js), so
+  // this has to catch as well as check — an uncaught rejection here shows up in
+  // the console as a bare "digitalmetrics.<type> failed" with the real reason
+  // nowhere in sight, which is exactly what it did.
   async function call(type, payload = {}) {
-    const res = await host.messaging.send(type, payload);
+    let res;
+    try {
+      res = await host.messaging.send(type, payload);
+    } catch (e) {
+      const message = String(e?.message ?? e);
+      setStatus(`error: ${message}`);
+      host.ui.toast(`${type}: ${message}`, { kind: "error" });
+      return null;
+    }
     if (!res?.ok) {
       setStatus(`error: ${res?.error || "unknown"}`);
       return null;
@@ -118,8 +157,26 @@ export async function mount(host, container) {
       onPrint:         () => window.print(),
     };
 
-    el.innerHTML = page.render(ctx);
-    disposePage = page.wire?.(ctx, el) || null;
+    // A renderer that throws must NOT leave the previous tab's markup sitting
+    // there. Without this, `el.innerHTML = page.render(ctx)` never runs on a
+    // throw, so five tabs silently displayed the Dashboard's content and
+    // looked like they worked.
+    try {
+      el.innerHTML = page.render(ctx);
+    } catch (err) {
+      el.innerHTML =
+        `<div class="dm-section"><h3 class="dm-section-title">${host.ui.escapeHtml(state.page)} failed to render</h3>` +
+        `<p class="muted">${host.ui.escapeHtml(String(err?.message ?? err))}</p></div>`;
+      console.error(`[digitalmetrics] ${state.page}.render threw:`, err);
+      return;
+    }
+
+    try {
+      disposePage = page.wire?.(ctx, el) || null;
+    } catch (err) {
+      console.error(`[digitalmetrics] ${state.page}.wire threw:`, err);
+      disposePage = null;
+    }
   }
 
   function selectPage(page) {
@@ -162,22 +219,76 @@ export async function mount(host, container) {
   // ── Data loading ─────────────────────────────────────────────────────────
   async function loadStores() {
     setStatus("loading stores…");
-    const list = await call("list_stores");
-    if (!list) return;
+    const list = (await call("list_stores")) || [];
 
-    const sel = $("#dm-store");
-    sel.innerHTML = list.length
-      ? list.map((s) => `<option value="${host.ui.escapeHtml(s)}">${host.ui.escapeHtml(s)}</option>`).join("")
-      : `<option value="">no stores</option>`;
+    // Known stores become suggestions, not the only options — the field itself
+    // accepts any store number.
+    const dl = $("#dm-store-list");
+    if (dl) {
+      dl.innerHTML = list
+        .map((s) => `<option value="${host.ui.escapeHtml(s)}"></option>`).join("");
+    }
 
     state.classifications = (await call("get_classifications")) || {};
 
     if (list.length) {
-      state.store = list[0];
+      state.store = state.store && list.includes(state.store) ? state.store : list[0];
+      $("#dm-store").value = state.store;
       await loadWeeks();
-    } else {
-      setStatus("no stores");
+      return;
     }
+
+    // Empty is the FIRST-RUN state, not an error: the database starts empty and
+    // stores only appear once data is imported.
+    const dflt = await call("get_default_store");
+    if (dflt?.store) {
+      state.store = dflt.store;
+      $("#dm-store").value = dflt.store;
+      setStatus(`store ${dflt.store} (from your profile) — Sync now to load it`);
+    } else {
+      setStatus("type a store number, then Sync now");
+    }
+  }
+
+  /**
+   * Switch to whatever store was typed.
+   *
+   * An unknown store is not an error — it is the way you add one. Register it,
+   * then pull it, so typing a number is the whole workflow rather than a
+   * separate "Add store" step.
+   */
+  async function selectStore(raw) {
+    const entered = String(raw ?? "").trim();
+    if (!entered) return;
+    if (!/^\d{1,5}$/.test(entered)) {
+      host.ui.toast("A store number is 1–5 digits.", { kind: "error" });
+      return;
+    }
+    const store = String(parseInt(entered, 10));   // no leading zeros
+    $("#dm-store").value = store;
+
+    if (store === state.store) return;
+    state.store = store;
+    // Anything cached belongs to the store we just left.
+    state.recentAssignments = null;
+    state.patterns = null;
+    state.ui = { ...state.ui, assocSelected: null, assocSearch: "" };
+
+    const known = (await call("list_stores")) || [];
+    if (!known.includes(store)) {
+      setStatus(`adding store ${store}…`);
+      const added = await call("add_store", { store });
+      if (!added) return;
+      setStatus(`pulling store ${store}… this opens a background tab`);
+      const pulled = await call("pull_store", { store, force: true });
+      if (pulled) {
+        host.ui.toast(`Store ${store}: ${(pulled.rows ?? 0).toLocaleString()} rows imported.`);
+      }
+      await loadStores();
+      return;
+    }
+
+    await loadWeeks();
   }
 
   async function loadWeeks() {
@@ -256,7 +367,7 @@ export async function mount(host, container) {
     // grid opens with the right people and their shift windows already marked
     // rather than empty.
     state.assignments = doc?.associates?.length
-      ? mergeShifts(doc.associates, schedule?.associates)
+      ? digitalTeamOnly(mergeShifts(doc.associates, schedule?.associates))
       : rosterFromSchedule(schedule);
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
     // Suggestions for cells that are already filled are noise; drop them here
@@ -267,12 +378,58 @@ export async function mount(host, container) {
     setStatus("ready");
   }
 
+  /**
+   * Is this person on the digital team?
+   *
+   * The scheduler hands back the WHOLE store roster — 232 people on a weekday
+   * at store 1458 — and a task grid listing every stocker and cashier is
+   * unusable. Classification is derived automatically now
+   * (lib/data/job_classify.js), so the grid can filter to the people it is
+   * actually for.
+   *
+   * Exceptions counts as digital: those ARE digital associates, just working
+   * exception picks. Store Help is excluded but still reachable through
+   * "Add associate" on the days someone helps out.
+   */
+  function isDigitalTeam(name) {
+    const c = state.classifications[String(name || "").toUpperCase()]
+           ?? state.classifications[name];
+    return c === "Digital" || c === "Exceptions";
+  }
+
+  /**
+   * Narrow a grid roster to the digital team, keeping anyone already working.
+   *
+   * Applied to SAVED days too, not just freshly-built ones. Days written
+   * before the filter existed hold the whole 232-person store roster, and
+   * leaving them unfiltered would mean the grid stayed unusable for exactly
+   * the dates someone had already opened.
+   *
+   * The "already working" exemption is what makes that safe: a Store Help
+   * associate added by hand, or given a task, keeps their row. Only untouched
+   * non-digital rows are dropped.
+   */
+  function digitalTeamOnly(list) {
+    if (!Array.isArray(list)) return [];
+    if (!Object.keys(state.classifications).length) return list;
+    return list.filter((a) =>
+      isDigitalTeam(a.name) ||
+      Object.keys(a.slots || {}).length > 0 ||
+      a.status);
+  }
+
   /** Schedule rows → blank grid rows, ordered by shift start. */
   function rosterFromSchedule(schedule) {
     const list = schedule?.associates;
     if (!Array.isArray(list)) return [];
 
-    return [...list]
+    // Before the first sync there are no classifications, and filtering on
+    // them would produce an empty grid — which reads as "broken", not as "not
+    // synced yet". Show everyone until we actually know who is who.
+    const known = Object.keys(state.classifications).length > 0;
+    const roster = known ? list.filter((a) => isDigitalTeam(a.name)) : list;
+
+    return [...roster]
       .sort((a, b) => (a.startSlot ?? 99) - (b.startSlot ?? 99) || a.name.localeCompare(b.name))
       .map((a) => ({
         name:       a.name,
@@ -345,6 +502,32 @@ export async function mount(host, container) {
       delete rest[slot];
       state.suggestions = { ...state.suggestions, [name]: rest };
     }
+    syncExceptionClassification(name);
+  }
+
+  /**
+   * Assigning the EXC task IS how someone becomes an Exceptions associate.
+   *
+   * `Exceptions` is the one classification a job title cannot express — the
+   * scheduler says "Digital Personal Shopper" whether or not that person spends
+   * their day on exception picks. With the Classify tab retired, the grid is
+   * the natural place to say it: give someone EXC and they are an exceptions
+   * associate; take every EXC cell away and they go back to Digital.
+   *
+   * Only ever moves between Digital and Exceptions. Store Help is left alone —
+   * a store associate covering an exception hour has not joined the digital
+   * team, and reclassifying them would drag them into every digital benchmark.
+   */
+  function syncExceptionClassification(name) {
+    const row = state.assignments.find((a) => a.name === name);
+    if (!row) return;
+
+    const hasExc = Object.values(row.slots || {}).some((t) => t === "EXC");
+    const key = String(name).toUpperCase();
+    const current = state.classifications[key] ?? state.classifications[name];
+
+    if (hasExc && current === "Digital")          setClassification(name, "Exceptions");
+    else if (!hasExc && current === "Exceptions") setClassification(name, "Digital");
   }
 
   function toggleStatus(name, status) {
@@ -428,62 +611,12 @@ export async function mount(host, container) {
   }
 
   // ── Imports ──────────────────────────────────────────────────────────────
-  // Parsing happens here, in the page, and only the parsed records are sent to
-  // the service worker — see service.js::import_metrics for why.
-
-  async function bytesOf(file) {
-    return new Uint8Array(await file.arrayBuffer());
-  }
-
-  async function uploadMetrics(file) {
-    if (!file) return;
-    setStatus(`reading ${file.name}…`);
-
-    const parsed = await parseWorkbook(await bytesOf(file));
-    if (!parsed.ok) {
-      setStatus("import failed");
-      host.ui.toast(parsed.reason, { kind: "error" });
-      return;
-    }
-
-    setStatus(`importing ${parsed.records.length} rows…`);
-    const result = await call("import_metrics", {
-      records: parsed.records, fileName: file.name,
-    });
-    if (!result) return;
-
-    const weeksWritten = result.written.length;
-    const stores = [...new Set(result.written.map((w) => w.store))];
-    host.ui.toast(
-      `Imported ${weeksWritten} week${weeksWritten === 1 ? "" : "s"} across ` +
-      `${stores.length} store${stores.length === 1 ? "" : "s"}` +
-      (result.skippedRows ? ` (${result.skippedRows} rows skipped)` : ""));
-
-    await loadStores();
-  }
-
-  async function uploadDailyBoard(file) {
-    if (!file) return;
-    if (!state.store) {
-      host.ui.toast("Select a store first.", { kind: "error" });
-      return;
-    }
-
-    setStatus(`reading ${file.name}…`);
-    const parsed = await parseDailyBoard(await bytesOf(file));
-    if (!parsed.ok) {
-      setStatus("import failed");
-      host.ui.toast(parsed.reason, { kind: "error" });
-      return;
-    }
-
-    const result = await call("import_daily_board", { store: state.store, days: parsed.days });
-    if (!result) return;
-
-    host.ui.toast(`Imported ${result.written.length} days into store ${state.store}.`);
-    setStatus("ready");
-    if (state.page === "assignments") await loadAssignments();
-  }
+  // Manual .xlsx upload was removed 2026-08-25: metrics and schedules now
+  // arrive from the automated pull (Sync now / Auto-sync), which reads the same
+  // Tableau worksheet the "Associate By Day" export came from. The parsers
+  // themselves are kept — lib/data/xlsx.js and lib/data/daily_board.js still
+  // back the import_metrics / import_daily_board handlers, which remain
+  // available for a one-off recovery.
 
   /**
    * Import a week of schedules from the scraper's clipboard export.
@@ -533,32 +666,107 @@ export async function mount(host, container) {
     if (state.page === "assignments") await loadAssignments();
   }
 
+  // ── Automated pull ───────────────────────────────────────────────────────
+  //
+  // A pull opens background tabs against Tableau and the scheduler, so it is
+  // never silent: the pill reports what happened, including partial success.
+  // A run that fetched metrics but not the schedule is a normal outcome, not
+  // an error to swallow.
+
+  function setPullStatus(text, { kind = "" } = {}) {
+    const el = $("#dm-pull-status");
+    if (!el) return;
+    el.hidden = !text;
+    el.textContent = text || "";
+    el.dataset.kind = kind;
+  }
+
+  async function refreshPullState() {
+    const state = await call("get_pull_state");
+    if (!state) return;
+    const box = $("#dm-pull-enabled");
+    if (box) box.checked = !!state.enabled;
+    if (state.running) { setPullStatus("syncing…"); return; }
+    if (state.lastRunAt) {
+      const mins = Math.round((Date.now() - state.lastRunAt) / 60000);
+      const when = mins < 1 ? "just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+      const failed = state.lastResult?.errors?.length;
+      setPullStatus(`synced ${when}${failed ? ` · ${failed} failed` : ""}`,
+                    { kind: failed ? "warn" : "ok" });
+    } else {
+      setPullStatus("never synced");
+    }
+  }
+
+  async function pullNow() {
+    const btn = $("#dm-pull-now");
+    const spinner = $("#dm-pull-spinner");
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.hidden = false;
+    setPullStatus("syncing…");
+    try {
+      const res = await call("pull_now", {});
+      if (!res) { setPullStatus("sync failed", { kind: "error" }); return; }
+
+      // The run declined to start (already running / too recent) — not a failure.
+      if (res.notRun) {
+        setPullStatus(res.notRun);
+        host.ui.toast(res.notRun);
+        return;
+      }
+
+      const rows = (res.metrics || []).reduce((n, m) => n + (m.rows || 0), 0);
+      const storesDone = (res.metrics || []).filter((m) => !m.skipped).length;
+      const parts = [];
+      if (storesDone) parts.push(`${rows.toLocaleString()} rows from ${storesDone} store${storesDone === 1 ? "" : "s"}`);
+      if (res.schedule) parts.push(`${res.schedule.shifts} shifts`);
+      if (!parts.length) parts.push("already up to date");
+
+      host.ui.toast(`Sync: ${parts.join(", ")}.`);
+
+      // Surface every failure individually — one broken source must not read
+      // as a total failure, and a silent partial is worse than either.
+      for (const e of res.errors || []) {
+        host.ui.toast(`${e.scope}: ${e.error}`, { kind: "error" });
+      }
+      for (const w of res.schedule?.warnings || []) {
+        host.ui.toast(w, { kind: "error" });
+      }
+
+      await loadStores();
+      if (state.page === "assignments") await loadAssignments();
+    } finally {
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.hidden = true;
+      await refreshPullState();
+    }
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────────────
-  const offTabs = host.ui.delegate(container, ".dm-tab", "click", (_e, el) => {
+  const offTabs = host.ui.delegate(container, "click", ".dm-tab", (_e, el) => {
     selectPage(el.dataset.dmPage);
   });
 
-  const onStore = async (e) => {
-    state.store = e.target.value;
-    // Assignment cache and any open associate report belong to the old store.
-    state.recentAssignments = null;
-    state.patterns = null;
-    state.ui = { ...state.ui, assocSelected: null, assocSearch: "" };
-    await loadWeeks();
-  };
+  // `change` fires on blur and on picking a datalist suggestion; Enter makes
+  // typing a store feel immediate rather than requiring a click elsewhere.
+  const onStore = (e) => selectStore(e.target.value);
+  const onStoreKey = (e) => { if (e.key === "Enter") selectStore(e.target.value); };
   const onWeek  = async (e) => { state.week  = e.target.value; await loadWeek(); };
   $("#dm-store")?.addEventListener("change", onStore);
+  $("#dm-store")?.addEventListener("keydown", onStoreKey);
   $("#dm-week")?.addEventListener("change", onWeek);
 
-  // Reset the input's value after each pick so choosing the same file twice
-  // still fires a change event.
-  const onMetricsFile = async (e) => { await uploadMetrics(e.target.files?.[0]); e.target.value = ""; };
-  const onBoardFile   = async (e) => { await uploadDailyBoard(e.target.files?.[0]); e.target.value = ""; };
-  $("#dm-upload-metrics")?.addEventListener("change", onMetricsFile);
-  $("#dm-upload-board")?.addEventListener("change", onBoardFile);
+  const onPullClick = () => pullNow();
+  const onPullToggle = async (e) => {
+    await call("set_pull_enabled", { enabled: e.target.checked });
+    await refreshPullState();
+  };
+  $("#dm-pull-now")?.addEventListener("click", onPullClick);
+  $("#dm-pull-enabled")?.addEventListener("change", onPullToggle);
 
   selectPage("dashboard");
   loadStores();
+  refreshPullState();
 
   // MODULE_CONTRACT §5: the shell unmounts but does not GC listeners.
   return () => {
@@ -568,8 +776,10 @@ export async function mount(host, container) {
     disposePage?.();
     offTabs?.();
     $("#dm-store")?.removeEventListener("change", onStore);
+    $("#dm-store")?.removeEventListener("keydown", onStoreKey);
     $("#dm-week")?.removeEventListener("change", onWeek);
-    $("#dm-upload-metrics")?.removeEventListener("change", onMetricsFile);
-    $("#dm-upload-board")?.removeEventListener("change", onBoardFile);
+    link.remove();
+    $("#dm-pull-now")?.removeEventListener("click", onPullClick);
+    $("#dm-pull-enabled")?.removeEventListener("change", onPullToggle);
   };
 }

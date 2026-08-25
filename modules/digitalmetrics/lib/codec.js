@@ -30,7 +30,11 @@ const METRIC_COLUMNS = [
   "Exception Substitution Qty", "Exception Nil Pick Qty",
 ];
 
-const SCHEDULE_FIELDS   = ["shiftStart", "shiftEnd", "startSlot", "endSlot"];
+// `jobName` is the scheduler's job title ("Digital Personal Shopper 1-936-…").
+// It is a ROLE, not a personal identifier, and it is what lets classification
+// be derived automatically instead of ticked by hand (data/job_classify.js).
+// Storing it beside the token leaks nothing the token did not already imply.
+const SCHEDULE_FIELDS   = ["shiftStart", "shiftEnd", "startSlot", "endSlot", "jobName"];
 const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd"];
 
 function pick(src, fields) {

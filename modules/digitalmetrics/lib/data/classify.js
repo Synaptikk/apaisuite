@@ -6,13 +6,22 @@
 //   Digital      — dedicated digital fulfilment team
 //   Exceptions   — digital associates mostly working exception picks; measured
 //                  only against each other (see data/metrics.js)
-//   Fashion      — apparel pickers; excluded from the pick-rate benchmark
-//                  because their task mix makes the number incomparable
 //   Store Help   — store associates helping out; different schedules, so
 //                  excluded from 5am late-start analysis
-//   Unclassified — not yet categorised
+//
+// ── Fashion was retired 2026-08-25 ─────────────────────────────────────────
+// Classification is now derived from the scheduler's job title
+// (data/job_classify.js): digital titles are Digital, everyone else who picked
+// is Store Help. Apparel pickers fall out as Store Help under that rule, which
+// is what the analyst asked for, and the category sat at zero.
+//
+// UNCLASSIFIED is kept as an INTERNAL fallback, not a category. Something has
+// to describe a picker the scheduler has no title for — deleting the constant
+// would silently drop those people out of every count rather than show them.
+// It is excluded from CLASSIFICATIONS so it cannot be assigned, and the
+// dashboard only renders it when it is non-zero.
 
-export const CLASSIFICATIONS = ["Digital", "Exceptions", "Fashion", "Store Help"];
+export const CLASSIFICATIONS = ["Digital", "Exceptions", "Store Help"];
 export const UNCLASSIFIED = "Unclassified";
 
 /** Classification for a name, defaulting to Unclassified. */

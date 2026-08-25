@@ -108,7 +108,7 @@ export function wire(ctx, root) {
   if (locked) return () => offs.forEach((off) => off());
 
   // ── Cell selection ───────────────────────────────────────────────────────
-  offs.push(host.ui.delegate(root, ".dm-cell", "click", (_e, el) => {
+  offs.push(host.ui.delegate(root, "click", ".dm-cell", (_e, el) => {
     const target = { name: el.dataset.dmRow, slot: Number(el.dataset.dmSlot) };
     // Touch has no keyboard, so a tap opens the task panel; on desktop the
     // cell simply takes focus and typing fills it.
@@ -116,7 +116,7 @@ export function wire(ctx, root) {
     else el.focus();
   }));
 
-  offs.push(host.ui.delegate(root, ".dm-cell", "keydown", (e, el) => {
+  offs.push(host.ui.delegate(root, "keydown", ".dm-cell", (e, el) => {
     const name = el.dataset.dmRow;
     const slot = Number(el.dataset.dmSlot);
 
@@ -142,7 +142,7 @@ export function wire(ctx, root) {
   }));
 
   // ── Mobile task panel ────────────────────────────────────────────────────
-  offs.push(host.ui.delegate(root, "[data-dm-task]", "click", (_e, el) => {
+  offs.push(host.ui.delegate(root, "click", "[data-dm-task]", (_e, el) => {
     const target = ctx.ui?.gridTarget;
     if (!target) return;
     onSetTask?.(target.name, target.slot, el.dataset.dmTask);
@@ -151,7 +151,7 @@ export function wire(ctx, root) {
   on("#dm-asg-panel-close", "click", () => onUiChange?.({ gridTarget: null }));
 
   // ── Status ───────────────────────────────────────────────────────────────
-  offs.push(host.ui.delegate(root, "[data-dm-status]", "click", (_e, el) => {
+  offs.push(host.ui.delegate(root, "click", "[data-dm-status]", (_e, el) => {
     onSetStatus?.(el.dataset.dmStatus, el.dataset.dmStatusKey);
   }));
 

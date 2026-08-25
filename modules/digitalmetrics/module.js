@@ -1,5 +1,26 @@
 // modules/digitalmetrics/module.js
-import { handlers as serviceHandlers } from "./service.js";
+import { handlers as serviceHandlers, onPullAlarm } from "./service.js";
+
+// ── Automated-pull alarm ───────────────────────────────────────────────────
+//
+// Registered at TOP-LEVEL script execution, not inside register() or a
+// handler. An MV3 service worker only wakes for an event whose listener was
+// attached during the worker's initial evaluation; a listener added later
+// exists only until the worker idles out, and then silently never fires again
+// (MODULE_CONTRACT §4, and the same pattern as modules/workvivo/module.js).
+//
+// The alarm itself is cheap — onPullAlarm() returns immediately unless the
+// user has opted in via `digitalmetrics.pullEnabled`.
+const PULL_ALARM = "digitalmetrics.pull";
+const PULL_PERIOD_MIN = 60;
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === PULL_ALARM) onPullAlarm();
+});
+
+// create() with the same name replaces any existing alarm, so this is safe to
+// run on every worker boot.
+chrome.alarms.create(PULL_ALARM, { periodInMinutes: PULL_PERIOD_MIN, delayInMinutes: 5 });
 
 export default {
   manifest: {
@@ -34,7 +55,7 @@ export default {
     },
 
     permissions: {
-      needs: ["storage", "unlimitedStorage", "tabs", "scripting", "clipboardWrite"],
+      needs: ["storage", "unlimitedStorage", "tabs", "scripting", "clipboardWrite", "alarms"],
       hosts: [
         "https://firestore.googleapis.com/*",
         "https://identitytoolkit.googleapis.com/*",

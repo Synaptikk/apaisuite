@@ -137,7 +137,7 @@ export function wire(ctx, root) {
   };
   input?.addEventListener("input", onInput);
 
-  const offPick = host.ui.delegate(root, "[data-dm-associate]", "click", (_e, el) => {
+  const offPick = host.ui.delegate(root, "click", "[data-dm-associate]", (_e, el) => {
     onSelectAssociate?.(el.dataset.dmAssociate);
   });
 

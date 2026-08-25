@@ -91,7 +91,7 @@ export function wire(ctx, root) {
   const onSort = (e) => onUiChange?.({ oppSort: e.target.value });
   sort?.addEventListener("change", onSort);
 
-  const offGroup = host.ui.delegate(root, "[data-dm-group]", "click", (_e, el) => {
+  const offGroup = host.ui.delegate(root, "click", "[data-dm-group]", (_e, el) => {
     const group   = el.dataset.dmGroup;
     const current = ui.oppGroups || DEFAULT_GROUPS;
     const next    = current.includes(group)
