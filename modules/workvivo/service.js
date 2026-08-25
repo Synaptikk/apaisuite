@@ -24,7 +24,7 @@
 
 import { ensureAlarm } from "../../shared/alarms.js";
 import { readLiveTokenFromTab, hasWorkvivoTab, openWorkvivoTab, waitForLiveToken } from "./lib/extract.js";
-import { postHeartbeat, fetchConnectionInfo }  from "./lib/qrcallbox.js";
+import { postHeartbeat, fetchConnectionInfo, postServerTest }  from "./lib/qrcallbox.js";
 
 const MODULE_ID            = "workvivo";
 const ALARM_NAME           = "workvivo.heartbeat";
@@ -326,6 +326,28 @@ export const handlers = {
       return { ok: false, errorClass: "CONFIG", body: "not configured" };
     }
     return await fetchConnectionInfo({ endpointUrl, apiKey });
+  },
+
+  // UI: "prove the SERVER can post, not just me".
+  //
+  // Deliberately does NOT read a token or touch a Workvivo tab — that would
+  // test this module instead of the thing under test. It sends the API key and
+  // nothing else; the server posts using the token this module couriered to it
+  // earlier. If a message arrives, the 3am path works.
+  //
+  // No status recording: `lastStatus` / `lastSuccess` describe the heartbeat,
+  // and letting a diagnostic write to them would make the panel's health
+  // readout depend on whether someone had recently pressed a test button.
+  async "server-test-post"(msg) {
+    const { endpointUrl, apiKey } = await getConfig();
+    if (!endpointUrl || !apiKey) {
+      return { ok: false, errorClass: "CONFIG", body: "not configured" };
+    }
+    return await postServerTest({
+      endpointUrl,
+      apiKey,
+      note: typeof msg?.note === "string" ? msg.note : undefined,
+    });
   },
 };
 

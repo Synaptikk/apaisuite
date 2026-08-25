@@ -44,6 +44,22 @@
     </button>
     <span id="wv-refreshMsg" class="muted tiny"></span>
   </div>
+
+  <!-- The two buttons prove different halves and are worth not conflating.
+       "Send heartbeat now" proves THIS BROWSER can read your token and hand it
+       over. "Send server test" proves QRCallBox can post with that token on its
+       own, which is what has to work at 3am when no browser is open. -->
+  <div class="wv-action-row">
+    <button id="wv-serverTest" class="btn btn-secondary btn-sm">
+      Send server test
+    </button>
+    <span id="wv-serverTestMsg" class="muted tiny"></span>
+  </div>
+  <p class="muted tiny">
+    Asks qrcallbox.com to post a message to your own Workvivo chat, using the
+    token this connector last sent it. It arrives as a direct message to you —
+    never in your store's channel — and says in the text that the server sent it.
+  </p>
 </section>
 
 <section class="card wv-config">

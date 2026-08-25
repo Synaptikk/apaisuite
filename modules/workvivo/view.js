@@ -184,6 +184,52 @@ export async function mount(host, container) {
     }
   });
 
+  // Server-side post test. Unlike the heartbeat, a failure here is worth
+  // leaving on screen — it names which half is broken, and the answer differs
+  // per class. Sticky until the next press rather than the 5s auto-clear.
+  $("wv-serverTest").addEventListener("click", async () => {
+    $("wv-serverTest").disabled = true;
+    $("wv-serverTestMsg").textContent = "Asking the server to post…";
+    try {
+      const resp = await host.messaging.send("server-test-post");
+      const r = resp.data ?? resp;               // same unwrap as reloadConnection()
+      if (r.ok) {
+        const b = r.body || {};
+        $("wv-serverTestMsg").textContent =
+          `Posted to your Workvivo DM at ${b.sentAtLocal ?? "just now"}` +
+          `${b.channelCreated ? " (created the DM)" : ""}. Check chat.`;
+      } else {
+        $("wv-serverTestMsg").textContent = explainServerTest(r);
+      }
+    } catch (e) {
+      $("wv-serverTestMsg").textContent = `Error: ${e?.message ?? e}`;
+    } finally {
+      $("wv-serverTest").disabled = false;
+    }
+  });
+
+  // Each class has a different fix, and "failed" on its own sends people to
+  // re-paste an API key that was never the problem.
+  function explainServerTest(r) {
+    const detail = typeof r.body === "string" ? r.body : (r.body?.error ?? "");
+    switch (r.errorClass) {
+      case "CONFIG":
+        return "Not configured yet — save your API key above first.";
+      case "AUTH":
+        return "The server rejected your API key. Generate a new one at qrcallbox.com → Workvivo and save it above.";
+      case "TOKEN_STALE":
+        return "Your API key is fine, but the token QRCallBox is holding is dead. Open a Workvivo tab and press “Send heartbeat now”, then retry.";
+      case "NOT_FOUND":
+        return "QRCallBox has no connection stored for you yet — press “Send heartbeat now” first.";
+      case "TIMEOUT":
+        return "The server didn't answer in time. Sendbird may be slow; try again.";
+      case "NETWORK":
+        return `Couldn't reach qrcallbox.com: ${detail}`;
+      default:
+        return `Server error${r.status ? ` (${r.status})` : ""}: ${detail || "unknown"}`;
+    }
+  }
+
   $("wv-saveConfig").addEventListener("click", async () => {
     const apiKey = $("wv-apiKey").value.trim();
     if (!apiKey) {

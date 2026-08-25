@@ -100,12 +100,89 @@ export async function postHeartbeat({
 }
 
 /**
- * Derive the connection-info endpoint URL from the heartbeat endpoint URL.
- * Both live under /api/workvivo/, so any overrides the user has set for
- * the heartbeat path (e.g., dev/staging hosts) apply to this one too.
+ * Derive a sibling endpoint URL from the heartbeat endpoint URL. Every
+ * extension-facing endpoint lives under /api/workvivo/, so an override the
+ * user set for the heartbeat path (dev/staging host) carries to all of them
+ * — one setting, not one per endpoint.
  */
+function deriveSiblingUrl(heartbeatUrl, name) {
+  return heartbeatUrl.replace(/\/api\/workvivo\/[^/]+$/, `/api/workvivo/${name}`);
+}
+
 function deriveConnectionInfoUrl(heartbeatUrl) {
-  return heartbeatUrl.replace(/\/api\/workvivo\/[^/]+$/, "/api/workvivo/connection-info");
+  return deriveSiblingUrl(heartbeatUrl, "connection-info");
+}
+
+/**
+ * Ask the QRCallBox SERVER to post a chat message, so the server-side Sendbird
+ * path can be tested without waiting for a real customer scan.
+ *
+ * This is not the extension posting. It hands nothing but the API key to the
+ * server, which opens its own Sendbird WebSocket with the access token this
+ * module couriered to it earlier. That distinction is the whole point of the
+ * test — a message that arrives proves the server can post on its own, which
+ * is what actually happens at 3am when nobody's browser is open.
+ *
+ * Defaults to the caller's own Workvivo self-DM, server-side. Posting to the
+ * real store channel needs `{ target: "store", confirm: true }`, which this
+ * function deliberately does not expose — there is no UI reason to let a test
+ * land in front of a store.
+ *
+ * @param {object} args
+ * @param {string} args.endpointUrl  Heartbeat endpoint URL (the test path is derived).
+ * @param {string} args.apiKey
+ * @param {string} [args.note]       Free text appended to the posted message.
+ *
+ * @returns {Promise<{ok:boolean, status:number, body:object|string,
+ *                    errorClass?: "AUTH"|"TOKEN_STALE"|"NOT_FOUND"|"SERVER"|"NETWORK"|"TIMEOUT"}>}
+ */
+export async function postServerTest({ endpointUrl, apiKey, note }) {
+  if (!endpointUrl || !apiKey) {
+    return { ok: false, status: 0, body: "missing endpoint or api key", errorClass: "AUTH" };
+  }
+  const url = deriveSiblingUrl(endpointUrl, "test-post");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+      },
+      body: JSON.stringify({ note: note || "sent from the APAISuite Workvivo panel" }),
+    });
+    const text = await resp.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+
+    if (resp.ok) return { ok: true, status: resp.status, body };
+
+    // A 401 from this endpoint is ambiguous on its face and the two cases have
+    // completely different fixes: a bad API key is a config problem, a rejected
+    // access token means the courier needs to run again. The server says which
+    // in its error text; surface that as distinct classes so view.js can give
+    // the right instruction instead of a shrug.
+    if (resp.status === 401) {
+      const msg = String(body?.error ?? body ?? "");
+      return {
+        ok: false, status: 401, body,
+        errorClass: /api key/i.test(msg) && !/access token/i.test(msg) ? "AUTH" : "TOKEN_STALE",
+      };
+    }
+    if (resp.status === 404) return { ok: false, status: 404, body, errorClass: "NOT_FOUND" };
+    return { ok: false, status: resp.status, body, errorClass: "SERVER" };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      return { ok: false, status: 0, body: `timeout after ${DEFAULT_TIMEOUT_MS}ms`, errorClass: "TIMEOUT" };
+    }
+    return { ok: false, status: 0, body: String(err?.message ?? err), errorClass: "NETWORK" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
