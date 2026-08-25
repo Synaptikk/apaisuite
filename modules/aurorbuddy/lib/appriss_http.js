@@ -4,7 +4,7 @@
 // the same file. All exports consumed by appriss.js; nothing here knows about
 // suspects, stores, or name matching.
 
-const _BASE = "https://wmtus.apprissretailcloud.com";
+import { APPRISS_BASE as _BASE } from "../../../shared/appriss.js";
 
 // Exported so appriss.js can reuse them in probeApprissApiAuth without
 // duplicating the URL or headers object.

@@ -10,13 +10,15 @@
 // response logs row0 keys to the SW console; update the cell() calls
 // in parseRow() once you see the actual field names.
 
-const SEARCH_URL = "https://wmtus.apprissretailcloud.com/platform/cpf/searchlite/getsearchresults";
+import { APPRISS_BASE } from "../../../shared/appriss.js";
+
+const SEARCH_URL = `${APPRISS_BASE}/platform/cpf/searchlite/getsearchresults`;
 
 const HEADERS = {
   "content-type":      "application/json;charset=UTF-8",
   "x-requested-with":  "XMLHttpRequest",
   "accept":            "application/json, text/plain, */*",
-  "referer":           "https://wmtus.apprissretailcloud.com/platform/explorer",
+  "referer":           `${APPRISS_BASE}/platform/explorer`,
 };
 
 const SEARCH_PATH  = "/public/quick lookup/markdown purchases/markdown purchase discount card.search";
@@ -113,7 +115,7 @@ export async function fetchMarkdownPurchases(storeNo, { signal } = {}) {
     clearTimeout(timer);
     if (!r.ok) {
       const ct = r.headers.get("content-type") || "";
-      if (ct.includes("text/html")) throw new Error("APPRISS auth required — open wmtus.apprissretailcloud.com and sign in");
+      if (ct.includes("text/html")) throw new Error(`APPRISS auth required — open ${APPRISS_BASE} and sign in`);
       throw new Error(`APPRISS HTTP ${r.status}`);
     }
     data = await r.json();

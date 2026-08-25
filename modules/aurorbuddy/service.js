@@ -17,6 +17,8 @@
 //     unnecessary). Dropped in the migration.
 
 import { createAuth, AUROR_SSO_SELECTORS, APPRISS_SSO_SELECTORS } from "../../shared/auth.js";
+import { APPRISS_HOME, APPRISS_DOMAIN, APPRISS_TAB_PATTERN,
+         isApprissSignInUrl } from "../../shared/appriss.js";
 import { reloadTabAndWait } from "../../shared/auth.js";
 import { searchPeople }  from "./lib/auror.js";
 import { apprissLookupAll, probeApprissApiAuth } from "./lib/appriss.js";
@@ -39,16 +41,16 @@ import { recordMetric, recordError } from "./lib/usage_metrics.js";
 const MODULE_ID    = "aurorbuddy";
 const AUROR_HOME   = "https://app.us.auror.co/";
 // /platform/cpf/ throws a 500 on a fresh device session. /platform/portal
-// redirects to /secure/cpf/auth/logon (manual sign-in page with a Sign In
-// button → /secure/sso/saml2 → IdP → portal). Going DIRECTLY to the SAML
-// endpoint skips the logon page + click-Sign-In entirely: when AAD/SSO is
-// cached (the common case) the chain completes silently and lands on
-// /platform/portal#/index. Same trick SparkFraud uses for pfedprod.
-// Verified live via CDP: cookies-cleared tab opened at the SAML URL
-// arrives at /platform/portal#/index?page=executive within ~6s with no
-// clicks needed.
-const APPRISS_HOME = "https://wmtus.apprissretailcloud.com/secure/sso/saml2?RelayState=/platform/portal";
-const APPRISS_DOMAIN = "wmtus.apprissretailcloud.com";
+// redirects to the sign-in page (a manual Sign In button → /secure/sso/saml2
+// → IdP → portal). Going DIRECTLY to the SAML endpoint skips the sign-in page
+// + click-Sign-In entirely: when AAD/SSO is cached (the common case) the chain
+// completes silently and lands on /platform/portal#/index. Same trick
+// SparkFraud uses for pfedprod. Verified live via CDP: cookies-cleared tab
+// opened at the SAML URL arrives at /platform/portal#/index?page=executive
+// within ~6s with no clicks needed.
+//
+// Origin + tenant prefix now live in shared/appriss.js — Appriss renamed the
+// host once and the constants were duplicated across five files.
 
 const JWT_TTL_MS = 20 * 60 * 1000;
 
@@ -342,7 +344,7 @@ async function ensureAurorAuth() {
 async function _apprissPollForAuth(tabId, waitMs) {
   // Re-check landing state in case caller skipped the click.
   const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (tab?.url?.includes("/logon") || tab?.url?.includes("/login")) {
+  if (isApprissSignInUrl(tab?.url)) {
     await auth.clickSso(tabId, APPRISS_SSO_SELECTORS).catch((e) =>
       console.warn("[AurorBuddy.ensureApprissAuth] clickSso threw:", e?.message)
     );
@@ -371,7 +373,7 @@ async function ensureApprissAuth({ waitMs = 30_000 } = {}) {
 
   // Open / find the APPRISS tab in BACKGROUND. The shell auto-clicks
   // SSO; if SAML/AAD is cached the chain completes silently.
-  let tab = await findTab(`https://${APPRISS_DOMAIN}/*`);
+  let tab = await findTab(APPRISS_TAB_PATTERN);
   const opened = !tab;
   console.log("[AurorBuddy.ensureApprissAuth] tab lookup:", { existed: !opened, id: tab?.id, url: tab?.url });
   if (!tab) {
@@ -433,10 +435,10 @@ async function ensureApprissAuth({ waitMs = 30_000 } = {}) {
   // prompt. The next caller will trigger a fresh autonomous cycle.
   const finalTab = await chrome.tabs.get(tab.id).catch(() => null);
   console.log("[AurorBuddy.ensureApprissAuth] both autonomous attempts exhausted; final tab state:", { url: finalTab?.url, status: finalTab?.status });
-  if (finalTab?.url && !finalTab.url.includes("/logon") && !finalTab.url.includes("/login")) {
-    // Off logon = probably signed in but missed the cookie/probe race.
+  if (finalTab?.url && !isApprissSignInUrl(finalTab.url)) {
+    // Off the sign-in page = probably signed in but missed the cookie/probe race.
     if (opened) chrome.tabs.remove(tab.id).catch(() => {});
-    return { ok: true, reason: "off logon page (autonomous attempt 2)" };
+    return { ok: true, reason: "off sign-in page (autonomous attempt 2)" };
   }
   return {
     ok: false,

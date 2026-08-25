@@ -20,8 +20,12 @@ import { postJson, SEARCH_URL, HEADERS, getSecureCongestionState } from "./appri
 import { cell, dedupCards, dedupTransactions,
          firstNameCandidates, nameMatchesAny, surnameIsLastToken } from "./appriss_names.js";
 
-const BASE         = "https://wmtus.apprissretailcloud.com";
+import { APPRISS_BASE as BASE } from "../../../shared/appriss.js";
 // URL formats from pipeline/appriss_scraper.py — APPRISS SPA's own viewer URLs.
+// NOTE: on the new host `/video/react` bounces to a separate CCTV origin
+// (web-prd-wus2-arp-cctv.azurewebsites.net/walmart-usa/video/...). That's fine —
+// these are links the analyst clicks, opened as ordinary tabs, so no
+// host_permission is involved.
 const CCTV_BASE    = `${BASE}/video/react#/cameras?transactionId=`;
 const RECEIPT_BASE = `${BASE}/platform/viewer?hidechrome=true#/store/ardm/event/`;
 

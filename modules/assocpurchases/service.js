@@ -8,13 +8,13 @@ import { fetchMumdData }                              from "./lib/mumd.js";
 import { fetchMarkdownPurchases, probeApprissAuth }  from "./lib/appriss_purchases.js";
 import { lookupNames }                                from "../../shared/associateLookup.js";
 import { createAuth, APPRISS_SSO_SELECTORS }          from "../../shared/auth.js";
+import { APPRISS_DOMAIN, APPRISS_HOME, APPRISS_TAB_PATTERN,
+         isApprissSignInUrl }                         from "../../shared/appriss.js";
 
 const LOG = (...a) => console.log("[assocpurchases]", ...a);
 
 // ── APPRISS auth ────────────────────────────────────────────────────────────
 
-const APPRISS_DOMAIN = "wmtus.apprissretailcloud.com";
-const APPRISS_HOME   = "https://wmtus.apprissretailcloud.com/secure/sso/saml2?RelayState=/platform/portal";
 const _auth = createAuth("assocpurchases");
 
 async function _waitForTabLoad(tabId, timeoutMs = 15_000) {
@@ -38,7 +38,7 @@ async function ensureApprissAuth() {
   // Slow path: open background tab to the SAML2 endpoint.
   // When the Walmart AAD/SSO session is cached the chain completes silently;
   // otherwise land on the logon page and auto-click the SSO button.
-  const existing = await chrome.tabs.query({ url: `https://${APPRISS_DOMAIN}/*` });
+  const existing = await chrome.tabs.query({ url: APPRISS_TAB_PATTERN });
   let tab = existing[0] ?? null;
   const weOpened = !tab;
   if (!tab) {
@@ -47,10 +47,10 @@ async function ensureApprissAuth() {
   }
   await _waitForTabLoad(tab.id);
 
-  // If we landed on a logon page, click the SSO button.
+  // If we landed on the sign-in page, click the SSO button.
   const current = await chrome.tabs.get(tab.id).catch(() => null);
-  if (current?.url?.includes("/logon") || current?.url?.includes("/login")) {
-    LOG("ensureApprissAuth: on logon page — clicking SSO");
+  if (isApprissSignInUrl(current?.url)) {
+    LOG("ensureApprissAuth: on sign-in page — clicking SSO");
     await _auth.clickSso(tab.id, APPRISS_SSO_SELECTORS).catch(() => {});
   }
 
