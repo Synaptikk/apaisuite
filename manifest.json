@@ -74,6 +74,7 @@
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
+    "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/*",
     "https://api-*.sendbird.com/*",
     "https://wismo-dashboard.walmart.com/*",
     "https://wismo.walmart.com/*",
@@ -255,6 +256,17 @@
       ],
       "js": [
         "modules/vizpick/content/tableau_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://stores.tableau.wal-mart.com/*"
+      ],
+      "js": [
+        "modules/digitalmetrics/content/tableau_capture.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

@@ -1,0 +1,11 @@
+{
+  "name": "digitalmetrics-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Digital fulfilment analytics module for APAISuite. Associate names are tokenised and encrypted client-side.",
+  "scripts": {
+    "test": "node --test lib/tests/*.test.mjs",
+    "audit:names": "node tools/audit_names.mjs"
+  }
+}

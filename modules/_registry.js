@@ -27,6 +27,7 @@ import market120         from "./market120/module.js";
 import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
 import digitalrollup     from "./digitalrollup/module.js";
+import digitalmetrics    from "./digitalmetrics/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -40,6 +41,7 @@ export default [
   metricshot,        // Scheduled screenshots → Workvivo
   vizpick,           // VizPick Market Rollup — every store in a market at once
   digitalrollup,     // Digital Market Rollup — live OPD fulfilment, same layout
+  digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
   aurorbuddy,
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,

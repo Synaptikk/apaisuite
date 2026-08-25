@@ -1,0 +1,35 @@
+<div class="dm-shell">
+  <nav class="dm-tabs" id="dm-tabs">
+    <button class="dm-tab is-active" data-dm-page="dashboard">Dashboard</button>
+    <button class="dm-tab" data-dm-page="insights">Insights</button>
+    <button class="dm-tab" data-dm-page="classify">Classify</button>
+    <button class="dm-tab" data-dm-page="comparison">Compare Groups</button>
+    <button class="dm-tab" data-dm-page="opportunities">Opportunities</button>
+    <button class="dm-tab" data-dm-page="leaderboard">Leaderboard</button>
+    <button class="dm-tab" data-dm-page="associates">Associates</button>
+    <button class="dm-tab" data-dm-page="assignments">Assignments</button>
+    <button class="dm-tab" data-dm-page="faq">FAQ</button>
+  </nav>
+
+  <div class="dm-toolbar">
+    <label class="field">
+      <span>Store</span>
+      <select id="dm-store"><option value="">Loading…</option></select>
+    </label>
+    <label class="field">
+      <span>Week</span>
+      <select id="dm-week"><option value="">—</option></select>
+    </label>
+    <label class="btn dm-upload">
+      Upload metrics
+      <input type="file" id="dm-upload-metrics" accept=".xlsx" hidden>
+    </label>
+    <label class="btn dm-upload">
+      Import Daily Board
+      <input type="file" id="dm-upload-board" accept=".xlsx" hidden>
+    </label>
+    <span class="pill" id="dm-status">idle</span>
+  </div>
+
+  <section class="dm-page" id="dm-page"></section>
+</div>

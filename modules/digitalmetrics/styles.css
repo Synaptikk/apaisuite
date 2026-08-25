@@ -1,0 +1,473 @@
+/* modules/digitalmetrics/styles.css
+   Every selector descends from .module-digitalmetrics (MODULE_CONTRACT §8).
+   Colours come from styles/tokens.css only — no literals. */
+
+.module-digitalmetrics {
+  --module-accent:        var(--apai-blue);
+  --module-accent-dark:   var(--apai-blue-dark);
+  --module-accent-darker: var(--apai-blue-darker);
+}
+
+.module-digitalmetrics .dm-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.module-digitalmetrics .dm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.module-digitalmetrics .dm-tab {
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--apai-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.module-digitalmetrics .dm-tab:hover { color: var(--apai-ink); }
+
+.module-digitalmetrics .dm-tab.is-active {
+  color: var(--module-accent);
+  border-bottom-color: var(--module-accent);
+}
+
+.module-digitalmetrics .dm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-4);
+}
+
+.module-digitalmetrics .dm-page { min-height: 200px; }
+
+.module-digitalmetrics .dm-todo {
+  padding: var(--sp-6);
+  border: 1px dashed var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-soft);
+  color: var(--apai-muted);
+}
+
+/* ── Classification badges ───────────────────────────────────────────────
+   The classification vocabulary needs its own colours; the shared badge
+   variants don't map onto it. Colours are declared here as module-local
+   tokens rather than inline styles — the donor used inline hex on every
+   render, which is what made it untheme-able. */
+
+.module-digitalmetrics {
+  --dm-digital:    var(--apai-success);
+  --dm-exceptions: var(--apai-warn);
+  --dm-fashion:    #DB2777;
+  --dm-help:       #7E22CE;
+  --dm-unknown:    var(--apai-muted);
+}
+
+.module-digitalmetrics .badge.digital      { background: var(--dm-digital); }
+.module-digitalmetrics .badge.exceptions   { background: var(--dm-exceptions); }
+.module-digitalmetrics .badge.fashion      { background: var(--dm-fashion); }
+.module-digitalmetrics .badge.store-help   { background: var(--dm-help); }
+.module-digitalmetrics .badge.unclassified { background: var(--dm-unknown); }
+
+/* ── Sections and stat tiles ─────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-section { margin-bottom: var(--sp-6); }
+
+.module-digitalmetrics .dm-section-title {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-sm, 13px);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--apai-muted);
+}
+
+.module-digitalmetrics .dm-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-3);
+}
+
+.module-digitalmetrics .dm-stat {
+  padding: var(--sp-4);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-elev);
+  box-shadow: var(--shadow-1);
+}
+
+.module-digitalmetrics .dm-stat-label {
+  font-size: var(--fs-sm, 12px);
+  color: var(--apai-muted);
+}
+
+.module-digitalmetrics .dm-stat-value {
+  margin-top: var(--sp-1);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--apai-ink);
+}
+
+.module-digitalmetrics .dm-stat-value.is-warn    { color: var(--apai-warn); }
+.module-digitalmetrics .dm-stat-value.is-fashion { color: var(--dm-fashion); }
+.module-digitalmetrics .dm-stat-value.is-help    { color: var(--dm-help); }
+
+.module-digitalmetrics .dm-stat-note {
+  margin-top: var(--sp-1);
+  font-size: 11px;
+  color: var(--apai-muted);
+  font-weight: 400;
+}
+
+.module-digitalmetrics .is-good { color: var(--apai-success); }
+.module-digitalmetrics .is-bad  { color: var(--apai-error); }
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.module-digitalmetrics .dm-input {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+  font: inherit;
+}
+
+.module-digitalmetrics .dm-filter-group { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+.module-digitalmetrics .dm-filter {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-pill);
+  background: var(--apai-bg-elev);
+  color: var(--apai-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm, 12px);
+}
+
+.module-digitalmetrics .dm-filter.is-active {
+  background: var(--module-accent);
+  border-color: var(--module-accent);
+  color: #fff;
+}
+
+.module-digitalmetrics .dm-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-right: var(--sp-3);
+  font-size: var(--fs-sm, 12px);
+  white-space: nowrap;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────── */
+
+/* Wide tables scroll inside their own container so the page body never
+   scrolls horizontally. */
+.module-digitalmetrics .dm-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.module-digitalmetrics .dm-table-scroll .is-right { text-align: right; }
+
+.module-digitalmetrics .dm-issues {
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm, 12px);
+  color: var(--apai-muted);
+}
+
+.module-digitalmetrics .dm-details {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm, 12px);
+  color: var(--apai-muted);
+}
+
+.module-digitalmetrics .dm-details summary { cursor: pointer; }
+
+/* ── Comparison ──────────────────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-4);
+}
+
+.module-digitalmetrics .dm-compare-card {
+  padding: var(--sp-4);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-elev);
+}
+
+.module-digitalmetrics .dm-compare-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-sm, 13px);
+}
+
+/* ── FAQ ─────────────────────────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-faq dt {
+  margin-top: var(--sp-4);
+  font-weight: 600;
+  color: var(--apai-ink);
+}
+
+.module-digitalmetrics .dm-faq dd {
+  margin: var(--sp-1) 0 0;
+  color: var(--apai-ink-soft);
+  max-width: 70ch;
+}
+
+/* ── Assignment grid ─────────────────────────────────────────────────────
+   Wide by nature: it scrolls inside its own container with the time header
+   and the associate column pinned, so the page body never scrolls sideways. */
+
+.module-digitalmetrics .dm-grid-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.module-digitalmetrics .dm-grid-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  -webkit-overflow-scrolling: touch;
+}
+
+.module-digitalmetrics .dm-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm, 12px);
+}
+
+.module-digitalmetrics .dm-grid th,
+.module-digitalmetrics .dm-grid td {
+  border-right: 1px solid var(--apai-border-soft);
+  border-bottom: 1px solid var(--apai-border-soft);
+  padding: var(--sp-1) var(--sp-2);
+  white-space: nowrap;
+}
+
+.module-digitalmetrics .dm-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--apai-bg-soft);
+  text-align: center;
+}
+
+.module-digitalmetrics .dm-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 160px;
+  text-align: left;
+  background: var(--apai-bg-elev);
+}
+
+.module-digitalmetrics .dm-grid thead .dm-name-cell { z-index: 4; }
+
+.module-digitalmetrics .dm-name { display: block; font-weight: 600; }
+
+.module-digitalmetrics .dm-status-group { display: inline-flex; gap: 2px; margin-top: 2px; }
+
+.module-digitalmetrics .dm-status {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-elev);
+  color: var(--apai-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.module-digitalmetrics .dm-status.is-active {
+  background: var(--apai-warn);
+  border-color: var(--apai-warn);
+  color: #fff;
+}
+
+.module-digitalmetrics tr.is-absent .dm-name { text-decoration: line-through; opacity: .6; }
+
+/* Cells */
+
+.module-digitalmetrics .dm-cell {
+  min-width: 54px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--apai-bg-soft);
+}
+
+.module-digitalmetrics .dm-cell.in-shift { background: var(--apai-bg-elev); }
+.module-digitalmetrics .dm-cell.is-half  { background-image: linear-gradient(135deg, transparent 50%, var(--apai-border-soft) 50%); }
+.module-digitalmetrics .dm-cell:focus    { outline: 2px solid var(--module-accent); outline-offset: -2px; }
+
+/* A suggestion is a proposal, not an assignment, and must not look like one. */
+.module-digitalmetrics .dm-suggestion-hint {
+  opacity: .45;
+  font-style: italic;
+}
+
+.module-digitalmetrics .dm-cell.task-pick  { background: #DBEAFE; }
+.module-digitalmetrics .dm-cell.task-disp  { background: #DCFCE7; }
+.module-digitalmetrics .dm-cell.task-stage { background: #FEF3C7; }
+.module-digitalmetrics .dm-cell.task-prep  { background: #F3E8FF; }
+.module-digitalmetrics .dm-cell.task-gmd   { background: #FFE4E6; }
+.module-digitalmetrics .dm-cell.task-exc   { background: #FFEDD5; }
+.module-digitalmetrics .dm-cell.task-ip    { background: #E0F2FE; }
+.module-digitalmetrics .dm-cell.task-l,
+.module-digitalmetrics .dm-cell.task-b     { background: var(--apai-border-soft); color: var(--apai-muted); }
+
+/* Summary */
+
+.module-digitalmetrics .dm-summary-row th,
+.module-digitalmetrics .dm-summary-row td {
+  position: relative;
+  background: var(--apai-bg-soft);
+  text-align: center;
+  font-weight: 600;
+}
+
+.module-digitalmetrics .dm-summary-row th {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  text-align: left;
+}
+
+.module-digitalmetrics .dm-summary-row.is-derived td { font-weight: 400; color: var(--apai-muted); }
+
+.module-digitalmetrics .dm-legend { margin-bottom: var(--sp-2); }
+.module-digitalmetrics .dm-legend kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-elev);
+  font-size: 10px;
+}
+
+/* ── Mobile task panel ───────────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-task-panel {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  padding: var(--sp-4);
+  border-top: 1px solid var(--apai-border);
+  background: var(--apai-bg-elev);
+  box-shadow: var(--shadow-3);
+}
+
+.module-digitalmetrics .dm-task-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.module-digitalmetrics .dm-task-close {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--apai-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.module-digitalmetrics .dm-task-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: var(--sp-2);
+}
+
+.module-digitalmetrics .dm-task-btn {
+  padding: var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ── Suggestions list ────────────────────────────────────────────────── */
+
+.module-digitalmetrics .dm-suggestions {
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  max-width: 420px;
+  overflow: hidden;
+}
+
+.module-digitalmetrics .dm-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: var(--apai-bg-elev);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.module-digitalmetrics .dm-suggestion:hover { background: var(--apai-bg-soft); }
+
+/* ── Print ───────────────────────────────────────────────────────────────
+   The grid is 17 columns wide; portrait is unreadable. Everything except the
+   grid is dropped, and the sticky/scroll behaviour is undone so the whole
+   table flows onto the page. */
+
+@media print {
+  @page { size: landscape; margin: 8mm; }
+
+  .module-digitalmetrics .dm-tabs,
+  .module-digitalmetrics .dm-toolbar,
+  .module-digitalmetrics .dm-controls,
+  .module-digitalmetrics .dm-legend,
+  .module-digitalmetrics .dm-task-panel,
+  .module-digitalmetrics .dm-status-group { display: none !important; }
+
+  .module-digitalmetrics .dm-grid-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    border: 0;
+  }
+
+  .module-digitalmetrics .dm-grid thead th,
+  .module-digitalmetrics .dm-name-cell,
+  .module-digitalmetrics .dm-summary-row th { position: static !important; }
+
+  .module-digitalmetrics .dm-cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+.module-digitalmetrics .dm-upload { cursor: pointer; }

@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "SCHEMATIC — target project indexes for the digitalmetrics module.",
+    "",
+    "Deliberately empty. Every read this module performs is either a document",
+    "get by full path or a flat collection list, both of which Firestore serves",
+    "from single-field indexes with no configuration.",
+    "",
+    "No composite index is listed because none is needed, and inventing",
+    "speculative ones costs storage and write latency for queries that do not",
+    "exist. Add an entry here only when a real query fails with a",
+    "FAILED_PRECONDITION telling you the index it wants.",
+    "",
+    "Note that filtering by associate is impossible server-side by design:",
+    "associates are stored as HMAC tokens inside array elements, which",
+    "Firestore cannot index or query on. All per-associate filtering happens",
+    "client-side after decryption. See docs/DIGITAL_METRICS_SCHEMA.md §5."
+  ],
+  "indexes": [],
+  "fieldOverrides": []
+}

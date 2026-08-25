@@ -1,0 +1,112 @@
+rules_version = '2';
+
+// Digital Metrics — target Firestore rules.
+//
+// SCHEMATIC. Not deployed. Written against the new project that will host this
+// module; the legacy standalone project is untouched by this file.
+//
+// The legacy project it replaces currently runs `allow read, write: if true`,
+// i.e. anyone knowing the project id can read every associate name and delete
+// every document. These rules are the replacement, and they assume the
+// encrypted schema in docs/DIGITAL_METRICS_SCHEMA.md.
+//
+// Honest limits of what rules can enforce here:
+//   • Rules cannot iterate arrays, so "no element of associates[] carries a
+//     plaintext name" is NOT expressible. That guarantee is enforced
+//     client-side by lib/codec.js allowlists + assertNoPlaintextNames().
+//     What rules CAN do is refuse any document not stamped as the encrypted
+//     schema version, which stops a legacy-shape writer dead.
+//   • Anonymous auth means "signed in" is a low bar — it stops drive-by
+//     scraping and casual deletion, not a determined party. Combined with
+//     client-side encryption, names stay protected either way. If this data
+//     ever needs real access control, move to named accounts and gate on
+//     custom claims (store assignment) here.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Every document this module writes carries the encrypted-schema stamp.
+    // Refusing anything older is what prevents a stale client from writing
+    // plaintext names back into a clean database.
+    function encryptedSchema() {
+      return request.resource.data.schemaVersion is int
+          && request.resource.data.schemaVersion >= 2;
+    }
+
+    function validStore(store) {
+      return store is string && store.size() > 0 && store.size() <= 10;
+    }
+
+    // Documents keyed by an ISO date (YYYY-MM-DD).
+    function validDateKey(key) {
+      return key.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    // ── Suite-wide metadata ──────────────────────────────────────────────
+    match /metrics/stores {
+      allow read:  if signedIn();
+      allow write: if signedIn() && request.resource.data.list is list;
+    }
+
+    match /metrics/classifications {
+      allow read:  if signedIn();
+      // data is { <token>: { c, n } } — a map keyed by HMAC token, never a name.
+      allow write: if signedIn() && encryptedSchema()
+                   && request.resource.data.data is map;
+    }
+
+    // ── Per-store data ───────────────────────────────────────────────────
+    match /stores/{store} {
+      allow read: if signedIn() && validStore(store);
+      // The store document itself is a container; subcollections hold the data.
+      allow write: if false;
+
+      match /weeks/{weekStart} {
+        allow read:  if signedIn();
+        allow write: if signedIn() && encryptedSchema()
+                     && validDateKey(weekStart)
+                     && request.resource.data.rawData is list;
+      }
+
+      match /schedules/{date} {
+        allow read:  if signedIn();
+        allow write: if signedIn() && encryptedSchema()
+                     && validDateKey(date)
+                     && request.resource.data.associates is list;
+      }
+
+      match /dailyAssignments/{date} {
+        allow read: if signedIn();
+
+        // Finalised days are locked. Unfinalising is deliberately allowed so a
+        // mistake is recoverable, but editing the roster of a finalised day
+        // without first unfinalising it is not.
+        allow create: if signedIn() && encryptedSchema() && validDateKey(date)
+                      && request.resource.data.associates is list;
+
+        allow update: if signedIn() && encryptedSchema()
+                      && request.resource.data.associates is list
+                      && (resource.data.finalized != true
+                          || request.resource.data.finalized == false);
+
+        allow delete: if false;
+      }
+
+      match /suggestions/{date} {
+        allow read:  if signedIn();
+        // Machine-generated; keyed by token, carries no `n` ciphertext at all.
+        allow write: if signedIn() && encryptedSchema()
+                     && validDateKey(date)
+                     && request.resource.data.suggestions is map;
+      }
+    }
+
+    // Anything not matched above is denied. Never reintroduce a
+    // `match /{document=**}` catch-all here.
+  }
+}
