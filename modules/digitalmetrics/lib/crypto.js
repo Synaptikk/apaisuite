@@ -57,11 +57,51 @@ function b64urlToBytes(s) {
 // Derive both keys once from the master secret. HKDF with distinct `info`
 // labels means the token key and the display key are cryptographically
 // unrelated: leaking one does not yield the other.
+/**
+ * Refuse to derive from a key that was never set.
+ *
+ * The entire privacy guarantee rests on this value being real and per-build.
+ * Without a check the failure modes are both bad and both quiet:
+ *
+ *  - The shipped placeholder contains "_", which is not standard base64, so a
+ *    browser's atob() throws — but deep inside crypto.subtle at the first
+ *    token derivation, as an opaque InvalidCharacterError with nothing
+ *    pointing at the real cause. (Node's Buffer is laxer and yields 34 bytes
+ *    of junk, so tests would not have caught it either.)
+ *  - Worse: swap the placeholder for anything that happens to BE valid base64
+ *    and it derives silently. Every install then shares a key that is sitting
+ *    in a public repo, and nothing anywhere says so.
+ *
+ * Fail at configuration time with a message naming the fix instead. See
+ * docs/SCHEMA.md §1 step 3.
+ */
+function assertRealKey(b64) {
+  if (!b64 || /^REPLACE_ME/.test(b64)) {
+    throw new Error(
+      "digitalmetrics: MASTER_SECRET_B64 is still the placeholder. Inject the " +
+      "real key with crypto.configureKey(<32 bytes, base64>) at package time — " +
+      "see docs/SCHEMA.md provisioning step 3. Never commit it.",
+    );
+  }
+  let bytes;
+  try {
+    bytes = b64ToBytes(b64);
+  } catch {
+    throw new Error("digitalmetrics: MASTER_SECRET_B64 is not valid base64.");
+  }
+  if (bytes.length !== 32) {
+    throw new Error(
+      `digitalmetrics: MASTER_SECRET_B64 must decode to exactly 32 bytes, got ${bytes.length}.`,
+    );
+  }
+  return bytes;
+}
+
 function keys() {
   if (keyPromise) return keyPromise;
   keyPromise = (async () => {
     const master = await crypto.subtle.importKey(
-      "raw", b64ToBytes(masterSecretB64), "HKDF", false, ["deriveKey"]
+      "raw", assertRealKey(masterSecretB64), "HKDF", false, ["deriveKey"]
     );
     const enc = new TextEncoder();
     const derive = (info, algo, usages) => crypto.subtle.deriveKey(
