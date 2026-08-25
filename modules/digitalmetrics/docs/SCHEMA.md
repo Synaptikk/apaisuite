@@ -1,26 +1,49 @@
-# Digital Metrics — target backend schematic
+# Digital Metrics — backend schema
 
-The Firestore layout the `digitalmetrics` module writes, for the **new project
-yet to be provisioned**. Nothing here is deployed.
+The Firestore layout the `digitalmetrics` module writes.
 
-**Status:** schematic, awaiting a project to deploy into.
-**Companion:** `DIGITAL_METRICS_PRIVACY.md` (why names look like this),
-`modules/digitalmetrics/backend/` (rules + indexes to deploy).
+**Status: LIVE as of 2026-08-25.** Project `apaisuite`, database
+`digitalmetrics` (a named database, not `(default)` — that one holds
+suite-wide telemetry under its own rules). Rules deployed and verified
+against the live project: a signed-in read of this database is permitted,
+and a write aimed at the suite database's collections is refused, so the
+two really are isolated rather than isolated-on-paper.
+
+The database starts **empty**. Data in the legacy standalone project
+(`digitalmetrics-fe0f3`) was deliberately not migrated.
+
+**Companion:** `PRIVACY.md` (why names look like this),
+`modules/digitalmetrics/backend/` (rules + indexes),
+`unified-extension-suite/backend/README.md` (project shape, deploy).
 
 ---
 
 ## 1. Provisioning checklist
 
-When the new project exists:
+1. ✅ **Project + databases.** `apaisuite` on Blaze, with `(default)` and
+   `digitalmetrics` in `nam5`. Anonymous auth enabled.
+   *Named (non-`(default)`) databases require billing — Spark gives you
+   `(default)` only, which is what forced the Blaze decision.*
+2. ✅ **`projectId` + `apiKey` + `databaseId`** set in `lib/config.js`, still
+   the only place any of them appears.
+3. ⬜ **Generate a real 32-byte key** and inject it via
+   `crypto.configureKey()` at package time. Do **not** commit it to
+   `lib/crypto_config.js`; a committed key is a public key, and this repo is
+   public. `crypto.js::assertRealKey()` now refuses to derive from the
+   placeholder, so skipping this fails loudly at the first name encryption
+   instead of silently giving every install the same known key.
+4. ✅ **Rules deployed** from `unified-extension-suite/` (where `firebase.json`
+   lives — the CLI rejects rules paths outside its directory):
+   `firebase deploy --only firestore --project apaisuite`
+5. ⬜ **`digitalmetrics.writerEnabled`** — leave unset (writes default on) only
+   once step 3 is done.
 
-1. Create the project; enable Firestore (Native mode) and **Anonymous** auth.
-2. Set `projectId` + `apiKey` in `modules/digitalmetrics/lib/config.js`. That
-   file is the only place either value appears — verified by grep.
-3. Generate a real 32-byte key and inject it via `crypto.configureKey()` at
-   package time. Do **not** commit it to `lib/crypto_config.js`; a committed
-   key is a public key.
-4. Deploy `modules/digitalmetrics/backend/firestore.rules` and
-   `firestore.indexes.json` with an explicit `--project` flag.
+Reminder for the console-only steps: `apaisuite` is owned by a personal Google
+account, and the Walmart network blocks that account from
+`console.firebase.google.com`. The Cloud Console
+(`console.cloud.google.com/customer-identity`) was reachable and is where
+Anonymous auth actually got enabled; otherwise a non-corp network is needed.
+Everything else here is CLI-reachable, which is unaffected.
 5. Leave `digitalmetrics.writerEnabled` unset (writes default on) only once
    steps 2–4 are done.
 
