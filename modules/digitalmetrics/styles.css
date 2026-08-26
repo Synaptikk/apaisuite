@@ -438,8 +438,26 @@
   background: var(--apai-bg-soft);
 }
 
-.module-digitalmetrics .dm-cell.in-shift { background: var(--apai-bg-elev); }
-.module-digitalmetrics .dm-cell.is-half  { background-image: linear-gradient(135deg, transparent 50%, var(--apai-border-soft) 50%); }
+/* Scheduled vs unscheduled has to be readable at a glance across a 17-column
+   grid. bg-soft against bg-elev differ by a couple of percent of lightness —
+   invisible unless two cells happen to sit side by side. The scheduled hours
+   are the ones you act on, so they get the lift, and an inset edge gives the
+   block a boundary that survives on a low-contrast display. */
+.module-digitalmetrics .dm-cell.in-shift {
+  background: var(--apai-bg-elev);
+  box-shadow: inset 0 0 0 1px var(--apai-border-soft);
+}
+.module-digitalmetrics .dm-cell:not(.in-shift) {
+  background: var(--apai-bg-soft);
+  /* Unscheduled hours read as "not yours to fill" rather than as empty. */
+  opacity: .55;
+}
+/* The half-hour wedge marks a shift starting or ending mid-hour. It was drawn
+   in border-soft, the same colour as the grid lines, so the diagonal was
+   indistinguishable from a rendering artefact. */
+.module-digitalmetrics .dm-cell.is-half {
+  background-image: linear-gradient(135deg, transparent 50%, var(--apai-border) 50%);
+}
 .module-digitalmetrics .dm-cell:focus    { outline: 2px solid var(--module-accent); outline-offset: -2px; }
 
 /* A suggestion is a proposal, not an assignment, and must not look like one. */
@@ -448,15 +466,39 @@
   font-style: italic;
 }
 
-.module-digitalmetrics .dm-cell.task-pick  { background: #DBEAFE; }
-.module-digitalmetrics .dm-cell.task-disp  { background: #DCFCE7; }
-.module-digitalmetrics .dm-cell.task-stage { background: #FEF3C7; }
-.module-digitalmetrics .dm-cell.task-prep  { background: #F3E8FF; }
-.module-digitalmetrics .dm-cell.task-gmd   { background: #FFE4E6; }
-.module-digitalmetrics .dm-cell.task-exc   { background: #FFEDD5; }
-.module-digitalmetrics .dm-cell.task-ip    { background: #E0F2FE; }
+/* Task tints live as module tokens so the grid and the legend swatch read
+   from ONE definition. They were previously written straight onto
+   `.dm-cell.task-*`, which meant the legend swatch — not a cell — inherited
+   nothing and rendered blank. */
+.module-digitalmetrics {
+  --dm-task-pick:  #DBEAFE;
+  --dm-task-disp:  #DCFCE7;
+  --dm-task-stage: #FEF3C7;
+  --dm-task-prep:  #F3E8FF;
+  --dm-task-gmd:   #FFE4E6;
+  --dm-task-exc:   #FFEDD5;
+  --dm-task-ip:    #E0F2FE;
+  --dm-task-rest:  var(--apai-border-soft);
+}
+
+.module-digitalmetrics .dm-cell.task-pick,
+.module-digitalmetrics .dm-legend-swatch.task-pick  { background: var(--dm-task-pick); }
+.module-digitalmetrics .dm-cell.task-disp,
+.module-digitalmetrics .dm-legend-swatch.task-disp  { background: var(--dm-task-disp); }
+.module-digitalmetrics .dm-cell.task-stage,
+.module-digitalmetrics .dm-legend-swatch.task-stage { background: var(--dm-task-stage); }
+.module-digitalmetrics .dm-cell.task-prep,
+.module-digitalmetrics .dm-legend-swatch.task-prep  { background: var(--dm-task-prep); }
+.module-digitalmetrics .dm-cell.task-gmd,
+.module-digitalmetrics .dm-legend-swatch.task-gmd   { background: var(--dm-task-gmd); }
+.module-digitalmetrics .dm-cell.task-exc,
+.module-digitalmetrics .dm-legend-swatch.task-exc   { background: var(--dm-task-exc); }
+.module-digitalmetrics .dm-cell.task-ip,
+.module-digitalmetrics .dm-legend-swatch.task-ip    { background: var(--dm-task-ip); }
 .module-digitalmetrics .dm-cell.task-l,
-.module-digitalmetrics .dm-cell.task-b     { background: var(--apai-border-soft); color: var(--apai-muted); }
+.module-digitalmetrics .dm-cell.task-b     { background: var(--dm-task-rest); color: var(--apai-muted); }
+.module-digitalmetrics .dm-legend-swatch.task-l,
+.module-digitalmetrics .dm-legend-swatch.task-b     { background: var(--dm-task-rest); }
 
 /* Summary */
 
@@ -585,3 +627,151 @@
 }
 
 .module-digitalmetrics .dm-upload { cursor: pointer; }
+
+/* ── Associate name + role, as one aligned cell ──────────────────────────
+   The badge used to trail the name inline, so its position depended on name
+   length and the column read as ragged (see _shared.js::associateCell).
+   margin-left:auto pins every badge to the column's right edge instead. */
+.module-digitalmetrics .dm-assoc-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.module-digitalmetrics .dm-role {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Names are buttons so they can open a breakdown, but they must still read as
+   names — a row of grey rectangles in a data table is worse than plain text. */
+.module-digitalmetrics .dm-assoc-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--apai-border);
+}
+.module-digitalmetrics .dm-assoc-link:hover {
+  color: var(--module-accent);
+  border-bottom-color: var(--module-accent);
+}
+.module-digitalmetrics .dm-assoc-link:focus-visible {
+  outline: 2px solid var(--module-accent);
+  outline-offset: 2px;
+}
+
+/* ── Multi-cell selection ────────────────────────────────────────────────
+   Drag or shift-click selects a rectangle; a task key then fills all of it.
+   The highlight has to survive on top of a task tint, so it is an inset ring
+   plus a wash rather than a background colour — a background would be
+   overwritten by .task-* and the selection would vanish exactly when it is
+   most useful. */
+.module-digitalmetrics .dm-cell.is-selected {
+  box-shadow: inset 0 0 0 2px var(--module-accent);
+  position: relative;
+}
+.module-digitalmetrics .dm-cell.is-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--module-accent);
+  opacity: .12;
+  pointer-events: none;
+}
+/* An unscheduled cell is dimmed; selecting it must still read clearly. */
+.module-digitalmetrics .dm-cell.is-selected:not(.in-shift) { opacity: 1; }
+
+/* Dragging across the grid must not start a text selection. */
+.module-digitalmetrics .dm-grid { user-select: none; }
+
+/* ── Legend, doubling as the colour key ──────────────────────────────── */
+.module-digitalmetrics .dm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+}
+
+.module-digitalmetrics .dm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* Same task-* class the cells use, so the key cannot drift from the grid. */
+.module-digitalmetrics .dm-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--apai-border);
+  display: inline-block;
+}
+
+/* ── Totals, pinned under the time header ─────────────────────────────────
+   Same arrangement as the standalone app: the numbers you check while
+   assigning stay on screen instead of sitting below sixty roster rows. */
+.module-digitalmetrics .dm-summary .dm-summary-row th,
+.module-digitalmetrics .dm-summary .dm-summary-row td {
+  position: sticky;
+  background: var(--apai-bg-soft);
+  z-index: 3;
+  font-weight: var(--fw-semi, 600);
+}
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(1) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(1) td { top: 28px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(2) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(2) td { top: 52px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(3) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(3) td { top: 76px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(4) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(4) td { top: 100px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(5) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(5) td { top: 124px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(6) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(6) td { top: 148px; }
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(7) th,
+.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(7) td { top: 172px; }
+/* The row label also pins left, so it survives horizontal scrolling. */
+.module-digitalmetrics .dm-summary .dm-summary-row th { left: 0; z-index: 6; }
+
+/* ── Hours outside the shift ──────────────────────────────────────────────
+   Not editable, not focusable, and visibly not part of the day. */
+.module-digitalmetrics .dm-cell[data-dm-offshift] {
+  cursor: default;
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    var(--apai-border-soft) 4px, var(--apai-border-soft) 5px);
+}
+
+/* ── Lunch compliance ─────────────────────────────────────────────────── */
+.module-digitalmetrics .dm-warn {
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-radius: var(--rad-md);
+  background: var(--apai-bg-soft);
+  border-left: 3px solid var(--apai-warn);
+  font-size: var(--fs-xs);
+  color: var(--apai-ink);
+}
+
+.module-digitalmetrics .dm-lunch-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--apai-warn);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}

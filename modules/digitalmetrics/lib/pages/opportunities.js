@@ -2,7 +2,7 @@
 //
 // Associates performing below their cohort benchmark, worst first.
 
-import { section, empty, esc, table } from "./_shared.js";
+import { section, empty, esc, table, associateCell } from "./_shared.js";
 import { classificationOf, badgeClass, CLASSIFICATIONS, UNCLASSIFIED } from "../data/classify.js";
 import { analyseOpportunities, sortOpportunities } from "../data/opportunities.js";
 
@@ -57,7 +57,7 @@ export function render(ctx) {
       label: "Associate", key: "name",
       format: (a) => {
         const cls = classificationOf(a.name, classifications);
-        return `${esc(a.name)} <span class="badge ${esc(badgeClass(cls))}">${esc(cls)}</span>`;
+        return associateCell(a.name, cls);
       },
     },
     { label: "Score", key: "score", align: "right",
@@ -91,6 +91,10 @@ export function wire(ctx, root) {
   const onSort = (e) => onUiChange?.({ oppSort: e.target.value });
   sort?.addEventListener("change", onSort);
 
+  const offAssoc = host.ui.delegate(root, "click", "[data-dm-associate]", (_e, el) => {
+    ctx.onSelectAssociate?.(el.dataset.dmAssociate);
+  });
+
   const offGroup = host.ui.delegate(root, "click", "[data-dm-group]", (_e, el) => {
     const group   = el.dataset.dmGroup;
     const current = ui.oppGroups || DEFAULT_GROUPS;
@@ -103,5 +107,6 @@ export function wire(ctx, root) {
   return () => {
     sort?.removeEventListener("change", onSort);
     offGroup?.();
+    offAssoc?.();
   };
 }

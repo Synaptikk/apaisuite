@@ -37,3 +37,6 @@ dev/screenshots/*.png
 
 # Local tooling only — playwright for dev/cws-drive.mjs, never shipped.
 node_modules/
+
+# Recovered source dumps from dev/web-grep.mjs — internal app code, not ours.
+dev/web-*.txt

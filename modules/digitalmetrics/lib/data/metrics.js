@@ -16,6 +16,7 @@
 
 import { parsePickDate } from "./parse.js";
 import { formatKey } from "./weeks.js";
+import { minutesPastFive } from "./clock.js";
 
 const EXCEPTION_PICKER_THRESHOLD = 0.20;   // ≥20% exception work → own benchmark
 const LATE_START_MAX_MINUTE      = 50;     // 5:51+ reads as a 6am start, not a late 5am
@@ -55,15 +56,7 @@ export function filterByDate(rows, { start = null, end = null } = {}) {
  * isn't a 5am start. "5:51"–"5:59" is treated as an early 6am start.
  */
 export function lateStartMinutes(firstScan) {
-  if (typeof firstScan !== "string") return null;
-  const m = firstScan.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return null;
-
-  const hour    = parseInt(m[1], 10);
-  const minutes = parseInt(m[2], 10);
-  const isPM    = m[3].toUpperCase() === "PM";
-  if (isPM || hour !== 5 || minutes > LATE_START_MAX_MINUTE) return null;
-  return minutes;
+  return minutesPastFive(firstScan, LATE_START_MAX_MINUTE);
 }
 
 /** Aggregate rows into one record per associate. */

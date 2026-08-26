@@ -11,6 +11,8 @@ import * as grid from "./grid.js";
 import {
   TIME_SLOTS, resolveShortcut, dayName, emptyAssociate,
 } from "../../data/grid.js";
+import { parsePastedTasks, applyPaste, tasksToClipboard, cellsInRange } from "../../data/paste.js";
+import { lunchSummary, isWithinShift } from "../../data/lunch.js";
 
 const AUTOSAVE_DELAY_MS = 3000;
 
@@ -46,11 +48,21 @@ function toolbar(ctx) {
     </div>`;
 }
 
+/**
+ * Key legend, doubling as the colour key.
+ *
+ * The grid tints each task a different colour, but nothing said which was
+ * which — you had to fill a cell to find out. The swatch uses the SAME
+ * `task-*` class the cells do, so the legend can never drift from the grid.
+ */
 function legend() {
   return `<div class="dm-legend dm-stat-note">
     Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label]) =>
-      `<kbd>${esc(label[0].toUpperCase())}</kbd> ${esc(label)}`).join(" · ")}
-    · <kbd>X</kbd> Clear
+      `<span class="dm-legend-item">` +
+        `<span class="dm-legend-swatch task-${esc(task.toLowerCase())}"></span>` +
+        `<kbd>${esc(label[0].toUpperCase())}</kbd> ${esc(label)}` +
+      `</span>`).join("")}
+    <span class="dm-legend-item"><kbd>X</kbd> Clear</span>
   </div>`;
 }
 
@@ -73,17 +85,33 @@ function mobilePanel(ctx) {
     </div>`;
 }
 
+/**
+ * Lunch compliance banner.
+ *
+ * Thresholds come from the standalone app's own suggestion engine — a shift
+ * over 6 hours needs a lunch, and it belongs at least 2 slots from either end.
+ * See data/lunch.js for the source of those numbers.
+ */
+function lunchBanner(ctx) {
+  const summary = lunchSummary(ctx.assignments);
+  if (!summary) return "";
+  return `<div class="dm-warn" role="status">
+    <strong>Lunch:</strong> ${esc(summary.count)} associate${summary.count === 1 ? "" : "s"} —
+    ${esc(summary.text)}.
+  </div>`;
+}
+
 export function render(ctx) {
   if (!ctx.store) return empty("Select a store on the Dashboard first.");
 
-  return toolbar(ctx) + legend() + grid.render(ctx) + mobilePanel(ctx);
+  return toolbar(ctx) + legend() + lunchBanner(ctx) + grid.render(ctx) + mobilePanel(ctx);
 }
 
 export function wire(ctx, root) {
   const {
-    host, onUiChange, onSetTask, onSetStatus, onDateChange,
+    host, onUiChange, onSetTask, onSetTasks, onSetStatus, onDateChange,
     onAddAssociate, onFinalize, onImport, onAcceptAll, onDismissAll, onPrint,
-    locked,
+    locked, assignments = [], ui = {},
   } = ctx;
 
   const offs = [];
@@ -108,12 +136,77 @@ export function wire(ctx, root) {
   if (locked) return () => offs.forEach((off) => off());
 
   // ── Cell selection ───────────────────────────────────────────────────────
+  //
+  // Hold and drag across cells to select a rectangle, or shift-click to extend
+  // from the last anchor. A task key then applies to the whole selection, which
+  // is how you fill a block of pick hours without pressing P forty times.
+  //
+  // During the drag the highlight is painted DIRECTLY onto the DOM rather than
+  // pushed through state — a re-render per mousemove would be unusable, and
+  // would fight the focus/scroll restore. State is written once, on mouseup.
+  // Seeded from state, NOT reset to null. Committing a selection re-renders,
+  // which re-runs wire() — so a fresh {anchor:null} here meant the selection
+  // was visually highlighted (it comes from ui.gridSel) while the key handler
+  // saw nothing selected and filled only the focused cell.
+  const sel = {
+    anchor: ui.gridSel?.anchor ?? null,
+    head:   ui.gridSel?.head   ?? null,
+    dragging: false,
+  };
+
+  const coords = (el) => ({ name: el.dataset.dmRow, slot: Number(el.dataset.dmSlot) });
+
+  // A Set needs a scalar key, and an associate's name can hold punctuation, so
+  // join on a character no roster will ever contain.
+  const key = (name, slot) => `${name}␟${slot}`;
+
+  const paint = () => {
+    const chosen = new Set(
+      cellsInRange(assignments, sel.anchor, sel.head).map((c) => key(c.name, c.slot)));
+    for (const c of root.querySelectorAll(".dm-cell")) {
+      c.classList.toggle("is-selected",
+        chosen.has(key(c.dataset.dmRow, Number(c.dataset.dmSlot))));
+    }
+  };
+
+  const commit = () => onUiChange?.({ gridSel: sel.anchor && sel.head
+    ? { anchor: { ...sel.anchor }, head: { ...sel.head } } : null });
+
+  offs.push(host.ui.delegate(root, "mousedown", ".dm-cell", (e, el) => {
+    if (e.button !== 0) return;
+    if (window.matchMedia?.("(pointer: coarse)").matches) return;   // touch uses the panel
+    // Shift extends the existing rectangle instead of starting a new one.
+    if (e.shiftKey && sel.anchor) sel.head = coords(el);
+    else { sel.anchor = coords(el); sel.head = coords(el); }
+    sel.dragging = true;
+    // Stop the browser starting a text selection across the table.
+    e.preventDefault();
+    el.focus({ preventScroll: true });
+    paint();
+  }));
+
+  offs.push(host.ui.delegate(root, "mouseover", ".dm-cell", (_e, el) => {
+    if (!sel.dragging) return;
+    sel.head = coords(el);
+    paint();
+  }));
+
+  // mouseup on the document, not the grid: releasing outside the table still
+  // has to end the drag, or the grid keeps selecting as the pointer moves back.
+  const onUp = () => {
+    if (!sel.dragging) return;
+    sel.dragging = false;
+    commit();
+  };
+  document.addEventListener("mouseup", onUp);
+  offs.push(() => document.removeEventListener("mouseup", onUp));
+
   offs.push(host.ui.delegate(root, "click", ".dm-cell", (_e, el) => {
-    const target = { name: el.dataset.dmRow, slot: Number(el.dataset.dmSlot) };
+    const target = coords(el);
     // Touch has no keyboard, so a tap opens the task panel; on desktop the
     // cell simply takes focus and typing fills it.
     if (window.matchMedia?.("(pointer: coarse)").matches) onUiChange?.({ gridTarget: target });
-    else el.focus();
+    else el.focus({ preventScroll: true });
   }));
 
   offs.push(host.ui.delegate(root, "keydown", ".dm-cell", (e, el) => {
@@ -135,11 +228,97 @@ export function wire(ctx, root) {
       return;
     }
 
+    if (e.key === "Escape") {
+      sel.anchor = null; sel.head = null;
+      paint(); commit();
+      return;
+    }
+
     const task = resolveShortcut(e.key);
     if (task === undefined) return;   // unmapped key: leave the cell alone
     e.preventDefault();
-    onSetTask?.(name, slot, task);
+
+    // A key applies to the whole selection when there is one, and to the
+    // focused cell otherwise.
+    // Never write outside a shift, however the cell was reached — a selection
+    // dragged past the end of someone's day would otherwise assign hours they
+    // are not working.
+    // Assigning outside a shift is refused; CLEARING one is always allowed, so
+    // stale out-of-shift tasks can be removed by hand.
+    const byName = new Map(assignments.map((a) => [a.name, a]));
+    const allowed = (c) => task === "" || isWithinShift(byName.get(c.name), c.slot);
+
+    const block = cellsInRange(assignments, sel.anchor, sel.head);
+    if (block.length > 1 && block.some((c) => c.name === name && c.slot === slot)) {
+      const writable = block.filter(allowed);
+      const blocked = block.length - writable.length;
+      if (writable.length) onSetTasks?.(writable.map((c) => ({ ...c, task })));
+      if (blocked) host.ui.toast(`${blocked} cell(s) skipped — outside the shift.`);
+    } else if (allowed({ name, slot })) {
+      onSetTask?.(name, slot, task);
+    }
   }));
+
+  // ── Copy / paste ─────────────────────────────────────────────────────────
+  //
+  // The grid is used like a spreadsheet, so it accepts what one puts on the
+  // clipboard: tab-separated columns, newline-separated rows, filling right and
+  // down from the focused cell.
+  //
+  // Bound on `root` rather than on the cell, because the clipboard events fire
+  // at the focused element and bubble — and the focused element is a <td> that
+  // the next render will have replaced.
+  const focusedCell = () => {
+    const a = document.activeElement;
+    return a && root.contains(a) && a.classList?.contains("dm-cell") ? a : null;
+  };
+
+  const onPaste = (e) => {
+    const cell = focusedCell();
+    if (!cell) return;
+    const text = e.clipboardData?.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+
+    const { rows, unrecognised } = parsePastedTasks(text);
+    if (!rows.length) return;
+
+    const { updates, skipped } = applyPaste(
+      assignments, cell.dataset.dmRow, Number(cell.dataset.dmSlot), rows, TIME_SLOTS.length);
+
+    const byName = new Map(assignments.map((a) => [a.name, a]));
+    const writable = updates.filter((u) => u.task === "" || isWithinShift(byName.get(u.name), u.slot));
+    const offShift = updates.length - writable.length;
+    onSetTasks?.(writable);
+
+    if (unrecognised.length) {
+      host.ui.toast(`Ignored ${unrecognised.length} unrecognised value(s): ${unrecognised.slice(0, 4).join(", ")}`,
+        { kind: "error" });
+    }
+    if (skipped) host.ui.toast(`${skipped} pasted cell(s) fell outside the grid.`);
+    if (offShift) host.ui.toast(`${offShift} pasted cell(s) skipped — outside the shift.`);
+    if (writable.length) host.ui.toast(`Pasted ${writable.length} assignment(s).`);
+  };
+
+  const onCopy = (e) => {
+    const cell = focusedCell();
+    if (!cell) return;
+    const row = assignments.find((a) => a.name === cell.dataset.dmRow);
+    if (!row) return;
+    e.preventDefault();
+    // Copy the focused cell. Copying its whole row would surprise anyone
+    // expecting single-cell behaviour, and the paste side handles blocks
+    // regardless of where they came from.
+    e.clipboardData?.setData("text/plain",
+      tasksToClipboard([[row.slots?.[cell.dataset.dmSlot] ?? ""]]));
+  };
+
+  root.addEventListener("paste", onPaste);
+  root.addEventListener("copy", onCopy);
+  offs.push(() => {
+    root.removeEventListener("paste", onPaste);
+    root.removeEventListener("copy", onCopy);
+  });
 
   // ── Mobile task panel ────────────────────────────────────────────────────
   offs.push(host.ui.delegate(root, "click", "[data-dm-task]", (_e, el) => {

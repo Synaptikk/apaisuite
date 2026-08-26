@@ -2,7 +2,7 @@
 //
 // Ranking by any single metric, with volume outliers held back.
 
-import { section, empty, esc, table } from "./_shared.js";
+import { section, empty, esc, table, associateCell } from "./_shared.js";
 import { classificationOf, badgeClass, CLASSIFICATIONS, UNCLASSIFIED } from "../data/classify.js";
 import { excludeOutliers } from "../data/opportunities.js";
 
@@ -72,7 +72,7 @@ export function render(ctx) {
     { label: "Associate", key: "name",
       format: (a) => {
         const cls = classificationOf(a.name, classifications);
-        return `${esc(a.name)} <span class="badge ${esc(badgeClass(cls))}">${esc(cls)}</span>`;
+        return associateCell(a.name, cls);
       } },
     { label, key, align: "right", format: (a) => `${esc(a[key] ?? 0)}${esc(suffix)}` },
     { label: "Pick Qty", key: "picked_qty", align: "right",
@@ -95,7 +95,7 @@ export function render(ctx) {
 }
 
 export function wire(ctx, root) {
-  const { onUiChange } = ctx;
+  const { onUiChange, host, onSelectAssociate } = ctx;
   const bind = (id, field) => {
     const el = root.querySelector(id);
     const fn = (e) => onUiChange?.({ [field]: e.target.value });
@@ -106,6 +106,11 @@ export function wire(ctx, root) {
     bind("#dm-lb-metric", "lbMetric"),
     bind("#dm-lb-group",  "lbGroup"),
     bind("#dm-lb-count",  "lbCount"),
+    // Clicking a name anywhere opens that person's breakdown, not just on the
+    // Associates tab.
+    host.ui.delegate(root, "click", "[data-dm-associate]", (_e, el) => {
+      onSelectAssociate?.(el.dataset.dmAssociate);
+    }),
   ];
   return () => offs.forEach((off) => off());
 }

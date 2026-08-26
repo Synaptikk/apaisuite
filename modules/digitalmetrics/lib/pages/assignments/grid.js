@@ -11,6 +11,8 @@
 //     time header and the name column pinned.
 
 import { esc } from "../_shared.js";
+import { inRange } from "../../data/paste.js";
+import { isWithinShift, lunchIssue } from "../../data/lunch.js";
 import {
   TIME_SLOTS, SUMMARY_TASKS, summarise, fillPercentage, isHalfSlot,
 } from "../../data/grid.js";
@@ -20,7 +22,7 @@ const STATUSES = [
   { key: "absent", label: "A", title: "Absent" },
 ];
 
-function cell(assoc, idx, suggestions, locked) {
+function cell(assoc, idx, suggestions, locked, selected) {
   const task       = assoc.slots?.[idx] || "";
   const suggestion = !task ? suggestions[assoc.name]?.[idx] : null;
 
@@ -31,6 +33,7 @@ function cell(assoc, idx, suggestions, locked) {
   const classes = [
     "dm-cell",
     inShift ? "in-shift" : "",
+    selected ? "is-selected" : "",
     task ? `task-${esc(task.toLowerCase())}` : "",
     suggestion ? "is-suggested" : "",
     isHalfSlot(assoc, idx) ? "is-half" : "",
@@ -43,24 +46,33 @@ function cell(assoc, idx, suggestions, locked) {
           esc(suggestion.task)}</span>`
       : "";
 
+  // Outside the shift there is nothing to ASSIGN — the associate is not here.
+  // The cell stays focusable though, because CLEARING must always be possible:
+  // days written before this rule existed hold tasks out there, and a cell you
+  // cannot reach is a cell you cannot fix. index.js enforces "clear only".
+  const editable = !locked;
+
   return `<td class="${classes}" data-dm-row="${esc(assoc.name)}" data-dm-slot="${idx}"
-             ${locked ? "" : 'tabindex="0"'} role="gridcell">${content}</td>`;
+             ${editable ? 'tabindex="0"' : ""} role="gridcell"
+             ${inShift ? "" : 'data-dm-offshift="1" aria-disabled="true"'}>${content}</td>`;
 }
 
-function associateRow(assoc, suggestions, locked) {
+function associateRow(assoc, suggestions, locked, isSelected) {
   const status = assoc.status || "";
+  const lunch  = lunchIssue(assoc);
   const buttons = STATUSES.map((s) => `
     <button class="dm-status ${status === s.key ? "is-active" : ""}"
             data-dm-status="${esc(assoc.name)}" data-dm-status-key="${esc(s.key)}"
             title="${esc(s.title)}" ${locked ? "disabled" : ""}>${esc(s.label)}</button>`).join("");
 
-  return `<tr class="${status ? `is-${esc(status)}` : ""}">
+  return `<tr class="${[status ? `is-${esc(status)}` : "", lunch ? "has-lunch-issue" : ""].filter(Boolean).join(" ")}">
     <th scope="row" class="dm-name-cell">
-      <span class="dm-name">${esc(assoc.name)}</span>
+      <span class="dm-name">${esc(assoc.name)}${
+        lunch ? `<span class="dm-lunch-flag" title="${esc(lunch.message)}" aria-label="${esc(lunch.message)}">!</span>` : ""}</span>
       ${assoc.shiftLabel ? `<span class="dm-stat-note">${esc(assoc.shiftLabel)}</span>` : ""}
       <span class="dm-status-group">${buttons}</span>
     </th>
-    ${TIME_SLOTS.map((_, i) => cell(assoc, i, suggestions, locked)).join("")}
+    ${TIME_SLOTS.map((_, i) => cell(assoc, i, suggestions, locked, isSelected(assoc.name, i))).join("")}
   </tr>`;
 }
 
@@ -88,7 +100,13 @@ function summaryRows(assignments, suggestions) {
 }
 
 export function render(ctx) {
-  const { assignments = [], suggestions = {}, locked = false } = ctx;
+  const { assignments = [], suggestions = {}, locked = false, ui = {} } = ctx;
+
+  // Selection is two corners (see data/paste.js::inRange), resolved against the
+  // CURRENT row order on every render so it survives the grid reloading.
+  const order = assignments.map((a) => a.name);
+  const { anchor, head } = ui.gridSel || {};
+  const isSelected = (name, slot) => inRange(order, anchor, head, name, slot);
 
   if (!assignments.length) {
     return `<div class="dm-todo">No roster for this date. Import a schedule or add
@@ -103,7 +121,7 @@ export function render(ctx) {
         locked ? "Finalized" : `${fill}% filled`}</span>
       <span class="dm-stat-note">${assignments.length} associates</span>
     </div>
-    <div class="dm-grid-scroll">
+    <div class="dm-grid-scroll" data-dm-scroll="grid">
       <table class="dm-grid" role="grid">
         <thead>
           <tr>
@@ -111,10 +129,14 @@ export function render(ctx) {
             ${TIME_SLOTS.map((s) => `<th>${esc(s)}</th>`).join("")}
           </tr>
         </thead>
+        <!-- Totals live at the TOP, sticky under the time header — same as the
+             standalone app. In a tfoot they sat below 60 rows of roster, so
+             the one thing you check while assigning was the one thing you had
+             to scroll to find. -->
+        <tbody class="dm-summary">${summaryRows(assignments, suggestions)}</tbody>
         <tbody>
-          ${assignments.map((a) => associateRow(a, suggestions, locked)).join("")}
+          ${assignments.map((a) => associateRow(a, suggestions, locked, isSelected)).join("")}
         </tbody>
-        <tfoot>${summaryRows(assignments, suggestions)}</tfoot>
       </table>
     </div>`;
 }

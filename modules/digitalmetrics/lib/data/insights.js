@@ -5,6 +5,7 @@
 
 import { classificationOf } from "./classify.js";
 import { parsePickDate } from "./parse.js";
+import { scanHour, minutesPastFive } from "./clock.js";
 
 const LATE_FLAG_MINUTES = 5;    // >5:05 counts as late for the day count
 const LATE_MAX_MINUTE   = 50;   // 5:51+ is an early 6am start, not a late 5am one
@@ -85,18 +86,12 @@ export function distribution(daily) {
   };
 }
 
-/** Parse "12/6/25 9:08 AM" (or bare "9:08 AM") to a 0–23 hour. */
-export function scanHour(firstScan) {
-  if (typeof firstScan !== "string") return null;
-  const m = firstScan.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return null;
-
-  let hour = parseInt(m[1], 10);
-  const isPM = m[3].toUpperCase() === "PM";
-  if (isPM && hour !== 12) hour += 12;
-  if (!isPM && hour === 12) hour = 0;
-  return hour;
-}
+/**
+ * Parse "12/6/25 9:08 AM", "8/22/2026 1:08:37 PM" or bare "9:08" to a 0–23
+ * hour. Re-exported from data/clock.js, which explains why the old inline
+ * regex read minutes as hours.
+ */
+export { scanHour };
 
 /** When Store Help actually starts, by first-scan hour. Busiest first. */
 export function storeHelpPeakHours(rawData, classifications = {}) {
@@ -143,15 +138,8 @@ export function lateStarts(rawData, associates = [], classifications = {}) {
     if (!name) continue;
     if (LATE_START_EXCLUDED.has(classificationOf(name, classifications))) continue;
 
-    const scan = row["Min. First Scan"];
-    if (typeof scan !== "string") continue;
-    const m = scan.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (!m) continue;
-
-    const hour    = parseInt(m[1], 10);
-    const minutes = parseInt(m[2], 10);
-    const isPM    = m[3].toUpperCase() === "PM";
-    if (isPM || hour !== 5 || minutes > LATE_MAX_MINUTE) continue;
+    const minutes = minutesPastFive(row["Min. First Scan"], LATE_MAX_MINUTE);
+    if (minutes === null) continue;
 
     if (!byName.has(name)) byName.set(name, { name, days: [] });
     byName.get(name).days.push({ date: row._label, minutes });

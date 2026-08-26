@@ -25,6 +25,7 @@ import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
 import { parseSchedulePayload } from "./lib/data/schedule_import.js";
+import { weekLabel } from "./lib/data/wmweek.js";
 
 const PAGES = {
   dashboard,
@@ -148,6 +149,7 @@ export async function mount(host, container) {
       suggestionCount: countSuggestions(),
       onDateChange:    setAssignmentDate,
       onSetTask:       setTask,
+      onSetTasks:      setTasks,
       onSetStatus:     toggleStatus,
       onAddAssociate:  addAssociate,
       onFinalize:      setFinalized,
@@ -156,6 +158,29 @@ export async function mount(host, container) {
       onImport:        importSchedule,
       onPrint:         () => window.print(),
     };
+
+    // ── Remember which cell had focus ──────────────────────────────────
+    //
+    // Every render replaces innerHTML, which destroys the focused element.
+    // On the Assignments grid that made hotkeys look broken: the first
+    // keypress set a task, the re-render dropped focus to <body>, and every
+    // press after that went nowhere. A spreadsheet has to keep the cursor
+    // where you left it.
+    const active = document.activeElement;
+    const keep = active && el.contains(active) && active.dataset?.dmRow !== undefined
+      ? { row: active.dataset.dmRow, slot: active.dataset.dmSlot }
+      : null;
+
+    // ── Remember where every scroll container was ──────────────────────
+    //
+    // Replacing innerHTML destroys the scrolling elements too, and a fresh
+    // one starts at 0,0. On the Assignments grid that made the view jump to
+    // the top-left on every keystroke: you would type a task and lose your
+    // place. Containers opt in with data-dm-scroll="<key>".
+    const scrolls = [];
+    for (const node of el.querySelectorAll("[data-dm-scroll]")) {
+      scrolls.push({ key: node.dataset.dmScroll, top: node.scrollTop, left: node.scrollLeft });
+    }
 
     // A renderer that throws must NOT leave the previous tab's markup sitting
     // there. Without this, `el.innerHTML = page.render(ctx)` never runs on a
@@ -176,6 +201,23 @@ export async function mount(host, container) {
     } catch (err) {
       console.error(`[digitalmetrics] ${state.page}.wire threw:`, err);
       disposePage = null;
+    }
+
+    // Scroll first, then focus — restoring focus into a container that is
+    // still at 0,0 is what scrolls the page.
+    for (const s of scrolls) {
+      const node = el.querySelector(`[data-dm-scroll="${CSS.escape(s.key)}"]`);
+      if (!node) continue;
+      node.scrollTop = s.top;
+      node.scrollLeft = s.left;
+    }
+
+    // preventScroll matters on a 17-column grid: without it, restoring focus
+    // yanks the viewport back to the cell on every keystroke.
+    if (keep) {
+      el.querySelector(
+        `[data-dm-row="${CSS.escape(keep.row)}"][data-dm-slot="${CSS.escape(keep.slot)}"]`,
+      )?.focus({ preventScroll: true });
     }
   }
 
@@ -298,9 +340,15 @@ export async function mount(host, container) {
     const weeks = await call("list_weeks", { store: state.store });
     if (!weeks) return;
 
+    // Weeks are stored by their Saturday, but nobody at the store thinks in
+    // Saturdays — they think in Walmart fiscal weeks, which is what Tableau's
+    // WM_WEEK and the scheduler's "WK 30" both use. Label them that way and
+    // keep the date range alongside, since the number alone does not say which
+    // days you are looking at. See data/wmweek.js.
     const recentFirst = [...weeks].reverse();
     $("#dm-week").innerHTML = recentFirst.length
-      ? recentFirst.map((w) => `<option value="${host.ui.escapeHtml(w)}">${host.ui.escapeHtml(w)}</option>`).join("")
+      ? recentFirst.map((w) =>
+          `<option value="${host.ui.escapeHtml(w)}">${host.ui.escapeHtml(weekLabel(w))}</option>`).join("")
       : `<option value="">no data</option>`;
 
     state.week = recentFirst[0] || null;
@@ -337,7 +385,13 @@ export async function mount(host, container) {
   async function selectAssociate(name) {
     state.ui = { ...state.ui, assocSelected: name, assocSearch: name };
     state.patterns = null;
-    renderPage();
+
+    // Names are clickable on every board now, and the breakdown lives on the
+    // Associates tab — so selecting someone has to go there. Without this the
+    // click set the selection and re-rendered the board you were already on,
+    // which looked like nothing happened at all.
+    if (state.page !== "associates") selectPage("associates");
+    else renderPage();
 
     if (!state.store) return;
     if (!state.recentAssignments) {
@@ -486,6 +540,49 @@ export async function mount(host, container) {
     state.assignments = state.assignments.map((a) => (a.name === name ? fn({ ...a }) : a));
     scheduleSave();
     renderPage();
+  }
+
+  /**
+   * Set many cells in ONE state change.
+   *
+   * Looping setTask() re-rendered per cell — a 30-cell paste meant 30 full
+   * innerHTML swaps, each fighting the focus and scroll restore. This applies
+   * the whole block, then renders once.
+   */
+  function setTasks(updates) {
+    if (!updates?.length) return;
+
+    const bySlotByName = new Map();
+    for (const u of updates) {
+      if (!bySlotByName.has(u.name)) bySlotByName.set(u.name, []);
+      bySlotByName.get(u.name).push(u);
+    }
+
+    state.assignments = state.assignments.map((a) => {
+      const mine = bySlotByName.get(a.name);
+      if (!mine) return a;
+      const slots = { ...a.slots };
+      for (const u of mine) {
+        if (u.task) slots[u.slot] = u.task;
+        else        delete slots[u.slot];
+      }
+      return { ...a, slots };
+    });
+
+    // A cell the user has now decided on should not keep offering advice.
+    const suggestions = { ...state.suggestions };
+    for (const u of updates) {
+      const slots = suggestions[u.name];
+      if (!slots?.[u.slot]) continue;
+      const rest = { ...slots };
+      delete rest[u.slot];
+      suggestions[u.name] = rest;
+    }
+    state.suggestions = suggestions;
+
+    scheduleSave();
+    renderPage();
+    for (const name of bySlotByName.keys()) syncExceptionClassification(name);
   }
 
   function setTask(name, slot, task) {

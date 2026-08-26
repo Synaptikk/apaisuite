@@ -12,6 +12,8 @@
 // Everything user-derived goes through esc(). The donor sanitised at the call
 // site by hand; here it is the default and the raw path has to be explicit.
 
+import { badgeClass } from "../data/classify.js";
+
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -64,4 +66,25 @@ export function table(columns, rows, { emptyMessage = "No data." } = {}) {
   return `<div class="dm-table-scroll"><table class="data-table">
     <thead><tr>${head}</tr></thead><tbody>${body}</tbody>
   </table></div>`;
+}
+
+/**
+ * An associate's name plus their role badge, as one aligned, clickable cell.
+ *
+ * Shared so every board renders the pair identically. Two problems it fixes:
+ *
+ *  · The badge used to follow the name inline, so its left edge landed
+ *    wherever the name happened to end and the column read as ragged. Here the
+ *    badge is pushed to the column's right edge with margin-left:auto, so all
+ *    badges line up regardless of name length.
+ *  · Names were plain text on every board except Associates, so there was no
+ *    way to open someone's breakdown from the Leaderboard or Opportunities.
+ *    `data-dm-associate` is the hook the delegated handler already looks for.
+ */
+export function associateCell(name, classification) {
+  const cls = classification || "Unclassified";
+  return `<span class="dm-assoc-cell">` +
+    `<button type="button" class="dm-assoc-link" data-dm-associate="${esc(name)}">${esc(name)}</button>` +
+    `<span class="badge ${esc(badgeClass(cls))} dm-role">${esc(cls)}</span>` +
+  `</span>`;
 }

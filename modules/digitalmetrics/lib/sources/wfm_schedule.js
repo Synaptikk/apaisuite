@@ -132,21 +132,39 @@ function extractWorkersInPage() {
 
     // ── job code → job title ────────────────────────────────────────────
     //
-    // `shift.jobName` is a job CODE ("1-936-1451"), not a title — verified
-    // 2026-08-25, where classifying on it produced 171 Store Help and zero
-    // Digital because nothing could ever match /digital/.
+    // `shift.jobName` is a job CODE ("1-936-1451"), not a title, so it can
+    // never match a /digital/ rule on its own.
     //
-    // The human title exists only in the rendered text, with the code appended
-    // ("Digital Personal Shopper 1-936-1451"). Building the mapping from the
-    // page keeps this working when a new job code appears, which hardcoding
-    // "1-936-1451 means digital" would not.
+    // The titles come from `worker.jobs[].jobDescription`, which every worker
+    // carries: 65/65 codes resolved across all 439 workers on 2026-08-26.
+    //
+    // An earlier version built this map by regexing the rendered page text
+    // instead. That only ever saw the rows the virtualised roster had painted
+    // — 11 codes of 65 — so everyone else fell back to the bare code and
+    // classified as Store Help. "Digital TL 1-630-7200" and
+    // "Digital Coach 40421" were the visible casualties: real digital titles
+    // that simply never got resolved.
     const jobTitles = {};
+    for (const w of workers) {
+      for (const j of w?.worker?.jobs || []) {
+        const code = j?.jobName;
+        const desc = j?.jobDescription;
+        if (!code || !desc || jobTitles[code]) continue;
+        // jobDescription repeats the code on the end ("Digital TL 1-630-7200");
+        // drop it so the stored title reads as a title.
+        // Codes come in two shapes: dashed ("Digital TL 1-630-7200") and bare
+        // ("Digital Coach 40421", whose code is 1-0-40421). Strip both, or the
+        // coach roles keep a number nobody reading a roster wants to see.
+        jobTitles[code] = String(desc)
+          .replace(/\s*(?:\d{1,2}-\d{1,3}-\d{3,5}|\d{4,6})\s*$/, "").trim() || String(desc);
+      }
+    }
+
+    // Page text as a fallback only — it is right about the rows it can see.
     for (const line of pageText.split("\n")) {
       const m = line.match(/^(.+?)\s+(\d{1,2}-\d{2,3}-\d{3,4})\b/);
       if (!m) continue;
       const title = m[1].trim();
-      // Titles are words; a line that is mostly digits is a data row, not a
-      // job label.
       if (title.length < 3 || !/[A-Za-z]{3}/.test(title)) continue;
       if (!jobTitles[m[2]]) jobTitles[m[2]] = title;
     }
