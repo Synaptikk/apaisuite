@@ -292,9 +292,40 @@
 
 /* Wide tables scroll inside their own container so the page body never
    scrolls horizontally. */
+/* Boards scroll inside their own box, with the header row pinned to the top of
+   it — same arrangement as .dm-grid-scroll on Assignments, deliberately, so
+   there is one scrolling-table pattern in this module rather than two.
+
+   It has to be this way round: `overflow-x: auto` alone still makes this a
+   scroll container on BOTH axes (a non-visible overflow on one axis computes
+   the other to auto), so a sticky header would resolve against this element
+   rather than .shell-viewport — and since the element never scrolled
+   vertically, the header would simply never stick. Giving it a real vertical
+   scroll is what makes `top: 0` mean anything.
+
+   max-height only bites when the table is long enough to need it; short boards
+   render exactly as before, with no scrollbar and no visible change. */
 .module-digitalmetrics .dm-table-scroll {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
   -webkit-overflow-scrolling: touch;
+}
+
+.module-digitalmetrics .dm-table-scroll .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* The background must sit on the th, not the tr: a sticky cell lifts out of
+     its row, and the row's background stays behind with the rows scrolling
+     under it. Without this the names read straight through the header. */
+  background: var(--apai-bg-soft);
+  /* Covers the hairline seam between the header and the first row. The two
+     edges are a subpixel apart at fractional zoom levels, and text bleeds
+     through the gap while scrolling — the same defect that had to be chased
+     out of the Assignments grid. */
+  box-shadow: 0 1px 0 var(--apai-border);
 }
 
 .module-digitalmetrics .dm-table-scroll .is-right { text-align: right; }
@@ -670,7 +701,10 @@
     color: #000;
   }
 
-  .module-digitalmetrics .dm-grid-scroll {
+  /* Both scrolling tables. A max-height that clips on screen would clip on
+     paper too, printing 70vh of a roster and silently dropping the rest. */
+  .module-digitalmetrics .dm-grid-scroll,
+  .module-digitalmetrics .dm-table-scroll {
     overflow: visible !important;
     max-height: none !important;
     border: 0;
@@ -679,6 +713,7 @@
   /* Sticky positioning does not survive pagination — it either floats or
      leaves a gap. Everything goes static for print. */
   .module-digitalmetrics .dm-grid thead th,
+  .module-digitalmetrics .dm-table-scroll .data-table thead th,
   .module-digitalmetrics .dm-name-cell,
   .module-digitalmetrics .dm-summary .dm-summary-row th,
   .module-digitalmetrics .dm-summary .dm-summary-row td {
