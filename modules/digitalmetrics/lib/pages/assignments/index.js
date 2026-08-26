@@ -30,7 +30,7 @@ const TASK_BUTTONS = [
 ];
 
 function toolbar(ctx) {
-  const { date, store, locked, saveStatus = "", suggestionCount = 0 } = ctx;
+  const { date, store, locked, saveStatus = "", saveError = null, suggestionCount = 0 } = ctx;
 
   return `
     <div class="dm-controls">
@@ -50,7 +50,10 @@ function toolbar(ctx) {
         <button class="btn" id="dm-asg-dismiss-all">Dismiss</button>` : ""}
 
       <button class="btn" id="dm-asg-finalize">${locked ? "Unfinalize" : "Finalize"}</button>
-      <span class="pill" id="dm-asg-save">${esc(saveStatus)}</span>
+      <span class="pill ${saveError ? "pill-fail" : ""}" id="dm-asg-save"
+              ${saveError ? `title="${esc(saveError)}"` : ""}>${esc(saveStatus)}</span>
+        ${saveError ? `<span class="status-strip status-strip-error dm-save-reason">${
+          esc(saveError)}</span>` : ""}
     </div>`;
 }
 

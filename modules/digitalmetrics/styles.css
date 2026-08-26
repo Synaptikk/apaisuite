@@ -98,6 +98,21 @@
    as "what am I looking at" then "what can I do to it". */
 .module-digitalmetrics .dm-toolbar-gap { flex: 1 1 auto; }
 
+/* The save failure reason, beside the pill. A failed save is the one error in
+   this module that costs real work — a shift plan that looks entered but was
+   never persisted — so it gets a full-width strip rather than a tooltip
+   nobody hovers. Takes the whole row so it cannot be squeezed to an ellipsis
+   by the toolbar buttons. */
+.module-digitalmetrics .dm-save-reason {
+  flex: 1 0 100%;
+  font-size: var(--fs-xs);
+}
+
+@media print {
+  /* A screen-only diagnostic; the printed sheet is the plan, not its status. */
+  .module-digitalmetrics .dm-save-reason { display: none !important; }
+}
+
 .module-digitalmetrics .dm-tabs {
   display: flex;
   flex-wrap: wrap;

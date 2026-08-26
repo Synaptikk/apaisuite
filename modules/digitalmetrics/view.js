@@ -104,18 +104,28 @@ export async function mount(host, container) {
   // this has to catch as well as check — an uncaught rejection here shows up in
   // the console as a bare "digitalmetrics.<type> failed" with the real reason
   // nowhere in sight, which is exactly what it did.
+  // The reason the LAST call failed. call() returns null on failure, which is
+  // convenient at the call site but throws the reason away — and "save failed"
+  // with the reason discarded is a dead end for whoever has to fix it. Kept
+  // here so a caller can surface it without every caller having to unwrap the
+  // envelope itself.
+  let lastCallError = null;
+
   async function call(type, payload = {}) {
     let res;
+    lastCallError = null;
     try {
       res = await host.messaging.send(type, payload);
     } catch (e) {
       const message = String(e?.message ?? e);
+      lastCallError = message;
       setStatus(`error: ${message}`);
       host.ui.toast(`${type}: ${message}`, { kind: "error" });
       return null;
     }
     if (!res?.ok) {
-      setStatus(`error: ${res?.error || "unknown"}`);
+      lastCallError = res?.error || "unknown";
+      setStatus(`error: ${lastCallError}`);
       return null;
     }
     return res.data;
@@ -692,7 +702,17 @@ export async function mount(host, container) {
       },
     });
 
+    // "save failed" on its own is a dead end — the reason is the whole point,
+    // and it is the difference between a kill switch, an expired token and a
+    // rules rejection. It goes on the pill's tooltip and into the console,
+    // because a day's assignments silently not persisting is worse than most
+    // things this module can do wrong.
     state.saveStatus = ok ? "saved" : "save failed";
+    state.saveError  = ok ? null : lastCallError;
+    if (!ok) {
+      console.error("[digitalmetrics] assignments save failed:", lastCallError,
+                    { store: state.store, date: state.assignmentDate });
+    }
     renderPage();
   }
 
