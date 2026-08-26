@@ -56,7 +56,15 @@ export function dailyBreakdown(rawData, name) {
       date:      last,
       firstScan: row["Min. First Scan"] ?? null,
       hours:     Math.round((row["Pick Hours"] || 0) * 10) / 10,
-      pickRate:  row["Pick Rate"] || 0,
+      // Picks per hour, whole. Tableau hands this over at full float width
+      // (92.421), and it was the one field here that went out unrounded —
+      // every sibling is already rounded, so it read as a glitch beside them.
+      // Tenths of a pick per hour is precision the number does not carry.
+      //
+      // Display only: the scoring path reads Tableau's raw row directly
+      // (metrics.js::pickRateSum), so benchmarks and Opportunities scores are
+      // unaffected.
+      pickRate:  Math.round(row["Pick Rate"] || 0),
       picked, nil, sub,
       ftpr:     ftpExp > 0 ? Math.round((ftpAct / ftpExp) * 1000) / 10 : 0,
       nilRate:  picked > 0 ? Math.round((nil / picked) * 1000) / 10 : 0,
