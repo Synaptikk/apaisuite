@@ -35,7 +35,6 @@ function toolbar(ctx) {
       <span class="dm-stat-note">Store ${esc(store || "—")}</span>
 
       <button class="btn" id="dm-asg-add" ${locked ? "disabled" : ""}>Add associate</button>
-      <button class="btn" id="dm-asg-import">Import schedule</button>
       <button class="btn" id="dm-asg-print">Print</button>
 
       ${suggestionCount ? `
@@ -101,16 +100,30 @@ function lunchBanner(ctx) {
   </div>`;
 }
 
+/**
+ * Store / date caption, shown ONLY on paper.
+ *
+ * On screen the toolbar says which store and day you are looking at, but print
+ * hides the toolbar — and a grid of 65 names with no date on it is useless the
+ * moment it leaves the printer.
+ */
+function printTitle(ctx) {
+  return `<div class="dm-print-title" hidden>` +
+    `Store ${esc(ctx.store || "—")} · ${esc(dayName(ctx.date))} ${esc(ctx.date || "")}` +
+  `</div>`;
+}
+
 export function render(ctx) {
   if (!ctx.store) return empty("Select a store on the Dashboard first.");
 
-  return toolbar(ctx) + legend() + lunchBanner(ctx) + grid.render(ctx) + mobilePanel(ctx);
+  return toolbar(ctx) + printTitle(ctx) + legend() + lunchBanner(ctx) +
+         grid.render(ctx) + mobilePanel(ctx);
 }
 
 export function wire(ctx, root) {
   const {
     host, onUiChange, onSetTask, onSetTasks, onSetStatus, onDateChange,
-    onAddAssociate, onFinalize, onImport, onAcceptAll, onDismissAll, onPrint,
+    onAddAssociate, onFinalize, onAcceptAll, onDismissAll, onPrint,
     locked, assignments = [], ui = {},
   } = ctx;
 
@@ -127,7 +140,6 @@ export function wire(ctx, root) {
     const name = prompt("Associate name");
     if (name?.trim()) onAddAssociate?.(emptyAssociate(name.trim().toUpperCase()));
   });
-  on("#dm-asg-import",      "click", () => onImport?.());
   on("#dm-asg-print",       "click", () => onPrint?.());
   on("#dm-asg-finalize",    "click", () => onFinalize?.(!locked));
   on("#dm-asg-accept-all",  "click", () => onAcceptAll?.());

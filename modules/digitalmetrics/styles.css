@@ -438,19 +438,35 @@
   background: var(--apai-bg-soft);
 }
 
-/* Scheduled vs unscheduled has to be readable at a glance across a 17-column
-   grid. bg-soft against bg-elev differ by a couple of percent of lightness —
-   invisible unless two cells happen to sit side by side. The scheduled hours
-   are the ones you act on, so they get the lift, and an inset edge gives the
-   block a boundary that survives on a low-contrast display. */
+/* ── Scheduled vs unscheduled ─────────────────────────────────────────────
+   Explicit per-theme values, NOT --apai-bg-elev vs --apai-bg-soft.
+   Those two tokens invert between themes: in light, bg-elev (#FFF) is lighter
+   than bg-soft (#F9FAFB); in dark, bg-soft (86% black) is LIGHTER than bg-elev
+   (92% black). Using them meant the unscheduled hours read as the prominent
+   ones in dark mode — the opposite of the intent.
+
+   Both values are declared here so the relationship is fixed: the scheduled
+   hours are always the brighter, opaque surface, and the blocked-out hours are
+   always the recessed one. */
+.module-digitalmetrics {
+  --dm-shift-bg:      var(--apai-bg-elev);
+  --dm-shift-edge:    var(--apai-border);
+  /* Mixed toward --apai-muted, NOT --apai-border. Border (#E5E7EB) and bg
+     (#F6F7F9) are both near-white, so mixing them could only ever produce
+     another near-white — measured 1.19:1 against the scheduled cell, which is
+     the "not contrasted enough" report. Muted (#5B6472) has somewhere to go. */
+  --dm-offshift-bg:   color-mix(in srgb, var(--apai-muted) 20%, var(--apai-bg));
+  --dm-offshift-line: color-mix(in srgb, var(--apai-muted) 40%, transparent);
+}
+
 .module-digitalmetrics .dm-cell.in-shift {
-  background: var(--apai-bg-elev);
-  box-shadow: inset 0 0 0 1px var(--apai-border-soft);
+  background: var(--dm-shift-bg);
+  box-shadow: inset 0 0 0 1px var(--dm-shift-edge);
 }
 .module-digitalmetrics .dm-cell:not(.in-shift) {
-  background: var(--apai-bg-soft);
-  /* Unscheduled hours read as "not yours to fill" rather than as empty. */
-  opacity: .55;
+  background: var(--dm-offshift-bg);
+  /* No opacity here — a translucent cell picks up whatever is behind it and
+     washes out the difference this rule exists to create. */
 }
 /* The half-hour wedge marks a shift starting or ending mid-hour. It was drawn
    in border-soft, the same colour as the grid lines, so the diagonal was
@@ -604,14 +620,55 @@
    table flows onto the page. */
 
 @media print {
-  @page { size: landscape; margin: 8mm; }
+  /* ── One page, readable ────────────────────────────────────────────────
+     The grid is 65 rows x 18 columns. At screen sizing that is three pages of
+     mostly whitespace, and the suite's sidebar and header printed alongside it
+     because the shell has no print rules of its own.
 
+     Landscape, tight margins, and a type scale sized so a full digital roster
+     lands on one sheet while the task codes stay legible. */
+  /* PORTRAIT, not landscape. The grid is lopsided — 18 columns wide but 73
+     rows tall — and the columns hold 1-5 character task codes that need very
+     little width. Height is what sets the type size, and type size is what
+     "readable" means here. Measured: landscape caps out around 7pt, portrait
+     comfortably takes 8pt+. */
+  @page { size: A4 portrait; margin: 6mm; }
+
+  /* Suite chrome. The shell never declared these, so they printed. */
+  .shell-header,
+  .shell-sidebar,
+  .shell-footer,
+  .shell-update-banner { display: none !important; }
+  .shell, .shell-viewport, #shell-main {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Module chrome — controls have no meaning on paper. */
   .module-digitalmetrics .dm-tabs,
   .module-digitalmetrics .dm-toolbar,
+  .module-digitalmetrics .dm-actions,
+  .module-digitalmetrics .dm-subtitle,
   .module-digitalmetrics .dm-controls,
   .module-digitalmetrics .dm-legend,
   .module-digitalmetrics .dm-task-panel,
+  .module-digitalmetrics .dm-warn,
+  .module-digitalmetrics .dm-grid-meta,
   .module-digitalmetrics .dm-status-group { display: none !important; }
+
+  /* Keep a title so a printed sheet can be identified later. The date and
+     store are injected by the page (.dm-print-title). */
+  .module-digitalmetrics .dm-header { display: block !important; margin: 0 0 1.5mm; }
+  .module-digitalmetrics .dm-title h1 { font-size: 9pt; margin: 0; line-height: 1.1; }
+  .module-digitalmetrics .dm-print-title[hidden] {
+    display: block !important;
+    font-size: 7pt;
+    color: #000;
+  }
 
   .module-digitalmetrics .dm-grid-scroll {
     overflow: visible !important;
@@ -619,12 +676,106 @@
     border: 0;
   }
 
+  /* Sticky positioning does not survive pagination — it either floats or
+     leaves a gap. Everything goes static for print. */
   .module-digitalmetrics .dm-grid thead th,
   .module-digitalmetrics .dm-name-cell,
-  .module-digitalmetrics .dm-summary-row th { position: static !important; }
+  .module-digitalmetrics .dm-summary .dm-summary-row th,
+  .module-digitalmetrics .dm-summary .dm-summary-row td {
+    position: static !important;
+    box-shadow: none !important;
+  }
 
-  .module-digitalmetrics .dm-cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Type and spacing: this is what turns three pages into one. */
+  .module-digitalmetrics .dm-grid {
+    width: 100% !important;
+    table-layout: fixed;
+    /* 73 rows (1 header + 7 totals + 65 roster) into ~193mm of usable height
+       is 2.6mm per row. That sets the type, not taste: 5.5pt with tight
+       leading is the largest that fits, and print DPI carries it. */
+    font-size: 8pt;
+    border-collapse: collapse;
+  }
+  .module-digitalmetrics .dm-grid th,
+  .module-digitalmetrics .dm-grid td {
+    /* Measured: 2.79mm per row put the sheet 12mm over one page. Leading of
+       1.0 and 0.15mm padding brings a row to ~2.45mm — 73 rows then land
+       around 180mm against ~193mm usable. */
+    padding: 0.3mm 0.4mm !important;
+    line-height: 1.05;
+    border: 0.2mm solid #999 !important;
+    min-width: 0 !important;
+    overflow: hidden;
+  }
+  .module-digitalmetrics .dm-grid thead th { font-size: 7pt; }
+
+  /* The name column carries the only long strings, so it gets the width. */
+  /* Names are the only long strings; 34mm holds the longest on this roster at
+     8pt and leaves ~9.6mm per hour column, which a 5-character code fits. */
+  .module-digitalmetrics .dm-name-cell { width: 34mm; text-align: left !important; }
+  .module-digitalmetrics .dm-name { font-size: 7.5pt; font-weight: 600; }
+  /* The shift time is dropped: it costs a whole second line on every row, and
+     the shaded in-shift cells already show the window across the grid. */
+  .module-digitalmetrics .dm-name-cell .dm-stat-note { display: none !important; }
+
+  .module-digitalmetrics .dm-summary .dm-summary-row th,
+  .module-digitalmetrics .dm-summary .dm-summary-row td {
+    font-size: 7pt;
+    background: #ECECEC !important;
+  }
+
+  /* Task tints are the whole point of the sheet — force them through, and
+     override the dark-theme mixes with the light values so a printout is
+     never dark-on-dark. */
+  .module-digitalmetrics .dm-cell,
+  .module-digitalmetrics .dm-summary .dm-summary-row th,
+  .module-digitalmetrics .dm-summary .dm-summary-row td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .module-digitalmetrics {
+    --dm-task-pick:  #DBEAFE;
+    --dm-task-disp:  #DCFCE7;
+    --dm-task-stage: #FEF3C7;
+    --dm-task-prep:  #F3E8FF;
+    --dm-task-gmd:   #FFE4E6;
+    --dm-task-exc:   #FFEDD5;
+    --dm-task-ip:    #E0F2FE;
+    --dm-task-rest:  #E5E7EB;
+    --dm-shift-bg:      #FFFFFF;
+    --dm-shift-edge:    #BBBBBB;
+    --dm-offshift-bg:   #D9D9D9;
+    --dm-offshift-line: #BFBFBF;
+  }
+  /* Everything prints black. Theme ink (blue headings, amber/green stat
+     colours) survives into print otherwise, and on a mono printer those come
+     out as muddy greys of no meaning. */
+  .module-digitalmetrics .dm-grid,
+  .module-digitalmetrics .dm-grid th,
+  .module-digitalmetrics .dm-grid td,
+  .module-digitalmetrics .dm-name,
+  .module-digitalmetrics .dm-title h1,
+  .module-digitalmetrics .dm-print-title { color: #000 !important; }
+
+  /* Off-shift hours: a flat grey, not the on-screen diagonal hatch. The hatch
+     reads as texture on a backlit display but as a lot of toner on paper, and
+     it competes with the task codes it sits next to. */
+  .module-digitalmetrics .dm-cell[data-dm-offshift] {
+    background-image: none !important;
+    background: #D5D5D5 !important;
+  }
+
+  /* Selection and lunch flags are working state, not part of the plan. */
+  .module-digitalmetrics .dm-cell.is-selected { box-shadow: none !important; }
+  .module-digitalmetrics .dm-cell.is-selected::after { display: none !important; }
+  .module-digitalmetrics .dm-lunch-flag { display: none !important; }
+  .module-digitalmetrics .dm-suggestion-hint { display: none !important; }
+
+  /* If it ever does spill, repeat the column header rather than orphan rows. */
+  .module-digitalmetrics .dm-grid thead { display: table-header-group; }
+  .module-digitalmetrics .dm-grid tr { break-inside: avoid; }
 }
+
 
 .module-digitalmetrics .dm-upload { cursor: pointer; }
 
@@ -747,7 +898,7 @@
   cursor: default;
   background-image: repeating-linear-gradient(
     45deg, transparent, transparent 4px,
-    var(--apai-border-soft) 4px, var(--apai-border-soft) 5px);
+    var(--dm-offshift-line) 4px, var(--dm-offshift-line) 5px);
 }
 
 /* ── Lunch compliance ─────────────────────────────────────────────────── */
@@ -774,4 +925,60 @@
   font-size: 10px;
   font-weight: 700;
   cursor: help;
+}
+
+
+/* ── Dark theme ───────────────────────────────────────────────────────────
+   The scheduled hours must stay the BRIGHTER surface in both themes. Dark
+   mode inverts the usual token order — --apai-bg-soft (86% black) is lighter
+   than --apai-bg-elev (92% black) — so the light values cannot simply be
+   reused, and the palette tokens are only in scope inside this block. */
+[data-theme="dark"] .module-digitalmetrics {
+  --dm-shift-bg:      color-mix(in srgb, var(--forge-black) 76%, var(--workshop-white));
+  --dm-shift-edge:    color-mix(in srgb, var(--steel) 70%, transparent);
+  --dm-offshift-bg:   color-mix(in srgb, var(--forge-black) 97%, var(--workshop-white));
+  --dm-offshift-line: color-mix(in srgb, var(--steel) 50%, transparent);
+}
+
+/* Task tints are pale washes designed for a white cell; on Forge Black they
+   glare and bury the label. Mixed back toward the surface, they read as tints
+   again while the task text stays legible. */
+[data-theme="dark"] .module-digitalmetrics {
+  --dm-task-pick:  color-mix(in srgb, #DBEAFE 26%, var(--forge-black));
+  --dm-task-disp:  color-mix(in srgb, #DCFCE7 26%, var(--forge-black));
+  --dm-task-stage: color-mix(in srgb, #FEF3C7 26%, var(--forge-black));
+  --dm-task-prep:  color-mix(in srgb, #F3E8FF 26%, var(--forge-black));
+  --dm-task-gmd:   color-mix(in srgb, #FFE4E6 26%, var(--forge-black));
+  --dm-task-exc:   color-mix(in srgb, #FFEDD5 26%, var(--forge-black));
+  --dm-task-ip:    color-mix(in srgb, #E0F2FE 26%, var(--forge-black));
+  --dm-task-rest:  color-mix(in srgb, var(--steel) 30%, var(--forge-black));
+}
+
+/* ── The scrolling sliver ─────────────────────────────────────────────────
+   The header is sticky at top:0 and the totals sit at fixed offsets beneath
+   it. Those offsets cannot match the header's rendered height exactly — it
+   changes with font metrics and zoom — so a 1-2px seam opened between them
+   and roster names flashed through it while scrolling.
+
+   Painting 2px of the row's own background above and below each sticky cell
+   covers the seam whatever the real heights turn out to be. Same trick the
+   standalone app used, and for the same reason. */
+.module-digitalmetrics .dm-summary .dm-summary-row th,
+.module-digitalmetrics .dm-summary .dm-summary-row td {
+  box-shadow: 0 -2px 0 var(--apai-bg-soft), 0 2px 0 var(--apai-bg-soft);
+}
+/* The header needs the same treatment on its underside, where the first
+   totals row meets it. */
+.module-digitalmetrics .dm-grid thead th {
+  box-shadow: 0 2px 0 var(--apai-bg-soft);
+}
+
+/* ── Lunch flag ───────────────────────────────────────────────────────────
+   --apai-warn is a dark amber (#A2570A) chosen for TEXT on a light surface.
+   Used as a badge background with black glyph it reads as a near-black blob.
+   A warning chip is the pale background with the dark colour as ink. */
+.module-digitalmetrics .dm-lunch-flag {
+  background: var(--apai-warn-bg);
+  color: var(--apai-warn);
+  border: 1px solid var(--apai-warn);
 }

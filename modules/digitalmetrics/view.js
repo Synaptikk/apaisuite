@@ -24,7 +24,6 @@ import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
-import { parseSchedulePayload } from "./lib/data/schedule_import.js";
 import { weekLabel } from "./lib/data/wmweek.js";
 
 const PAGES = {
@@ -155,7 +154,6 @@ export async function mount(host, container) {
       onFinalize:      setFinalized,
       onAcceptAll:     acceptAllSuggestions,
       onDismissAll:    () => { state.suggestions = {}; renderPage(); },
-      onImport:        importSchedule,
       onPrint:         () => window.print(),
     };
 
@@ -715,53 +713,11 @@ export async function mount(host, container) {
   // back the import_metrics / import_daily_board handlers, which remain
   // available for a one-off recovery.
 
-  /**
-   * Import a week of schedules from the scraper's clipboard export.
-   *
-   * Uses a modal rather than reading the clipboard directly: clipboard-read
-   * permission prompts are confusing here, and the paste box also lets someone
-   * see and correct what they are about to import.
-   */
-  async function importSchedule() {
-    if (!state.store) {
-      host.ui.toast("Select a store on the Dashboard first.", { kind: "error" });
-      return;
-    }
-
-    const text = prompt(
-      `Paste the schedule export for store ${state.store}.\n\n` +
-      `Copy it from the extension's schedule scrape.`);
-    if (!text) return;
-
-    const parsed = parseSchedulePayload(text);
-    if (!parsed.ok) {
-      host.ui.toast(parsed.reason, { kind: "error" });
-      return;
-    }
-
-    // A paste from the wrong store would write another store's roster into
-    // this one, which is very hard to notice afterwards.
-    if (parsed.store && parsed.store !== state.store) {
-      const proceed = confirm(
-        `That export is for store ${parsed.store}, but store ${state.store} is selected.\n\n` +
-        `Import it into ${state.store} anyway?`);
-      if (!proceed) return;
-    }
-
-    setStatus("importing schedules…");
-    const result = await call("import_schedules", {
-      store: state.store, schedules: parsed.schedules,
-    });
-    if (!result) return;
-
-    for (const w of parsed.warnings || []) host.ui.toast(w, { kind: "error" });
-    host.ui.toast(
-      `Imported ${result.written.length} days (${parsed.associateCount} shifts) ` +
-      `into store ${state.store}.`);
-
-    setStatus("ready");
-    if (state.page === "assignments") await loadAssignments();
-  }
+  // Schedule import was removed 2026-08-26. It asked you to paste an export
+  // from "the extension's schedule scrape" — a scraper that never existed in
+  // the suite — and the automated pull now reads the Workforce Planning portal
+  // directly (lib/sources/wfm_schedule.js). lib/data/schedule_import.js and
+  // the import_schedules handler remain for a one-off recovery.
 
   // ── Automated pull ───────────────────────────────────────────────────────
   //
