@@ -89,6 +89,17 @@ export function lunchIssue(assoc) {
   }
 
   if (!slots.length) {
+    // Someone who is not here cannot take a lunch. Requiring one of an absent
+    // associate leaves a warning on the row that no action can clear: you
+    // cannot give a lunch to a person who did not come in, so the flag would
+    // sit there permanently and train people to ignore the flag entirely.
+    //
+    // Deliberately only the MISSING case. A lunch that was already entered
+    // before they were marked absent still gets its duplicate/edge check, so
+    // marking someone absent never silently hides a real mistake in the plan —
+    // it only stops demanding something impossible.
+    if (assoc?.status === "absent") return null;
+
     const b = shiftBounds(assoc);
     return { kind: "missing", window,
              message: `${b.hours}h shift has no lunch` };

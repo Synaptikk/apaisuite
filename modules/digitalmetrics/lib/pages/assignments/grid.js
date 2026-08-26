@@ -81,9 +81,13 @@ function summaryRows(assignments, suggestions) {
 
   const fmt = (total, prop) => (prop > 0 ? `${total} (${prop})` : String(total));
 
-  const rows = SUMMARY_TASKS.map(({ key, label }) => `
+  // The row header carries the task's own tint, so a column of numbers can be
+  // traced back to the coloured cells it counts without reading the label.
+  // Same `task-*` class the cells and the legend swatches use, so the three
+  // cannot drift apart.
+  const rows = SUMMARY_TASKS.map(({ key, task, label }) => `
     <tr class="dm-summary-row">
-      <th scope="row">${esc(label)}</th>
+      <th scope="row" class="task-${esc(String(task).toLowerCase())}">${esc(label)}</th>
       ${counts[key].map((n, i) =>
         `<td>${esc(fmt(n, suggested[key][i]))}</td>`).join("")}
     </tr>`);

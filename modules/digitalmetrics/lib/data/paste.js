@@ -7,7 +7,7 @@
 // then fills right and down from the focused cell, exactly as Excel does.
 //
 // Accepted per cell, case-insensitively:
-//   · a task name        PICK, DISP, STAGE, PREP, GMD, IP, EXC, L, B, 30
+//   · a task name        PICK, DISP, STAGE, PREP, QC, DRV, DS, TRN, IP, EXC, L, B, 30
 //   · a shortcut letter  p, d, s, r, g, i, e, l, b, 3   (the grid's own keys)
 //   · empty              clears the cell
 // Anything else is reported as unrecognised rather than silently written — a

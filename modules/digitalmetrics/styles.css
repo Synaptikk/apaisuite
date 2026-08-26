@@ -522,9 +522,16 @@
   --dm-task-disp:  #DCFCE7;
   --dm-task-stage: #FEF3C7;
   --dm-task-prep:  #F3E8FF;
-  --dm-task-gmd:   #FFE4E6;
   --dm-task-exc:   #FFEDD5;
   --dm-task-ip:    #E0F2FE;
+  /* The four added tasks. Picked to stay distinguishable from the four above
+     at the grid's 12px cell size, where hue separates far better than
+     lightness — these sit in the teal / rose / lime / indigo gaps between the
+     existing blue, green, amber and purple. */
+  --dm-task-qc:    #CCFBF1;
+  --dm-task-drv:   #FFE4E6;
+  --dm-task-ds:    #ECFCCB;
+  --dm-task-trn:   #E0E7FF;
   --dm-task-rest:  var(--apai-border-soft);
 }
 
@@ -536,8 +543,14 @@
 .module-digitalmetrics .dm-legend-swatch.task-stage { background: var(--dm-task-stage); }
 .module-digitalmetrics .dm-cell.task-prep,
 .module-digitalmetrics .dm-legend-swatch.task-prep  { background: var(--dm-task-prep); }
-.module-digitalmetrics .dm-cell.task-gmd,
-.module-digitalmetrics .dm-legend-swatch.task-gmd   { background: var(--dm-task-gmd); }
+.module-digitalmetrics .dm-cell.task-qc,
+.module-digitalmetrics .dm-legend-swatch.task-qc    { background: var(--dm-task-qc); }
+.module-digitalmetrics .dm-cell.task-drv,
+.module-digitalmetrics .dm-legend-swatch.task-drv   { background: var(--dm-task-drv); }
+.module-digitalmetrics .dm-cell.task-ds,
+.module-digitalmetrics .dm-legend-swatch.task-ds    { background: var(--dm-task-ds); }
+.module-digitalmetrics .dm-cell.task-trn,
+.module-digitalmetrics .dm-legend-swatch.task-trn   { background: var(--dm-task-trn); }
 .module-digitalmetrics .dm-cell.task-exc,
 .module-digitalmetrics .dm-legend-swatch.task-exc   { background: var(--dm-task-exc); }
 .module-digitalmetrics .dm-cell.task-ip,
@@ -546,6 +559,48 @@
 .module-digitalmetrics .dm-cell.task-b     { background: var(--dm-task-rest); color: var(--apai-muted); }
 .module-digitalmetrics .dm-legend-swatch.task-l,
 .module-digitalmetrics .dm-legend-swatch.task-b     { background: var(--dm-task-rest); }
+
+/* Summary row headers carry the same tint as the cells they count, so a row of
+   numbers can be traced to its colour in the grid without reading the word.
+   A left bar rather than a full fill: the header is sticky and sits against
+   the tinted cells, and two flat colours meeting read as a rendering fault.
+   The bar also survives the dark theme, where a pastel fill behind pale text
+   would not. */
+.module-digitalmetrics .dm-summary-row th[class*="task-"] {
+  border-left: 4px solid var(--dm-task-rest);
+}
+.module-digitalmetrics .dm-summary-row th.task-pick  { border-left-color: var(--dm-task-pick); }
+.module-digitalmetrics .dm-summary-row th.task-disp  { border-left-color: var(--dm-task-disp); }
+.module-digitalmetrics .dm-summary-row th.task-stage { border-left-color: var(--dm-task-stage); }
+.module-digitalmetrics .dm-summary-row th.task-prep  { border-left-color: var(--dm-task-prep); }
+.module-digitalmetrics .dm-summary-row th.task-qc    { border-left-color: var(--dm-task-qc); }
+.module-digitalmetrics .dm-summary-row th.task-drv   { border-left-color: var(--dm-task-drv); }
+.module-digitalmetrics .dm-summary-row th.task-ds    { border-left-color: var(--dm-task-ds); }
+.module-digitalmetrics .dm-summary-row th.task-trn   { border-left-color: var(--dm-task-trn); }
+.module-digitalmetrics .dm-summary-row th.task-exc   { border-left-color: var(--dm-task-exc); }
+
+/* ── Absent associates ──────────────────────────────────────────────────
+   Their scheduled hours stop reading as cover. The shift tint is what makes a
+   row look staffed, so it is the thing that has to go — the row is dimmed and
+   the in-shift cells lose their fill, leaving the row visibly inert next to
+   the ones that still count. Any tasks already entered stay legible but
+   muted: marking someone absent must not look like it deleted the plan. */
+.module-digitalmetrics .dm-grid tr.is-absent .dm-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.75;
+}
+.module-digitalmetrics .dm-grid tr.is-absent .dm-cell {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+.module-digitalmetrics .dm-grid tr.is-absent .dm-cell.in-shift {
+  /* Diagonal hatching, so "scheduled but not here" is distinguishable from
+     "not scheduled" even once the colour is gone. */
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 3px,
+    var(--apai-border) 3px, var(--apai-border) 4px);
+}
 
 /* Summary */
 
@@ -773,7 +828,10 @@
     --dm-task-disp:  #DCFCE7;
     --dm-task-stage: #FEF3C7;
     --dm-task-prep:  #F3E8FF;
-    --dm-task-gmd:   #FFE4E6;
+    --dm-task-qc:    #CCFBF1;
+    --dm-task-drv:   #FFE4E6;
+    --dm-task-ds:    #ECFCCB;
+    --dm-task-trn:   #E0E7FF;
     --dm-task-exc:   #FFEDD5;
     --dm-task-ip:    #E0F2FE;
     --dm-task-rest:  #E5E7EB;
@@ -983,7 +1041,10 @@
   --dm-task-disp:  color-mix(in srgb, #DCFCE7 26%, var(--forge-black));
   --dm-task-stage: color-mix(in srgb, #FEF3C7 26%, var(--forge-black));
   --dm-task-prep:  color-mix(in srgb, #F3E8FF 26%, var(--forge-black));
-  --dm-task-gmd:   color-mix(in srgb, #FFE4E6 26%, var(--forge-black));
+  --dm-task-qc:    color-mix(in srgb, #CCFBF1 26%, var(--forge-black));
+  --dm-task-drv:   color-mix(in srgb, #FFE4E6 26%, var(--forge-black));
+  --dm-task-ds:    color-mix(in srgb, #ECFCCB 26%, var(--forge-black));
+  --dm-task-trn:   color-mix(in srgb, #E0E7FF 26%, var(--forge-black));
   --dm-task-exc:   color-mix(in srgb, #FFEDD5 26%, var(--forge-black));
   --dm-task-ip:    color-mix(in srgb, #E0F2FE 26%, var(--forge-black));
   --dm-task-rest:  color-mix(in srgb, var(--steel) 30%, var(--forge-black));

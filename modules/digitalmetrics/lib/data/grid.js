@@ -8,14 +8,37 @@ export const TIME_SLOTS = [
   "2-3P", "3-4P", "4-5P", "5-6P", "6-7P", "7-8P", "8-9P", "9-10P",
 ];
 
-export const DAY_NAMES = ["SUN", "MON", "TUE", "WED", "TH", "FRI", "SAT"];
+export const DAY_NAMES = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
 
-// Keyboard shortcuts, as printed on the donor's legend. Lower and upper case
-// both map, and three keys clear a cell.
+// Keyboard shortcuts. Lower and upper case both map, and three keys clear a
+// cell.
+//
+// The mnemonic is the task's own letter wherever it is still free, and a
+// distinctive letter from the word where it is not: DISP already owns D, so
+// Drivers takes the V of "driVer" and Downstacker the N of "dowNstacker";
+// PICK owns P, so Prep takes R.
+//
+// This object is the single source of truth for the legend as well. It used to
+// print label[0], which was simply wrong — it showed P for Prep (the actual key
+// is R) and P again for Pick, so two entries claimed the same key and one of
+// them did nothing.
 export const TASK_SHORTCUTS = {
-  p: "PICK", d: "DISP", s: "STAGE", r: "PREP", g: "GMD",
+  p: "PICK", d: "DISP", s: "STAGE", r: "PREP",
+  q: "QC", v: "DRV", n: "DS", t: "TRN",
   i: "IP", e: "EXC", l: "L", b: "B", 3: "30",
   x: "", Delete: "", Backspace: "",
+};
+
+/**
+ * Display labels for the task codes, so the legend and the mobile panel read
+ * as words rather than as the abbreviations the cells carry.
+ */
+export const TASK_LABELS = {
+  PICK: "Pick", DISP: "Disp", STAGE: "Stage", PREP: "Prep",
+  QC: "Quality", DRV: "Drivers", DS: "Downstack", TRN: "Training",
+  IP: "IP", EXC: "Exc", L: "Lunch", B: "Break", 30: "30",
 };
 
 /** Tasks that appear as their own summary row, in display order. */
@@ -24,9 +47,21 @@ export const SUMMARY_TASKS = [
   { key: "disp",    task: "DISP",  label: "Dispense" },
   { key: "stage",   task: "STAGE", label: "Stage" },
   { key: "prep",    task: "PREP",  label: "Prep" },
+  { key: "qc",      task: "QC",    label: "Quality" },
+  { key: "drv",     task: "DRV",   label: "Drivers" },
+  { key: "ds",      task: "DS",    label: "Downstack" },
+  { key: "trn",     task: "TRN",   label: "Training" },
   { key: "exc",     task: "EXC",   label: "Exception" },
-  { key: "gmd",     task: "GMD",   label: "GMD" },
 ];
+
+/**
+ * Is this associate absent?
+ *
+ * Absence is the one status that changes the arithmetic: an absent person's
+ * cells may still hold whatever was planned for them, but they are not there
+ * to do it, so counting those tasks overstates the day's cover.
+ */
+export const isAbsent = (assoc) => assoc?.status === "absent";
 
 // Estimated picks per picker per hour. A planning figure, not a measurement —
 // the grid uses it to answer "is this enough people for the volume?".
@@ -72,6 +107,12 @@ export function summarise(assignments, suggestions = {}) {
   const suggested = Object.fromEntries(SUMMARY_TASKS.map((t) => [t.key, blank()]));
 
   for (const assoc of assignments || []) {
+    // An absent associate contributes nothing. Their cells are left as they
+    // were — marking someone absent must not destroy the plan, and it has to
+    // be undoable — but the counts are a statement about who is actually on
+    // the floor, and they are not.
+    if (isAbsent(assoc)) continue;
+
     for (let i = 0; i < TIME_SLOTS.length; i++) {
       const actual     = assoc.slots?.[i];
       const suggestion = !actual ? suggestions[assoc.name]?.[i]?.task : null;
@@ -105,6 +146,11 @@ export function fillPercentage(assignments) {
   let filled = 0;
 
   for (const a of assignments || []) {
+    // Absent associates drop out of the denominator too. Leaving them in makes
+    // a fully-planned day read as under-filled purely because someone called
+    // in, which is the opposite of what the number is for.
+    if (isAbsent(a)) continue;
+
     const start = typeof a.shiftStart === "number" ? a.shiftStart : 0;
     const end   = typeof a.shiftEnd   === "number" ? a.shiftEnd   : TIME_SLOTS.length;
     for (let i = start; i < end; i++) {

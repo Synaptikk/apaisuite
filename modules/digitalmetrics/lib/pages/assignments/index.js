@@ -9,17 +9,24 @@
 import { esc, empty } from "../_shared.js";
 import * as grid from "./grid.js";
 import {
-  TIME_SLOTS, resolveShortcut, dayName, emptyAssociate,
+  TIME_SLOTS, TASK_SHORTCUTS, TASK_LABELS, resolveShortcut, dayName, emptyAssociate,
 } from "../../data/grid.js";
 import { parsePastedTasks, applyPaste, tasksToClipboard, cellsInRange } from "../../data/paste.js";
 import { lunchSummary, isWithinShift } from "../../data/lunch.js";
 
 const AUTOSAVE_DELAY_MS = 3000;
 
+// Derived from TASK_SHORTCUTS so the buttons, the legend and the keyboard can
+// never disagree about what exists or which key produces it. Adding a task is
+// now one line in data/grid.js rather than four edits across two files.
+//
+// Order follows TASK_SHORTCUTS; the clear action is appended because it is not
+// a task.
 const TASK_BUTTONS = [
-  ["PICK", "Pick"], ["DISP", "Disp"], ["STAGE", "Stage"], ["PREP", "Prep"],
-  ["GMD", "GMD"], ["IP", "IP"], ["EXC", "Exc"], ["L", "Lunch"], ["B", "Break"],
-  ["", "Clear"],
+  ...Object.entries(TASK_SHORTCUTS)
+    .filter(([key, task]) => task && key.length === 1)
+    .map(([key, task]) => [task, TASK_LABELS[task] || task, key.toUpperCase()]),
+  ["", "Clear", "X"],
 ];
 
 function toolbar(ctx) {
@@ -56,10 +63,13 @@ function toolbar(ctx) {
  */
 function legend() {
   return `<div class="dm-legend dm-stat-note">
-    Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label]) =>
+    Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label, key]) =>
       `<span class="dm-legend-item">` +
         `<span class="dm-legend-swatch task-${esc(task.toLowerCase())}"></span>` +
-        `<kbd>${esc(label[0].toUpperCase())}</kbd> ${esc(label)}` +
+        // The REAL shortcut, not the label's first letter. That guess printed
+        // P for Prep (the key is R) and P again for Pick, so the legend told
+        // you to press a key that did something else.
+        `<kbd>${esc(key)}</kbd> ${esc(label)}` +
       `</span>`).join("")}
     <span class="dm-legend-item"><kbd>X</kbd> Clear</span>
   </div>`;

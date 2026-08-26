@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   TIME_SLOTS, resolveShortcut, isHalfSlot, summarise,
-  fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate,
+  fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate, isAbsent,
   PICKS_PER_PICKER_HOUR,
 } from "../data/grid.js";
 
@@ -22,11 +22,16 @@ test("the grid covers 5am to 10pm in 17 hourly slots", () => {
 test("keyboard shortcuts resolve in either case, and three keys clear", () => {
   assert.equal(resolveShortcut("p"), "PICK");
   assert.equal(resolveShortcut("P"), "PICK");
-  assert.equal(resolveShortcut("G"), "GMD");
+  assert.equal(resolveShortcut("R"), "PREP");   // not P - Pick owns that
+  assert.equal(resolveShortcut("q"), "QC");
+  assert.equal(resolveShortcut("v"), "DRV");
+  assert.equal(resolveShortcut("n"), "DS");
+  assert.equal(resolveShortcut("t"), "TRN");
+  assert.equal(resolveShortcut("g"), undefined, "GMD was removed from the vocabulary");
   assert.equal(resolveShortcut("x"), "");
   assert.equal(resolveShortcut("Delete"), "");
   assert.equal(resolveShortcut("Backspace"), "");
-  assert.equal(resolveShortcut("q"), undefined, "unmapped keys must not clear a cell");
+  assert.equal(resolveShortcut("z"), undefined, "unmapped keys must not clear a cell");
 });
 
 // ── half slots ───────────────────────────────────────────────────────────
@@ -156,8 +161,8 @@ test("a document with no date is not finalised", () => {
 
 // ── misc ─────────────────────────────────────────────────────────────────
 test("day names map from ISO dates", () => {
-  assert.equal(dayName("2026-01-15"), "TH");
-  assert.equal(dayName("2026-01-17"), "SAT");
+  assert.equal(dayName("2026-01-15"), "Thursday");
+  assert.equal(dayName("2026-01-17"), "Saturday");
   assert.equal(dayName(null), "");
 });
 
@@ -172,4 +177,47 @@ test("a new associate row starts blank", () => {
     name: "JOHN", slots: {}, status: null,
     shiftStart: null, shiftEnd: null, shiftLabel: null,
   });
+});
+
+// ── absence ──────────────────────────────────────────────────────────────
+//
+// Marking someone absent must change the ARITHMETIC without destroying the
+// plan: the cells stay (it has to be undoable) but stop counting as cover.
+
+test("an absent associate contributes nothing to the staffing counts", () => {
+  const { counts } = summarise([
+    assoc({ name: "HERE", slots: { 0: "PICK" } }),
+    assoc({ name: "OUT",  slots: { 0: "PICK" }, status: "absent" }),
+  ]);
+  assert.equal(counts.pickers[0], 1, "only the person actually on the floor counts");
+});
+
+test("marking absent does not erase the assigned cells", () => {
+  // The undo path depends on this: the slots must survive so unmarking
+  // restores the plan rather than leaving an empty row.
+  const a = assoc({ name: "OUT", slots: { 0: "PICK" }, status: "absent" });
+  summarise([a]);
+  assert.deepEqual(a.slots, { 0: "PICK" }, "summarise must not mutate the roster");
+});
+
+test("a tardy associate still counts — only absence removes cover", () => {
+  const { counts } = summarise([assoc({ slots: { 0: "PICK" }, status: "tardy" })]);
+  assert.equal(counts.pickers[0], 1);
+});
+
+test("absent associates leave the fill percentage denominator", () => {
+  // Both have an 8-slot shift; only one is here, and their slots are filled.
+  const full = fillPercentage([
+    assoc({ name: "HERE", slots: Object.fromEntries([...Array(8)].map((_, i) => [i, "PICK"])) }),
+    assoc({ name: "OUT", slots: {}, status: "absent" }),
+  ]);
+  assert.equal(full, 100, "a fully-planned day must not read as half-empty because someone called in");
+});
+
+test("isAbsent is exact — no truthiness on other statuses", () => {
+  assert.equal(isAbsent({ status: "absent" }), true);
+  assert.equal(isAbsent({ status: "tardy" }), false);
+  assert.equal(isAbsent({ status: null }), false);
+  assert.equal(isAbsent({}), false);
+  assert.equal(isAbsent(undefined), false);
 });
