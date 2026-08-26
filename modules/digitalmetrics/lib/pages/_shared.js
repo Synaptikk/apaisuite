@@ -51,6 +51,26 @@ export const empty = (message) => `<div class="dm-todo">${esc(message)}</div>`;
 export const flipDir = (dir) => (dir === "asc" ? "desc" : "asc");
 
 /**
+ * What clicking a header should do, as a plain function of the current state.
+ *
+ * Clicking the column you are already sorted by flips the direction; clicking
+ * any other switches to it in its natural order. Shared so the Leaderboard and
+ * Opportunities cannot drift apart, and pulled out of the event handlers so it
+ * can be tested without a DOM — the branch that decides "same column or not" is
+ * the one that silently does nothing when it is wrong.
+ *
+ * Returns a patch for onUiChange, keyed by the caller's own field names:
+ *   nextSort({ clicked: "ftpr", current: "nil_rate", rev: true,
+ *              keyField: "lbMetric", revField: "lbRev" })
+ *     -> { lbMetric: "ftpr", lbRev: false }
+ */
+export function nextSort({ clicked, current, rev, keyField, revField }) {
+  return clicked === current
+    ? { [revField]: !rev }
+    : { [keyField]: clicked, [revField]: false };
+}
+
+/**
  * Generic comparator by key. Numbers compare numerically, everything else
  * case-insensitively as text, and `name` is the tiebreaker so equal values
  * keep a stable, predictable order instead of shuffling between renders.

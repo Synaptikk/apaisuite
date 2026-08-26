@@ -15,7 +15,7 @@ import * as classifyPage  from "../pages/classify.js";
 import * as opportunities from "../pages/opportunities.js";
 import * as leaderboard   from "../pages/leaderboard.js";
 import * as faq           from "../pages/faq.js";
-import { esc } from "../pages/_shared.js";
+import { esc, nextSort, compareBy, flipDir } from "../pages/_shared.js";
 
 const PAGES = { dashboard, comparison, classifyPage, opportunities, leaderboard, faq };
 
@@ -225,4 +225,57 @@ test("FAQ documents the metric definitions the other modules implement", () => {
     assert.ok(html.includes(term), `FAQ missing ${term}`);
   }
   assert.match(html, /never stored in the database/, "FAQ should explain the name handling");
+});
+
+// ── nextSort ─────────────────────────────────────────────────────────────
+//
+// The header click handlers are a DOM event away from being testable, so the
+// decision they make lives here instead. The failure this guards is a header
+// that appears to do nothing: get the same-column branch wrong and clicking
+// the active column re-selects it instead of flipping.
+
+test("clicking a new column switches to it in its natural order", () => {
+  assert.deepEqual(
+    nextSort({ clicked: "ftpr", current: "nil_rate", rev: true, keyField: "lbMetric", revField: "lbRev" }),
+    { lbMetric: "ftpr", lbRev: false });
+});
+
+test("clicking the active column flips instead of re-selecting it", () => {
+  assert.deepEqual(
+    nextSort({ clicked: "ftpr", current: "ftpr", rev: false, keyField: "lbMetric", revField: "lbRev" }),
+    { lbRev: true });
+  assert.deepEqual(
+    nextSort({ clicked: "ftpr", current: "ftpr", rev: true, keyField: "lbMetric", revField: "lbRev" }),
+    { lbRev: false }, "and flips back");
+});
+
+test("nextSort keys the patch by the caller's own fields", () => {
+  // Both boards share the function but not their ui state field names.
+  assert.deepEqual(
+    nextSort({ clicked: "overall", current: "ftpr", rev: false, keyField: "oppSort", revField: "oppRev" }),
+    { oppSort: "overall", oppRev: false });
+});
+
+test("flipDir only ever yields asc or desc", () => {
+  assert.equal(flipDir("asc"), "desc");
+  assert.equal(flipDir("desc"), "asc");
+  assert.equal(flipDir(undefined), "asc", "an absent direction is treated as desc");
+});
+
+test("compareBy sorts numbers numerically, not as text", () => {
+  const rows = [{ name: "A", v: 9 }, { name: "B", v: 100 }, { name: "C", v: 20 }];
+  assert.deepEqual([...rows].sort(compareBy("v", "asc")).map((r) => r.v), [9, 20, 100]);
+});
+
+test("compareBy breaks ties by name so rows do not shuffle between renders", () => {
+  const rows = [{ name: "ZOE", v: 5 }, { name: "ADAM", v: 5 }];
+  assert.deepEqual([...rows].sort(compareBy("v", "desc")).map((r) => r.name), ["ADAM", "ZOE"]);
+});
+
+test("opportunities default groups track CLASSIFICATIONS instead of a stale list", () => {
+  // Regression: the default named "Fashion" after it stopped being a
+  // classification, so it filtered on a group nothing could match.
+  const html = opportunities.render(ctx({ associates: [assoc({ name: "BAD", ftpr: 40 })] }));
+  assert.match(html, /BAD/, "a Digital associate must survive the default filter");
+  assert.doesNotMatch(html, /Fashion/, "no dead category anywhere on the page");
 });

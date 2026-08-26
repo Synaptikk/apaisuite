@@ -2,7 +2,7 @@
 //
 // Ranking by any single metric, with volume outliers held back.
 
-import { section, empty, esc, table, associateCell, compareBy, flipDir } from "./_shared.js";
+import { section, empty, esc, table, associateCell, compareBy, flipDir, nextSort } from "./_shared.js";
 import { classificationOf, badgeClass, CLASSIFICATIONS, UNCLASSIFIED } from "../data/classify.js";
 import { excludeOutliers } from "../data/opportunities.js";
 
@@ -126,14 +126,15 @@ export function wire(ctx, root) {
     bind("#dm-lb-metric", "lbMetric", { lbRev: false }),
     bind("#dm-lb-group",  "lbGroup"),
     bind("#dm-lb-count",  "lbCount"),
-    // Clicking the header you are already sorted by flips the direction;
-    // clicking any other switches to it, natural order first. Same convention
-    // as every file manager, so it needs no explaining.
+    // Same convention as every file manager, so it needs no explaining.
     host.ui.delegate(root, "click", "[data-dm-sort]", (_e, el) => {
-      const next = el.dataset.dmSort;
-      onUiChange?.(next === (ui.lbMetric || "ftpr")
-        ? { lbRev: !ui.lbRev }
-        : { lbMetric: next, lbRev: false });
+      onUiChange?.(nextSort({
+        clicked: el.dataset.dmSort,
+        current: ui.lbMetric || "ftpr",
+        rev: ui.lbRev,
+        keyField: "lbMetric",
+        revField: "lbRev",
+      }));
     }),
     // Clicking a name anywhere opens that person's breakdown, not just on the
     // Associates tab.

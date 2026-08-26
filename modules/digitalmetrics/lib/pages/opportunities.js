@@ -2,7 +2,7 @@
 //
 // Associates performing below their cohort benchmark, worst first.
 
-import { section, empty, esc, table, associateCell, flipDir, compareBy } from "./_shared.js";
+import { section, empty, esc, table, associateCell, flipDir, compareBy, nextSort } from "./_shared.js";
 import { classificationOf, badgeClass, CLASSIFICATIONS, UNCLASSIFIED } from "../data/classify.js";
 import { analyseOpportunities, sortOpportunities } from "../data/opportunities.js";
 
@@ -28,9 +28,14 @@ const NATURAL_DIR = {
 // useful on the first click.
 const PLAIN_DIR = { name: "asc", picked_qty: "desc", hours: "desc" };
 
-// Exceptions is off by default: exception pickers are measured on a different
-// scale and their presence buries everyone else.
-const DEFAULT_GROUPS = ["Digital", "Fashion", "Store Help", UNCLASSIFIED];
+// Every group except Exceptions, whose pickers are measured on a different
+// scale and whose presence buries everyone else.
+//
+// Derived from CLASSIFICATIONS rather than listed, because listing it is how
+// it went stale: this used to name "Fashion", which stopped being a
+// classification and left the default filtering on a group that could never
+// match. A derived list cannot drift when the categories change.
+const DEFAULT_GROUPS = [...CLASSIFICATIONS.filter((g) => g !== "Exceptions"), UNCLASSIFIED];
 
 export function render(ctx) {
   const { associates = [], benchmarks = {}, classifications = {}, adherence = {}, ui = {} } = ctx;
@@ -142,10 +147,13 @@ export function wire(ctx, root) {
 
   // Same convention as the Leaderboard: re-click the active column to flip.
   const offHeader = host.ui.delegate(root, "click", "[data-dm-sort]", (_e, el) => {
-    const next = el.dataset.dmSort;
-    onUiChange?.(next === (ui.oppSort || "overall")
-      ? { oppRev: !ui.oppRev }
-      : { oppSort: next, oppRev: false });
+    onUiChange?.(nextSort({
+      clicked: el.dataset.dmSort,
+      current: ui.oppSort || "overall",
+      rev: ui.oppRev,
+      keyField: "oppSort",
+      revField: "oppRev",
+    }));
   });
 
   const offAssoc = host.ui.delegate(root, "click", "[data-dm-associate]", (_e, el) => {
