@@ -44,12 +44,69 @@ export const section = (title, body) => `
 
 export const empty = (message) => `<div class="dm-todo">${esc(message)}</div>`;
 
-/** A sortable data table. `columns` = [{ key, label, align?, format? }] */
-export function table(columns, rows, { emptyMessage = "No data." } = {}) {
+/**
+ * Flip a sort direction. Exported because every board needs the same rule for
+ * "click the column you are already sorted by".
+ */
+export const flipDir = (dir) => (dir === "asc" ? "desc" : "asc");
+
+/**
+ * Generic comparator by key. Numbers compare numerically, everything else
+ * case-insensitively as text, and `name` is the tiebreaker so equal values
+ * keep a stable, predictable order instead of shuffling between renders.
+ *
+ * `valueOf` lets a column sort on something other than the cell it displays —
+ * Adherence renders "94%" out of a side table, for instance.
+ */
+export function compareBy(key, dir = "desc", valueOf = null) {
+  const read = valueOf || ((row) => row[key]);
+  const sign = dir === "asc" ? 1 : -1;
+  return (a, b) => {
+    const av = read(a), bv = read(b);
+    const an = typeof av === "number" || (av !== "" && av != null && !isNaN(Number(av)));
+    const bn = typeof bv === "number" || (bv !== "" && bv != null && !isNaN(Number(bv)));
+    let d;
+    if (an && bn) d = (Number(av) || 0) - (Number(bv) || 0);
+    else d = String(av ?? "").localeCompare(String(bv ?? ""), undefined, { sensitivity: "base" });
+    if (d) return d * sign;
+    return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+  };
+}
+
+/**
+ * A data table, optionally with click-to-sort headers.
+ *
+ * `columns` = [{ key, label, align?, format?, sortKey?, sortable? }]
+ *
+ * Pass `sort: { key, dir }` to turn the headers into sort buttons. The table
+ * does NOT sort — it only renders the current state and emits `data-dm-sort`
+ * on click, because each board's ordering has its own rules (the leaderboard
+ * knows lower Nil Rate is better; Opportunities ranks worst-first). Sorting
+ * here as well would mean two sorters that can disagree.
+ *
+ * Columns opt OUT with `sortable: false` — a rank column or a list of issue
+ * strings has no meaningful order of its own.
+ */
+export function table(columns, rows, { emptyMessage = "No data.", sort = null } = {}) {
   if (!rows?.length) return empty(emptyMessage);
 
   const head = columns
-    .map((c) => `<th class="${c.align === "right" ? "is-right" : ""}">${esc(c.label)}</th>`)
+    .map((c) => {
+      const right = c.align === "right" ? "is-right" : "";
+      const sortKey = c.sortable === false ? null : (c.sortKey || c.key);
+      if (!sort || !sortKey) {
+        return `<th class="${right}">${esc(c.label)}</th>`;
+      }
+      const active = sort.key === sortKey;
+      // "↕" on an unsorted column advertises that it can be clicked at all —
+      // without it the headers look identical to the plain ones above.
+      const arrow = !active ? "↕" : sort.dir === "asc" ? "▲" : "▼";
+      return `<th class="${right} is-sortable ${active ? "is-sorted" : ""}"` +
+             ` aria-sort="${active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}">` +
+             `<button type="button" class="dm-sort" data-dm-sort="${esc(sortKey)}"` +
+             ` title="Sort by ${esc(c.label)}">${esc(c.label)}` +
+             `<span class="dm-sort-arrow" aria-hidden="true">${arrow}</span></button></th>`;
+    })
     .join("");
 
   const body = rows.map((row) => {

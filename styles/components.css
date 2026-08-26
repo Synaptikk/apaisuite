@@ -274,6 +274,57 @@
 .data-table tbody tr:hover td { background: var(--apai-bg-soft); }
 .data-table .zebra { background: #FAFAFA; }
 
+/* ── Sortable headers ───────────────────────────────────────────
+   Lives here rather than in a module's stylesheet because .data-table is a
+   suite component — any board that passes `sort` to table() gets these.
+
+   The <th> keeps its own padding at 0 and hands it to the button, so the whole
+   header cell is the click target rather than just the word inside it. */
+.data-table th.is-sortable { padding: 0; }
+.data-table th.is-sortable .dm-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  /* inherit, not re-declare: the th above owns the size/case/tracking, and a
+     second set of values here would drift the moment that one is edited. */
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+.data-table th.is-right.is-sortable .dm-sort { justify-content: flex-end; }
+.data-table th.is-sortable .dm-sort:hover { color: var(--apai-ink); }
+.data-table th.is-sortable .dm-sort:focus-visible {
+  outline: 2px solid var(--module-accent);
+  outline-offset: -2px;
+}
+.data-table th.is-sorted .dm-sort { color: var(--apai-ink); font-weight: var(--fw-bold); }
+
+/* The idle "↕" is dimmed to near-invisible so a screen of headers does not
+   read as a row of arrows, but comes up on hover to show it is clickable.
+   The active arrow always stays fully visible. */
+.data-table th.is-sortable .dm-sort-arrow {
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.25;
+  transition: opacity var(--duration-fast) ease;
+}
+.data-table th.is-sortable .dm-sort:hover .dm-sort-arrow { opacity: 0.6; }
+.data-table th.is-sorted .dm-sort-arrow { opacity: 1; color: var(--module-accent); }
+
+@media print {
+  /* The arrows are interaction affordances; on paper they are noise. */
+  .data-table .dm-sort-arrow { display: none; }
+  .data-table th.is-sortable { padding: var(--sp-2) var(--sp-3); }
+  .data-table th.is-sortable .dm-sort { padding: 0; display: inline; }
+}
+
 .data-table-compact th, .data-table-compact td {
   padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-sm);

@@ -133,6 +133,74 @@ test("leaderboard sorts ascending for metrics where lower is better", () => {
   assert.ok(html.indexOf("LOWNIL") < html.indexOf("HIGHNIL"), "best nil rate ranks first");
 });
 
+// ── sortable headers ─────────────────────────────────────────────────────
+//
+// The headers are the only way to reach a sort the dropdown does not offer,
+// and "show every metric" is the reason the boards are worth sorting at all.
+
+test("leaderboard shows every metric column, not just the selected one", () => {
+  const html = leaderboard.render(ctx({ ui: { lbMetric: "ftpr" } }));
+  for (const label of ["FTPR", "Pick Rate", "Pick Qty", "Hours", "Nil Rate", "Sub Rate"]) {
+    assert.match(html, new RegExp(">" + label + "<"), label + " column is missing");
+  }
+});
+
+test("leaderboard headers carry a sort key and mark the active one", () => {
+  const html = leaderboard.render(ctx({ ui: { lbMetric: "nil_rate" } }));
+  assert.match(html, /data-dm-sort="nil_rate"/);
+  assert.match(html, /aria-sort="ascending"/, "nil_rate is best-first ascending");
+  // Rank has no order of its own.
+  assert.doesNotMatch(html, /data-dm-sort="_rank"/);
+});
+
+test("lbRev inverts the ranking and the header arrow together", () => {
+  const rows = { associates: [assoc({ name: "LOWNIL", nil_rate: 1 }), assoc({ name: "HIGHNIL", nil_rate: 20 })],
+                 classifications: {} };
+  const natural = leaderboard.render(ctx({ ...rows, ui: { lbMetric: "nil_rate" } }));
+  const flipped = leaderboard.render(ctx({ ...rows, ui: { lbMetric: "nil_rate", lbRev: true } }));
+  assert.ok(natural.indexOf("LOWNIL") < natural.indexOf("HIGHNIL"));
+  assert.ok(flipped.indexOf("HIGHNIL") < flipped.indexOf("LOWNIL"), "reversed order");
+  assert.match(flipped, /aria-sort="descending"/, "the arrow must follow the data");
+});
+
+test("leaderboard can sort by associate name without falling back to FTPR", () => {
+  const html = leaderboard.render(ctx({
+    associates: [assoc({ name: "ZOE" }), assoc({ name: "ADAM" })],
+    classifications: {},
+    ui: { lbMetric: "name" },
+  }));
+  assert.ok(html.indexOf("ADAM") < html.indexOf("ZOE"), "names sort A-Z");
+});
+
+test("opportunities exposes volume and lateness, and sorts by header", () => {
+  const html = opportunities.render(ctx({
+    associates: [assoc({ name: "BAD", ftpr: 40 })],
+    ui: { oppSort: "ftpr" },
+  }));
+  assert.match(html, />Pick Qty</, "volume is needed to weigh a flag");
+  assert.match(html, />Late</);
+  assert.match(html, /data-dm-sort="ftpr"/);
+  assert.match(html, /aria-sort="ascending"/, "worst FTPR first is ascending");
+  assert.doesNotMatch(html, /data-dm-sort="issues"/, "a list of strings has no order");
+});
+
+test("opportunities Score header sorts by the overall ranking", () => {
+  const html = opportunities.render(ctx({ associates: [assoc({ name: "BAD", ftpr: 40 })] }));
+  assert.match(html, /data-dm-sort="overall"/);
+});
+
+test("opportunities sorts descriptive columns plainly instead of silently using Overall", () => {
+  // picked_qty is not in SORTS. Before, it hit the unknown-key fallback and
+  // re-sorted by Overall, so the header looked broken.
+  const html = opportunities.render(ctx({
+    associates: [assoc({ name: "SMALL", ftpr: 40, picked_qty: 500 }),
+                 assoc({ name: "BIG", ftpr: 41, picked_qty: 9000 })],
+    classifications: { SMALL: "Digital", BIG: "Digital" },
+    ui: { oppSort: "picked_qty" },
+  }));
+  assert.ok(html.indexOf("BIG") < html.indexOf("SMALL"), "highest volume first");
+});
+
 test("classify shows a radio per category for each associate", () => {
   const html = classifyPage.render(ctx());
   for (const c of ["Digital", "Exceptions", "Store Help", "Unclassified"]) {
