@@ -1,26 +1,28 @@
 // modules/digitalmetrics/module.js
-import { handlers as serviceHandlers, onPullAlarm } from "./service.js";
+import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
+import { handlers as serviceHandlers, onPullAlarm, installPullAlarm } from "./service.js";
 
 // ── Automated-pull alarm ───────────────────────────────────────────────────
 //
-// Registered at TOP-LEVEL script execution, not inside register() or a
-// handler. An MV3 service worker only wakes for an event whose listener was
-// attached during the worker's initial evaluation; a listener added later
-// exists only until the worker idles out, and then silently never fires again
-// (MODULE_CONTRACT §4, and the same pattern as modules/workvivo/module.js).
+// Top-level, because an MV3 service worker only wakes for an event whose
+// listener was attached during its initial evaluation; one added later exists
+// until the worker idles out and then silently never fires again
+// (MODULE_CONTRACT §4). register() cannot do it — that runs only in the shell
+// page (app.js::mountModule), never in the worker.
 //
-// The alarm itself is cheap — onPullAlarm() returns immediately unless the
-// user has opted in via `digitalmetrics.pullEnabled`.
-const PULL_ALARM = "digitalmetrics.pull";
-const PULL_PERIOD_MIN = 60;
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === PULL_ALARM) onPullAlarm();
-});
-
-// create() with the same name replaces any existing alarm, so this is safe to
-// run on every worker boot.
-chrome.alarms.create(PULL_ALARM, { periodInMinutes: PULL_PERIOD_MIN, delayInMinutes: 5 });
+// Guarded, because module.js is imported by BOTH contexts. Unguarded, the
+// shell page registered its own listener and rewrote the alarm on every page
+// load. shared/tests/alarm_install_sites.test.mjs pins both halves.
+//
+// The alarm is cheap: onPullAlarm() returns immediately unless the user has
+// opted in via `digitalmetrics.pullEnabled`.
+if (IS_SERVICE_WORKER) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "digitalmetrics.pull") onPullAlarm();
+  });
+  installPullAlarm().catch((e) =>
+    console.warn("[digitalmetrics] installPullAlarm failed:", e?.message ?? e));
+}
 
 export default {
   manifest: {

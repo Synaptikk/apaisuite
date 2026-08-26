@@ -212,6 +212,45 @@ duplicates. Episodes group `(userId, zoneName)` runs whose gap is ≤
 `thresholds.multiZoneWindowMinutes` (30 min by default). The full event
 table still shows every row.
 
+## Cases tab (per-case access history)
+
+The risk queue answers "which openings look unusual". It cannot answer
+"who has been opening the fragrance case, and how often" — a case opened
+forty times by one associate at ordinary hours scores Normal on every row
+and is invisible there by design. That is the question a shrink signal
+actually starts from, so it gets its own tab.
+
+**Grouping.** `view.js::groupByCase` keys a case on
+`store + zoneName + lockName`. Store is part of the key because lock names
+repeat across stores; merging two stores' openings into one row would
+invent a pattern.
+
+**The two filters that deliberately do not apply.** Status and Risk level
+are ignored on this tab — either one hides openings, which is the single
+thing the view exists to show. Cleared and non-malicious rows are counted
+and listed, and the note under the table says so on screen. Store, zone,
+position, date range and the search box all still apply, so typing
+`fragrance` in Search narrows to those cases.
+
+**After-hours is computed from `eventHour`, not from `riskReasons`.**
+Base-rate calibration can strip the AFTERHOURS reason off every event in a
+store where overnight opening is routine (see `riskScoring.js`); the access
+history must still say 3am. The hour windows come from
+`risk_weights.json::timeWindows`, injected into `groupByCase` so the
+grouping stays pure of the rules file.
+
+Drill-in shows: items in the case (from the case map, if one is loaded),
+openings per day, a "who opened it" table (click a row to filter the
+timeline to that person), and every opening in reverse-chronological order
+with its status and a Details link into the normal event drawer.
+
+Exports: the case list exports one row per case
+(`exportCaseSummaryCsv`); inside a case, the Export button writes every
+opening chronologically (`exportCaseOpeningsCsv`), respecting the
+person filter if one is set.
+
+Pinned by `lib/tests/group_by_case.test.mjs`.
+
 ## Open questions
 
 See `docs/DIGITAL_LOCKS_QUESTIONS.md`. None of them block V1.

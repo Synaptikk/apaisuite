@@ -34,6 +34,8 @@ digitallocks-*.json
 # The handful already tracked predate this rule and stay tracked; anything new
 # needs `git add -f` and a look at what is actually in the frame first.
 dev/screenshots/*.png
+# Print probes render the roster to PDF — same names, same rule.
+dev/screenshots/*.pdf
 
 # Local tooling only — playwright for dev/cws-drive.mjs, never shipped.
 node_modules/

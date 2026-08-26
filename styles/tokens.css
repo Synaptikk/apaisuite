@@ -263,3 +263,84 @@
   --module-accent-bg:     color-mix(in srgb, var(--heat-gold) 14%, var(--forge-black));
   --module-accent-ink:    var(--forge-black);
 }
+
+/* ── Preview layout ─────────────────────────────────────────────
+   Applied by setting `data-layout="preview"` on <html>, independently of
+   `data-theme` (Settings → "Try the Preview layout"; shared/layoutPref.js
+   owns validation, defaulting anything but the literal "preview" to
+   "current" — see theme_boot.js). Never touches the Current layout: every
+   rule here is scoped under [data-layout="preview"], so it is inert unless
+   the attribute is set. Component geometry lives in styles/preview-shell.css
+   and styles/preview-components.css — this block only introduces the token
+   VALUES that back those rules.
+
+   Split into three blocks on purpose:
+   1. Unconditional geometry (radius/elevation/shell sizing) — theme-neutral,
+      applies to both Preview themes.
+   2. Light-only colors — Preview light gets a colored sidebar/header
+      ("bold reskin"), which needs its own foreground token.
+   3. Dark-only additions — deliberately NOT a colored sidebar. The
+      original brief for the Foundry palette says "restrained accents...
+      do not spread orange and gold across every component"; a solid-ember
+      sidebar would violate that explicitly. Preview dark gets its
+      boldness from stronger grid lines, bigger type, and the card accent
+      stripe instead — same intensity, different lever, because the ember
+      accent is reserved for actions per the brief. */
+html[data-layout="preview"] {
+  /* Radius bumped one step up the existing scale (not invented values) —
+     every component that already consumes var(--rad-md)/var(--rad-lg)
+     (20 and 12 files respectively) picks this up with no per-component
+     edits, which is the whole point of routing geometry through tokens. */
+  --rad-md: 10px;
+  --rad-lg: 16px;
+  --shell-header-h: 64px;
+  --shell-sidebar-w: 248px;
+  --shadow-1: 0 2px 6px rgba(15, 23, 42, 0.10);
+  --shadow-2: 0 6px 18px rgba(15, 23, 42, 0.14);
+  --shadow-3: 0 18px 44px rgba(15, 23, 42, 0.18);
+}
+
+/* Brand colors are NOT duplicated here. Per the design brief: "inspect
+   APAISuite for existing Walmart brand tokens and reuse those values. Do
+   not create slightly different duplicate blues or yellows." The colored
+   sidebar below reuses --apai-blue-darker / --apai-yellow, both already
+   defined at the top of this file — nothing new is invented.
+
+   :not([data-theme="dark"]) is load-bearing, not decoration: `html` +
+   attribute gives this selector HIGHER specificity than the bare
+   `[data-theme="dark"]` block above, so without the exclusion this would
+   override Forge Black with the light workspace surface even when dark
+   theme is active — found live via settings-preview-dark screenshot QA
+   (the "Settings" heading rendered near-invisible: light ink on a
+   light-surface .card sitting on top of a still-dark shell-viewport). */
+html[data-layout="preview"]:not([data-theme="dark"]) {
+  --apai-bg:      #EEF1F5;
+  --apai-bg-soft: #E7EBF0;
+  /* Colored chrome — the sidebar/header signature that makes Preview read
+     as a different shell at a glance, not just a subtly different white. */
+  --preview-chrome-bg:       var(--apai-blue-darker);
+  --preview-chrome-ink:      #FFFFFF;
+  --preview-chrome-ink-soft: rgba(255, 255, 255, 0.72);
+  --preview-chrome-ink-faint: rgba(255, 255, 255, 0.5);
+  --preview-chrome-hover:    rgba(255, 255, 255, 0.08);
+  --preview-chrome-active:   rgba(255, 255, 255, 0.14);
+  --preview-chrome-border:   rgba(255, 255, 255, 0.14);
+  /* Spark yellow, restrained to a single 3px accent per the spec's own
+     "sparingly, not large background areas" rule for this color. */
+  --preview-chrome-accent:   var(--apai-yellow);
+}
+
+/* Preview dark reuses Current dark's Foundry palette byte-for-byte (see
+   "Dark theme" block above and docs/DESIGN_SYSTEM.md::Dark theme — Foundry)
+   — [data-theme="dark"] already applies every one of those tokens to <html>
+   regardless of data-layout, so restating them here would just be dead
+   weight. This block exists, scoped separately from Current's, so Preview
+   dark CAN diverge later without risking Current's dark theme. "Strong
+   grids, clear hierarchy" per the brief — the stronger border/shadow below
+   is that lever, deliberately instead of a colored chrome surface. */
+html[data-layout="preview"][data-theme="dark"] {
+  --apai-border: color-mix(in srgb, var(--steel) 55%, transparent);
+  --shadow-1: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 6px 20px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 20px 48px rgba(0, 0, 0, 0.65);
+}

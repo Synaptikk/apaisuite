@@ -1,0 +1,176 @@
+/* styles/preview-components.css — Preview layout: component geometry.
+   Inert unless <html data-layout="preview">. Targets the SHARED component
+   classes in styles/components.css (.card, .data-table, .btn, .pill,
+   .badge, .filter-bar, .field, .modal, .state-*) so every module that uses
+   them — Settings, AurorBuddy, ClaimsDisposition, SparkFraud, and the
+   module-card grid on Home — inherits the Preview geometry automatically,
+   with zero changes to any module's view.js/view.html.
+
+   Modules that define their own bespoke, token-driven component classes
+   instead of the shared ones (VizPick's .vizpick-*, Digital Market
+   Rollup's .dmr-*, etc.) already inherit Preview's palette/shadow/surface
+   TOKENS from styles/tokens.css automatically, since those classes are
+   built entirely from var(--apai-*)/var(--sp-*)/var(--shadow-*). Where a
+   module needs a Preview-specific geometry delta beyond what tokens carry,
+   that lives in a small additive `[data-layout="preview"] .module-<id>`
+   block inside that module's OWN styles.css — see
+   modules/digitalrollup/styles.css and modules/vizpick/styles.css for the
+   pattern.
+
+   Intensity note (bumped 2026-08-26 after user feedback that the first pass
+   was too subtle): every component below gets a top/left accent stripe in
+   --module-accent, matching the same idiom now used on Home's module cards
+   (styles/preview-shell.css) and on individual module panels that already
+   used a border-left accent (e.g. modules/digitalrollup's .dmr-picker).
+   Reusing one idiom everywhere is deliberate — it is what makes disparate
+   components read as one redesigned system rather than N unrelated tweaks. */
+
+/* ── Cards ──────────────────────────────────────────────────────
+   "Clear visual separation" — a real accent stripe + stronger elevation,
+   not just a radius bump. No new colors: --module-accent already exists
+   and defaults to --apai-blue for anything that doesn't override it. */
+[data-layout="preview"] .card {
+  border-radius: var(--rad-lg);
+  border-top: 3px solid var(--module-accent, var(--apai-blue));
+  box-shadow: var(--shadow-1);
+}
+[data-layout="preview"] .card-title {
+  font-size: var(--fs-lg);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--apai-border-soft);
+  margin-bottom: var(--sp-2);
+}
+
+/* ── Data tables ────────────────────────────────────────────────
+   Metric-heavy rule set: sticky, visually distinct header (tinted +
+   uppercase per the "clear column headers" rule), tighter row padding at
+   high density, tabular numerals right-aligned. Geometry/typography only —
+   sort/search/pagination/filter behaviour is untouched module JS. */
+[data-layout="preview"] .data-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--apai-bg-soft);
+  box-shadow: 0 1px 0 var(--apai-border);
+}
+[data-layout="preview"] .data-table th {
+  padding: var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--apai-muted);
+}
+[data-layout="preview"] .data-table td {
+  padding: var(--sp-2) var(--sp-3);
+}
+[data-layout="preview"] .data-table-compact th,
+[data-layout="preview"] .data-table-compact td {
+  padding: var(--sp-1) var(--sp-2);
+}
+[data-layout="preview"] .data-table tbody tr:hover td {
+  background: var(--module-accent-bg, var(--apai-info-bg));
+}
+
+/* ── Buttons ────────────────────────────────────────────────────
+   Firmer radius + a hover lift (transform only — compositor-safe, no
+   layout reflow); primary keeps --module-accent so per-module accent
+   colors (AurorBuddy's yellow, etc.) are unaffected. */
+[data-layout="preview"] .btn {
+  border-radius: var(--rad-md);
+  font-weight: var(--fw-semi);
+  transition: background-color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+[data-layout="preview"] .btn-primary {
+  box-shadow: var(--shadow-1);
+}
+[data-layout="preview"] .btn-primary:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+[data-layout="preview"] .btn-primary:active {
+  transform: translateY(0);
+}
+[data-layout="preview"] .btn-pill {
+  border-radius: var(--rad-pill);
+}
+
+/* ── Pills / badges / status strip ──────────────────────────────
+   "Active tabs and selected filters immediately recognizable" + "color is a
+   supporting signal, never the only status indicator" — Preview does not
+   remove any existing text/icon pairing, it sharpens shape and weight. */
+[data-layout="preview"] .pill,
+[data-layout="preview"] .badge {
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
+}
+
+[data-layout="preview"] .status-strip {
+  border-radius: var(--rad-sm);
+  border-left-width: 4px;
+  font-weight: var(--fw-medium);
+}
+
+/* ── Filter bar / KPI strips ────────────────────────────────────
+   Compact, aligned strip per the metric-heavy rules, with the same accent
+   stripe idiom as cards so a filter row reads as part of the same system. */
+[data-layout="preview"] .filter-bar {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-left: 3px solid var(--module-accent, var(--apai-blue));
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-1);
+}
+
+/* ── Forms ──────────────────────────────────────────────────────
+   Visible-label inputs (already required by the shared .field pattern) get
+   a touch more definition on focus, matching the sidebar's stronger active
+   indicator. Keyboard focus stays the shared :focus-visible rule in
+   base.css — this only affects the resting/hover border. */
+[data-layout="preview"] .field-label {
+  font-weight: var(--fw-semi);
+}
+[data-layout="preview"] .input,
+[data-layout="preview"] select.input,
+[data-layout="preview"] textarea.input {
+  border-radius: var(--rad-sm);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+[data-layout="preview"] .input:hover {
+  border-color: var(--apai-muted);
+}
+[data-layout="preview"] .input:focus-visible {
+  border-color: var(--module-accent, var(--apai-blue));
+}
+
+/* ── Modals / drawers ───────────────────────────────────────────
+   Stronger elevation so a modal reads as clearly above the page, per
+   "blur/scrim to indicate background dismissal." No behavior change —
+   native <dialog> semantics, focus trap, and Escape handling are untouched
+   module/shared JS (shared/ui.js, components.css::.modal). */
+[data-layout="preview"] .modal {
+  border-radius: var(--rad-lg);
+  border-top: 4px solid var(--module-accent, var(--apai-blue));
+  box-shadow: var(--shadow-3);
+  border-left: none; border-right: none; border-bottom: none;
+}
+[data-layout="preview"] .modal-head {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+/* ── Empty / loading / error states ─────────────────────────────
+   Unchanged text and semantics; only the container gets the same card-like
+   definition as everything else in Preview so a state message doesn't look
+   like a stray unstyled paragraph. */
+[data-layout="preview"] .state-empty,
+[data-layout="preview"] .state-error,
+[data-layout="preview"] .state-loading {
+  border-radius: var(--rad-md);
+  padding: var(--sp-4);
+}

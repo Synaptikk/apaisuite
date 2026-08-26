@@ -88,6 +88,68 @@ export function exportHistoryCsv(events, fileName) {
   triggerDownload(lines.join("\r\n"), fileName, "text/csv");
 }
 
+/**
+ * Download every opening of one case, chronological. This is the export
+ * behind "who has been opening the fragrance case" — unlike the active
+ * export it carries cleared and non-malicious rows too, because omitting
+ * them would misstate how often the case was opened.
+ * @param {object[]} events   — the case's events
+ * @param {string}   fileName
+ */
+export function exportCaseOpeningsCsv(events, fileName) {
+  const headers = [
+    "store", "zoneName", "lockName", "eventTime", "userId",
+    "firstName", "lastName", "position", "unlockSource",
+    "riskScore", "riskLevel", "riskReasons", "reviewStatus",
+  ];
+  const rows = [...events].sort((a, b) => {
+    const at = Date.parse(a.eventTime), bt = Date.parse(b.eventTime);
+    return (Number.isFinite(at) ? at : 0) - (Number.isFinite(bt) ? bt : 0);
+  });
+  const lines = [DISCLAIMER_LINE, headers.join(",")];
+  for (const e of rows) {
+    lines.push(headers.map((h) => {
+      if (h === "riskReasons")  return csvCell((e.riskReasons || []).join("; "));
+      if (h === "reviewStatus") return csvCell(STATUS_LABEL[e.reviewStatus] || e.reviewStatus);
+      return csvCell(e[h]);
+    }).join(","));
+  }
+  triggerDownload(lines.join("\r\n"), fileName, "text/csv");
+}
+
+/**
+ * Download one row per case: how often it was opened, by how many people,
+ * and who opened it most.
+ * @param {object[]} cases — from view.js::groupByCase, already sorted
+ * @param {string}   fileName
+ */
+export function exportCaseSummaryCsv(cases, fileName) {
+  const headers = [
+    "store", "zoneName", "lockName", "openings", "people",
+    "topOpener", "topOpenerId", "topOpenerOpenings",
+    "afterHoursOpenings", "flaggedEvents", "firstOpening", "lastOpening",
+  ];
+  const lines = [DISCLAIMER_LINE, headers.join(",")];
+  for (const c of cases) {
+    const top = c.topOpener;
+    lines.push([
+      csvCell(c.store),
+      csvCell(c.zoneName),
+      csvCell(c.lockName),
+      csvCell(c.openings),
+      csvCell(c.people),
+      csvCell(top?.name || (top ? "(unattributed)" : "")),
+      csvCell(top?.userId || ""),
+      csvCell(top?.openings ?? ""),
+      csvCell(c.afterHours),
+      csvCell(c.flagged),
+      csvCell(c.firstMs ? new Date(c.firstMs).toISOString() : ""),
+      csvCell(c.lastMs  ? new Date(c.lastMs).toISOString()  : ""),
+    ].join(","));
+  }
+  triggerDownload(lines.join("\r\n"), fileName, "text/csv");
+}
+
 // ── Suggested next steps per episode (deliberately phrased as questions
 // for the reviewer, not findings). ──────────────────────────────────
 function suggestedActions(ep) {

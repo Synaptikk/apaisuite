@@ -1,0 +1,256 @@
+/* styles/preview-shell.css — Preview layout: shell chrome geometry + color.
+   Inert unless <html data-layout="preview">. Every rule here targets the
+   SAME class names layout.css defines for Current, so it is a pure visual
+   delta over the existing shell markup in app.html — no new DOM regions, no
+   changed grid areas, no module code touched. Load order (see app.html):
+   tokens.css → base.css → layout.css → components.css → preview-shell.css.
+
+   Scope: shell-level chrome only (header, sidebar, nav, footer, Home
+   composition). Card/table/button/KPI geometry used inside module views
+   lives in styles/preview-components.css.
+
+   Intensity note (bumped 2026-08-26 after user feedback that the first pass
+   was too subtle to notice): light theme gets a colored sidebar/header
+   ("bold reskin" — reuses --apai-blue-darker + --apai-yellow, no new brand
+   hues per the design brief). Dark theme deliberately does NOT get a colored
+   chrome surface — the Foundry brief is explicit that ember/gold stay
+   "restrained... not spread across every component," and a solid-color
+   sidebar would be exactly that. Dark gets its boldness from bigger type,
+   stronger shadows/borders, and per-card accent stripes instead — same
+   visual weight, different lever, chosen to stay inside the brief's own
+   rules rather than override them. */
+
+/* ── Header ─────────────────────────────────────────────────────
+   Light: full colored bar (--preview-chrome-bg) with a thin Spark-yellow
+   accent line along the bottom — the "signature strip" that makes Preview
+   read as a different shell within the first second, using the brand's
+   own yellow "sparingly" (one 3px line, not a fill) per the spec.
+   Dark: stays on Forge Black (no new color), gets the same yellow-role
+   treatment via Molten Ember instead — consistent structural language,
+   theme-appropriate accent. */
+[data-layout="preview"] .shell-header {
+  border-bottom: none;
+  box-shadow: 0 3px 0 var(--preview-chrome-accent, var(--apai-yellow)), var(--shadow-2);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-header {
+  background: var(--preview-chrome-bg);
+  color: var(--preview-chrome-ink);
+}
+[data-layout="preview"][data-theme="dark"] .shell-header {
+  box-shadow: 0 3px 0 var(--molten-ember), var(--shadow-2);
+}
+[data-layout="preview"] .shell-header-brand svg {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+/* app.html's brand mark hardcodes stroke/fill="#0071CE" as SVG presentation
+   attributes, which the CSS spec treats as the LOWEST-priority origin — any
+   real selector, even an element selector, overrides them without
+   !important. Recoloring here does not touch app.html, so Current's brand
+   mark is untouched. */
+[data-layout="preview"]:not([data-theme="dark"]) .shell-header-brand svg path {
+  stroke: var(--preview-chrome-ink);
+  fill: var(--preview-chrome-ink);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-header-brand:hover {
+  color: var(--preview-chrome-ink);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-header-brand:hover svg path {
+  stroke: var(--preview-chrome-accent);
+  fill: var(--preview-chrome-accent);
+}
+
+/* Preview identification badge (app.html #shell-preview-badge). Always
+   present in the DOM; only meaningful once this stylesheet's parent
+   selector is active, so no extra positioning logic needed.
+
+   NOT scoped under [data-layout="preview"] for the [hidden] rule: the badge
+   must hide correctly under Current too, regardless of which layout is
+   active. Explicit [hidden] override required because .pill sets `display:
+   inline-flex` (components.css) — an author rule, which beats the UA
+   `[hidden] { display: none }` default even though both match the element.
+   Same fix already applied once in this codebase for
+   .shell-update-banner[hidden] (see styles/layout.css) — same gotcha, same
+   cause. */
+#shell-preview-badge[hidden] { display: none; }
+
+[data-layout="preview"] #shell-preview-badge {
+  margin-left: calc(-1 * var(--sp-2));
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: var(--fs-xs);
+}
+
+/* ── Sidebar / navigation ───────────────────────────────────────
+   Nav rule from the brief: "clearly distinguish global navigation from
+   module-specific tabs" and "keep the active module... obvious." Current's
+   active state is a background tint only; Preview adds a left accent bar
+   PLUS (light theme) a colored chrome surface so the whole rail reads as
+   structurally separate from the content, not just a lighter-weight list. */
+[data-layout="preview"] .shell-sidebar {
+  border-right: none;
+  padding-top: var(--sp-3);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-sidebar {
+  background: var(--preview-chrome-bg);
+  box-shadow: 2px 0 0 rgba(0, 0, 0, 0.08);
+}
+[data-layout="preview"][data-theme="dark"] .shell-sidebar {
+  box-shadow: 1px 0 0 var(--apai-border);
+}
+
+[data-layout="preview"] .shell-nav {
+  padding: var(--sp-2) var(--sp-3);
+  gap: 4px;
+}
+
+[data-layout="preview"] .shell-nav-item {
+  position: relative;
+  border-radius: var(--rad-md);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 4px);
+  font-size: var(--fs-md);
+}
+[data-layout="preview"] .shell-nav-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  border-radius: var(--rad-pill);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+/* Light: chrome-tinted text/hover/active states so nav stays legible on the
+   colored sidebar. The active indicator uses the single Spark-yellow accent
+   uniformly (not per-module --module-accent) — on a dark-blue rail, several
+   modules' blue accent would nearly vanish against a blue background, and a
+   consistent accent color reads as "this is the active-state color" rather
+   than "this is module X's brand," which is what a nav rail needs. */
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item {
+  color: var(--preview-chrome-ink-soft);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item:hover {
+  background: var(--preview-chrome-hover);
+  color: var(--preview-chrome-ink);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item.is-active {
+  background: var(--preview-chrome-active);
+  color: var(--preview-chrome-ink);
+  font-weight: var(--fw-semi);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item.is-active::before {
+  background: var(--preview-chrome-accent);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item svg {
+  opacity: 0.85;
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item.is-active svg {
+  opacity: 1;
+}
+
+/* Dark: no colored chrome surface (see file header), so the active state
+   leans harder on the bar + a stronger tint using the module's own accent —
+   consistent with "keep the active module obvious" without adding a new
+   color the brief didn't call for. */
+[data-layout="preview"][data-theme="dark"] .shell-nav-item.is-active {
+  background: var(--module-accent-bg, var(--apai-info-bg));
+  font-weight: var(--fw-semi);
+}
+[data-layout="preview"][data-theme="dark"] .shell-nav-item.is-active::before {
+  background: var(--module-accent, var(--molten-ember));
+}
+
+[data-layout="preview"] .shell-nav-section {
+  padding: var(--sp-5) var(--sp-3) var(--sp-2);
+  font-size: 10px;
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.1em;
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-section {
+  color: var(--preview-chrome-ink-faint);
+}
+
+[data-layout="preview"] .shell-sidebar-footer {
+  border-top: none;
+  padding: var(--sp-3) var(--sp-2);
+}
+[data-layout="preview"]:not([data-theme="dark"]) .shell-sidebar-footer {
+  box-shadow: 0 -1px 0 var(--preview-chrome-border);
+}
+[data-layout="preview"][data-theme="dark"] .shell-sidebar-footer {
+  box-shadow: 0 -1px 0 var(--apai-border);
+}
+
+/* Status dots (beta/deprecated) keep their semantic colors in both themes —
+   color is a supporting signal here, paired with the "Deprecated" section
+   label and the module's own status pill inside its view, never the only
+   indicator. On the colored light chrome they need a hairline ring so a
+   saturated dot doesn't fight a saturated background. */
+[data-layout="preview"]:not([data-theme="dark"]) .shell-nav-item .shell-nav-status {
+  box-shadow: 0 0 0 2px var(--preview-chrome-bg);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────
+   Quiet by design — this is an operational tool, not a marketing page. */
+[data-layout="preview"] .shell-footer {
+  border-top: none;
+  box-shadow: 0 -1px 0 var(--apai-border);
+}
+
+/* ── Typography ─────────────────────────────────────────────────
+   Bigger, bolder headings are one of the fastest "this looks redesigned"
+   signals and cost nothing structurally — h1/h2/h3 are block-level text,
+   not sized containers, so a small bump doesn't clip or reflow layouts
+   (verified across Settings + digitalrollup + vizpick screenshots). */
+[data-layout="preview"] h1 {
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+}
+[data-layout="preview"] h2 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}
+[data-layout="preview"] h3 {
+  font-size: 17px;
+}
+
+/* ── Home screen composition ────────────────────────────────────
+   Card grid gets more breathing room, a per-card top accent stripe (the
+   module's own --module-accent — the same left/top-accent idiom Current
+   already uses on individual module panels, e.g.
+   modules/digitalrollup/styles.css .dmr-picker, applied here at the
+   shell's module-card level), and a stronger elevation on hover so the
+   grid reads as a set of actionable tiles rather than a list. Hover uses
+   opacity/shadow/transform only (per motion rules: transform is
+   compositor-only, never width/height); disabled under reduced-motion
+   below. */
+[data-layout="preview"] .grid-cards {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-5);
+}
+
+[data-layout="preview"] .module-card {
+  border-radius: var(--rad-lg);
+  border-top: 3px solid var(--module-accent, var(--apai-blue));
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+[data-layout="preview"] .module-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-layout="preview"] .shell-nav-item::before,
+  [data-layout="preview"] .module-card {
+    transition: none;
+  }
+  [data-layout="preview"] .module-card:hover {
+    transform: none;
+  }
+}

@@ -467,3 +467,40 @@
   color: var(--apai-muted);
   margin: var(--sp-3) 0 0;
 }
+
+/* ── Preview layout ─────────────────────────────────────────────
+   Additive only — every rule here is scoped under [data-layout="preview"],
+   so Current's .dmr-* rules above are byte-for-byte unchanged. This module
+   is the vertical-slice validation for the Preview pattern: its panels
+   (.dmr-panel, .dmr-stores, .dmr-picker) and cards (.dmr-store-card) are
+   module-local, token-driven classes rather than the shared .card/.data-table
+   components in styles/preview-components.css, so they need their own small
+   geometry delta to pick up the same "clear visual separation" language the
+   rest of Preview uses. No new colors, no structural/DOM changes, no changed
+   sort/filter/refresh behaviour — border-radius/shadow/hover only. */
+[data-layout="preview"] .module-digitalrollup .dmr-panel,
+[data-layout="preview"] .module-digitalrollup .dmr-stores,
+[data-layout="preview"] .module-digitalrollup .dmr-picker {
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-1);
+}
+[data-layout="preview"] .module-digitalrollup .dmr-tile {
+  border-radius: var(--rad-md);
+}
+[data-layout="preview"] .module-digitalrollup .dmr-store-card {
+  border-radius: var(--rad-lg);
+  transition: box-shadow var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+[data-layout="preview"] .module-digitalrollup .dmr-store-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+[data-layout="preview"] .module-digitalrollup .dmr-store-card.is-home:hover {
+  transform: none; /* the accent spine is the "this is yours" signal — don't let it lift and imply it moved */
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-layout="preview"] .module-digitalrollup .dmr-store-card { transition: none; }
+  [data-layout="preview"] .module-digitalrollup .dmr-store-card:hover { transform: none; }
+}

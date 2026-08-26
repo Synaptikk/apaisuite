@@ -12,7 +12,7 @@ import { getUserHomeMarket, getUserHomeStore, onUserMarketChange } from "../../s
 import { rollUpSkippedByAssociate } from "./lib/parse_vizpick_stores_csv.js";
 import { buildPerformanceHtml, buildPickListHtml, buildCardEmail } from "./lib/card_report.js";
 import * as associateDirectory from "../../shared/associateDirectory.js";
-import { hasName } from "../../shared/associateDirectory.js";
+import { hasName, normalizeWin } from "../../shared/associateDirectory.js";
 import { lookupNames, lookupDiagnostics, diffLookupDiagnostics } from "../../shared/associateLookup.js";
 import { createLogging } from "../../shared/logging.js";
 
@@ -223,6 +223,12 @@ export async function mount(host, container) {
   // WIN -> { name, title } resolved from shared/associateDirectory.js. Held in
   // memory only for the render; the raw WIN is what the capture stores, and a
   // name is never written back into the snapshot.
+  //
+  // KEYED BY normalizeWin(win) — lower-cased — never by the raw capture value.
+  // associateDirectory keys every record that way, so getMany() hands back
+  // lower-cased keys; reading the map with Tableau's verbatim WIN meant a WIN
+  // carrying any upper case resolved successfully and then rendered as an id
+  // anyway. Go through dirGet(), never directory.get() with a raw win.
   let directory = new Map();
   // WINs this mount has already put through the resolver, so a repaint does
   // not re-query them. Deliberately NOT expressed as a null in `directory`:
@@ -232,6 +238,10 @@ export async function mount(host, container) {
   // Outcome of the last resolution pass, so the Associates card can explain a
   // column of ids instead of just showing one. null = never ran.
   let nameResolve = null;
+  // Set when a pass failed transiently. Until it elapses, refreshDirectory()
+  // does not re-attempt — otherwise every sort/expand render would re-fire a
+  // full round of lookups at a Workvivo that is currently unreachable.
+  let transientUntil = 0;
 
   let homeMarket = await getUserHomeMarket();
   // The user's own store, marked on its card so it is findable in a market of
@@ -323,12 +333,26 @@ export async function mount(host, container) {
    * is honest: better a bare id than a confidently wrong name against a list
    * of who left work behind.
    */
+  /**
+   * Read the mount-local directory with the same key associateDirectory uses.
+   *
+   * Every read of `directory` MUST go through here. The store normalises WINs
+   * to lower case; Tableau's location-details export passes the scanner's WIN
+   * through verbatim, and those arrive mixed-case. A raw-key read therefore
+   * missed records that had resolved perfectly — the name was in hand and the
+   * card printed the id — and, because the "is it resolved?" test used the same
+   * raw key, the WIN also looked permanently unresolved to the retry logic.
+   */
+  function dirGet(win) {
+    return directory.get(normalizeWin(win));
+  }
+
   async function refreshDirectory() {
     // Only the associates actually on screen. Collecting every WIN in the
     // market meant resolving hundreds of people nobody would ever see.
     const wins = new Set();
     for (const r of rowsForActiveTab()) {
-      for (const a of topAssociatesFor(r).shown) if (a.win) wins.add(a.win);
+      for (const a of topAssociatesFor(r).shown) if (a.win) wins.add(normalizeWin(a.win));
     }
     if (!wins.size) return false;
     // "Missing" means MISSING A NAME — not missing a record. The two are not
@@ -339,8 +363,11 @@ export async function mount(host, container) {
     // skipped the resolver entirely, and rendered the WIN — permanently, since
     // the nameless record survives a reload. Stores with no prior tool usage
     // resolved fine, which is why this looked store-specific.
-    const missing = [...wins].filter((w) => !hasName(directory.get(w)) && !attempted.has(w));
+    const missing = [...wins].filter((w) => !hasName(dirGet(w)) && !attempted.has(w));
     if (!missing.length) return false;
+    // Backing off after a transient failure. Not `attempted`, because these
+    // WINs are still owed a lookup — just not right now.
+    if (transientUntil && Date.now() < transientUntil) return false;
 
     // 1. Whatever the suite already knows — free, one storage round trip, and
     //    covers every WIN any other module has resolved before.
@@ -358,7 +385,7 @@ export async function mount(host, container) {
     //    associateLookup dedupes concurrent calls, caches negatives short-term
     //    (a "no match" is usually a failure, not a fact), and writes results
     //    into the permanent store — so every other module gets them too.
-    const stillMissing = missing.filter((w) => !hasName(directory.get(w)));
+    const stillMissing = missing.filter((w) => !hasName(dirGet(w)));
     if (stillMissing.length) {
       const before = lookupDiagnostics();
       let threw = null;
@@ -373,7 +400,7 @@ export async function mount(host, container) {
       // it is really Workvivo being unreachable or a standing miss — so record
       // the reason, both to the debug feed and to the card itself.
       const d = diffLookupDiagnostics(before);
-      const unresolved = stillMissing.filter((w) => !hasName(directory.get(w))).length;
+      const unresolved = stillMissing.filter((w) => !hasName(dirGet(w))).length;
       nameResolve = { ...d, asked: stillMissing.length, unresolved, threw };
       if (unresolved) {
         log.emit("names_unresolved", {
@@ -399,11 +426,25 @@ export async function mount(host, container) {
     // shared/associateLookup.js::lookupTitle stays for that user-initiated
     // path. This view simply does not call it.
 
-    // Mark everything this pass touched, so a repaint does not re-query the
-    // ones that stayed unresolved. They render as the bare WIN, which is the
-    // honest outcome: better an id than a confidently wrong name on a list
-    // like this — but the card now says WHY, via nameResolveNote().
-    for (const w of missing) attempted.add(w);
+    // Bank "we tried this one" ONLY when the pass was conclusive.
+    //
+    // A transient failure — Workvivo not signed in, no tab open yet, the SW
+    // torn down mid-executeScript — is not evidence about the WIN. Marking it
+    // here is what made one bad pass permanent for the life of the mount:
+    // nothing re-queried when a fresh capture landed, so a card that opened
+    // before Workvivo had a session showed ids until the user navigated away
+    // and back. `attempted` exists to stop a repaint re-querying a DEFINITIVE
+    // miss, which is a different thing.
+    //
+    // Not re-queried on every render either — a transient pass sets a cooldown
+    // so sorting or expanding a card can't hammer Workvivo while it's down.
+    const passWasTransient = Boolean(nameResolve?.transient || nameResolve?.threw);
+    if (passWasTransient) {
+      transientUntil = Date.now() + TRANSIENT_RETRY_MS;
+    } else {
+      transientUntil = 0;
+      for (const w of missing) attempted.add(w);
+    }
     return changed;
   }
 
@@ -535,7 +576,20 @@ export async function mount(host, container) {
   await paint();
 
   // 6. Re-paint when a background/other-tab refresh completes.
-  const unsub = host.messaging.on("source_complete", () => { paint(); });
+  //
+  // A completed capture is the one moment worth re-asking about names: the rows
+  // are new (so there are WINs nobody has looked up), and time has passed (so a
+  // Workvivo session that was missing may now exist). Without clearing
+  // `attempted`, a mount that resolved nothing on its first pass stayed that way
+  // for as long as the module was open, however many refreshes landed behind it
+  // — the ids never filled in and nothing said why. Definitive misses are still
+  // cheap to re-ask: associateDirectory holds them for an hour and answers from
+  // storage without touching the network.
+  const unsub = host.messaging.on("source_complete", () => {
+    attempted.clear();
+    transientUntil = 0;
+    paint();
+  });
   const unsubProgress = host.messaging.on("today_progress", (p) => { renderTodayBar(p); });
   const unsubPhase = host.messaging.on("capture_phase", (p) => {
     if (p?.phase) { lastRunNote = p.phase; paintRunNote(); }
@@ -1199,7 +1253,7 @@ export async function mount(host, container) {
    *                 here, and no amount of retrying will help.
    */
   function nameResolveNote(shown) {
-    const bare = shown.filter((a) => a.win && !hasName(directory.get(a.win))).length;
+    const bare = shown.filter((a) => a.win && !hasName(dirGet(a.win))).length;
     if (!bare) return "";
     const d = nameResolve;
     if (!d) return "";
@@ -1235,7 +1289,7 @@ export async function mount(host, container) {
     const idsNote = nameResolveNote(shown);
 
     const rowsHtml = shown.map((a) => {
-      const who = directory.get(a.win) || null;
+      const who = dirGet(a.win) || null;
       const open = isAssocOpen(store, a.win);
       const label = who?.name ? escapeHtml(who.name) : escapeHtml(a.win);
       const title = who?.title ? `<span class="vizpick-assoc-title">${escapeHtml(who.title)}</span>` : "";
@@ -1344,7 +1398,7 @@ export async function mount(host, container) {
    * printouts were a column of ids.
    */
   function nameResolver() {
-    return (win) => directory.get(win)?.name ?? null;
+    return (win) => dirGet(win)?.name ?? null;
   }
 
   /**

@@ -30,7 +30,8 @@ import { newImportId, putImport, listImports,
 import { STATUSES, STATUS_LABEL,
          applyOverlay, setStatus, archiveImport } from "./lib/statusStore.js";
 import { exportActiveCsv, exportChecklistCsv,
-         exportHistoryCsv }                       from "./lib/exportChecklist.js";
+         exportHistoryCsv, exportCaseOpeningsCsv,
+         exportCaseSummaryCsv }                   from "./lib/exportChecklist.js";
 import { parseCaseItemsFile, lookupCaseItems }    from "./lib/parseCaseItems.js";
 
 const POWER_BI_URL = "https://app.powerbi.com/groups/me/reports/a118e7e7-9431-4240-b630-04575d36cc37/217785fb10b56ddae020?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
@@ -135,6 +136,12 @@ export async function mount(host, container) {
     sortBy:            "riskScore",
     sortDir:           "desc",
     selectedId:        null,
+    // Cases tab — "who opened this case, and when". Independent of the
+    // event table's sort so switching tabs doesn't scramble either one.
+    selectedCaseKey:   null,   // caseKeyOf(event) of the case being drilled into
+    caseUserFilter:    "",     // userId; set by clicking a row in the openers table
+    casesSortBy:       "openings",
+    casesSortDir:      "desc",
     busyImporting:     false,
     showNonMalicious:  false,   // toggle to reveal hidden (non-malicious) events in active tab
     users: {
@@ -920,6 +927,7 @@ export async function mount(host, container) {
     els.content.classList.remove("dl-hidden");
 
     if (state.tab === "active")    renderActiveTable();
+    else if (state.tab === "cases")     renderCasesTab();
     else if (state.tab === "checklist") renderChecklist();
     else if (state.tab === "history")   renderHistoryTable();
     else                                renderUsersTab();
@@ -950,6 +958,359 @@ export async function mount(host, container) {
     // every filter change, sort, and remount — queueing one navigation per
     // visible row. The event table renders no tenure data anyway; the drawer
     // fetches on open (renderDrawerTenure), which is the only place it shows.
+  }
+
+  // ── Cases tab ───────────────────────────────────────────────────────────────
+  //
+  // Answers "who has been opening the fragrance case, and when?" — the
+  // opposite question to the active queue, which hides everything already
+  // cleared and ranks by risk. A case opened forty times by one associate
+  // at ordinary hours is invisible there by design; here it is the headline.
+  //
+  // Honoured filters: store, zone, position, date range, search.
+  // Ignored:          status and risk level. Either one would hide openings,
+  //                   which is the single thing this view exists to show.
+  //                   The note under the table says so on screen.
+
+  function casesBaseEvents() {
+    return filterEvents(state.events, { ...state.filters, status: "", riskLevel: "" });
+  }
+
+  // After-hours is computed from the event's own hour rather than from its
+  // risk reasons: base-rate calibration can zero the AFTERHOURS reason out of
+  // riskReasons entirely (see riskScoring.js), and a case-history view still
+  // needs to say "opened at 3am" even when 3am is normal for this store.
+  function isAfterHoursHour(hour) {
+    if (hour == null) return false;
+    const tw = rules.timeWindows || {};
+    const inWin = (w) => w && hour >= w.fromHour && hour < w.toHour;
+    if (inWin(tw.deepAfterHours)) return true;
+    return (tw.edgeAfterHours || []).some(inWin);
+  }
+
+  function renderCasesTab() {
+    const cases = groupByCase(casesBaseEvents(), isAfterHoursHour);
+    if (state.selectedCaseKey) {
+      const one = cases.find((c) => c.key === state.selectedCaseKey);
+      if (one) { renderCaseDetail(one); return; }
+      // The case dropped out of the current filter window (usually a narrowed
+      // date range). Say so rather than silently bouncing back to the list.
+      replace(els.content,
+        backToCasesBar(),
+        h("div", { class: "dl-empty" },
+          "That case has no openings inside the current date range and filters."),
+      );
+      return;
+    }
+    renderCasesList(cases);
+  }
+
+  function backToCasesBar() {
+    return h("div", { class: "dl-case-backbar" },
+      h("button", {
+        class: "btn btn-secondary btn-sm",
+        onClick: () => setState({ selectedCaseKey: null, caseUserFilter: "" }),
+      }, "← All cases"),
+    );
+  }
+
+  function renderCasesList(cases) {
+    if (!cases.length) {
+      replace(els.content,
+        h("div", { class: "dl-empty" },
+          h("strong", null, "No openings match the current filters."),
+          " Widen the date range or clear the store/zone filters."),
+      );
+      return;
+    }
+    const sorted = sortCases(cases);
+    const totalOpenings = cases.reduce((n, c) => n + c.openings, 0);
+
+    const table = h("div", { class: "dl-table-wrap" },
+      h("table", { class: "dl-table" },
+        h("thead", null,
+          h("tr", null,
+            caseTh("Case",         "lockName"),
+            caseTh("Zone",         "zoneName"),
+            caseTh("Store",        "store"),
+            caseTh("Openings",     "openings"),
+            caseTh("People",       "people"),
+            h("th", null, "Most openings by"),
+            caseTh("After-hours",  "afterHours"),
+            caseTh("First",        "firstMs"),
+            caseTh("Last",         "lastMs"),
+            h("th", null, ""),
+          )),
+        h("tbody", null, ...sorted.map((c) => caseRow(c))),
+      ),
+    );
+
+    replace(els.content,
+      h("div", { class: "dl-case-intro" },
+        h("div", null,
+          h("strong", null, `${cases.length} case${cases.length === 1 ? "" : "s"}`),
+          ` · ${totalOpenings} opening${totalOpenings === 1 ? "" : "s"} in the selected date range`,
+        ),
+        h("button", { class: "btn btn-secondary btn-sm", onClick: doExport },
+          "Export case summary CSV"),
+      ),
+      table,
+      h("p", { class: "dl-muted dl-case-note" },
+        "Every opening is listed here, including events already cleared or marked non-malicious — ",
+        "the Status and Risk level filters deliberately do not apply to this tab. ",
+        "Counts are a record of access, not an allegation."),
+    );
+  }
+
+  function caseRow(c) {
+    const open = () => setState({ selectedCaseKey: c.key, caseUserFilter: "" });
+    const top = c.topOpener;
+    return h("tr", { class: "dl-case-row", onClick: open },
+      h("td", { class: "dl-cell-user" }, c.lockName || h("span", { class: "dl-muted" }, "(no lock name)")),
+      h("td", null, c.zoneName || ""),
+      h("td", null, c.store || ""),
+      h("td", null, h("strong", null, String(c.openings))),
+      h("td", null, String(c.people)),
+      h("td", null,
+        top
+          ? h("div", null,
+              h("div", null, top.name || h("span", { class: "dl-muted" }, "(unattributed)")),
+              h("div", { class: "dl-cell-id" }, `${top.openings} of ${c.openings}`))
+          : "—"),
+      h("td", null, c.afterHours
+        ? h("span", { class: "dl-chip dl-chip-warn" }, String(c.afterHours))
+        : h("span", { class: "dl-muted" }, "0")),
+      h("td", { class: "dl-mono" }, c.firstMs ? fmtDateTime(c.firstMs) : ""),
+      h("td", { class: "dl-mono" }, c.lastMs  ? fmtDateTime(c.lastMs)  : ""),
+      h("td", null,
+        h("button", {
+          class: "btn btn-sm btn-secondary",
+          onClick: (ev) => { ev.stopPropagation(); open(); },
+        }, "Openings")),
+    );
+  }
+
+  // Numeric/time columns default to descending on first click — "most
+  // openings" and "most recent" are what a reviewer wants first; names sort
+  // A→Z.
+  const CASE_DESC_FIRST = new Set(["openings", "people", "afterHours", "firstMs", "lastMs"]);
+
+  function caseTh(label, key) {
+    const isSorted = state.casesSortBy === key;
+    return h("th", {
+      class: "dl-sortable",
+      onClick: () => setState({
+        casesSortBy: key,
+        casesSortDir: isSorted
+          ? (state.casesSortDir === "asc" ? "desc" : "asc")
+          : (CASE_DESC_FIRST.has(key) ? "desc" : "asc"),
+      }),
+    },
+      label,
+      isSorted ? h("span", { class: "dl-sort-arrow" }, state.casesSortDir === "asc" ? "▲" : "▼") : null,
+    );
+  }
+
+  function sortCases(cases) {
+    const dir = state.casesSortDir === "asc" ? 1 : -1;
+    const key = state.casesSortBy;
+    return [...cases].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return  1 * dir;
+      if (bv == null) return -1 * dir;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }
+
+  // ── One case: who opened it, and every opening in order ────────────────────
+
+  function renderCaseDetail(c) {
+    const userFilter = state.caseUserFilter;
+    const openings = [...c.events].sort((a, b) => {
+      const at = Date.parse(a.eventTime), bt = Date.parse(b.eventTime);
+      return (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
+    });
+    const shown = userFilter
+      ? openings.filter((e) => (e.userId || "(unattributed)") === userFilter)
+      : openings;
+
+    const busiestDay = c.days.reduce((best, d) => (!best || d[1] > best[1] ? d : best), null);
+
+    replace(els.content,
+      backToCasesBar(),
+      h("div", { class: "dl-case-head" },
+        h("h2", null, c.lockName || "(no lock name)"),
+        h("div", { class: "dl-muted" },
+          `${c.zoneName || "(no zone)"} · store ${c.store || "?"}`),
+      ),
+      h("div", { class: "dl-summary" },
+        summaryCard("Openings",     c.openings, "in selected range"),
+        summaryCard("People",       c.people,   "distinct users"),
+        summaryCard("After-hours",  c.afterHours, "11pm–7am", c.afterHours ? "dl-card-high" : ""),
+        summaryCard("Flagged",      c.flagged,  "High or Critical", c.flagged ? "dl-card-critical" : ""),
+        summaryCard("Busiest day",  busiestDay ? busiestDay[0] : "—", busiestDay ? `${busiestDay[1]} openings` : ""),
+        summaryCard("Last opened",  c.lastMs ? fmtDateTime(c.lastMs) : "—", ""),
+      ),
+      renderCaseItems(c),
+      c.days.length > 1 ? h("section", { class: "dl-case-section" },
+        h("h3", null, "Openings per day"),
+        dayBars(c.days),
+      ) : null,
+      h("section", { class: "dl-case-section" },
+        h("h3", null, "Who opened it"),
+        openersTable(c),
+      ),
+      h("section", { class: "dl-case-section" },
+        h("div", { class: "dl-case-section-head" },
+          h("h3", null,
+            userFilter
+              ? `Openings by ${c.byUser.get(userFilter)?.name || userFilter}`
+              : "Every opening",
+            h("span", { class: "dl-muted" }, ` (${shown.length})`)),
+          h("div", { class: "dl-case-section-actions" },
+            userFilter
+              ? h("button", { class: "btn btn-sm btn-secondary",
+                              onClick: () => setState({ caseUserFilter: "" }) }, "Show everyone")
+              : null,
+            h("button", { class: "btn btn-sm btn-secondary", onClick: doExport },
+              "Export CSV"),
+          ),
+        ),
+        openingsTable(shown),
+      ),
+    );
+  }
+
+  function renderCaseItems(c) {
+    const section = h("section", { class: "dl-case-section" },
+      h("h3", null, "Items in this case"));
+    if (!state.caseMapping) {
+      section.appendChild(h("p", { class: "dl-muted" },
+        "No case map loaded. Click ", h("strong", null, "Case Map…"), " in the header to import one — ",
+        "that's what turns a lock name into the merchandise behind it."));
+      return section;
+    }
+    const items = lookupCaseItems(state.caseMapping.items, {
+      zoneName: c.zoneName, lockName: c.lockName, store: c.store,
+    });
+    if (!items.length) {
+      section.appendChild(h("p", { class: "dl-muted" },
+        `No items mapped for "${c.lockName}" in "${c.zoneName}".`));
+      return section;
+    }
+    section.appendChild(
+      h("div", { class: "dl-table-wrap" },
+        h("table", { class: "dl-table dl-table-compact" },
+          h("thead", null, h("tr", null,
+            h("th", null, "UPC"), h("th", null, "Item #"), h("th", null, "Description"))),
+          h("tbody", null, ...items.map((item) =>
+            h("tr", null,
+              h("td", { class: "dl-mono" }, item.upc),
+              h("td", null, item.itemNumber || "—"),
+              h("td", null, item.description || "—"),
+            ))),
+        )),
+    );
+    return section;
+  }
+
+  function openersTable(c) {
+    const rows = c.openers.map((u) => {
+      const key = u.userId || "(unattributed)";
+      const isSelected = state.caseUserFilter === key;
+      const share = c.openings ? Math.round((u.openings / c.openings) * 100) : 0;
+      return h("tr", {
+        class: isSelected ? "dl-case-row is-selected" : "dl-case-row",
+        onClick: () => setState({ caseUserFilter: isSelected ? "" : key }),
+      },
+        h("td", { class: "dl-cell-user" },
+          h("div", null, u.name || h("span", { class: "dl-muted" }, "(unattributed)")),
+          h("div", { class: "dl-cell-id" }, u.userId || ""),
+        ),
+        h("td", null, u.position || ""),
+        h("td", null, h("strong", null, String(u.openings))),
+        h("td", null,
+          h("div", { class: "dl-share" },
+            h("div", { class: "dl-share-bar", style: { width: `${share}%` } })),
+          h("span", { class: "dl-cell-id" }, `${share}%`),
+        ),
+        h("td", null, u.afterHours
+          ? h("span", { class: "dl-chip dl-chip-warn" }, String(u.afterHours))
+          : h("span", { class: "dl-muted" }, "0")),
+        h("td", { class: "dl-mono" }, u.firstMs ? fmtDateTime(u.firstMs) : ""),
+        h("td", { class: "dl-mono" }, u.lastMs  ? fmtDateTime(u.lastMs)  : ""),
+      );
+    });
+    return h("div", { class: "dl-table-wrap" },
+      h("table", { class: "dl-table" },
+        h("thead", null, h("tr", null,
+          h("th", null, "User"),
+          h("th", null, "Position"),
+          h("th", null, "Openings"),
+          h("th", null, "Share"),
+          h("th", null, "After-hours"),
+          h("th", null, "First"),
+          h("th", null, "Last"),
+        )),
+        h("tbody", null, ...rows),
+      ),
+    );
+  }
+
+  function openingsTable(events) {
+    if (!events.length) {
+      return h("div", { class: "dl-empty" }, "No openings match the current filters.");
+    }
+    return h("div", { class: "dl-table-wrap" },
+      h("table", { class: "dl-table" },
+        h("thead", null, h("tr", null,
+          h("th", null, "Time"),
+          h("th", null, "User"),
+          h("th", null, "Position"),
+          h("th", null, "Source"),
+          h("th", null, "Risk"),
+          h("th", null, "Status"),
+          h("th", null, ""),
+        )),
+        h("tbody", null, ...events.map((e) => {
+          const badgeClass = RISK_LEVEL_TO_BADGE_CLASS[e.riskLevel] || "dl-risk-normal";
+          const after = isAfterHoursHour(e.eventHour);
+          return h("tr", null,
+            h("td", { class: "dl-mono" },
+              fmtDateTime(e.eventTime),
+              after ? h("span", { class: "dl-chip dl-chip-warn", style: { marginLeft: "6px" } }, "after-hours") : null,
+            ),
+            h("td", { class: "dl-cell-user" },
+              h("div", null, e.fullName || h("span", { class: "dl-muted" }, "(unattributed)")),
+              h("div", { class: "dl-cell-id" }, e.userId || ""),
+            ),
+            h("td", null, e.position || ""),
+            h("td", null, e.unlockSource || ""),
+            h("td", null, h("span", { class: `dl-risk-badge ${badgeClass}` }, String(e.riskScore))),
+            h("td", null, h("span", { class: `dl-status dl-status-${e.reviewStatus}` },
+              STATUS_LABEL[e.reviewStatus] || e.reviewStatus)),
+            h("td", null,
+              h("button", { class: "btn btn-sm btn-secondary",
+                            onClick: () => setState({ selectedId: e.id }) }, "Details")),
+          );
+        })),
+      ),
+    );
+  }
+
+  function dayBars(days) {
+    const max = Math.max(...days.map((d) => d[1]), 1);
+    return h("div", { class: "dl-case-days" },
+      ...days.map(([day, n]) =>
+        h("div", { class: "dl-case-day", title: `${day} — ${n} opening${n === 1 ? "" : "s"}` },
+          h("div", { class: "dl-case-day-count" }, String(n)),
+          h("div", { class: "dl-case-day-bar",
+                     style: { height: `${Math.max(3, Math.round((n / max) * 56))}px` } }),
+          h("div", { class: "dl-case-day-label" }, day.slice(5)),
+        )),
+    );
   }
 
   // ── Users audit tab ─────────────────────────────────────────────────────────
@@ -1315,6 +1676,21 @@ export async function mount(host, container) {
           e.clearedAt ? dd(new Date(e.clearedAt).toLocaleString()) : null,
           e.clearedReason ? dt("Cleared reason") : null,
           e.clearedReason ? dd(STATUS_LABEL[e.clearedReason] || e.clearedReason) : null,
+        ),
+
+        // One click from "this opening" to "every opening of this case" —
+        // the question a single flagged row almost always raises.
+        h("p", { style: { marginTop: "12px", marginBottom: 0 } },
+          h("button", {
+            class: "btn btn-sm btn-secondary",
+            title: `Show every opening of ${e.lockName || "this case"}`,
+            onClick: () => setState({
+              tab: "cases",
+              selectedCaseKey: caseKeyOf(e),
+              caseUserFilter: "",
+              selectedId: null,
+            }),
+          }, "See all openings of this case →"),
         ),
 
         h("h4", { style: { marginTop: "20px", marginBottom: "8px" } }, "Why this surfaced"),
@@ -1748,6 +2124,18 @@ export async function mount(host, container) {
     if (state.tab === "history") {
       const rows = filterEvents(state.events, { ...state.filters, status: "" }).filter((e) => e.reviewStatus !== "active");
       exportHistoryCsv(rows, `digitallocks-history-${today}.csv`);
+    } else if (state.tab === "cases") {
+      const cases = groupByCase(casesBaseEvents(), isAfterHoursHour);
+      const one = state.selectedCaseKey ? cases.find((c) => c.key === state.selectedCaseKey) : null;
+      if (one) {
+        const rows = state.caseUserFilter
+          ? one.events.filter((e) => (e.userId || "(unattributed)") === state.caseUserFilter)
+          : one.events;
+        const slug = (one.lockName || "case").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+        exportCaseOpeningsCsv(rows, `digitallocks-openings-${slug || "case"}-${today}.csv`);
+      } else {
+        exportCaseSummaryCsv(sortCases(cases), `digitallocks-cases-${today}.csv`);
+      }
     } else if (state.tab === "checklist") {
       const active = filterEvents(state.events, { ...state.filters, status: state.filters.status || "active" });
       const eps = groupIntoEpisodes(active, { windowMinutes: rules.thresholds.multiZoneWindowMinutes });
@@ -1852,6 +2240,82 @@ function filterEvents(events, f) {
 
 function uniqueSorted(arr) {
   return [...new Set(arr.filter(Boolean))].sort();
+}
+
+// A "case" is one physical locked fixture: the same lock name, in the same
+// zone, at the same store. Store is part of the key because lock names repeat
+// across stores ("Fragrance 1" exists everywhere) and merging two stores'
+// openings into one row would invent a pattern that isn't there.
+export function caseKeyOf(e) {
+  return [e.store || "", e.zoneName || "", e.lockName || ""].join("\u0000");
+}
+
+/**
+ * Group events into per-case opening histories.
+ *
+ * @param {object[]} events
+ * @param {(hour:number|null) => boolean} isAfterHours — injected so this stays
+ *        pure of the rules file; the caller owns the time windows.
+ * @returns {object[]} cases, each with .events, .openers (desc by openings),
+ *          .days ([dayKey, count] ascending), and roll-up counts.
+ */
+export function groupByCase(events, isAfterHours = () => false) {
+  const map = new Map();
+  for (const e of events) {
+    const key = caseKeyOf(e);
+    let c = map.get(key);
+    if (!c) {
+      c = {
+        key,
+        store: e.store || "", zoneName: e.zoneName || "", lockName: e.lockName || "",
+        events: [], openings: 0, afterHours: 0, flagged: 0, maxScore: 0,
+        firstMs: null, lastMs: null,
+        byUser: new Map(), byDay: new Map(),
+      };
+      map.set(key, c);
+    }
+    const t = e.eventTime ? Date.parse(e.eventTime) : NaN;
+    const after = isAfterHours(e.eventHour);
+
+    c.events.push(e);
+    c.openings++;
+    if (after) c.afterHours++;
+    if (e.riskLevel === "High" || e.riskLevel === "Critical") c.flagged++;
+    if ((e.riskScore || 0) > c.maxScore) c.maxScore = e.riskScore || 0;
+    if (Number.isFinite(t)) {
+      if (c.firstMs == null || t < c.firstMs) c.firstMs = t;
+      if (c.lastMs  == null || t > c.lastMs)  c.lastMs  = t;
+    }
+    if (e.eventDate) c.byDay.set(e.eventDate, (c.byDay.get(e.eventDate) || 0) + 1);
+
+    // Unattributed rows (no USER ID) collapse into one bucket rather than
+    // one bucket each — "12 openings nobody is named on" is the useful shape.
+    const uid = e.userId || "(unattributed)";
+    let u = c.byUser.get(uid);
+    if (!u) {
+      u = { userId: e.userId || "", name: "", position: "",
+            openings: 0, afterHours: 0, firstMs: null, lastMs: null, maxScore: 0 };
+      c.byUser.set(uid, u);
+    }
+    u.openings++;
+    if (!u.name && e.fullName) u.name = e.fullName;
+    if (!u.position && e.position) u.position = e.position;
+    if (after) u.afterHours++;
+    if ((e.riskScore || 0) > u.maxScore) u.maxScore = e.riskScore || 0;
+    if (Number.isFinite(t)) {
+      if (u.firstMs == null || t < u.firstMs) u.firstMs = t;
+      if (u.lastMs  == null || t > u.lastMs)  u.lastMs  = t;
+    }
+  }
+
+  const out = [...map.values()];
+  for (const c of out) {
+    c.people    = c.byUser.size;
+    c.openers   = [...c.byUser.values()].sort((a, b) => b.openings - a.openings);
+    c.topOpener = c.openers[0] || null;
+    c.days      = [...c.byDay.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  }
+  return out;
 }
 
 function mostBy(arr, keyFn) {

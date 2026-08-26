@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "APAISuite",
   "short_name": "APAISuite",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Asset Protection investigation suite: case review, ORC monitoring, Spark fraud triage, digital locks, and store metrics.",
   "minimum_chrome_version": "120",
   "action": {

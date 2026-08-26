@@ -477,6 +477,92 @@
   font-size: var(--fs-sm);
 }
 
+/* ── Cases tab ────────────────────────────────────────────────── */
+.dl-case-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-md);
+}
+.dl-case-note { font-size: var(--fs-sm); margin: var(--sp-2) 0 0; max-width: 90ch; }
+
+.dl-table tbody tr.dl-case-row { cursor: pointer; }
+.dl-table tbody tr.dl-case-row.is-selected td {
+  background: var(--apai-info-bg);
+  border-left: 3px solid var(--apai-link);
+}
+
+.dl-case-backbar { margin-bottom: var(--sp-3); }
+
+.dl-case-head { margin-bottom: var(--sp-4); }
+.dl-case-head h2 {
+  margin: 0 0 2px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+}
+
+.dl-case-section { margin-top: var(--sp-5); }
+.dl-case-section h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--apai-muted);
+}
+.dl-case-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.dl-case-section-actions { display: flex; gap: var(--sp-2); }
+
+/* Share-of-openings bar in the openers table */
+.dl-share {
+  display: inline-block;
+  width: 90px;
+  height: 6px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border);
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: var(--sp-2);
+}
+.dl-share-bar { height: 100%; background: var(--apai-link); }
+
+/* Openings-per-day bars */
+.dl-case-days {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  padding: var(--sp-3);
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+}
+.dl-case-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 34px;
+}
+.dl-case-day-bar {
+  width: 18px;
+  border-radius: var(--rad-sm) var(--rad-sm) 0 0;
+  background: var(--apai-link);
+}
+.dl-case-day-count { font-size: var(--fs-xs); color: var(--apai-ink); font-weight: var(--fw-semi); }
+.dl-case-day-label { font-size: 10px; color: var(--apai-muted); font-family: var(--font-mono); white-space: nowrap; }
+
 /* New-hire badge */
 .dl-badge {
   display: inline-block;

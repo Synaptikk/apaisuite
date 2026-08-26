@@ -927,6 +927,33 @@ sentinel conflated *tried and failed* with *hold no record*, and clobbered any
 title the record did carry. **Gate on `hasName()`, never on `get()`/`getMany()`
 returning something.**
 
+**Names resolved and then rendered as ids anyway — two causes, both fixed
+2026-08-25.** The symptom was "some associates still show a WIN", which read as
+Workvivo missing those people. It was not.
+
+1. **Key mismatch.** `associateDirectory` keys every record by
+   `normalizeWin(win)` (trimmed, LOWER-CASED), so `getMany()` returns
+   lower-cased keys. The location-details export passes the scanner's WIN
+   through verbatim, and those are not all lower case. The view wrote the map
+   from `getMany` (normalised) and read it with the raw export value — so a WIN
+   with any upper case resolved successfully and printed as an id, with the name
+   sitting in the map under a key nobody asked for. The same raw-key read backed
+   the "is this resolved?" test, so those WINs also looked permanently
+   unresolved to the retry logic and to `nameResolveNote()`. All reads now go
+   through `dirGet()`. **This is why it looked like "only some" people —
+   it tracked the casing of the scan record, not the person.**
+2. **A transient pass was banked as final.** `attempted` was filled from
+   `missing` unconditionally, including WINs whose lookup failed only because
+   Workvivo had no tab/session yet. Nothing re-queried them for the life of the
+   mount, however many refreshes landed behind it. Transient passes now set a
+   60s cooldown instead of marking anything attempted, and `source_complete`
+   clears `attempted` — a completed capture is the one moment worth re-asking:
+   new rows, and time has passed. Definitive misses stay cheap to re-ask
+   (associateDirectory answers them from storage for an hour, no network).
+
+Pinned by `modules/vizpick/lib/tests/directory_keys.test.mjs` — a source scan,
+because what regresses is a call site inside `mount()`'s closure.
+
 **Bare WINs in the Associates view are now explained, not silent (2026-08-22).**
 Rendering an id when name resolution fails is deliberate — better an id than a
 confidently wrong name on a list about who is not doing their picks — but three
