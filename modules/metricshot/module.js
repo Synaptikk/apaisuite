@@ -79,10 +79,19 @@ export default {
       // VizPick's own rows and rasterised in an offscreen document, instead of
       // being screenshotted over CDP. See lib/capture.js.
       needs: ["alarms", "scripting", "tabs", "storage", "offscreen"],
+      // No api-{appid}.sendbird.com entry, deliberately. Every Sendbird call
+      // is made by lib/sendbird.js from INSIDE the Workvivo tab (executeScript
+      // world:"MAIN"), so it is same-page traffic governed by Workvivo's own
+      // CSP — which already allows *.sendbird.com. The extension origin never
+      // fetches Sendbird, so a host permission would be unused.
+      //
+      // It used to be listed as "https://api-*.sendbird.com/*", which Chrome
+      // rejects outright: a match pattern may only wildcard a whole leading
+      // label ("*.sendbird.com"), never part of one. The whole entry was
+      // dropped and logged as "URL pattern is malformed" on every load.
       hosts: [
         "https://stores.tableau.wal-mart.com/*",
         "https://workvivo.walmart.com/*",
-        "https://api-*.sendbird.com/*",
       ],
     },
 

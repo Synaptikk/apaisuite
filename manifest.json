@@ -75,7 +75,6 @@
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
     "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/*",
-    "https://api-*.sendbird.com/*",
     "https://wismo-dashboard.walmart.com/*",
     "https://wismo.walmart.com/*",
     "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*"
