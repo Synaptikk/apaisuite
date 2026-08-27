@@ -575,24 +575,39 @@
 .module-digitalmetrics .dm-legend-swatch.task-l,
 .module-digitalmetrics .dm-legend-swatch.task-b     { background: var(--dm-task-rest); }
 
-/* Summary row headers carry the same tint as the cells they count, so a row of
-   numbers can be traced to its colour in the grid without reading the word.
-   A left bar rather than a full fill: the header is sticky and sits against
-   the tinted cells, and two flat colours meeting read as a rendering fault.
-   The bar also survives the dark theme, where a pastel fill behind pale text
-   would not. */
-.module-digitalmetrics .dm-summary-row th[class*="task-"] {
-  border-left: 4px solid var(--dm-task-rest);
-}
-.module-digitalmetrics .dm-summary-row th.task-pick  { border-left-color: var(--dm-task-pick); }
-.module-digitalmetrics .dm-summary-row th.task-disp  { border-left-color: var(--dm-task-disp); }
-.module-digitalmetrics .dm-summary-row th.task-stage { border-left-color: var(--dm-task-stage); }
-.module-digitalmetrics .dm-summary-row th.task-prep  { border-left-color: var(--dm-task-prep); }
-.module-digitalmetrics .dm-summary-row th.task-qc    { border-left-color: var(--dm-task-qc); }
-.module-digitalmetrics .dm-summary-row th.task-drv   { border-left-color: var(--dm-task-drv); }
-.module-digitalmetrics .dm-summary-row th.task-ds    { border-left-color: var(--dm-task-ds); }
-.module-digitalmetrics .dm-summary-row th.task-trn   { border-left-color: var(--dm-task-trn); }
-.module-digitalmetrics .dm-summary-row th.task-exc   { border-left-color: var(--dm-task-exc); }
+/* The whole summary row carries its task's tint, edge to edge, so a bar of
+   numbers is identifiable by colour alone without tracking back to the label.
+
+   The class sits on the <tr>, not the <th>: a th class can only paint the
+   label cell, and CSS cannot reach the row's other cells from it.
+
+   Specificity is deliberate. These cells already take --apai-bg-soft from the
+   base rule and a second background from the sticky rule further down, so the
+   tint is written with .dm-summary in the chain to outrank BOTH. Without that
+   it applies while scrolled to the top and is repainted the moment the row
+   sticks, which looks like a flicker bug rather than a losing selector.
+
+   Safe in dark: --dm-task-* are redefined per theme (mixed toward the surface
+   at 26%), so this is the same value the tinted grid cells already use behind
+   text, and the summary numerals inherit the same ink they do. */
+.module-digitalmetrics .dm-summary .dm-summary-row.task-pick th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-pick td { background: var(--dm-task-pick); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-disp th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-disp td { background: var(--dm-task-disp); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-stage th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-stage td { background: var(--dm-task-stage); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-prep th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-prep td { background: var(--dm-task-prep); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-qc th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-qc td { background: var(--dm-task-qc); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-drv th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-drv td { background: var(--dm-task-drv); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ds th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ds td { background: var(--dm-task-ds); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-trn th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-trn td { background: var(--dm-task-trn); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-exc th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-exc td { background: var(--dm-task-exc); }
 
 /* ── Absent associates ──────────────────────────────────────────────────
    Their scheduled hours stop reading as cover. The shift tint is what makes a

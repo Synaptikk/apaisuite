@@ -39,6 +39,21 @@ export async function fetchRecognition(storeNbr) {
   if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI Field_Dashboard tab." };
   const { tab, didOpen } = opened;
 
+  // Owned here, closed in the finally. Previously closed only at the end of the
+  // success path, so any throw above it — load timeout, SSO bounce, a capture
+  // that never arrived — orphaned the tab. These sources poll, and the tabs are
+  // not registered with shared/tabSessions.js, so the idle reaper cannot see
+  // them either: nothing was cleaning them up.
+  try {
+    return await runFetchRecognition(tab, didOpen, storeNbr);
+  } finally {
+    // Only ours. A tab the user already had open stays open.
+    if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function runFetchRecognition(tab, didOpen, storeNbr) {
+
   await waitForTabLoad(tab.id, 25_000);
 
   // After an extension reload, an existing tab's document_start content
@@ -135,9 +150,7 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
 
   // We're done with the tab. Only close it if WE opened it — leave alone
   // any pre-existing Power BI tab the user might still be using.
-  if (didOpen) {
-    chrome.tabs.remove(tabId).catch(() => { /* may already be gone */ });
-  }
+  // NOT closed here — fetchRecognition's finally owns the tab.
 
   return {
     ok: true,

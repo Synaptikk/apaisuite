@@ -431,6 +431,18 @@ export async function mount(host, container) {
     state.assignments = doc?.associates?.length
       ? digitalTeamOnly(mergeShifts(doc.associates, schedule?.associates))
       : rosterFromSchedule(schedule);
+
+    // An empty grid is ambiguous — no schedule pulled, or a genuinely empty
+    // day? The Workforce Planning pull only captures the week the scheduler
+    // page happens to be showing, so picking a date outside it silently
+    // produced a blank grid. Fetch what IS covered so the empty state can say
+    // which dates exist instead of leaving you to guess.
+    //
+    // Only on the empty path: this is a collection listing, and there is no
+    // reason to pay for it on the normal one.
+    state.scheduleDates = state.assignments.length
+      ? null
+      : (await call("list_dates", { store: state.store, collection: "schedules" })) || [];
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
     // Suggestions for cells that are already filled are noise; drop them here
     // rather than making every consumer re-check.

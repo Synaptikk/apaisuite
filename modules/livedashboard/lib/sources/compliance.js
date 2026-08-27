@@ -31,6 +31,21 @@ export async function fetchCompliance() {
   if (!opened) return { ok: false, errorClass: "TAB", error: "Could not find or open Enviance tab." };
   const { tab, didOpen } = opened;
 
+  // Owned here, closed in the finally. Previously closed only at the end of the
+  // success path, so any throw above it — load timeout, SSO bounce, a capture
+  // that never arrived — orphaned the tab. These sources poll, and the tabs are
+  // not registered with shared/tabSessions.js, so the idle reaper cannot see
+  // them either: nothing was cleaning them up.
+  try {
+    return await runFetchCompliance(tab, didOpen);
+  } finally {
+    // Only ours. A tab the user already had open stays open.
+    if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function runFetchCompliance(tab, didOpen) {
+
   // 2. Wait for tab to finish loading.
   await waitForTabLoad(tab.id, 20_000);
 
@@ -65,9 +80,7 @@ export async function fetchCompliance() {
   // 4. Done with the tab. Only close it if WE opened it — leave alone any
   // pre-existing Enviance tab the user might be working in (e.g., opened
   // via the drill-down's focus_enviance_tab handler).
-  if (didOpen) {
-    chrome.tabs.remove(tab.id).catch(() => { /* may already be gone */ });
-  }
+  // NOT closed here — fetchCompliance's finally owns the tab.
 
   // Annotate the result so the view can show how many silent retries
   // happened — useful for diagnostics but not surfaced as user-facing UI.

@@ -86,8 +86,8 @@ function summaryRows(assignments, suggestions) {
   // Same `task-*` class the cells and the legend swatches use, so the three
   // cannot drift apart.
   const rows = SUMMARY_TASKS.map(({ key, task, label }) => `
-    <tr class="dm-summary-row">
-      <th scope="row" class="task-${esc(String(task).toLowerCase())}">${esc(label)}</th>
+    <tr class="dm-summary-row task-${esc(String(task).toLowerCase())}">
+      <th scope="row">${esc(label)}</th>
       ${counts[key].map((n, i) =>
         `<td>${esc(fmt(n, suggested[key][i]))}</td>`).join("")}
     </tr>`);
@@ -113,8 +113,23 @@ export function render(ctx) {
   const isSelected = (name, slot) => inRange(order, anchor, head, name, slot);
 
   if (!assignments.length) {
-    return `<div class="dm-todo">No roster for this date. Import a schedule or add
-            associates to begin.</div>`;
+    // "Import a schedule" was the old advice and that button no longer exists,
+    // so it sent you looking for something that had been removed. Say what is
+    // actually true: which dates the Workforce Planning pull has covered, and
+    // that Sync is what extends it.
+    const dates = ctx.scheduleDates;
+    const covered = Array.isArray(dates) && dates.length
+      ? `Workforce Planning data covers ${dates[0]} to ${dates[dates.length - 1]}` +
+        (dates.length > 2 ? ` (${dates.length} days)` : "")
+      : "No Workforce Planning schedules have been pulled for this store yet";
+
+    return `<div class="dm-todo">
+      <strong>No schedule for ${esc(ctx.date || "this date")}.</strong>
+      <div class="dm-stat-note">${esc(covered)}.</div>
+      <div class="dm-stat-note">The pull captures whichever week the scheduler
+        page is showing, so a date outside it has nothing stored. Open that week
+        in Workforce Planning and press Sync, or add associates by hand.</div>
+    </div>`;
   }
 
   const fill = Math.round(fillPercentage(assignments));

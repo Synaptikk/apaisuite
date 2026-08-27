@@ -42,6 +42,26 @@ export async function fetchRegister(storeNbr) {
   if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI register report tab." };
   const { tab, didOpen } = opened;
 
+  // The tab is owned HERE, and closed in the finally below.
+  //
+  // It used to be closed at the end of runRegisterPipeline's success path,
+  // which leaked two ways. Any throw above that line — a load timeout, an SSO
+  // redirect, a capture that never arrived — orphaned the tab; and the reauth
+  // retry re-entered the pipeline with didOpen:false, so after a single reauth
+  // the tab was never closed even when everything succeeded. This source runs
+  // on a poll, so both paths accumulate: tens of background tabs over a day.
+  //
+  // These tabs are not registered with shared/tabSessions.js either, so the
+  // idle reaper cannot see them — nothing else was going to clean them up.
+  try {
+    return await runFetchRegister(tab, didOpen, storeNbr);
+  } finally {
+    // Only ours. A Power BI tab the user already had open stays open.
+    if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function runFetchRegister(tab, didOpen, storeNbr) {
   await waitForTabLoad(tab.id, 25_000);
 
   // After an extension reload, an existing tab's document_start content
@@ -170,11 +190,8 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
     },
   }));
 
-  // We're done with the tab. Only close if WE opened it — leave alone any
-  // pre-existing Power BI tab the user might still be using.
-  if (didOpen) {
-    chrome.tabs.remove(tabId).catch(() => { /* may already be gone */ });
-  }
+  // NOT closed here. The tab is owned by fetchRegister's finally — closing
+  // on this success path is what leaked it on every error and every reauth.
 
   return {
     ok: true,
