@@ -3,6 +3,8 @@
 // The assignment grid's domain rules: time slots, task vocabulary, per-slot
 // staffing summary, fill percentage, and the finalise rule. Pure.
 
+import { parseClock } from "./clock.js";
+
 export const TIME_SLOTS = [
   "5-6", "6-7", "7-8", "8-9", "9-10", "10-11", "11-12", "12-1P", "1-2P",
   "2-3P", "3-4P", "4-5P", "5-6P", "6-7P", "7-8P", "8-9P", "9-10P",
@@ -73,24 +75,81 @@ export function resolveShortcut(key) {
   return lower && lower in TASK_SHORTCUTS ? TASK_SHORTCUTS[lower] : undefined;
 }
 
+/** The grid's first column is the 5am hour. */
+const SLOT_START_HOUR = 5;
+
 /**
- * Is this slot only half worked?
+ * The shift's true start and end, in minutes past midnight.
  *
- * A shift starting at 5:30 works half of the 5-6 slot, and one ending at 1:30
- * works half of 1-2P. Half slots are excluded from staffing counts entirely
- * rather than counted as 0.5 — the summary answers "how many people are on
- * this task right now", and half a person is not a useful answer.
+ * shiftStart/shiftEnd on a grid row are SLOT INDICES — whole hours, because
+ * toSlot() floors. The real clock times survive only on shiftLabel
+ * ("5:40am-2:10pm"), so that is what has to be read to know how much of an
+ * hour someone actually works.
+ *
+ * Both times are pulled with one global match rather than by splitting on "-".
+ * A split works today because formatTime never emits a hyphen, but it is one
+ * format change away from silently returning nonsense.
+ */
+function shiftMinutes(assoc) {
+  const label = assoc?.shiftLabel;
+  if (typeof label !== "string") return null;
+
+  const times = label.match(/\d{1,2}:\d{2}(?::\d{2})?\s*[AaPp]?[Mm]?/g);
+  if (!times || times.length < 2) return null;
+
+  const a = parseClock(times[0]);
+  const b = parseClock(times[1]);
+  if (!a || !b) return null;
+
+  const startMin = a.hour * 60 + a.minutes;
+  const endMin   = b.hour * 60 + b.minutes;
+  // An overnight shift (10pm-7am) has no honest representation on a 5am-10pm
+  // grid and is already clamped upstream; fractional coverage would be a lie
+  // on top of a clamp, so leave those to the whole-slot fallback.
+  if (endMin <= startMin) return null;
+
+  return { startMin, endMin };
+}
+
+/**
+ * How much of this slot the associate actually works: 0, 0.5, or 1.
+ *
+ * The old rule was binary and string-matched ":30" on the label, so it caught
+ * exactly one case. A :40 start — common on this roster — matched nothing and
+ * counted as a WHOLE person for an hour they work 20 minutes of, inflating
+ * both the staffing line and the estimated picks derived from it. Anything
+ * that was caught went the other way and counted as ZERO, which understated
+ * the same numbers.
+ *
+ * Quantised to halves rather than reported exactly. A 40-minute slot is 0.67
+ * of an hour, and a summary row reading "2.7" invites arithmetic nobody wants
+ * to do; halves say "someone is here for part of this hour" at the precision
+ * a staffing decision is actually made at. It also keeps the headcount and the
+ * estimated picks consistent, since picks derive from this same number.
+ */
+export function slotCoverage(assoc, slotIdx) {
+  const inShift = typeof assoc?.shiftStart === "number"
+               && typeof assoc?.shiftEnd === "number"
+               && slotIdx >= assoc.shiftStart && slotIdx < assoc.shiftEnd;
+
+  const bounds = shiftMinutes(assoc);
+  // No readable times — fall back to the whole-slot view rather than guessing.
+  if (!bounds) return inShift ? 1 : 0;
+
+  const slotStart = (SLOT_START_HOUR + slotIdx) * 60;
+  const overlap = Math.min(bounds.endMin, slotStart + 60) - Math.max(bounds.startMin, slotStart);
+  if (overlap <= 0) return 0;
+
+  return Math.round(Math.min(overlap, 60) / 60 * 2) / 2;
+}
+
+/**
+ * Is this slot only partly worked? Kept for the cell styling, now derived from
+ * the coverage above so the tint and the arithmetic can never disagree.
  */
 export function isHalfSlot(assoc, slotIdx) {
-  const label = assoc?.shiftLabel;
-  if (typeof label !== "string") return false;
-
-  const [start, end] = label.split("-").map((s) => s?.trim());
-  if (!start || !end) return false;
-
-  if (slotIdx === assoc.shiftStart      && start.includes(":30")) return true;
-  if (slotIdx === assoc.shiftEnd - 1    && end.includes(":30"))   return true;
-  return false;
+  const c = slotCoverage(assoc, slotIdx);
+  return c > 0 && c < 1;
 }
 
 /**
@@ -122,7 +181,10 @@ export function summarise(assignments, suggestions = {}) {
       const row = SUMMARY_TASKS.find((t) => t.task === task);
       if (!row) continue;
 
-      const weight = isHalfSlot(assoc, i) ? 0 : 1;
+      // Fractional: a 5:40 start works a third of the 5-6 hour, not none of it
+      // and not all of it. Both readings were wrong in opposite directions.
+      const weight = slotCoverage(assoc, i);
+      if (weight <= 0) continue;
       counts[row.key][i] += weight;
       if (!actual) suggested[row.key][i] += weight;
     }
@@ -131,7 +193,9 @@ export function summarise(assignments, suggestions = {}) {
   return {
     counts,
     suggested,
-    estimatedPicks: counts.pickers.map((n) => n * PICKS_PER_PICKER_HOUR),
+    // Whole picks. The headcount is deliberately fractional; a projected
+    // "112.5 picks" is false precision on a planning figure.
+    estimatedPicks: counts.pickers.map((n) => Math.round(n * PICKS_PER_PICKER_HOUR)),
   };
 }
 

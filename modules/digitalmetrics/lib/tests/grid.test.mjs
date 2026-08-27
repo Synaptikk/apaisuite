@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   TIME_SLOTS, resolveShortcut, isHalfSlot, summarise,
   fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate, isAbsent,
+  slotCoverage,
   PICKS_PER_PICKER_HOUR,
 } from "../data/grid.js";
 
@@ -35,10 +36,15 @@ test("keyboard shortcuts resolve in either case, and three keys clear", () => {
 });
 
 // ── half slots ───────────────────────────────────────────────────────────
-test("a shift starting or ending on the half hour marks that slot half", () => {
-  const a = assoc({ shiftStart: 0, shiftEnd: 4, shiftLabel: "5:30-9:30" });
-  assert.equal(isHalfSlot(a, 0), true, "first slot, :30 start");
-  assert.equal(isHalfSlot(a, 3), true, "last slot, :30 end");
+test("a partly-worked slot is half; a fully-worked one is not", () => {
+  // 5:30-9:30 works half of the 5-6 hour and half of the 9-10 hour. Slot 3
+  // (8-9) is worked end to end, so it is NOT half — the old rule flagged it
+  // purely because the label ended in ":30", without checking which hour
+  // that :30 actually fell in.
+  const a = assoc({ shiftStart: 0, shiftEnd: 5, shiftLabel: "5:30-9:30" });
+  assert.equal(isHalfSlot(a, 0), true,  "first slot, :30 start");
+  assert.equal(isHalfSlot(a, 4), true,  "last slot, :30 end");
+  assert.equal(isHalfSlot(a, 3), false, "8-9 is worked in full");
   assert.equal(isHalfSlot(a, 1), false);
 });
 
@@ -79,12 +85,11 @@ test("estimated picks scale with picker headcount", () => {
   assert.equal(estimatedPicks[0], 2 * PICKS_PER_PICKER_HOUR);
 });
 
-test("half slots are excluded from staffing counts", () => {
-  // Half a person on a task is not a useful answer to "how many are on it".
+test("a partly-worked slot counts as half a person, not zero and not one", () => {
   const { counts } = summarise([
     assoc({ shiftStart: 0, shiftEnd: 4, shiftLabel: "5:30-9:30", slots: { 0: "PICK", 1: "PICK" } }),
   ]);
-  assert.equal(counts.pickers[0], 0, "the half slot does not count");
+  assert.equal(counts.pickers[0], 0.5, "half an hour worked is half a person");
   assert.equal(counts.pickers[1], 1);
 });
 
@@ -220,4 +225,63 @@ test("isAbsent is exact — no truthiness on other statuses", () => {
   assert.equal(isAbsent({ status: null }), false);
   assert.equal(isAbsent({}), false);
   assert.equal(isAbsent(undefined), false);
+});
+
+// ── fractional coverage ──────────────────────────────────────────────────
+//
+// The reported bug: a :40 start counted as a WHOLE person for an hour they
+// work 20 minutes of, inflating both the staffing line and the estimated
+// picks derived from it. The old rule only ever string-matched ":30".
+
+test("a :40 start counts as part of an hour, not all of it", () => {
+  const a = assoc({ shiftStart: 0, shiftEnd: 8, shiftLabel: "5:40am-1:00pm" });
+  assert.equal(slotCoverage(a, 0), 0.5, "20 of 60 minutes rounds to half");
+  assert.equal(slotCoverage(a, 1), 1,   "6-7 is worked in full");
+});
+
+test("a late end fills its last whole hour and rounds the remainder", () => {
+  // 2:10pm: the 1-2 hour is worked end to end, and the 10 minutes spilling
+  // into 2-3 round to nothing. Quantising to halves means anything under 15
+  // minutes reads as absent, which is the right answer for staffing.
+  const a = assoc({ shiftStart: 0, shiftEnd: 10, shiftLabel: "5:00am-2:10pm" });
+  assert.equal(slotCoverage(a, 8), 1, "1-2pm worked in full");
+  assert.equal(slotCoverage(a, 9), 0, "10 minutes rounds away");
+});
+
+test("a :30 end gives its last slot a half", () => {
+  const a = assoc({ shiftStart: 0, shiftEnd: 10, shiftLabel: "5:00am-2:30pm" });
+  assert.equal(slotCoverage(a, 9), 0.5);
+});
+
+test("minutes past the half hour round up to a full slot", () => {
+  // 50 of 60 minutes is a whole person for planning purposes.
+  const a = assoc({ shiftStart: 0, shiftEnd: 4, shiftLabel: "5:10am-9:00am" });
+  assert.equal(slotCoverage(a, 0), 1);
+});
+
+test("slots outside the shift are zero", () => {
+  const a = assoc({ shiftStart: 2, shiftEnd: 5, shiftLabel: "7:00am-10:00am" });
+  assert.equal(slotCoverage(a, 0), 0);
+  assert.equal(slotCoverage(a, 5), 0);
+});
+
+test("an unreadable label falls back to whole slots rather than guessing", () => {
+  const a = assoc({ shiftStart: 0, shiftEnd: 3, shiftLabel: null });
+  assert.equal(slotCoverage(a, 0), 1);
+  assert.equal(slotCoverage(a, 5), 0);
+});
+
+test("an overnight label falls back rather than inverting", () => {
+  // 10pm-7am has no honest place on a 5am-10pm grid and is clamped upstream.
+  const a = assoc({ shiftStart: 0, shiftEnd: 2, shiftLabel: "10:00pm-7:00am" });
+  assert.equal(slotCoverage(a, 0), 1, "whole-slot fallback, not a negative overlap");
+});
+
+test("estimated picks follow the fractional headcount and stay whole", () => {
+  const { estimatedPicks } = summarise([
+    assoc({ shiftStart: 0, shiftEnd: 4, shiftLabel: "5:30-9:30", slots: { 0: "PICK" } }),
+  ]);
+  // Half a picker at 75/hr, rounded: a fractional pick count is false precision.
+  assert.equal(estimatedPicks[0], 38);
+  assert.ok(Number.isInteger(estimatedPicks[0]));
 });

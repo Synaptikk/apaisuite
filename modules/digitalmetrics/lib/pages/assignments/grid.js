@@ -79,7 +79,11 @@ function associateRow(assoc, suggestions, locked, isSelected) {
 function summaryRows(assignments, suggestions) {
   const { counts, suggested, estimatedPicks } = summarise(assignments, suggestions);
 
-  const fmt = (total, prop) => (prop > 0 ? `${total} (${prop})` : String(total));
+  // Headcount is fractional now: someone working 5:40-6:00 is half a person in
+  // the 5-6 hour, not one and not none. Whole numbers stay whole — "3", never
+  // "3.0" — so a column of halves reads as the exception it is.
+  const n = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+  const fmt = (total, prop) => (prop > 0 ? `${n(total)} (${n(prop)})` : n(total));
 
   // The row header carries the task's own tint, so a column of numbers can be
   // traced back to the coloured cells it counts without reading the label.
