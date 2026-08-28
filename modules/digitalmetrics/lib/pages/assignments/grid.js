@@ -104,7 +104,19 @@ function summaryRows(assignments, suggestions) {
       ${estimatedPicks.map((n) => `<td>${esc(n)}</td>`).join("")}
     </tr>`);
 
-  return rows.join("");
+  // Each sticky summary row needs its own `top`, stacked under the header.
+  // Those offsets used to be nine hand-written nth-child rules that stopped at
+  // the seventh row — correct for the six tasks plus Est. Picks that existed
+  // when they were written, and silently wrong the moment a task was added:
+  // rows past the seventh stayed `position: sticky` with `top: auto`, so they
+  // did not pin and drifted over the rows above while scrolling.
+  //
+  // The index is emitted with the row instead, so the stack is as long as the
+  // list is and adding a task never needs a CSS edit. Injected after the
+  // splice above, because Est. Picks changes every index after it.
+  return rows
+    .map((row, i) => row.replace('<tr class="', `<tr style="--dm-row:${i}" class="`))
+    .join("");
 }
 
 export function render(ctx) {

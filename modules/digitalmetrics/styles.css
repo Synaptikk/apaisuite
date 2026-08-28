@@ -516,7 +516,14 @@
 }
 /* The half-hour wedge marks a shift starting or ending mid-hour. It was drawn
    in border-soft, the same colour as the grid lines, so the diagonal was
-   indistinguishable from a rendering artefact. */
+   indistinguishable from a rendering artefact.
+
+   The wedge is a background-IMAGE and the task tints below are a
+   background-COLOR, deliberately. They were shorthand `background:`, which
+   resets background-image — and being declared later, assigning a task to a
+   part-hour cell silently erased the wedge, so the cell claimed a full hour
+   of cover that the summary was correctly counting as half. The two now
+   compose: tint underneath, wedge on top. */
 .module-digitalmetrics .dm-cell.is-half {
   background-image: linear-gradient(135deg, transparent 50%, var(--apai-border) 50%);
 }
@@ -551,29 +558,29 @@
 }
 
 .module-digitalmetrics .dm-cell.task-pick,
-.module-digitalmetrics .dm-legend-swatch.task-pick  { background: var(--dm-task-pick); }
+.module-digitalmetrics .dm-legend-swatch.task-pick  { background-color: var(--dm-task-pick); }
 .module-digitalmetrics .dm-cell.task-disp,
-.module-digitalmetrics .dm-legend-swatch.task-disp  { background: var(--dm-task-disp); }
+.module-digitalmetrics .dm-legend-swatch.task-disp  { background-color: var(--dm-task-disp); }
 .module-digitalmetrics .dm-cell.task-stage,
-.module-digitalmetrics .dm-legend-swatch.task-stage { background: var(--dm-task-stage); }
+.module-digitalmetrics .dm-legend-swatch.task-stage { background-color: var(--dm-task-stage); }
 .module-digitalmetrics .dm-cell.task-prep,
-.module-digitalmetrics .dm-legend-swatch.task-prep  { background: var(--dm-task-prep); }
+.module-digitalmetrics .dm-legend-swatch.task-prep  { background-color: var(--dm-task-prep); }
 .module-digitalmetrics .dm-cell.task-qc,
-.module-digitalmetrics .dm-legend-swatch.task-qc    { background: var(--dm-task-qc); }
+.module-digitalmetrics .dm-legend-swatch.task-qc    { background-color: var(--dm-task-qc); }
 .module-digitalmetrics .dm-cell.task-drv,
-.module-digitalmetrics .dm-legend-swatch.task-drv   { background: var(--dm-task-drv); }
+.module-digitalmetrics .dm-legend-swatch.task-drv   { background-color: var(--dm-task-drv); }
 .module-digitalmetrics .dm-cell.task-ds,
-.module-digitalmetrics .dm-legend-swatch.task-ds    { background: var(--dm-task-ds); }
+.module-digitalmetrics .dm-legend-swatch.task-ds    { background-color: var(--dm-task-ds); }
 .module-digitalmetrics .dm-cell.task-trn,
-.module-digitalmetrics .dm-legend-swatch.task-trn   { background: var(--dm-task-trn); }
+.module-digitalmetrics .dm-legend-swatch.task-trn   { background-color: var(--dm-task-trn); }
 .module-digitalmetrics .dm-cell.task-exc,
-.module-digitalmetrics .dm-legend-swatch.task-exc   { background: var(--dm-task-exc); }
+.module-digitalmetrics .dm-legend-swatch.task-exc   { background-color: var(--dm-task-exc); }
 .module-digitalmetrics .dm-cell.task-ip,
-.module-digitalmetrics .dm-legend-swatch.task-ip    { background: var(--dm-task-ip); }
+.module-digitalmetrics .dm-legend-swatch.task-ip    { background-color: var(--dm-task-ip); }
 .module-digitalmetrics .dm-cell.task-l,
-.module-digitalmetrics .dm-cell.task-b     { background: var(--dm-task-rest); color: var(--apai-muted); }
+.module-digitalmetrics .dm-cell.task-b     { background-color: var(--dm-task-rest); color: var(--apai-muted); }
 .module-digitalmetrics .dm-legend-swatch.task-l,
-.module-digitalmetrics .dm-legend-swatch.task-b     { background: var(--dm-task-rest); }
+.module-digitalmetrics .dm-legend-swatch.task-b     { background-color: var(--dm-task-rest); }
 
 /* The whole summary row carries its task's tint, edge to edge, so a bar of
    numbers is identifiable by colour alone without tracking back to the label.
@@ -998,21 +1005,22 @@
   z-index: 3;
   font-weight: var(--fw-semi, 600);
 }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(1) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(1) td { top: 28px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(2) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(2) td { top: 52px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(3) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(3) td { top: 76px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(4) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(4) td { top: 100px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(5) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(5) td { top: 124px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(6) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(6) td { top: 148px; }
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(7) th,
-.module-digitalmetrics .dm-summary .dm-summary-row:nth-child(7) td { top: 172px; }
 /* The row label also pins left, so it survives horizontal scrolling. */
+/* Sticky offset per summary row, from the index the renderer emits.
+
+   This was nth-child(1..7) with literal tops, which was right for the six
+   tasks plus Est. Picks that existed then and became wrong the moment a task
+   was added: the eighth row onward kept position:sticky with top:auto, so it
+   never pinned and slid over the rows above while scrolling. Driving it from
+   --dm-row makes the stack as long as the list, with no CSS to edit when the
+   task vocabulary changes.
+
+   28px clears the column header; 24px is one summary row. Both are the
+   values the old literals encoded (28, 52, 76, 100 ... = 28 + 24n). */
+.module-digitalmetrics .dm-summary .dm-summary-row th,
+.module-digitalmetrics .dm-summary .dm-summary-row td {
+  top: calc(28px + var(--dm-row, 0) * 24px);
+}
 .module-digitalmetrics .dm-summary .dm-summary-row th { left: 0; z-index: 6; }
 
 /* ── Hours outside the shift ──────────────────────────────────────────────
