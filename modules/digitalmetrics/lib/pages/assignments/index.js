@@ -147,6 +147,25 @@ export function wire(ctx, root) {
     offs.push(() => el?.removeEventListener(ev, fn));
   };
 
+  // ── Condense the totals once the grid is scrolled ────────────────────────
+  //
+  // The summary is a reference while you are down among the roster rows, not
+  // something being read closely, so it gives its height back: ten pinned rows
+  // at 24px hold 268px of the viewport, at 17px they hold 198px.
+  //
+  // A class on the table, not inline styles, so the sticky offsets follow from
+  // the same --dm-summary-h the padding uses. Toggled straight on the DOM
+  // rather than through state: this fires on every scroll frame, and a
+  // re-render per frame would fight the focus and scroll restoration.
+  const scroller = root.querySelector("[data-dm-scroll='grid']");
+  const table = root.querySelector(".dm-grid");
+  if (scroller && table) {
+    const sync = () => table.classList.toggle("is-condensed", scroller.scrollTop > 4);
+    scroller.addEventListener("scroll", sync, { passive: true });
+    offs.push(() => scroller.removeEventListener("scroll", sync));
+    sync();   // a re-render mid-scroll must not come back expanded
+  }
+
   // ── Toolbar ──────────────────────────────────────────────────────────────
   on("#dm-asg-date", "change", (e) => onDateChange?.(e.target.value));
   on("#dm-asg-add", "click", () => {

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import {
   TIME_SLOTS, resolveShortcut, isHalfSlot, summarise,
   fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate, isAbsent,
-  slotCoverage,
+  slotCoverage, partialSide,
   PICKS_PER_PICKER_HOUR,
 } from "../data/grid.js";
 
@@ -284,4 +284,19 @@ test("estimated picks follow the fractional headcount and stay whole", () => {
   // Half a picker at 75/hr, rounded: a fractional pick count is false precision.
   assert.equal(estimatedPicks[0], 38);
   assert.ok(Number.isInteger(estimatedPicks[0]));
+});
+
+test("the dead half is on the side the associate is actually missing", () => {
+  // The old single wedge drew a 5:40 start and a 5:20 finish identically, so
+  // the shading said "partial" without saying which end.
+  const late  = assoc({ shiftStart: 0, shiftEnd: 8, shiftLabel: "5:40am-1:00pm" });
+  const early = assoc({ shiftStart: 0, shiftEnd: 9, shiftLabel: "5:00am-1:30pm" });
+  assert.equal(partialSide(late, 0), "lead",   "arrives late: the earlier half is dead");
+  assert.equal(partialSide(early, 8), "trail", "leaves early: the later half is dead");
+});
+
+test("a fully-worked or unworked slot has no dead side", () => {
+  const a = assoc({ shiftStart: 0, shiftEnd: 8, shiftLabel: "5:40am-1:00pm" });
+  assert.equal(partialSide(a, 3), null, "worked end to end");
+  assert.equal(partialSide(a, 15), null, "outside the shift entirely");
 });

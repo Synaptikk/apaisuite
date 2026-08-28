@@ -409,9 +409,19 @@
   margin-bottom: var(--sp-2);
 }
 
+/* The grid takes the viewport below the pinned legend, which is what makes
+   the toolbar scroll away CLEANLY: the page's total height becomes toolbar +
+   100vh, so it scrolls exactly the toolbar's height and then stops. Without
+   that bound the grid box would keep travelling up under the stuck legend,
+   taking its own sticky header with it — pinned to a box edge that is now
+   off-screen, i.e. invisible.
+
+   It has to stay its own scroll container: 17 columns need horizontal
+   scrolling, and an element that scrolls on one axis is a scroll container
+   on both — so the header can only ever stick to THIS box, never the page. */
 .module-digitalmetrics .dm-grid-scroll {
   overflow: auto;
-  max-height: 70vh;
+  max-height: calc(100vh - var(--dm-chrome-h, 104px));
   border: 1px solid var(--apai-border);
   border-radius: var(--rad-md);
   -webkit-overflow-scrolling: touch;
@@ -503,6 +513,7 @@
      the "not contrasted enough" report. Muted (#5B6472) has somewhere to go. */
   --dm-offshift-bg:   color-mix(in srgb, var(--apai-muted) 20%, var(--apai-bg));
   --dm-offshift-line: color-mix(in srgb, var(--apai-muted) 40%, transparent);
+  --dm-half-dead-bg:  color-mix(in srgb, var(--apai-muted) 58%, var(--apai-bg));
 }
 
 .module-digitalmetrics .dm-cell.in-shift {
@@ -524,8 +535,36 @@
    part-hour cell silently erased the wedge, so the cell claimed a full hour
    of cover that the summary was correctly counting as half. The two now
    compose: tint underneath, wedge on top. */
+/* A part-worked hour shades its UNWORKED half exactly like an hour outside the
+   shift — same fill, same hatch, same angle — because that is what it is. The
+   eye then reads the shift's real edge instead of a decoration.
+
+   Rectangular halves, not the old 135deg wedge. Two reasons. The wedge was
+   drawn in --apai-border, the grid-line colour, so it was nearly invisible
+   against a tinted cell; and a diagonal cannot carry the hatch, whereas a
+   rectangle can be painted with the same repeating gradient the blocked hours
+   use, sized to half the cell.
+
+   is-half-lead  = arrives partway in, so the EARLIER half is dead.
+   is-half-trail = leaves partway through, so the LATER half is dead.
+   The old single wedge drew a 5:40 start and a 5:20 finish identically.
+
+   background-position is the only difference between the two, and the layers
+   sit above the task tint (a background-COLOR) so a filled part-hour cell
+   still shows both. */
 .module-digitalmetrics .dm-cell.is-half {
-  background-image: linear-gradient(135deg, transparent 50%, var(--apai-border) 50%);
+  background-image:
+    repeating-linear-gradient(45deg, transparent, transparent 4px,
+      var(--dm-offshift-line) 4px, var(--dm-offshift-line) 5px),
+    linear-gradient(var(--dm-offshift-line), var(--dm-offshift-line)),
+    linear-gradient(var(--dm-half-dead-bg), var(--dm-half-dead-bg));
+  /* hatch | 1px edge at the split | fill */
+  background-size: 50% 100%, 1px 100%, 50% 100%;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-position: left center, 50% center, left center;
+}
+.module-digitalmetrics .dm-cell.is-half-trail {
+  background-position: right center, 50% center, right center;
 }
 .module-digitalmetrics .dm-cell:focus    { outline: 2px solid var(--module-accent); outline-offset: -2px; }
 
@@ -876,6 +915,7 @@
     --dm-shift-edge:    #BBBBBB;
     --dm-offshift-bg:   #D9D9D9;
     --dm-offshift-line: #BFBFBF;
+    --dm-half-dead-bg:  #C4C4C4;
   }
   /* Everything prints black. Theme ink (blue headings, amber/green stat
      colours) survives into print otherwise, and on a mono printer those come
@@ -972,6 +1012,40 @@
 .module-digitalmetrics .dm-grid { user-select: none; }
 
 /* ── Legend, doubling as the colour key ──────────────────────────────── */
+/* The key stays; everything above it does not.
+
+   Pinned to the page scroller so the title, date and toolbar scroll away
+   and give the roster their space back. It needs an opaque background and
+   a z-index above the grid, or the rows scroll THROUGH it — it is a
+   transparent flex row by default, which is invisible until something
+   passes behind it. */
+.module-digitalmetrics .dm-legend {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: var(--apai-bg);
+  padding: var(--sp-1) 0;
+}
+
+/* Condensed totals, while the grid is scrolled. The summary is a reference
+   once you are down among the roster rows, not something being read
+   closely, so it gives its height back: ten pinned rows at 24px hold 268px
+   of the viewport, and at 17px they hold 198px — roughly three more
+   assignable rows in view.
+
+   --dm-summary-h drives BOTH the cell padding and the sticky offsets above,
+   so the stack cannot come apart from the rows it is spacing. */
+.module-digitalmetrics .dm-grid.is-condensed {
+  --dm-summary-h: 17px;
+}
+.module-digitalmetrics .dm-grid.is-condensed .dm-summary-row th,
+.module-digitalmetrics .dm-grid.is-condensed .dm-summary-row td {
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 10px;
+  line-height: 17px;
+}
+
 .module-digitalmetrics .dm-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1019,7 +1093,7 @@
    values the old literals encoded (28, 52, 76, 100 ... = 28 + 24n). */
 .module-digitalmetrics .dm-summary .dm-summary-row th,
 .module-digitalmetrics .dm-summary .dm-summary-row td {
-  top: calc(28px + var(--dm-row, 0) * 24px);
+  top: calc(var(--dm-head-h, 28px) + var(--dm-row, 0) * var(--dm-summary-h, 24px));
 }
 .module-digitalmetrics .dm-summary .dm-summary-row th { left: 0; z-index: 6; }
 
@@ -1069,6 +1143,7 @@
   --dm-shift-edge:    color-mix(in srgb, var(--steel) 70%, transparent);
   --dm-offshift-bg:   color-mix(in srgb, var(--forge-black) 97%, var(--workshop-white));
   --dm-offshift-line: color-mix(in srgb, var(--steel) 50%, transparent);
+  --dm-half-dead-bg:  var(--forge-black);
 }
 
 /* Task tints are pale washes designed for a white cell; on Forge Black they

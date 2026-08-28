@@ -14,7 +14,7 @@ import { esc } from "../_shared.js";
 import { inRange } from "../../data/paste.js";
 import { isWithinShift, lunchIssue } from "../../data/lunch.js";
 import {
-  TIME_SLOTS, SUMMARY_TASKS, summarise, fillPercentage, isHalfSlot,
+  TIME_SLOTS, SUMMARY_TASKS, summarise, fillPercentage, isHalfSlot, partialSide,
 } from "../../data/grid.js";
 
 const STATUSES = [
@@ -37,6 +37,9 @@ function cell(assoc, idx, suggestions, locked, selected) {
     task ? `task-${esc(task.toLowerCase())}` : "",
     suggestion ? "is-suggested" : "",
     isHalfSlot(assoc, idx) ? "is-half" : "",
+    // Which end is unworked, so the shading can sit on the right side of
+    // the cell rather than being a generic "partial" marker.
+    partialSide(assoc, idx) ? `is-half-${partialSide(assoc, idx)}` : "",
   ].filter(Boolean).join(" ");
 
   const content = task

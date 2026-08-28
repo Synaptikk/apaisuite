@@ -153,6 +153,27 @@ export function isHalfSlot(assoc, slotIdx) {
 }
 
 /**
+ * WHICH half of a partly-worked slot is not worked: "lead" (the associate
+ * arrives partway through) or "trail" (they leave partway through).
+ *
+ * The old wedge was a single diagonal that meant "partial" without saying
+ * which end, so a 5:40 start and a 5:20 finish drew identically. Knowing the
+ * side is what lets the unworked half be shaded like the blocked-out hours
+ * either side of it, which is the whole point — the eye reads the shift's real
+ * edge instead of a decoration.
+ */
+export function partialSide(assoc, slotIdx) {
+  if (!isHalfSlot(assoc, slotIdx)) return null;
+  const bounds = shiftMinutes(assoc);
+  if (!bounds) return null;
+  const slotStart = (SLOT_START_HOUR + slotIdx) * 60;
+  // Starts inside this hour → the earlier part is unworked.
+  if (bounds.startMin > slotStart) return "lead";
+  if (bounds.endMin < slotStart + 60) return "trail";
+  return null;
+}
+
+/**
  * Per-slot staffing counts.
  *
  * Unfilled cells fall back to their suggestion, so the summary shows what the
