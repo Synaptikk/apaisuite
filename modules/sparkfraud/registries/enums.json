@@ -10,21 +10,27 @@
     "seeded_on": "2026-05-22",
     "regenerable_from": "recon/probe_enums.py (PROPOSED — probes via junk-value 400 trick documented in notes/api_endpoints.md:124-127)"
   },
-
   "services": {
-    "values": ["PICKING", "PICKING_DELIVERY", "DELIVERY"],
+    "values": [
+      "PICKING",
+      "PICKING_DELIVERY",
+      "DELIVERY"
+    ],
     "confidence": "VERIFIED",
     "source": "Dispatcher 400 enum-probe response (notes/api_endpoints.md:122)",
     "last_verified": "pre-2026-05-22"
   },
-
   "serviceTypes": {
-    "values": ["EXPRESS", "SAME_DAY_DELIVERY", "SAME_DAY_DELIVERY_WITH_SLOTS", "SCHEDULED_DELIVERY"],
+    "values": [
+      "EXPRESS",
+      "SAME_DAY_DELIVERY",
+      "SAME_DAY_DELIVERY_WITH_SLOTS",
+      "SCHEDULED_DELIVERY"
+    ],
     "confidence": "VERIFIED",
     "source": "Dispatcher 400 enum-probe response (notes/api_endpoints.md:124)",
     "last_verified": "pre-2026-05-22"
   },
-
   "deliveryTypes": {
     "_purpose": "UI checkbox ↔ swift Dispatcher API mapping. The single source of truth for app.js DELIVERY_MAP (next PR will make app.js consume this).",
     "_consumer_contract": "When a checkbox.id is checked, union its `services` into the request body `services[]` and its `serviceTypes` into `serviceTypes[]`. Empty `serviceTypes` array means 'no serviceType narrowing for this delivery type'.",
@@ -33,95 +39,150 @@
         "checkbox_id": "dt-spark",
         "ui_label": "Spark Shop & Deliver",
         "default_checked": true,
-        "services": ["PICKING_DELIVERY"],
+        "services": [
+          "PICKING_DELIVERY"
+        ],
         "serviceTypes": [],
         "confidence": "LIKELY",
         "verification_note": "Confirmed by combining enum probe with UI screenshot cross-check after the SAME_DAY_DELIVERY mis-mapping was caught (notes/api_endpoints.md 'What we wasted time on / Using SAME_DAY_DELIVERY for Spark Shop & Deliver'). May warrant re-verification when 'Customer returns' is mapped."
+      }
+    ],
+    "unmapped_ui_options": [
+      {
+        "ui_label": "Customer returns",
+        "confidence": "UNKNOWN",
+        "hypothesis": "serviceType: CUSTOMER_RETURNS (per notes/api_endpoints.md:137)"
       },
+      {
+        "ui_label": "Black Friday",
+        "confidence": "UNKNOWN"
+      },
+      {
+        "ui_label": "Internalized parcel",
+        "confidence": "UNKNOWN"
+      },
+      {
+        "ui_label": "Restaurant",
+        "confidence": "UNKNOWN"
+      }
+    ],
+    "_retired_note": "Express Delivery and Scheduled Grocery were removed from the UI and from the request on 2026-08-29 at the analyst's request. Their mappings are kept below rather than deleted: the confidence levels and verification notes are research, and re-deriving them would mean repeating the enum probing. Restoring one is a matter of moving its object back into `items`.",
+    "retired": [
       {
         "checkbox_id": "dt-express",
         "ui_label": "Express Delivery",
         "default_checked": true,
-        "services": ["DELIVERY"],
-        "serviceTypes": ["EXPRESS"],
+        "services": [
+          "DELIVERY"
+        ],
+        "serviceTypes": [
+          "EXPRESS"
+        ],
         "confidence": "LIKELY"
       },
       {
         "checkbox_id": "dt-sched",
         "ui_label": "Scheduled Grocery",
         "default_checked": true,
-        "services": ["DELIVERY"],
-        "serviceTypes": ["SCHEDULED_DELIVERY", "SAME_DAY_DELIVERY_WITH_SLOTS"],
+        "services": [
+          "DELIVERY"
+        ],
+        "serviceTypes": [
+          "SCHEDULED_DELIVERY",
+          "SAME_DAY_DELIVERY_WITH_SLOTS"
+        ],
         "confidence": "POSSIBLE",
         "verification_note": "Hypothesis: scheduled/slotted grocery delivery maps to SCHEDULED_DELIVERY and SAME_DAY_DELIVERY_WITH_SLOTS serviceTypes. Not yet verified via enum probe."
       }
-    ],
-    "unmapped_ui_options": [
-      {"ui_label": "Customer returns",       "confidence": "UNKNOWN", "hypothesis": "serviceType: CUSTOMER_RETURNS (per notes/api_endpoints.md:137)"},
-      {"ui_label": "Black Friday",           "confidence": "UNKNOWN"},
-      {"ui_label": "Internalized parcel",    "confidence": "UNKNOWN"},
-      {"ui_label": "Restaurant",             "confidence": "UNKNOWN"}
     ]
   },
-
   "tripDisplayStatuses": {
-    "values": ["atPickup", "unAssigned", "completed", "tripInProgress", "courierRequested", "enrouteToPickup"],
+    "values": [
+      "atPickup",
+      "unAssigned",
+      "completed",
+      "tripInProgress",
+      "courierRequested",
+      "enrouteToPickup"
+    ],
     "confidence": "VERIFIED",
     "source": "Dispatcher response tripDisplayStatusMap keys (notes/api_endpoints.md:37-42)",
     "ui_filter_default": "completed",
     "consumer_note": "app.js:385 filters viable candidates to displayTripStatus=='completed' for fraud investigation (not in_progress or unassigned)."
   },
-
   "watchlist": {
     "_purpose": "Driver-watchlist configuration. Consumed by modules/sparkfraud/service.js::pollWatchlist on every chrome.alarms tick. When a watched driver's displayTripStatus transitions into one of active_statuses, the service fires a desktop notification + auto-fetches order item details.",
-    "active_statuses": ["enrouteToPickup", "atPickup", "tripInProgress"],
+    "active_statuses": [
+      "enrouteToPickup",
+      "atPickup",
+      "tripInProgress"
+    ],
     "poll_interval_minutes": 3,
     "dispatcher_window_minutes": 120,
     "max_hits_retained": 100,
     "_consumer_contract": "Edit active_statuses to tune which transitions fire alerts without code changes. Edit poll_interval_minutes to slow down / speed up the cadence (min 1 in production builds per chrome.alarms.create constraints)."
   },
-
   "transitStatuses": {
-    "values": ["ON_TIME", "DELAYED"],
+    "values": [
+      "ON_TIME",
+      "DELAYED"
+    ],
     "confidence": "LIKELY",
     "source": "Dispatcher response transitStatus field (notes/tools/dispatcher_mfe.md:113); ON_TIME observed in sample, DELAYED referenced in app.js:416. Other possible values not yet enumerated."
   },
-
   "carriers": {
-    "values": ["FLEX", "DOORDASH", "UBER", "JOEYCO", "FOODORA", "POINTPICKUP", "NURO", "CRUISE", "ASSOCIATE", "FLEET"],
+    "values": [
+      "FLEX",
+      "DOORDASH",
+      "UBER",
+      "JOEYCO",
+      "FOODORA",
+      "POINTPICKUP",
+      "NURO",
+      "CRUISE",
+      "ASSOCIATE",
+      "FLEET"
+    ],
     "confidence": "LIKELY",
     "exhaustive": false,
     "source": "swift LMDE_CARRIER_MASTER config response (notes/tools/dispatcher_mfe.md:167-169). Note says 'etc.' — list is observed but not asserted exhaustive.",
     "owner_taxonomy": {
       "_note": "Per LMDE_CARRIER_MASTER metadata each carrier has an `owner` field with one of these values.",
-      "values": ["WALMART", "THIRD_PARTY", "AUTO"]
+      "values": [
+        "WALMART",
+        "THIRD_PARTY",
+        "AUTO"
+      ]
     },
     "regenerable_via": "POST swift /sparkApp/api/smc/configuration/v2/getConfig with body {header:{configCategory:'GLOBAL_TABLES',configIdentifier:'LMDE_CARRIER_MASTER'}}"
   },
-
   "lineStatuses": {
     "_note": "OMS provider-oms/orders row.lineStatus field. 'cancelled' (case-insensitive) is the only value app.js currently special-cases (strikethrough render).",
-    "values_observed": ["cancelled"],
+    "values_observed": [
+      "cancelled"
+    ],
     "confidence": "POSSIBLE",
     "exhaustive": false,
     "source": "app.js:141,361,503 string match on lineStatus.toLowerCase() === 'cancelled'. Other live values not enumerated."
   },
-
   "taskEventStatuses": {
     "_note": "Order taskEvents[].eventStatus values. Used by viability heuristic (app.js:tripInStoreWindow).",
-    "values_consumed": ["PICKED", "DISPATCHED"],
+    "values_consumed": [
+      "PICKED",
+      "DISPATCHED"
+    ],
     "confidence": "POSSIBLE",
     "source": "app.js:320-325 only. NOT documented in notes/api_endpoints.md or notes/tools/dispatcher_mfe.md.",
     "drift_risk": "HIGH — heuristic core depends on these names; if Walmart renames either, viability filter silently returns viable=false for all trips."
   },
-
   "orderTypes": {
-    "values_observed": ["GMD"],
+    "values_observed": [
+      "GMD"
+    ],
     "confidence": "POSSIBLE",
     "exhaustive": false,
     "source": "Single sample in notes/api_endpoints.md:67"
   },
-
   "roles": {
     "_purpose": "Roles documented as gated for Dispatcher access (notes/tools/dispatcher_mfe.md:13-15).",
     "values": [

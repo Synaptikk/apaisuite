@@ -111,9 +111,11 @@
   <div class="sf-row">
     <fieldset class="fieldset">
       <legend>Delivery type</legend>
+      <!-- Express Delivery and Scheduled Grocery removed 2026-08-29. Their
+           mappings live under deliveryTypes.retired in registries/enums.json;
+           restoring one means moving it back into `items` AND re-adding its
+           checkbox here. -->
       <label class="check"><input type="checkbox" id="sf-dt-spark"   checked> <span>Spark Shop &amp; Deliver</span></label>
-      <label class="check"><input type="checkbox" id="sf-dt-express" checked> <span>Express Delivery</span></label>
-      <label class="check"><input type="checkbox" id="sf-dt-sched"   checked> <span>Scheduled Grocery</span></label>
     </fieldset>
     <button id="sf-search" class="btn btn-primary btn-pill">Find candidates</button>
     <button id="sf-whos-here" class="btn btn-secondary btn-pill" title="Open a popup listing every driver currently in active status at the store (en route to pickup / at pickup / trip in progress), with their orders + items">👁 Who's here now?</button>

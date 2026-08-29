@@ -80,9 +80,15 @@ export async function mount(host, container) {
     if (!Array.isArray(items) || !items.length) {
       throw new Error("enums.json#deliveryTypes.items missing or empty");
     }
-    // Donor IDs are dt-spark / dt-express / dt-unsched / dt-sched.
-    // Suite uses sf-prefixed IDs (sf-dt-spark, ...). Remap here so the
-    // checkbox lookup in runSearch still hits the right elements.
+    // Registry ids are unprefixed (dt-spark); the suite's markup uses
+    // sf-prefixed ids (sf-dt-spark) so they cannot collide with another
+    // module's. Remap here so the checkbox lookup in runSearch still hits the
+    // right elements.
+    //
+    // Only dt-spark is active — Express and Scheduled Grocery were retired
+    // 2026-08-29 and moved to deliveryTypes.retired in enums.json. This loop
+    // reads whatever `items` holds, so nothing here needs changing to add or
+    // remove one.
     return items.map(item => ({
       ...item,
       checkbox_id: item.checkbox_id?.startsWith("sf-")
