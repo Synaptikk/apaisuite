@@ -327,6 +327,19 @@ export const handlers = {
   "get_schedule":      withAliases((m)     => schedules.get(m.store, m.date)),
   "put_schedule":      withAliases((m)     => schedules.put(m.store, m.date, m.doc)),
 
+  // The store the ASSIGNMENTS tab is pinned to. Derived from the signed-in
+  // identity (shared/userStore.js reads the cached Auror JWT and takes the
+  // store out of the WIN suffix), never from the dashboard picker: a daily
+  // plan is written per store and there is no reason for one person to be
+  // editing another store's day.
+  //
+  // Returns null rather than throwing when it cannot be derived — the caller
+  // falls back to the selected store, because locking someone out of their own
+  // roster is worse than the thing the lock prevents.
+  "get_home_store":    withAliases(async () => ({
+    store: await getUserHomeStore().catch(() => null),
+  })),
+
   "get_assignments":   withAliases((m)     => assignments.get(m.store, m.date)),
   "recent_assignments": withAliases((m)    => assignments.recent(m.store, m.limit ?? 30)),
   "put_assignments":   withAliases((m)     => assignments.put(m.store, m.date, m.doc)),

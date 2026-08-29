@@ -86,6 +86,7 @@ export async function mount(host, container) {
     // Assignments tab
     assignmentDate: defaultDate(),
     assignments: [],
+    homeStore:   null,
     suggestions: {},
     locked: false,
     saveStatus: "",
@@ -290,6 +291,12 @@ export async function mount(host, container) {
 
     // Empty is the FIRST-RUN state, not an error: the database starts empty and
     // stores only appear once data is imported.
+    // The Assignments tab is pinned to this and ignores the picker above.
+    // Fetched once at mount: it comes from the cached identity, not the
+    // network, and it does not change while the tab is open.
+    const home = await call("get_home_store");
+    state.homeStore = home?.store ? String(home.store) : null;
+
     const dflt = await call("get_default_store");
     if (dflt?.store) {
       state.store = dflt.store;
@@ -415,14 +422,32 @@ export async function mount(host, container) {
       .reduce((n, slots) => n + Object.keys(slots || {}).length, 0);
   }
 
+  /**
+   * The store the Assignments tab works on.
+   *
+   * Pinned to the signed-in user's home store, NOT the dashboard picker. A
+   * daily plan is per store and shared; someone browsing another store's
+   * metrics should not be able to overwrite that store's roster by leaving the
+   * picker where they left it.
+   *
+   * Falls back to the selected store when the home store cannot be derived —
+   * no cached identity yet, or a WIN this parser does not recognise. Locking
+   * someone out of their own roster is a worse failure than the one the lock
+   * prevents.
+   */
+  function assignmentStore() {
+    return state.homeStore || state.store;
+  }
+
   async function loadAssignments() {
-    if (!state.store || !state.assignmentDate) return;
+    const store = assignmentStore();
+    if (!store || !state.assignmentDate) return;
 
     setStatus("loading assignments…");
     const [doc, suggestions, schedule] = await Promise.all([
-      call("get_assignments", { store: state.store, date: state.assignmentDate }),
-      call("get_suggestions", { store: state.store, date: state.assignmentDate }),
-      call("get_schedule",    { store: state.store, date: state.assignmentDate }),
+      call("get_assignments", { store, date: state.assignmentDate }),
+      call("get_suggestions", { store, date: state.assignmentDate }),
+      call("get_schedule",    { store, date: state.assignmentDate }),
     ]);
 
     // A day with no assignments yet starts from the imported schedule, so the
@@ -442,7 +467,7 @@ export async function mount(host, container) {
     // reason to pay for it on the normal one.
     state.scheduleDates = state.assignments.length
       ? null
-      : (await call("list_dates", { store: state.store, collection: "schedules" })) || [];
+      : (await call("list_dates", { store, collection: "schedules" })) || [];
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
     // Suggestions for cells that are already filled are noise; drop them here
     // rather than making every consumer re-check.
@@ -694,20 +719,21 @@ export async function mount(host, container) {
 
   async function saveAssignments(extra = {}) {
     clearTimeout(saveTimer);
-    if (!state.store || !state.assignmentDate) return;
+    const store = assignmentStore();
+    if (!store || !state.assignmentDate) return;
 
     state.saveStatus = "saving…";
     renderPage();
 
     const ok = await call("put_assignments", {
-      store: state.store,
+      store,
       date:  state.assignmentDate,
       doc: {
         associates:  state.assignments,
         date:        state.assignmentDate,
         day:         dayName(state.assignmentDate),
         updatedAt:   new Date().toISOString(),
-        store:       state.store,
+        store,
         finalized:   state.locked,
         finalizedAt: state.locked ? new Date().toISOString() : null,
         ...extra,

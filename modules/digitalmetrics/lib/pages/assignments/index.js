@@ -3,8 +3,14 @@
 // The Assignments tab: toolbar, grid, keyboard entry, mobile task panel,
 // suggestions, finalise, autosave and print.
 //
-// Uses the store selected on the Dashboard — there is deliberately no second
-// store selector, because two selectors that can disagree is a bug generator.
+// PINNED to the signed-in user's home store, not the Dashboard picker. A daily
+// plan is written per store and shared with whoever else opens that store, so
+// browsing another store's metrics must not put you in a position to overwrite
+// its roster. There is still no second store selector here — the store is not
+// selectable at all now.
+//
+// Falls back to the selected store when the home store cannot be derived; see
+// view.js::assignmentStore().
 
 import { esc, empty } from "../_shared.js";
 import * as grid from "./grid.js";
@@ -30,7 +36,10 @@ const TASK_BUTTONS = [
 ];
 
 function toolbar(ctx) {
-  const { date, store, locked, saveStatus = "", saveError = null, suggestionCount = 0 } = ctx;
+  const { date, locked, saveStatus = "", saveError = null, suggestionCount = 0,
+          homeStore = null, store: selectedStore = null } = ctx;
+  // Pinned to the signed-in user, not the dashboard picker.
+  const store = homeStore || selectedStore;
 
   return `
     <div class="dm-controls">
@@ -39,7 +48,15 @@ function toolbar(ctx) {
         <input class="dm-input" id="dm-asg-date" type="date" value="${esc(date || "")}">
       </label>
       <span class="pill">${esc(dayName(date))}</span>
-      <span class="dm-stat-note">Store ${esc(store || "—")}</span>
+      <span class="dm-stat-note" ${homeStore
+        ? 'title="Assignments are pinned to your home store."'
+        : 'title="Home store could not be determined, so the selected store is used."'
+      }>Store ${esc(store || "—")}${homeStore ? " 🔒" : ""}</span>
+      ${homeStore && selectedStore && homeStore !== selectedStore
+        ? `<span class="status-strip status-strip-info dm-save-reason">Showing your home
+           store ${esc(homeStore)}. The dashboard is on ${esc(selectedStore)} — a daily
+           plan is shared, so it is only ever edited by its own store.</span>`
+        : ""}
 
       <button class="btn" id="dm-asg-add" ${locked ? "disabled" : ""}>Add associate</button>
       <button class="btn" id="dm-asg-print">Print</button>
@@ -122,12 +139,15 @@ function lunchBanner(ctx) {
  */
 function printTitle(ctx) {
   return `<div class="dm-print-title" hidden>` +
-    `Store ${esc(ctx.store || "—")} · ${esc(dayName(ctx.date))} ${esc(ctx.date || "")}` +
+    `Store ${esc(pageStore(ctx) || "—")} · ${esc(dayName(ctx.date))} ${esc(ctx.date || "")}` +
   `</div>`;
 }
 
+/** The store this page works on. Home store wins; picker is the fallback. */
+const pageStore = (ctx) => ctx.homeStore || ctx.store;
+
 export function render(ctx) {
-  if (!ctx.store) return empty("Select a store on the Dashboard first.");
+  if (!pageStore(ctx)) return empty("Select a store on the Dashboard first.");
 
   return toolbar(ctx) + printTitle(ctx) + legend() + lunchBanner(ctx) +
          grid.render(ctx) + mobilePanel(ctx);
