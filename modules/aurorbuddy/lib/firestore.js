@@ -38,6 +38,7 @@ const STORE_KEYS = {
   pendingWrites:      "aurorbuddy.fb_pendingWrites",
   aurorIdentity:      "aurorbuddy.fb_aurorIdentity",
   writerEnabled:      "aurorbuddy.fb_writerEnabled",  // sync — flag-gate kill switch (BACKEND_MIGRATION_PLAN.md §7)
+  project:            "aurorbuddy.fb_project",        // which project the cached identity belongs to
 };
 const SESSION_KEYS = {
   idToken:   "aurorbuddy.fb_idToken",
@@ -180,19 +181,91 @@ async function refreshIdToken(refreshToken) {
   return data.id_token;
 }
 
+// ─── Project-identity guard (cutover safety) ───────────────────────────────
+//
+// Firebase anonymous identities are per PROJECT. Changing
+// FIREBASE_CONFIG.projectId therefore invalidates everything cached here: the
+// stored refresh token belongs to the old project's auth realm, and the cached
+// uid names a user that does not exist in the new one.
+//
+// Without this guard, flipping the cutover switch fails twice over:
+//   - getIdToken() hands the OLD refresh token to the NEW project's key, gets
+//     a 400, and throws — the refresh path had no fallback, so auth wedged
+//     rather than degrading to a fresh sign-in.
+//   - getUid() returns the OLD uid, which commonRowFields() stamps as
+//     analystUid, which the rules compare against request.auth.uid. Every
+//     write would 403 as not-yours.
+//
+// THE BACK-FILL MATTERS. An install predating this marker has no stored value,
+// and treating that as "belongs to no project" would clear a perfectly good
+// credential on every existing install — minting a new uid and orphaning that
+// analyst's tool_metrics/{uid} doc, which is the exact damage this exists to
+// prevent. Absent means "the project this module has always used".
+//
+// The retry queue is deliberately NOT cleared: queued items store the raw
+// payload and dispatch() rebuilds each row through commonRowFields() at flush
+// time, so they pick up the new uid on their own.
+const LEGACY_PROJECT = "aurorbuddy";
+
+let _identityCheckedFor = null;
+
+export async function ensureProjectIdentity() {
+  if (_identityCheckedFor === projectId) return { changed: false };
+  try {
+    const got  = await chrome.storage.local.get(STORE_KEYS.project);
+    const seen = got[STORE_KEYS.project] ?? LEGACY_PROJECT;
+
+    if (seen === projectId) {
+      // Stamp it, so the back-fill assumption is made once and never again.
+      if (got[STORE_KEYS.project] === undefined) {
+        await chrome.storage.local.set({ [STORE_KEYS.project]: projectId });
+      }
+      _identityCheckedFor = projectId;
+      return { changed: false };
+    }
+
+    console.warn(`[aurorbuddy.firestore] project changed ${seen} → ${projectId}; clearing cached identity`);
+    await chrome.storage.local.remove([
+      STORE_KEYS.refreshToken,
+      STORE_KEYS.uid,
+      STORE_KEYS.metricsInitialized,   // the new project has no tool_metrics doc yet
+    ]);
+    try {
+      await chrome.storage.session.remove([SESSION_KEYS.idToken, SESSION_KEYS.idTokenAt]);
+    } catch { /* session storage unavailable in this context */ }
+    await chrome.storage.local.set({ [STORE_KEYS.project]: projectId });
+
+    _identityCheckedFor = projectId;
+    return { changed: true, from: seen, to: projectId };
+  } catch {
+    // Storage unavailable — better to attempt the write than to hard-fail here.
+    return { changed: false };
+  }
+}
+
 async function getIdToken() {
+  await ensureProjectIdentity();
+
   const ses = await chrome.storage.session.get([SESSION_KEYS.idToken, SESSION_KEYS.idTokenAt]);
   if (ses[SESSION_KEYS.idToken] && (Date.now() - (ses[SESSION_KEYS.idTokenAt] || 0)) < ID_TOKEN_TTL_MS) {
     return ses[SESSION_KEYS.idToken];
   }
   const loc = await chrome.storage.local.get(STORE_KEYS.refreshToken);
   if (loc[STORE_KEYS.refreshToken]) {
-    return await refreshIdToken(loc[STORE_KEYS.refreshToken]);
+    try {
+      return await refreshIdToken(loc[STORE_KEYS.refreshToken]);
+    } catch {
+      // Defence in depth alongside the guard above: a revoked, corrupt or
+      // wrong-project refresh token must degrade to a new anonymous user
+      // rather than wedging every write for the life of the install.
+      await chrome.storage.local.remove(STORE_KEYS.refreshToken);
+    }
   }
   return await signUpAnonymous();
 }
 
 export async function getUid() {
+  await ensureProjectIdentity();
   const got = await chrome.storage.local.get(STORE_KEYS.uid);
   if (got[STORE_KEYS.uid]) return got[STORE_KEYS.uid];
   await getIdToken();
