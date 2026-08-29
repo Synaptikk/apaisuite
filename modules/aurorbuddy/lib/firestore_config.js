@@ -28,9 +28,9 @@
 // the module would start writing into an empty database while the
 // dashboard still reads the old one.
 export const FIREBASE_CONFIG = {
-  projectId:  "aurorbuddy",
-  databaseId: "(default)",
-  webApiKey:  "AIzaSyBVbIuRW8qSXS_CVhpkKGlwrt-AFWTrWnw",
+  projectId:  "apaisuite",
+  databaseId: "aurorbuddy",
+  webApiKey:  "AIzaSyAxRJ7qjWqm9XgGtNHr1hUyW8IJgcndj_s",
 };
 
 // Identifies the source extension on every write so the dashboard can
