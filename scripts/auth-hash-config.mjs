@@ -107,10 +107,17 @@ async function main() {
     hc.memoryCost != null ? `--mem-cost=${hc.memoryCost}` : null,
   ].filter(Boolean);
 
-  console.log(`\nTo copy the accounts from "${FROM}" into "${TO}":\n`);
+  // ONE LINE, deliberately. A `\`-continued block is bash syntax; pasted into
+  // cmd.exe (which continues with `^`) it fails on the first line, and this
+  // whole migration is driven from a Windows box. One long line is uglier and
+  // runs everywhere. Values are quoted because the signer key is base64 and
+  // contains `+` and `/`.
+  const quote = (f) => f.replace(/^(--[a-z-]+)=(.*)$/, (_, k, v) => `${k}="${v}"`);
+  console.log(`\nTo copy the accounts from "${FROM}" into "${TO}" — run these from a`);
+  console.log(`disposable directory (users.json must not land in a repo):\n`);
   console.log(`  firebase auth:export users.json --project ${FROM}`);
-  console.log(`  firebase auth:import users.json --project ${TO} \\`);
-  console.log(flags.map((f, i) => `    ${f}${i < flags.length - 1 ? " \\" : ""}`).join("\n"));
+  console.log(``);
+  console.log(`  firebase auth:import users.json --project ${TO} ${flags.map(quote).join(" ")}`);
 
   if (!reveal) console.log(`\n(re-run with --reveal to fill in the signer key)`);
 
