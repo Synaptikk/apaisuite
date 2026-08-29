@@ -177,17 +177,24 @@ export function render(ctx) {
     </div>
     <div class="dm-grid-scroll" data-dm-scroll="grid">
       <table class="dm-grid" role="grid">
-        <thead>
+        <!-- Time row AND totals share ONE header group. A browser repeats only
+             the header group when a table breaks across printed pages: a tbody
+             never repeats, and only the FIRST header group does, so a second
+             one set to table-header-group would not reliably work either. With
+             both here, page 2 of a long roster carries the hour columns and the
+             totals instead of sixty anonymous rows of task codes.
+        
+             Totals stay at the TOP, sticky under the time header — same as the
+             standalone app. In a tfoot they sat below 60 rows of roster, so the
+             one thing you check while assigning was the one thing you had to
+             scroll to find. -->
+        <thead class="dm-summary">
           <tr>
             <th class="dm-name-cell">Associate</th>
             ${TIME_SLOTS.map((s) => `<th>${esc(s)}</th>`).join("")}
           </tr>
+          ${summaryRows(assignments, suggestions)}
         </thead>
-        <!-- Totals live at the TOP, sticky under the time header — same as the
-             standalone app. In a tfoot they sat below 60 rows of roster, so
-             the one thing you check while assigning was the one thing you had
-             to scroll to find. -->
-        <tbody class="dm-summary">${summaryRows(assignments, suggestions)}</tbody>
         <tbody>
           ${assignments.map((a) => associateRow(a, suggestions, locked, isSelected)).join("")}
         </tbody>

@@ -441,7 +441,7 @@
   white-space: nowrap;
 }
 
-.module-digitalmetrics .dm-grid thead th {
+.module-digitalmetrics .dm-grid thead tr:not(.dm-summary-row) th {
   position: sticky;
   top: 0;
   z-index: 2;
@@ -865,7 +865,7 @@
 
   /* Sticky positioning does not survive pagination — it either floats or
      leaves a gap. Everything goes static for print. */
-  .module-digitalmetrics .dm-grid thead th,
+  .module-digitalmetrics .dm-grid thead tr:not(.dm-summary-row) th,
   .module-digitalmetrics .dm-table-scroll .data-table thead th,
   .module-digitalmetrics .dm-name-cell,
   .module-digitalmetrics .dm-summary .dm-summary-row th,
@@ -895,7 +895,7 @@
     min-width: 0 !important;
     overflow: hidden;
   }
-  .module-digitalmetrics .dm-grid thead th { font-size: 7pt; }
+  .module-digitalmetrics .dm-grid thead tr:not(.dm-summary-row) th { font-size: 7pt; }
 
   /* The name column carries the only long strings, so it gets the width. */
   /* Names are the only long strings; 34mm holds the longest on this roster at
@@ -1204,7 +1204,7 @@
 }
 /* The header needs the same treatment on its underside, where the first
    totals row meets it. */
-.module-digitalmetrics .dm-grid thead th {
+.module-digitalmetrics .dm-grid thead tr:not(.dm-summary-row) th {
   box-shadow: 0 2px 0 var(--apai-bg-soft);
 }
 

@@ -69,7 +69,7 @@ await sleep(2000);
 await page.evaluate(() => document.querySelector('.dm-tab[data-dm-page="assignments"]')?.click());
 await sleep(3000);
 
-const rows = await page.evaluate(() => document.querySelectorAll(".dm-grid tbody:not(.dm-summary) tr").length);
+const rows = await page.evaluate(() => document.querySelectorAll(".dm-grid tbody tr").length);
 
 // What print actually sees.
 await page.emulateMediaType("print");
@@ -92,7 +92,7 @@ const printState = await page.evaluate(() => {
     mm: (() => {
       const px = 3.7795;
       const t = document.querySelector(".dm-grid");
-      const rows = [...document.querySelectorAll(".dm-grid tbody:not(.dm-summary) tr")];
+      const rows = [...document.querySelectorAll(".dm-grid tbody tr")];
       const head = document.querySelector(".dm-grid thead");
       const sum = document.querySelector(".dm-summary");
       const hdr = document.querySelector(".module-digitalmetrics .dm-header");
