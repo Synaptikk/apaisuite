@@ -17,12 +17,20 @@ rules_version = '2';
 //   suite_schema_drift  — column-shape changes in the dashboards we scrape.
 //                         See shared/schema_watch_report.js + docs/SOURCE_SCHEMA_WATCH.md.
 //
-// NO CLIENT READS. Nothing in the extension reads either collection — the
-// debug panel renders local telemetry, not these rows. Analysis happens in the
-// console or via a service account, both of which bypass rules entirely. So
-// read stays closed: an install that can read every other install's usage is
-// a deanonymising tool, and the only thing it would buy is a feature nobody
-// asked for.
+// NO EXTENSION READS. The reasoning has not changed: an install that can read
+// every other install's usage is a deanonymising tool, and the debug panel
+// renders local telemetry, not these rows. Extensions authenticate
+// ANONYMOUSLY, so gating reads on a password user keeps that door shut exactly
+// as before — `isPasswordUser()` is false for every extension install, by
+// construction.
+//
+// What is now allowed is the DASHBOARD (2026-08-29): password-authenticated
+// users at aurorbuddy.firebaseapp.com, which is already how every collection
+// in the aurorbuddy database is gated and where per-module reporting was
+// asked for. Rows remain pseudonymous — the "Store 756 User 2" labels are
+// DERIVED at read time from (storeNumber, installationId) by
+// shared/usage_labels.js and never stored, so this widens who can read the
+// counts without changing what is written about anyone.
 //
 // NO UPDATES, NO DELETES. An event is a fact about a moment. Being able to
 // rewrite or remove one turns the collection from a record into an assertion,
@@ -34,6 +42,15 @@ service cloud.firestore {
 
     function signedIn() {
       return request.auth != null;
+    }
+
+    // The dashboard signs in with email/password; every extension install
+    // signs in anonymously. So this is the line between "a reporting user"
+    // and "one of the things being reported on", and it is enforced by the
+    // provider rather than by anything a client asserts about itself.
+    function isPasswordUser() {
+      return request.auth != null
+             && request.auth.token.firebase.sign_in_provider == 'password';
     }
 
     // Cheap structural gate. Rules cannot prove a field is pseudonymous, but
@@ -51,12 +68,14 @@ service cloud.firestore {
 
     match /suite_usage_events/{eventId} {
       allow create: if signedIn() && noObviousPii() && reasonableSize();
-      allow read, update, delete: if false;
+      allow read:   if isPasswordUser();
+      allow update, delete: if false;
     }
 
     match /suite_schema_drift/{driftId} {
       allow create: if signedIn() && reasonableSize();
-      allow read, update, delete: if false;
+      allow read:   if isPasswordUser();
+      allow update, delete: if false;
     }
 
     // Everything else in this database is closed. A new module gets its own
