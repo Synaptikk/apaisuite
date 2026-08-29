@@ -140,6 +140,9 @@ export async function mount(host, container) {
 
   // 7. The Collect flow.
   async function onCollect() {
+    // Collect IS the module. Recorded at the click, not on completion, so a
+    // run that fails still counts as used — see shared/host.js::usage.
+    host.usage.record("collect");
     const $collect = $("cl-collect");
     $collect.disabled = true;
     setStatus("Finding CaseVisibility tab…");

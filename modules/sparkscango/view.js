@@ -63,6 +63,7 @@ export async function mount(host, container) {
 
   // ── Refresh ─────────────────────────────────────────────────────
   async function refreshAll() {
+    host.usage.record("refresh_all");
     els.refreshBtn.disabled = true;
     els.refreshBtn.textContent = "Refreshing…";
     els.status.textContent = "Refreshing all sources…";

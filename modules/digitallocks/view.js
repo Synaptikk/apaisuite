@@ -324,6 +324,7 @@ export async function mount(host, container) {
     localStorage.setItem("digitallocks.lastStore", storeNumber);
     // Also persist for SW daily-refresh alarm.
     host.storage.local.set("homeStore", storeNumber).catch(() => {});
+    host.usage.record("search_store");
     showImportProgress(`Querying Power BI for store ${storeNumber}…`);
     try {
       // V1.5: SW captures the Power BI data-grid DAX query (via MAIN-world

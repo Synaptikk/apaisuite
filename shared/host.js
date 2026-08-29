@@ -16,6 +16,7 @@ import { createAuth }      from "./auth.js";
 import { createHttp }      from "./http.js";
 import { createLogging }   from "./logging.js";
 import { createUI }        from "./ui.js";
+import { recordUsage }     from "./usage_metrics.js";
 
 export function createHost(moduleId, shellApi = {}) {
   if (!moduleId) throw new Error("createHost: moduleId required");
@@ -33,6 +34,22 @@ export function createHost(moduleId, shellApi = {}) {
     http:      createHttp(moduleId),
     logging:   createLogging(moduleId),
     ui:        createUI(moduleId),
+    // Suite-wide usage telemetry. `moduleName` is filled in from the host, so
+    // a module cannot record usage against another module's name, and every
+    // call site is one line:
+    //
+    //     host.usage.record("collect_pressed");
+    //
+    // Call it at the point of INTENT (the click), not on completion — put the
+    // outcome in `result`. A module that fails often should read as used and
+    // broken, not as unused.
+    //
+    // Fire-and-forget: it swallows its own errors, because telemetry that can
+    // fail a user action is worse than no telemetry.
+    usage: Object.freeze({
+      record: (actionName, opts = {}) =>
+        recordUsage({ ...opts, moduleName: moduleId, actionName }).catch(() => {}),
+    }),
     shell:     Object.freeze({ ...shellApi }),
   });
 }

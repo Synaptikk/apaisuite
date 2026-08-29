@@ -740,6 +740,9 @@ export async function mount(host, container) {
 
   // ── Refresh + store change ─────────────────────────────────────
   async function onRefreshClick() {
+    // Deliberately NOT on `bootstrap`, which fires whenever the dashboard is
+    // opened — that is module_opened wearing a different hat.
+    host.usage.record("refresh_all");
     refreshBtn.disabled = true;
     refreshBtn.textContent = "Refreshing…";
     statusText.textContent = "Refreshing CVP + Absences…";

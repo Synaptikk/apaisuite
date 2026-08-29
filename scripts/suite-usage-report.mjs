@@ -34,6 +34,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { labelInstalls, labelFor } from "../shared/usage_labels.js";
 
 const CLIENT_ID     = "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com";
 const CLIENT_SECRET = "j9iVZfS8kkCEFUPaAeJV0sAi";
@@ -225,14 +226,68 @@ Nothing recorded in this window. If that is unexpected, the likely causes are:
               `${distinct(rows, "storeNumber")} store(s) · ` +
               `${distinct(rows, "marketNumber")} market(s)`);
 
-  const byModule = tally(rows, (r) => r.moduleName);
-  section("Module use", byModule, {
-    total: rows.length,
+  // ── user vs automation ──────────────────────────────────────────────────
+  //
+  // Alarm-driven work is recorded (it is the only evidence those alarms fire)
+  // but must never be counted as usage — vizpick checks every 30 min,
+  // sparkscango every 15, metricshot every minute. Rows written before the
+  // `trigger` field existed have none; those predate automation being recorded
+  // at all, so treating them as user rows is correct rather than merely
+  // convenient.
+  const isAuto = (r) => r.trigger === "auto";
+  const auto   = rows.filter(isAuto);
+  const used   = rows.filter((r) => !isAuto(r));
+  const opens  = used.filter((r) => r.actionName === "module_opened");
+  const work   = used.filter((r) => r.actionName !== "module_opened");
+
+  console.log(`${work.length} action(s) · ${opens.length} module open(s) · ${auto.length} automated`);
+
+  // Opening a module is not using it. Kept separate because the gap between
+  // the two columns is the interesting number: opened often but rarely used
+  // means the tool is found and then abandoned, which no single count shows.
+  const byModule = tally(work, (r) => r.moduleName);
+  section("Module use (actions, excluding opens and automation)", byModule, {
+    total: work.length,
     extra: (m) => {
-      const n = new Set(rows.filter((r) => r.moduleName === m).map((r) => r.installationId)).size;
-      return `  ${n} install${n === 1 ? "" : "s"}`;
+      const n = new Set(work.filter((r) => r.moduleName === m).map((r) => r.installationId)).size;
+      const o = opens.filter((r) => r.moduleName === m).length;
+      return `  ${n} install${n === 1 ? "" : "s"}, ${o} open${o === 1 ? "" : "s"}`;
     },
   });
+
+  const openedNotUsed = tally(opens, (r) => r.moduleName)
+    .filter(([m]) => !byModule.some(([k]) => k === m));
+  if (openedNotUsed.length) {
+    section("Opened but never used", openedNotUsed, { total: opens.length });
+  }
+
+  // ── per person, without knowing who anyone is ───────────────────────────
+  //
+  // Labels are DERIVED from (storeNumber, installationId) at read time — see
+  // shared/usage_labels.js. Nothing identifying is stored, and the raw
+  // installation ids are never printed: "12 installs" must not become
+  // "which 12".
+  const labels = labelInstalls(rows);
+  const perUser = tally(work, (r) => labelFor(labels, r));
+  section("Per user (store-scoped pseudonym)", perUser, {
+    total: work.length,
+    extra: (lbl) => {
+      const mods = new Set(work.filter((r) => labelFor(labels, r) === lbl).map((r) => r.moduleName));
+      return `  ${mods.size} module${mods.size === 1 ? "" : "s"}`;
+    },
+  });
+
+  section("Per store", tally(work, (r) => String(r.storeNumber || "").trim() || "(no store)"), {
+    total: work.length,
+    extra: (s) => {
+      const n = [...labels.values()].filter((v) => v.store === s).length;
+      return `  ${n} user${n === 1 ? "" : "s"}`;
+    },
+  });
+
+  if (auto.length) {
+    section("Automation (NOT usage — proves the alarms fire)", tally(auto, (r) => `${r.moduleName}.${r.actionName}`), { total: auto.length });
+  }
 
   section("Top actions", tally(rows, (r) => `${r.moduleName}.${r.actionName}`).slice(0, 15), { total: rows.length });
   section("Result", tally(rows, (r) => r.result), { total: rows.length });

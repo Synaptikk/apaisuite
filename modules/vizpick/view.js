@@ -636,6 +636,10 @@ export async function mount(host, container) {
   // to skip: an unchanged stamp means the data on screen is already the data
   // upstream has, so re-downloading ~4,600 rows would change nothing.
   async function runRefresh(force) {
+    // Only the button reaches here. The 30-minute autocheck runs in the
+    // service worker and never touches this view, so this is unambiguously
+    // a person asking for a pull.
+    host.usage.record(force ? "refresh_yesterday_forced" : "refresh_yesterday");
     setBusy(btnRefresh, true);
     btnForce.hidden = true;
     let res = null;
@@ -653,6 +657,7 @@ export async function mount(host, container) {
   }
 
   async function runToday(force) {
+    host.usage.record(force ? "refresh_today_forced" : "refresh_today");
     const stores = rosterRows().map((r) => r.store);
     if (!stores.length) {
       renderTodayBar(null, "Refresh the Yesterday tab first — it supplies the store list for this market.");

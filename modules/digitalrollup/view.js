@@ -235,7 +235,7 @@ export async function mount(host, container) {
   await paint();
   // Nothing stored yet means a first-run user staring at an empty board with
   // no idea the Refresh button is the whole interaction. Pull for them.
-  if (!state.snapshot) runPull();
+  if (!state.snapshot) runPull({ trigger: "auto" });
 
   // ── Data ────────────────────────────────────────────────────────
 
@@ -264,7 +264,11 @@ export async function mount(host, container) {
     selectedMarket = state.snapshot?.market || markets[0]?.market || selectedMarket || null;
   }
 
-  async function runPull() {
+  // Three callers: the Refresh button, a market change (both a person), and
+  // the first-run pull below (not). Same function, so the trigger has to be
+  // passed in — this module is the reason the field exists at all.
+  async function runPull({ trigger = "user" } = {}) {
+    host.usage.record("pull", { trigger });
     if (busy) return;
     busy = true;
     runNote = null;

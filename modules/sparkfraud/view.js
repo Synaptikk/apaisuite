@@ -1365,6 +1365,9 @@ ${itemsHtml}
 
   // ── 12. Search flows ───────────────────────────────────────────────
   async function runSearch() {
+    // The search IS the investigation. driveOrderResolution fans out per
+    // batch underneath and is not recorded separately — one intent, one row.
+    host.usage.record("search");
     lookupMode = false;
     const btn = $("sf-search");
     btn.disabled = true;

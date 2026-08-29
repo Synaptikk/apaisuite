@@ -3,7 +3,10 @@
 // Classification vocabulary and lookup. Pure.
 //
 // Meanings, because they drive benchmark maths elsewhere:
-//   Digital      — dedicated digital fulfilment team
+//   Digital      — dedicated digital fulfilment team. Includes In Home
+//                  Delivery (2026-08-29): the title has no "digital" in it,
+//                  but the work is digital and belongs on the same
+//                  leaderboard. See data/job_classify.js::DIGITAL_JOB_RE.
 //   Exceptions   — digital associates mostly working exception picks; measured
 //                  only against each other (see data/metrics.js)
 //   Store Help   — store associates helping out; different schedules, so

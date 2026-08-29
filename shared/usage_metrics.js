@@ -80,7 +80,22 @@ function browserSlug() {
  * Build the row. Split out from the write so it can be tested without a
  * network or a Firebase project.
  */
-export async function buildUsageRow({ moduleName, actionName, result = "success", durationMs = null, contextHint = null }) {
+// `trigger` separates work a person asked for from work an alarm did.
+//
+// Without it the numbers are worthless: vizpick checks every 30 minutes,
+// digitalrollup every 10, sparkscango every 15, metricshot every minute and
+// workvivo hourly — so every install would look permanently, identically busy
+// and "which tools get used" could not be answered at all. digitalrollup makes
+// it unavoidable rather than merely advisable: its manual refresh and its auto
+// refresh are the SAME handler, so nothing else distinguishes them.
+//
+// Automation is still recorded, not dropped. These alarms are the least
+// exercised code in the suite (CURRENT_TASKS.md §7 — several had never once
+// fired before 2026-08-20), and an alarm that stops firing is invisible
+// otherwise. Usage reporting just filters to trigger === "user".
+export const TRIGGERS = Object.freeze(["user", "auto"]);
+
+export async function buildUsageRow({ moduleName, actionName, result = "success", durationMs = null, contextHint = null, trigger = "user" }) {
   const [installationId, storeNumber, marketNumber, role] = await Promise.all([
     getInstallationId(),
     getUserHomeStore().catch(() => null),
@@ -96,6 +111,10 @@ export async function buildUsageRow({ moduleName, actionName, result = "success"
     moduleName:   String(moduleName || ""),
     actionName:   String(actionName || ""),
     result:       String(result || "success"),
+    // Unknown values collapse to "user" rather than passing through: a typo
+    // must not create a third bucket that silently drops rows out of both the
+    // usage filter and the automation filter.
+    trigger:      TRIGGERS.includes(trigger) ? trigger : "user",
     durationMs:   Number.isFinite(durationMs) ? Math.round(durationMs) : null,
     contextHint:  contextHint == null ? null : scrub(contextHint),
     toolVersion:  chrome.runtime?.getManifest?.().version || "",

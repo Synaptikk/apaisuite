@@ -447,6 +447,9 @@ export async function mount(host, container) {
       host.ui.toast("Set your store in Settings → Defaults first.", { kind: "error" });
       return host.route("#/settings");
     }
+    // The 1-minute tick alarm posts scheduled metrics from the SW and never
+    // reaches here, so this is only ever a person pressing Run now.
+    host.usage.record("run_now");
     host.ui.toast(`Running "${nameOf(id)}"…`);
     try {
       const res = await host.messaging.send("run-now", { id });

@@ -339,6 +339,10 @@ export async function mount(host, container) {
   async function runFullScan(myGen) {
     const store = $("ab-store").value.trim();
     if (!store) return alert("Enter a home store number first.");
+    // One event for the whole pipeline, not one per stage. find_stores →
+    // scan_auror → appriss_lookup are a single user intent fanned out; counting
+    // each would triple this module against every other.
+    host.usage.record("scan");
 
     const check = () => { if (isStale(myGen)) throw new Error("__stale_scan__"); };
     const scanStartedAt = Date.now();

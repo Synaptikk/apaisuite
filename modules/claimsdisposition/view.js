@@ -438,7 +438,11 @@ export async function mount(host, container) {
   }
 
   // ── Pull → render flow ────────────────────────────────────────
-  async function doPull() {
+  // `trigger` matters here: doPull serves both the Pull button and the
+  // cold-start auto-pull below, so without it a dashboard that opens itself
+  // would be indistinguishable from an analyst running a pull.
+  async function doPull({ trigger = "user" } = {}) {
+    host.usage.record("pull", { trigger });
     if (state.inFlightPull) return;
 
     // The cold-start auto-pull can fire before the async roster read below
@@ -493,6 +497,7 @@ export async function mount(host, container) {
 
   async function doDownload() {
     if (!state.selectedPullId) return;
+    host.usage.record("download_csv");
     try {
       const resp = await sendSW("downloadCsv", { pullId: state.selectedPullId });
       if (!resp.ok) {
@@ -627,7 +632,7 @@ export async function mount(host, container) {
       // again.
       console.log("[claimsdisposition] no pulls in IndexedDB; auto-pulling…");
       setState({ loading: true });
-      await doPull();
+      await doPull({ trigger: "auto" });
     }
   } catch (err) {
     if (cancelled) return () => {};

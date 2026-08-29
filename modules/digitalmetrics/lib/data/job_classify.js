@@ -27,8 +27,42 @@
 
 import { CLASSIFICATIONS } from "./classify.js";
 
-/** Job titles that mean the dedicated digital fulfilment team. */
-export const DIGITAL_JOB_RE = /\bdigital\b/i;
+/**
+ * Job titles that mean the dedicated digital fulfilment team.
+ *
+ * "In Home Delivery" is here because it IS digital work — the analyst's call
+ * 2026-08-29 — and the word "digital" does not appear in the title, so the
+ * bare `\bdigital\b` rule dropped those associates into Store Help and out of
+ * the Digital leaderboard and opportunities list entirely.
+ */
+export const DIGITAL_JOB_RE = /\bdigital\b|\bin[\s-]*home[\s-]*delivery\b/i;
+
+/**
+ * Digital job CODES, for the days the scheduler's title map does not resolve.
+ *
+ * `lib/sources/wfm_schedule.js` resolves a shift's job code to a title through
+ * a map it scrapes off the same page, and falls back to storing the RAW CODE as
+ * the jobName when the map has no entry. That map comes back incomplete on some
+ * pulls — store 1458's 2026-09-15 schedule resolves "Digital Personal Shopper"
+ * for 60 people while 15 others carry a bare `1-990-7410` — so a title-only
+ * rule silently reclassifies whoever the map happened to miss.
+ *
+ * `1-930-1481` is In Home Delivery, established from store 1458's own data: it
+ * appears for exactly the people who read "In Home Delivery" on the days the
+ * map did resolve, and it appears on 2026-09-15 alongside a fully-resolved
+ * "Digital Personal Shopper", so it is not that code.
+ *
+ * Only codes verified that way belong here. A guessed code silently promotes
+ * whoever holds it, which is the failure this list exists to prevent.
+ */
+export const DIGITAL_JOB_CODES = new Set(["1-930-1481"]);
+
+/** Whether a scheduler jobName means digital — by title OR by raw code. */
+export function isDigitalJob(jobName) {
+  const s = String(jobName ?? "").trim();
+  if (!s) return false;
+  return DIGITAL_JOB_RE.test(s) || DIGITAL_JOB_CODES.has(s);
+}
 
 /**
  * Leadership roles, read off the same job title.
@@ -81,13 +115,15 @@ export const MANUAL_ONLY = ["Exceptions"];
  *
  * Examples seen on the real roster:
  *   "Digital Personal Shopper 1-936-1451" → Digital
+ *   "In Home Delivery"                    → Digital
+ *   "1-930-1481"                          → Digital  (unresolved IHD code)
  *   "Fashion TL 1-625-7200"               → Store Help  (see note above)
  *   "Stocking ON TA 1-635-7440"           → Store Help
  */
 export function classificationForJob(jobName) {
   const s = String(jobName ?? "").trim();
   if (!s) return null;
-  return DIGITAL_JOB_RE.test(s) ? "Digital" : "Store Help";
+  return isDigitalJob(s) ? "Digital" : "Store Help";
 }
 
 /**
@@ -123,7 +159,7 @@ export function deriveClassifications(scheduled, { existing = {}, pickers = [] }
     if (!job) continue;
     const key = name.toUpperCase();
     const prev = titleByName.get(key);
-    if (!prev || (DIGITAL_JOB_RE.test(job) && !DIGITAL_JOB_RE.test(prev))) {
+    if (!prev || (isDigitalJob(job) && !isDigitalJob(prev))) {
       titleByName.set(key, job);
     }
   }

@@ -168,6 +168,10 @@ export async function mount(host, container) {
 
   // ── Action wiring ──────────────────────────────────────────────
   $("wv-refreshNow").addEventListener("click", async () => {
+    // The hourly heartbeat is the module's real work and runs in the SW; it
+    // must NEVER count as usage or this module reads as the most-used in the
+    // suite while nobody has opened it.
+    host.usage.record("refresh_now");
     $("wv-refreshNow").disabled = true;
     $("wv-refreshMsg").textContent = "Sending…";
     try {

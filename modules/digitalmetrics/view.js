@@ -828,6 +828,7 @@ export async function mount(host, container) {
     const spinner = $("#dm-pull-spinner");
     if (btn) btn.disabled = true;
     if (spinner) spinner.hidden = false;
+    host.usage.record("pull_now");
     setPullStatus("syncing…");
     try {
       const res = await call("pull_now", {});

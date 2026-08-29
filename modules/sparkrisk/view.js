@@ -506,6 +506,7 @@ async function openSessionDetail(sessionId) {
     // Wire up save review button
     $("sr-save-review").addEventListener("click", async () => {
       if (!review?.id) return;
+      host.usage.record("save_review");
       await send("updateReview", {
         reviewId: review.id,
         status: $("sr-review-status").value,

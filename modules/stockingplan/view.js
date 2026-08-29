@@ -98,6 +98,7 @@ export async function mount(host, container) {
   // --- Collect -------------------------------------------------------------
 
   async function onCollect() {
+    host.usage.record("collect");
     const $btn = $("sp-collect");
     $btn.disabled = true;
     assignments = new Map();

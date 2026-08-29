@@ -98,6 +98,7 @@ export async function mount(host, container) {
   container.querySelector("#om-btn-analyze").addEventListener("click", async () => {
     const store = (container.querySelector("#om-store").value ?? "").trim();
     if (!store) return;
+    host.usage.record("analyze_threats");
     const btn = container.querySelector("#om-btn-analyze");
     btn.disabled = true; btn.textContent = "Analyzing…";
     _startProgress(container);

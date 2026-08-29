@@ -458,7 +458,18 @@
   background: var(--apai-bg-elev);
 }
 
-.module-digitalmetrics .dm-grid thead .dm-name-cell { z-index: 4; }
+/* The corner cell is pinned on BOTH axes, so it has to outrank the roster's
+   own pinned name column (z-index 3) or the names scroll straight over the
+   word "Associate" — the header's other cells look fine, because only this
+   column has anything travelling underneath it.
+
+   The selector has to carry `thead tr:not(.dm-summary-row)` rather than just
+   `thead`: the header-row rule above is (0,3,3) and a plain
+   `.dm-grid thead .dm-name-cell` is (0,3,1), so it lost the z-index outright
+   and the corner stayed at 2. It read as a background bug and was not one. */
+.module-digitalmetrics .dm-grid thead tr:not(.dm-summary-row) th.dm-name-cell {
+  z-index: 4;
+}
 
 .module-digitalmetrics .dm-name { display: block; font-weight: 600; }
 
