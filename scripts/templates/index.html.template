@@ -67,6 +67,11 @@
     <h2 style="margin-top:0">Install or update</h2>
     <div class="btn-row">
       <button id="dl-folder" class="btn btn-primary">Download to folder</button>
+      <!-- RELEASING.md has always promised this button; the placeholder was
+           only ever wired into version.json.template, so it never existed.
+           Rendered empty when CWS_LISTING_URL is unset, and removed on load
+           below — sed has no conditionals, so the pruning happens in JS. -->
+      <a id="cws-link" class="btn" href="{{CWS_LISTING_URL}}">Install from Chrome Web Store</a>
     </div>
     <p class="hint">
       Click <strong>Download to folder</strong>, then pick (or create) an empty
@@ -111,6 +116,12 @@
   <div id="releases-list" class="muted" style="font-size: 14px;">Loading release history…</div>
 
   <script>
+    // ---- Store link: drop it when no listing URL was configured ----
+    (function () {
+      var a = document.getElementById("cws-link");
+      if (a && !a.getAttribute("href")) a.parentNode.removeChild(a);
+    })();
+
     // ---- Direct-to-folder download (File System Access API) ----
     (function () {
       var btn = document.getElementById("dl-folder");

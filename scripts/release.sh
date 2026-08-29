@@ -191,6 +191,15 @@ rm -rf "$STAGED_EXT/scripts" \
 # only the top-level rm pattern was applied).
 find "$STAGED_EXT" -type d -name node_modules -prune -exec rm -rf {} +
 
+# The very same trap caught .playwright-mcp, and it shipped for months. The rm
+# above only matches the tree ROOT, and the comment about `cp -r *` skipping
+# dotfiles is true only at the top level — a dot-directory nested inside a
+# normal one is copied like anything else. modules/assocpurchases/.playwright-mcp
+# held 137 console logs, 1.9 MB, from a July debugging session, and every
+# release since carried them to users. Console logs from a page-automation run
+# can contain captured page content, so this is a privacy leak, not just bloat.
+find "$STAGED_EXT" -type d -name '.playwright-mcp' -prune -exec rm -rf {} +
+
 # Same trap, same fix, for dev tooling and unit tests: the top-level rm above
 # only catches ./dev, so modules/digitallocks/dev/smoke.mjs and every
 # lib/tests/ directory were shipping to users. scripts/pack-cws.sh already

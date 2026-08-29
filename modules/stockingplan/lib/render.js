@@ -176,7 +176,6 @@ export function toPrintHtml(plan, assignments) {
   </tbody>
 </table>
 
-<script>window.onload = () => window.print();<\/script>
 </body>
 </html>`;
 }

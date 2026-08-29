@@ -163,12 +163,18 @@
     <p style="margin-top:8px;font-size:11px;color:#6B7280">In the print dialog → Destination → "Save as PDF"</p>
   </div>
 </div>
-<script>document.getElementById('btn-print').addEventListener('click',()=>window.print());</script>
 </body></html>`;
 
   document.open();
   document.write(html);
   document.close();
+
+  // The button used to be wired by an inline <script> written into the markup
+  // above. report.html is an extension page, so MV3's default `script-src
+  // 'self'` blocked it and the button had never once worked — the only reason
+  // printing happened at all is the auto-open below. Wiring it from here, which
+  // IS a 'self' script, is the same fix vizpick/lib/card_report.js took.
+  document.getElementById("btn-print")?.addEventListener("click", () => window.print());
 
   // Auto-open print dialog after content renders
   setTimeout(() => window.print(), 1000);

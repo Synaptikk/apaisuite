@@ -788,12 +788,18 @@ ${confidenceHtml}
 </div>
 ${missingThumbCount ? `<div class="thumb-banner">⚠ ${missingThumbCount} thumbnail${missingThumbCount === 1 ? "" : "s"} unavailable (no product image found). Dashed boxes indicate missing images.</div>` : ""}
 ${itemsHtml}
-<script>setTimeout(()=>window.print(), 400);</script>
 </body></html>`;
 
     const w = window.open("", "_blank", "width=900,height=700");
     w.document.write(html);
     w.document.close();
+    // Print from HERE, not from a script inside the page. That window inherits
+    // this extension page's CSP (MV3 default: script-src 'self'), so the inline
+    // <script> this used to carry was blocked and the dialog never opened —
+    // the report rendered and nothing printed. Same fix as
+    // vizpick/lib/card_report.js. The delay lets the evidence thumbnails lay
+    // out before the print snapshot.
+    setTimeout(() => { try { w.focus(); w.print(); } catch { /* user closed it */ } }, 400);
   }
 
   // ── 9. Auth + headers ──────────────────────────────────────────────

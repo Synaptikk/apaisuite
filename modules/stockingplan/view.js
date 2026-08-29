@@ -470,10 +470,19 @@ export async function mount(host, container) {
   function onPrint() {
     if (!plan) { setStatus("Generate the plan first.", "error"); return; }
     const html = toPrintHtml(plan, assignments);
-    const blob = new Blob([html], { type: "text/html" });
-    const url  = URL.createObjectURL(blob);
-    host.tabs.create({ url });
-    // Blob URL is tied to the extension page; Chrome will clean it up when the tab closes.
+    // This used to write the html to a blob: URL and open it with tabs.create,
+    // relying on an inline `window.onload = () => window.print()` inside the
+    // markup. A blob opened from an extension page inherits this page's CSP
+    // (MV3 default: script-src 'self'), so that script was blocked and the
+    // print dialog never opened — and tabs.create hands back no window handle
+    // to print from either. Opening it ourselves gives us the handle.
+    // Same fix as sparkfraud/view.js and vizpick/lib/card_report.js.
+    const w = window.open("", "_blank", "width=900,height=700");
+    if (!w) { setStatus("Allow pop-ups for this page to print the plan.", "error"); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch { /* user closed it */ } }, 350);
   }
 
   async function onCopy() {
