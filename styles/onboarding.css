@@ -1,0 +1,125 @@
+/* styles/onboarding.css — first-run setup wizard + coach marks.
+   Uses the suite tokens so it inherits light/dark without its own palette. */
+
+.ob-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+.ob-card {
+  width: min(520px, 100%);
+  background: var(--surface, #fff);
+  color: var(--text, #111827);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+.ob-step  { margin: 0 0 4px; font-size: 12px; color: var(--muted, #6b7280); letter-spacing: .04em; text-transform: uppercase; }
+.ob-card h2 { margin: 0 0 8px; font-size: 20px; }
+.ob-lead  { margin: 0 0 16px; color: var(--muted, #6b7280); font-size: 14px; line-height: 1.5; }
+.ob-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+
+.ob-choices { display: flex; flex-direction: column; gap: 8px; }
+.ob-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.ob-choice:hover { border-color: var(--apai-blue, #2563eb); }
+.ob-choice.is-selected {
+  border-color: var(--apai-blue, #2563eb);
+  box-shadow: inset 0 0 0 1px var(--apai-blue, #2563eb);
+}
+.ob-choice-label { font-weight: 600; font-size: 14px; }
+.ob-choice-hint  { font-size: 12px; color: var(--muted, #6b7280); }
+
+.ob-input {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+.ob-input:focus { outline: none; border-color: var(--apai-blue, #2563eb); }
+.ob-error { margin: 8px 0 0; font-size: 13px; color: var(--apai-danger, #dc2626); }
+
+.ob-actions { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+.ob-spacer  { flex: 1; }
+.ob-btn {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 18px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--apai-blue, #2563eb);
+  color: #fff;
+  cursor: pointer;
+}
+.ob-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.ob-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ob-btn-ghost {
+  background: transparent;
+  color: inherit;
+  border-color: var(--border, #e5e7eb);
+}
+.ob-skip {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Coach marks ─────────────────────────────────────────────────────────
+   The veil dims the page and catches the click-to-dismiss; the ring is a
+   cut-out highlight around the target, drawn with a huge outward shadow so
+   the element stays fully lit while everything else is dimmed. */
+.ob-tip-veil { position: fixed; inset: 0; z-index: 9100; background: transparent; }
+.ob-tip-ring {
+  position: fixed;
+  z-index: 9101;
+  border-radius: 10px;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.55), 0 0 0 2px var(--apai-yellow, #f59e0b);
+  transition: top 140ms ease, left 140ms ease, width 140ms ease, height 140ms ease;
+}
+.ob-tip {
+  position: fixed;
+  z-index: 9102;
+  width: min(320px, calc(100vw - 24px));
+  background: var(--surface, #fff);
+  color: var(--text, #111827);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+}
+.ob-tip-count { margin: 0 0 4px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted, #6b7280); }
+.ob-tip-title { margin: 0 0 6px; font-size: 15px; }
+.ob-tip-body  { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted, #6b7280); }
+.ob-tip-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-tip-ring { transition: none; }
+}

@@ -26,6 +26,7 @@ import {
   isDebugUnlocked, setDebugUnlocked, startDebugFeed, readAlarms,
   UNLOCK_TAPS, UNLOCK_HINT_AT, FEED_MAX,
 } from "./shared/debug_feed.js";
+import { maybeRunOnboarding, resetOnboarding, runSetup, runTips } from "./shared/onboarding.js";
 import { LAYOUTS, resolveLayoutPref } from "./shared/layoutPref.js";
 import { SIDEBAR, resolveSidebarPref, toggledSidebarPref } from "./shared/sidebarPref.js";
 
@@ -297,6 +298,31 @@ async function route() {
   }
   currentMount = null;
   $main.innerHTML = "";
+
+  // #/setup — force the first-run flow on an install that has already done it.
+  // The completion flag lives in SYNC storage so it follows the person across
+  // machines, which is right for a real user and useless for testing: there is
+  // no local state to clear. This route is the way in.
+  //
+  //   #/setup        wizard + tips
+  //   #/setup/tips   just the coach marks
+  //   #/setup/reset  forget completion, then run it as a genuine first-run
+  if (head === "setup") {
+    const mode = rest[0];
+    renderHome();                                  // something for the tips to sit over
+    queueMicrotask(async () => {
+      try {
+        if (mode === "reset") { await resetOnboarding(); await maybeRunOnboarding({ force: true }); }
+        else if (mode === "tips") { await runTips(); }
+        else { await runSetup({ force: true }); await runTips(); }
+      } catch (e) {
+        console.warn("[shell] setup route:", e?.message ?? e);
+      }
+      // Drop back to home so a refresh does not relaunch the wizard forever.
+      if (location.hash.startsWith("#/setup")) location.hash = "#/home";
+    });
+    return;
+  }
 
   if (!head || head === "home")     return renderHome();
   if (head === "settings")          return renderSettings();
@@ -738,6 +764,13 @@ function renderSettings() {
               sign-in identifies a market, so it can't be detected for you.
             </p>
           </div>
+          <div class="row row-between" style="margin-top:14px">
+            <p class="muted" style="margin:0">
+              Re-run the welcome walkthrough — role, store, market, and the
+              tips about reordering modules and collapsing the sidebar.
+            </p>
+            <button type="button" class="btn btn-secondary" id="settings-rerun-setup">Run setup again</button>
+          </div>
         </div>
       </div>
 
@@ -806,6 +839,14 @@ function renderSettings() {
 
   wireDefaults();
   wireDebugPanel();
+
+  // Re-runs the walkthrough in place. Deliberately does NOT clear the
+  // completion flag: someone asking to see it again has not become a new user,
+  // and forgetting that would make it reappear unprompted on their next boot.
+  $("settings-rerun-setup")?.addEventListener("click", async () => {
+    await runSetup({ force: true });
+    await runTips();
+  });
 }
 
 // ── Hidden debug panel ────────────────────────────────────────────────────
@@ -1348,6 +1389,11 @@ route().catch((e) => {
   console.error("[shell] boot route failed:", e);
   $main.innerHTML = `<div class="state-error">Shell boot failed: ${escapeHtml(String(e?.message ?? e))}</div>`;
 });
+
+// First-run setup. Runs AFTER the first route so the coach marks have a
+// rendered sidebar to point at — anchoring to elements that do not exist yet
+// would silently drop every tip. No-ops unless setup has never been completed.
+maybeRunOnboarding().catch((e) => console.warn("[shell] onboarding:", e?.message ?? e));
 
 // ── "The suite was opened" ────────────────────────────────────────────────
 //
