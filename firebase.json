@@ -16,6 +16,11 @@
       "database": "digitalmetrics",
       "rules": "modules/digitalmetrics/backend/firestore.rules",
       "indexes": "modules/digitalmetrics/backend/firestore.indexes.json"
+    },
+    {
+      "database": "aurorbuddy",
+      "rules": "modules/aurorbuddy/backend/firestore.rules",
+      "indexes": "modules/aurorbuddy/backend/firestore.indexes.json"
     }
   ]
 }

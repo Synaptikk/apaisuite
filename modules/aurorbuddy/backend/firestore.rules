@@ -1,0 +1,191 @@
+// AurorBuddy — rules for the `aurorbuddy` NAMED DATABASE inside the
+// `apaisuite` project.
+//
+// Copied verbatim from the live rules of the standalone `aurorbuddy` project
+// (~/shanesmith/firestore.rules) at migration time, so behaviour is identical
+// on day one and any later divergence is a deliberate, reviewable diff rather
+// than a rewrite nobody can check against what was running before.
+//
+// ── Why a named database, not a collection in (default) ──────────────────
+// (default) in this project holds suite-wide telemetry and denies everything
+// else outright. Its own header states the rule: a new module gets its own
+// named database, so a rules mistake in one module cannot reach another's
+// data. digitalmetrics already follows this; aurorbuddy joins it.
+//
+// ── The auth consequence, which is easy to miss ──────────────────────────
+// isPasswordUser() below resolves against THIS project's Firebase Auth. A
+// Firebase ID token carries the project id in its `aud` claim, so a dashboard
+// user signed into the old `aurorbuddy` project cannot read anything here, no
+// matter what these rules say. The dashboard therefore holds TWO authenticated
+// Firebase apps during the transition — one per project — signing into both
+// with the same credentials. That only works because the account migration is
+// an auth:export/import COPY: the accounts must exist in both places.
+//
+// See docs/AURORBUDDY_PROJECT_MIGRATION.md for the cutover order.
+rules_version = '2';
+
+// AurorBuddy Firestore security rules.
+//
+// Two auth shapes are in play:
+//   - Anonymous (Firebase anonymous auth): the extension itself. Used for
+//     scan/event writes from end-user installs. UID is stable per install.
+//   - Password (Firebase email/password auth): dashboard users — the
+//     people who sign in at https://aurorbuddy.firebaseapp.com to view
+//     metrics. Identified by request.auth.token.firebase.sign_in_provider.
+//
+// Two writer shapes are in play (BACKEND_MIGRATION_PLAN.md §1):
+//   - Legacy "shanesmith" extension (today): writes /tool_events with the
+//     append-only `timestamp = request.time` shape and suspectTotalValue.
+//   - New "suite" extension (unified-extension-suite): writes /tool_workflows
+//     at workflow start, then creates /tool_events with deterministic doc id
+//     = aurorEventId, with both `createdAt == request.time` and an update
+//     window for value fields once the analyst confirms via Mark Submitted.
+//
+// Rules accept BOTH shapes during the cutover window. Once shanesmith is
+// fully retired, the legacy `timestamp == request.time` branch can be
+// removed.
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function isPasswordUser() {
+      return request.auth != null
+             && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    function isOwner() {
+      return request.auth != null
+             && request.resource.data.analystUid == request.auth.uid;
+    }
+
+    function onlyChangedFields(allowed) {
+      // True iff every field changed by this update is in the allowed set.
+      // Empty diff (no changes) trivially satisfies.
+      return request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(allowed);
+    }
+
+    // tool_events:
+    //   - create: owner write, EITHER `timestamp == request.time` (legacy
+    //     shanesmith) OR `createdAt == request.time` (suite).
+    //   - update: owner only, ONLY the value-field set + aurorEventStatus +
+    //     aurorEventSubmittedAt + updatedAt + valueDisplayLabel + migratedAt.
+    //     All other fields are frozen post-create.
+    //   - read: any authed (extension dedup filter + dashboard).
+    //   - delete: never.
+    match /tool_events/{id} {
+      allow create: if isOwner()
+                    && (
+                      request.resource.data.timestamp == request.time
+                      || request.resource.data.createdAt == request.time
+                    );
+      allow update: if request.auth != null
+                    && resource.data.analystUid == request.auth.uid
+                    && onlyChangedFields([
+                         'finalEventValue',
+                         'finalEventValueSource',
+                         'finalEventValueCapturedAt',
+                         'finalEventValueConfidence',
+                         'finalEventValueUnknownReason',
+                         'valueDisplayLabel',
+                         'aurorEventStatus',
+                         'aurorEventSubmittedAt',
+                         'updatedAt',
+                         'migratedAt'
+                       ]);
+      allow read:   if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Append-only scan log. Same legacy + suite shape support.
+    match /tool_scans/{id} {
+      allow create: if isOwner()
+                    && (
+                      request.resource.data.timestamp == request.time
+                      || request.resource.data.createdAt == request.time
+                    );
+      allow read:   if isPasswordUser();
+      allow update, delete: if false;
+    }
+
+    // tool_workflows (suite only, new in 2026-06-07 migration):
+    //   - create: owner only; createdAt + updatedAt server-stamped.
+    //   - update: owner only; specific writable field set (status,
+    //     statusHistory, substep tracking, error context, value fields).
+    //   - read: any authed (dashboard + extension's own queries).
+    //   - delete: never.
+    match /tool_workflows/{id} {
+      allow create: if isOwner()
+                    && request.resource.data.createdAt == request.time;
+      allow update: if request.auth != null
+                    && resource.data.analystUid == request.auth.uid
+                    && onlyChangedFields([
+                         'status',
+                         'statusHistory',
+                         'updatedAt',
+                         'aurorPersonMatchStatus',
+                         'aurorPersonId',
+                         'aurorEventDraftStatus',
+                         'aurorSubmitStatus',
+                         'aurorEventId',
+                         'aurorEventUrl',
+                         'suspectName',
+                         'suspectAurorPersonId',
+                         'transactionContext',
+                         'errorCode',
+                         'errorMessageRedacted',
+                         'finalEventValue',
+                         'finalEventValueSource',
+                         'finalEventValueConfidence',
+                         'finalEventValueUnknownReason',
+                         'valueDisplayLabel'
+                       ]);
+      allow read:   if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Per-action telemetry. Append-only, write timestamp client-side (we
+    // use POST /tool_metric_events for batch-efficiency rather than :commit
+    // with REQUEST_TIME, so we don't enforce timestamp == request.time here
+    // the way scans/events do). Reads gated to dashboard.
+    match /tool_metric_events/{id} {
+      allow create: if isOwner();
+      allow read:   if isPasswordUser();
+      allow update, delete: if false;
+    }
+
+    // Per-analyst rolling metrics — write only your own doc, anyone authed
+    // (dashboard) can read for the leaderboard.
+    //
+    // NOTE: dashboard read was historically isPasswordUser(). The extension's
+    // own writes don't need to read tool_metrics (writes are
+    // increment-transform-only). Keeping the read restriction since broadening
+    // it provides no extension-side benefit.
+    match /tool_metrics/{uid} {
+      allow read:  if isPasswordUser();
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Dashboard sign-up metadata (email + home store). Created by the user
+    // signing up; only the user themselves can write their own doc.
+    match /users/{uid} {
+      allow read:   if isPasswordUser();
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // v0.1.60: nearby-store cache for find_stores. Any authed caller can
+    // read or write.
+    match /tool_cache_stores/{id} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // v1.0.0: shared whole-scan cache. Doc id = `${homeStore}_${miles}_${days}`.
+    match /tool_cache_scans/{id} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

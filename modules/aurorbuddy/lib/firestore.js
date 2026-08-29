@@ -25,11 +25,11 @@
 
 import { FIREBASE_CONFIG, ANALYST_SOURCE } from "./firestore_config.js";
 
-const { projectId, webApiKey } = FIREBASE_CONFIG;
+const { projectId, databaseId, webApiKey } = FIREBASE_CONFIG;
 
 const IDENTITY_BASE  = "https://identitytoolkit.googleapis.com/v1";
 const SECURETOKEN    = "https://securetoken.googleapis.com/v1/token";
-const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents`;
 
 const STORE_KEYS = {
   refreshToken:       "aurorbuddy.fb_refreshToken",
@@ -285,12 +285,14 @@ function randomDocId() {
   return out;
 }
 
-// Exported for shared/usage_metrics.js, which writes the suite-wide usage
-// collection. Exporting the primitive rather than a second copy of the auth
-// dance keeps one anonymous-auth path and one token cache; see the note at the
-// top of shared/usage_metrics.js about the layering.
-export async function commitCreateWithServerTimestamp(collection, docId, fields, timestampField) {
-  const docName = `projects/${projectId}/databases/(default)/documents/${collection}/${docId}`;
+// Internal to this module. This was exported for a while so shared/ could
+// borrow it for the suite-wide `suite_*` collections — but this client is
+// pinned to the `aurorbuddy` project and those collections are governed by
+// rules deployed to `apaisuite`, so every borrowed write came back 403.
+// Suite-wide telemetry now has its own client at shared/suiteBackend.js.
+// Nothing outside modules/aurorbuddy/ should reach in here again.
+async function commitCreateWithServerTimestamp(collection, docId, fields, timestampField) {
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/${collection}/${docId}`;
   const writes = [{
     update: {
       name:   docName,
@@ -307,7 +309,7 @@ export async function commitCreateWithServerTimestamp(collection, docId, fields,
 async function patchDoc(collection, docId, fields, updateMaskFieldPaths, transforms = []) {
   // Update via :commit so we can attach transforms (e.g. updatedAt = REQUEST_TIME)
   // alongside the field updates, and gate updatedAt to server time.
-  const docName = `projects/${projectId}/databases/(default)/documents/${collection}/${docId}`;
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/${collection}/${docId}`;
   const writes = [{
     update: {
       name:   docName,
@@ -356,7 +358,7 @@ async function createWorkflowInternal(payload) {
     ...common,
   };
   // createdAt + updatedAt both gated to REQUEST_TIME via two transforms on commit.
-  const docName = `projects/${projectId}/databases/(default)/documents/tool_workflows/${workflowId}`;
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/tool_workflows/${workflowId}`;
   const writes = [{
     update: { name: docName, fields: toFirestoreFields(merged) },
     currentDocument: { exists: false },
@@ -408,7 +410,7 @@ async function writeEventInternal(payload) {
     ...common,
   };
   const docId = String(payload.aurorEventId);
-  const docName = `projects/${projectId}/databases/(default)/documents/tool_events/${docId}`;
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/tool_events/${docId}`;
   const writes = [{
     update: { name: docName, fields: toFirestoreFields(merged) },
     currentDocument: { exists: false },
@@ -471,7 +473,7 @@ async function bumpMetrics({
 } = {}) {
   const uid = await getUid();
   const identity = await getAurorIdentity();
-  const docName = `projects/${projectId}/databases/(default)/documents/tool_metrics/${uid}`;
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/tool_metrics/${uid}`;
 
   const transforms = [
     { fieldPath: "lastUsedAt", setToServerValue: "REQUEST_TIME" },

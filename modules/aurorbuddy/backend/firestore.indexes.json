@@ -1,0 +1,25 @@
+{
+  "indexes": [
+    {
+      "//": "Used by aurorbuddy suite's fetchAwaitingExpiredWorkflows() — composite filter on analystUid + status + range filter on updatedAt requires this index. See unified-extension-suite/modules/aurorbuddy/lib/firestore.js::fetchAwaitingExpiredWorkflows.",
+      "collectionGroup": "tool_workflows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "analystUid", "order": "ASCENDING" },
+        { "fieldPath": "status",     "order": "ASCENDING" },
+        { "fieldPath": "updatedAt",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Used by aurorbuddy suite's fetchAwaitingFinalValue() — composite filter on analystUid + finalEventValueConfidence with orderBy createdAt.",
+      "collectionGroup": "tool_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "analystUid",                "order": "ASCENDING" },
+        { "fieldPath": "finalEventValueConfidence", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",                 "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
