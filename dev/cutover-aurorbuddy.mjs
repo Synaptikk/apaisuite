@@ -48,16 +48,39 @@ function readConfig() {
   return fs.readFileSync(CONFIG_PATH, "utf8");
 }
 
-function assertNotAlreadyFlipped(src) {
-  const m = src.match(/projectId:\s*"([^"]+)"/);
-  if (!m) die("Could not find projectId in firestore_config.js — has the file changed shape?");
-  if (m[1] === DST.project) {
+// Everything below reads and writes the FIREBASE_CONFIG object literal ONLY.
+//
+// A whole-file regex is wrong here and quietly so: firestore_config.js carries
+// a comment block spelling out the post-cutover values verbatim
+// ("//   projectId: \"apaisuite\""), so a naive /projectId:\s*"([^"]+)"/ finds
+// the COMMENT first. Reading it that way reports the cutover as already done;
+// writing it that way edits the comment, leaves the real config untouched, and
+// still passes a "does the file contain this string" check — a flip that
+// announces success and changes nothing.
+const BLOCK_RE = /(export\s+const\s+FIREBASE_CONFIG\s*=\s*\{)([\s\S]*?)(\n\};)/;
+
+export function parseConfigBlock(src) {
+  const m = src.match(BLOCK_RE);
+  if (!m) die("Could not find the FIREBASE_CONFIG object in firestore_config.js — has the file changed shape?");
+  return { head: m[1], body: m[2], tail: m[3], start: m.index, whole: m[0] };
+}
+
+export function readValue(body, key) {
+  const m = body.match(new RegExp(`\\b${key}\\s*:\\s*"([^"]*)"`));
+  return m ? m[1] : null;
+}
+
+export function assertNotAlreadyFlipped(src) {
+  const { body } = parseConfigBlock(src);
+  const current  = readValue(body, "projectId");
+  if (!current) die("No projectId inside the FIREBASE_CONFIG object.");
+  if (current === DST.project) {
     die(`Already cut over (projectId is "${DST.project}").\n` +
         `  Re-copying now would REVERT live rows to their pre-cutover state.\n` +
         `  If you genuinely need to re-run the copy, revert the config first and know why.`);
   }
-  if (m[1] !== SRC.project) {
-    die(`Unexpected projectId "${m[1]}" — expected "${SRC.project}". Refusing to guess.`);
+  if (current !== SRC.project) {
+    die(`Unexpected projectId "${current}" — expected "${SRC.project}". Refusing to guess.`);
   }
 }
 
@@ -103,21 +126,34 @@ async function compare(tok) {
 
 // ─── The flip ─────────────────────────────────────────────────────────────
 
-function flipConfig() {
-  let src = readConfig();
-  const before = src;
+const TARGET = { projectId: DST.project, databaseId: DST.db, webApiKey: DST_WEB_API_KEY };
 
-  src = src.replace(/(projectId:\s*)"[^"]+"/,  `$1"${DST.project}"`);
-  src = src.replace(/(databaseId:\s*)"[^"]+"/, `$1"${DST.db}"`);
-  src = src.replace(/(webApiKey:\s*)"[^"]+"/,  `$1"${DST_WEB_API_KEY}"`);
+/** Pure: source text in, rewritten source text out. Exported so it is testable. */
+export function rewriteConfig(src) {
+  const { body, whole, head, tail } = parseConfigBlock(src);
 
-  if (src === before) die("Config rewrite produced no change — refusing to claim success.");
-  for (const [label, want] of [["projectId", DST.project], ["databaseId", DST.db], ["webApiKey", DST_WEB_API_KEY]]) {
-    if (!new RegExp(`${label}:\\s*"${want.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"`).test(src)) {
-      die(`Rewrite did not take for ${label}. File left untouched.`);
-    }
+  let nextBody = body;
+  for (const [key, want] of Object.entries(TARGET)) {
+    const re = new RegExp(`(\\b${key}\\s*:\\s*)"[^"]*"`);
+    if (!re.test(nextBody)) die(`No ${key} inside the FIREBASE_CONFIG object.`);
+    nextBody = nextBody.replace(re, `$1"${want}"`);
   }
-  fs.writeFileSync(CONFIG_PATH, src);
+
+  const next = src.replace(whole, `${head}${nextBody}${tail}`);
+
+  // Verify by RE-PARSING the block, not by searching the file. The values we
+  // just wrote also appear in the comment above, so a file-wide check would
+  // pass even if nothing in the object had changed.
+  const after = parseConfigBlock(next).body;
+  for (const [key, want] of Object.entries(TARGET)) {
+    const got = readValue(after, key);
+    if (got !== want) die(`Rewrite did not take for ${key} (found "${got}"). File left untouched.`);
+  }
+  return next;
+}
+
+function flipConfig() {
+  fs.writeFileSync(CONFIG_PATH, rewriteConfig(readConfig()));
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────
@@ -178,4 +214,9 @@ Done. Remaining steps are yours:
 `);
 }
 
-main().catch((e) => die(e?.message ?? String(e)));
+// Only run when invoked directly, so the pure text helpers above can be
+// imported by tests without the script trying to talk to Firestore.
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) main().catch((e) => die(e?.message ?? String(e)));
