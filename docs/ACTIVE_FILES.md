@@ -56,7 +56,7 @@ Every module folder has at minimum: `module.js`, `service.js`, `view.js`,
 | `aurorbuddy/` | `lib/` (auror, appriss, appriss_http, appriss_names, stores, auror_event, evidence_downloader, models, event_classifier, timings) |
 | `sparkfraud/` | `content/capture.js` (MAIN-world), `lib/`, `models/` (typed domain), `registries/` (6 JSON), `fixtures/`, `telemetry/events.js`, `journal.js` |
 | `claimsdisposition/` | `components/`, `data/`, `lib/` (incl. `db.js` IndexedDB layer, `userDirectory.js` cache), `vendor/pdfmake/` |
-| `digitallocks/` | `content/powerbi_driver.js` (planned for V1.5), `data/role_zone_rules.json` + `high_risk_keywords.json` + `risk_weights.json`, `lib/` (parseLockEvents, riskScoring, statusStore, xlsx, db) |
+| `digitallocks/` | `content/capture.js` (Power BI transport capture), `lib/powerBiQuery.js` (builds the DAX query), `data/role_zone_rules.json` + `high_risk_keywords.json` + `risk_weights.json`, `lib/` (parseLockEvents, riskScoring, statusStore, xlsx, db). **Dead:** `content/powerbi_driver.js` — the xlsx-export driver was never wired up, see `CURRENT_TASKS.md` §4 |
 | `workvivo/` | `lib/extract.js` (page-scope token extractor), `lib/qrcallbox.js` (server contract). Hourly alarm registered at top-level of `module.js`. |
 | `claimsbuddy/` | `content/clearsight_content.js`, `native_host/` (native messaging host install). **Disabled** in `_registry.js`. |
 

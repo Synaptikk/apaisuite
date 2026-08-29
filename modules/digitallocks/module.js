@@ -63,12 +63,16 @@ export default {
       handlers: serviceHandlers,
     },
 
-    // V1 UI runs locally; the SW handler `searchByStore` opens (or finds)
-    // a background tab on the Power BI report, then chrome.scripting injects
-    // content/powerbi_driver.js to drive the per-visual Export-to-Excel
-    // flow. chrome.downloads.onCreated captures the resulting .xlsx and
-    // hands the bytes back to the view's existing parser. Same pattern as
-    // claimsdisposition's tab-driven Looker pull.
+    // V1 UI runs locally; the SW handler `searchByStore` opens (or finds) a
+    // background tab on the Power BI report purely so content/capture.js can
+    // observe one of the report's own DAX requests. From it the SW takes the
+    // tenant url, the self-contained MWCToken and the modelId, then issues its
+    // OWN query for the requested store and decodes the result straight into
+    // the view's existing parser — no UI driving and no file download.
+    //
+    // The Export-to-Excel driver this comment used to describe
+    // (content/powerbi_driver.js, chrome.downloads.onCreated) was never wired
+    // up; the file is a leftover. See docs/CURRENT_TASKS.md §4.
     // wd504.myworkday.com is the tenure lookup (lookupAssociate): the SW
     // drives its OWN background Workday tab to a directory search and reads
     // "Length of Service" out of the rendered page. It is read-only — nothing

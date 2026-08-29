@@ -87,30 +87,75 @@ livedashboard uses 55/45. See `dev/HOOPS_PERSTORE_FINDINGS.md`.
 
 ---
 
-### 4. DigitalLocks V1.5 — Power BI automated ingest
+### 4. DigitalLocks V1.5 — Power BI ingest
 
-**Why:** V1 ships manual-import-only (drag-drop Power BI XLSX export). V1.5
-lets the reviewer type a store number and click Search; the SW drives the
-Power BI report directly.
+**Why:** V1 shipped manual-import-only (drag-drop Power BI XLSX export). V1.5
+lets the reviewer type a store number and click Search.
 
-**Where it stands:** spec written in
-[`DIGITAL_LOCKS_MODULE.md`](DIGITAL_LOCKS_MODULE.md) section "A. Automated".
-V1 manual-import pipeline is shipped — V1.5 just feeds bytes into the same
-parser/scorer/persistence path.
+**The DOM export driver this section used to specify was never built, and
+should not be.** The plan was: inject `content/powerbi_driver.js`, drive the
+store slicer, click through Export → Excel, catch the .xlsx with
+`chrome.downloads.onCreated`. What shipped instead queries Power BI's
+underlying DAX endpoint directly. A whole store is one sub-second HTTP call
+with no UI driving, no download, and nothing for Forcepoint DLP to quarantine.
+`content/powerbi_driver.js` exists on disk as a leftover of the abandoned
+approach and nothing imports it. `DIGITAL_LOCKS_MODULE.md` section "A.
+Automated" still describes the export flow and is stale for the same reason.
 
-**Open questions:** none blocking. Defaults are sane.
+**Where it stands (rewritten 2026-08-29):** the DAX path works and is now
+correct. It was not, for its whole life until this date — it was returning
+**191 of store 1458's 5,338 events**, and looking healthy while doing it.
+
+Two independent bugs, both fixed:
+
+1. **It replayed the report's own captured query**, patching only
+   `Where[0]` on the assumption that condition was the store. The report
+   persists per-user slicer state, so the captured `Where` also held
+   `Lock Name = 'G7-2'` and `Zone Name = '46-COSMETICS & SKINCARE-TIER 1'`.
+   Both were replayed verbatim on every pull for every store. Whatever the
+   analyst last clicked in Power BI silently became a filter on the review
+   data. The reported symptom was "the zone filter only shows Cosmetics" —
+   the dropdown was describing the dataset accurately.
+2. **`Binding…Window.Count` was 500**, the grid visual's own paging window,
+   replayed along with everything else. Even with slicers cleared, any store
+   busier than 500 events was cut off. Power BI signals this in `DS[0].IC`
+   (IsComplete) and nothing read it.
+
+The query is now **built, not replayed** (`lib/powerBiQuery.js`): store filter
+only, max row window, `IC` checked on every response, and a store that
+genuinely exceeds the 30,000-row server ceiling is re-pulled in date windows —
+or refused outright rather than returned partial. The capture is still needed
+but only for transport (url, MWCToken, modelId), so any QES request will do
+and `waitForTransport` no longer waits for the grid specifically.
+
+Evidence, measurements and the implementation notes that are easy to get
+wrong — `datetime_local` is TEXT so date filters are string comparisons; the
+nine-column Select is load-bearing for row COUNT because DSR groups by the
+projection tuple — are in
+[`../dev/DIGITALLOCKS_PULL_FINDINGS.md`](../dev/DIGITALLOCKS_PULL_FINDINGS.md).
+
+**Next concrete steps:**
+
+1. **Verify the SW→content-script handoff in a loaded extension.** The query
+   layer was verified against live Power BI, but `waitForTransport` reading a
+   real `__APAISUITE_DIGITALLOCKS_CAP` has not been exercised end to end (the
+   probe ran in the debug Edge profile, which has no extension loaded). Load
+   the suite from a **different path** to do it — same path means same
+   extension id and a cached module graph, so the worker keeps running the old
+   pipeline. See `MEMORY.md::--load-extension does not recompile`.
+2. **Re-check the risk calibration against a real multi-zone pull.** It was
+   tuned on the 191–500 row single-zone slice the broken pull produced;
+   `HIGH_RISK_ZONE` firing on 100% of rows was the motivating example and is
+   simply a different number across 11 zones. The calibration self-tunes per
+   import so it should adapt, but that has not been observed. Correction note
+   is in `DIGITAL_LOCKS_MODULE.md::Calibration`.
+3. **Delete `content/powerbi_driver.js`** once (1) is confirmed — it is dead
+   code for an approach that was not taken, and leaving it invites someone to
+   wire it back up.
+
+**Open questions:** none blocking.
 See [`DIGITAL_LOCKS_QUESTIONS.md`](DIGITAL_LOCKS_QUESTIONS.md) for the full
 non-blocker list.
-
-**Next concrete step:** create `modules/digitallocks/content/powerbi_driver.js`,
-declare it in top-level `manifest.json`, add `app.powerbi.com/*` host
-permission, add `digitallocks.pullPowerBiExport` SW handler that:
-1. opens/finds a background `app.powerbi.com` tab on the report,
-2. injects the driver,
-3. drives the slicer to the requested store,
-4. triggers Export → Excel,
-5. captures the .xlsx via `chrome.downloads.onCreated`,
-6. returns bytes base64.
 
 ---
 

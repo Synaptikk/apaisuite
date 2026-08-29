@@ -90,6 +90,19 @@ Those weights are the *starting* values. Applying them literally produced a
 review queue containing every event in the import, for a reason worth stating
 plainly: **a reason that describes every event describes none of them.**
 
+> **Correction, 2026-08-29 — the single-zone import was an artefact, and this
+> calibration has never been checked against a real one.** "Store 1458's 500-row
+> export is entirely one zone" was not a property of the store. It was two bugs
+> in the pull: the query inherited the analyst's live Power BI slicers (a zone
+> and a lock), and the row window was the grid visual's 500. The store actually
+> has **5,338 events across 11 zones and 98 locks**. Both are fixed (see
+> `lib/powerBiQuery.js` and `dev/DIGITALLOCKS_PULL_FINDINGS.md`), so the premise
+> below — `HIGH_RISK_ZONE` firing on 100% of rows — is exactly the thing that
+> changes on a real pull. The calibration machinery is self-tuning per import
+> and so should adapt, but its firing rates have not been observed on
+> multi-zone data. **Re-check it before trusting a queue built from a fixed
+> pull.**
+
 Store 1458's 500-row export is entirely one zone (`72-ELECTRONICS DESK-TIER 2`),
 worked by the Entertainment associates whose job that case is. `HIGH_RISK_ZONE`
 fired on 100% of rows, adding a flat +20 to everything; one more +10 rule tipped

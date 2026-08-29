@@ -3,9 +3,16 @@
 // MAIN-world content script for app.powerbi.com. Monkey-patches fetch +
 // XMLHttpRequest to record the Power BI dataset queries the report fires.
 //
-// We don't drive the UI to filter — we capture the DAX query the visual
-// already issues on its own (when the report renders or the user changes
-// the slicer), then replay it from the SW with a modified store filter.
+// We don't drive the UI to filter, and we no longer replay the report's own
+// query either — that inherited whatever slicers the analyst had left set.
+// What the SW actually needs from here is TRANSPORT: the tenant-specific QES
+// url, the self-contained MWCToken, and the modelId. It builds its own query
+// around them (see ../lib/powerBiQuery.js).
+//
+// So ANY captured QES request is useful, not just the data grid's. The ring is
+// exposed wholesale via all(); the SW picks from it inside its injected
+// function (service.js::waitForTransport) rather than serialising captured
+// response bodies back across the executeScript boundary.
 //
 // Capture is stored on window.__APAISUITE_DIGITALLOCKS_CAP and read by the
 // SW via chrome.scripting.executeScript({ world: "MAIN" }).
@@ -108,16 +115,6 @@
   window[KEY] = {
     installedAt: Date.now(),
     all: () => ring.slice(),
-    findDataGridQuery: () => {
-      // Pick the most recent capture whose request body selects the data
-      // grid's distinctive columns (Lock Name + store).
-      for (let i = ring.length - 1; i >= 0; i--) {
-        const r = ring[i];
-        const b = r.reqBody || "";
-        if (b.includes('"Property":"Lock Name"') && b.includes('"Property":"store"')) return r;
-      }
-      return null;
-    },
     clear: () => { ring.length = 0; },
   };
 

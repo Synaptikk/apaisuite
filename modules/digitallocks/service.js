@@ -1,8 +1,7 @@
 // modules/digitallocks/service.js
 //
-// Service-worker handlers for digitallocks. V1.5 uses a capture-and-replay
-// strategy against Power BI's underlying DAX query endpoint, bypassing the
-// fragile UI export flow entirely.
+// Service-worker handlers for digitallocks. V1.5 queries Power BI's underlying
+// DAX endpoint directly, bypassing the fragile UI export flow entirely.
 //
 // V2 adds:
 //   lookupUpcOrders  — replays GScope OMS orders endpoint for UPC cross-check.
@@ -11,27 +10,36 @@
 //
 // Flow (Power BI):
 //   1. ensurePowerBiTab           find or create a background app.powerbi.com tab
-//   2. waitForCapture             poll until the MAIN-world capture
-//                                 (content/capture.js) has recorded a
-//                                 data-grid DAX request. The user must let
-//                                 the report load once so the visual fires
-//                                 its initial query.
-//   3. mutate body                substitute the desired store into the
-//                                 captured query's Where clause
-//   4. POST from SW               (no cookies needed; MWCToken in
-//                                 captured Authorization header is self-
-//                                 contained auth)
-//   5. decodeDsr(response)        Power BI's compressed Data Shape Result
-//                                 → flat row objects keyed by column name
+//   2. waitForTransport           poll until the MAIN-world capture
+//                                 (content/capture.js) has recorded ANY QES
+//                                 request, and take three facts from it: the
+//                                 tenant's url, the MWCToken, the modelId
+//   3. buildStoreQuery            construct our own query — store filter only,
+//                                 max row window (lib/powerBiQuery.js)
+//   4. POST from SW               (no cookies needed; the MWCToken is
+//                                 self-contained auth)
+//   5. readQueryResult + decodeDsr  check IsComplete, then decode Power BI's
+//                                 compressed Data Shape Result into flat row
+//                                 objects keyed by column name
 //   6. return rows                view feeds them into the same scoring /
 //                                 persistence pipeline as the manual XLSX
 //                                 import.
+//
+// Step 3 used to REPLAY the report's own captured query with the store literal
+// patched in. That inherited the analyst's live slicer state — one measured
+// pull returned 191 of a store's 5,338 events, all from the single zone the
+// report happened to be filtered to. See lib/powerBiQuery.js for the full
+// reasoning and dev/DIGITALLOCKS_PULL_FINDINGS.md for the measurements.
 
 import { ensureAlarm } from "../../shared/alarms.js";
 import { findOrOpenTracked, closeIfOpened } from "../../shared/tabs.js";
 import * as Directory from "../../shared/associateDirectory.js";
 import { lookupTitle } from "../../shared/associateLookup.js";
 import { decodeDsr } from "./lib/dsrDecode.js";
+import {
+  buildStoreQuery, readQueryResult, pickTransport, dateWindows,
+  SELECT_COLUMNS, MAX_WINDOW, PAGE_DAYS,
+} from "./lib/powerBiQuery.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
 import { fetchAllLocksFromPage } from "./lib/buildCaseMap.js";
 import { fetchAllUsersFromPage, deleteUserFromPage } from "./lib/fetchAllUsersFromPage.js";
@@ -469,55 +477,122 @@ export const handlers = {
 // ── Power BI internals ────────────────────────────────────────────────────────
 
 async function runSearchPipeline(tabId, storeNumber, waitMs) {
-  const cap = await waitForCapture(tabId, waitMs);
-  if (!cap) {
+  const transport = await waitForTransport(tabId, waitMs);
+  if (!transport) {
     return {
       ok: false, errorClass: "NO_CAPTURE",
-      error: "No Power BI data-grid query captured. Open the report in Power BI and let the data grid render once, then retry.",
+      error: "No Power BI query captured. Open the report in Power BI and let it render once, then retry.",
     };
   }
 
-  const body = JSON.parse(cap.reqBody);
-  const where = body?.queries?.[0]?.Query?.Commands?.[0]?.SemanticQueryDataShapeCommand?.Query?.Where;
-  if (!Array.isArray(where) || !where.length) {
-    return { ok: false, errorClass: "SHAPE", error: "Captured query has no Where clause — cannot apply store filter" };
-  }
-  const cond = where[0]?.Condition?.In;
-  if (!cond?.Values?.[0]?.[0]?.Literal) {
-    return { ok: false, errorClass: "SHAPE", error: "Captured query Where clause shape is unexpected — cannot patch store filter" };
-  }
-  cond.Values[0][0].Literal.Value = `'${storeNumber}'`;
+  // One unbounded query first. A whole store is a single sub-second call at
+  // observed volumes (5,338 rows in ~690 ms), so paging is the exception.
+  const first = await postQuery(transport, buildStoreQuery({ store: storeNumber, modelId: transport.modelId }));
+  if (!first.ok) return first;
 
-  const headers = {
-    "Authorization": cap.reqHeaders?.["Authorization"],
-    "Content-Type": "application/json;charset=UTF-8",
-    "X-PowerBI-HostEnv": cap.reqHeaders?.["X-PowerBI-HostEnv"] || "Power BI Web App",
-    "Accept": "application/json, text/plain, */*",
+  if (first.complete) {
+    return {
+      ok: true,
+      rows: first.rows, count: first.rows.length,
+      storeNumber, capturedAt: transport.capturedAt,
+      paged: false, complete: true,
+    };
+  }
+
+  // Incomplete means the store outgrew the 30,000-row ceiling. Re-pull it in
+  // date windows and merge. This has not been observed in the wild — the two
+  // stores measured came back at ~5k — but the alternative is silently
+  // returning a truncated store, which is the failure this whole rewrite
+  // exists to remove.
+  console.warn(`[digitallocks] store ${storeNumber} exceeded one query's row ceiling — paging by date`);
+  const windows = dateWindows(new Date());
+  const merged = new Map();
+  const incompletePages = [];
+
+  for (const win of windows) {
+    const page = await postQuery(
+      transport,
+      buildStoreQuery({ store: storeNumber, modelId: transport.modelId, from: win.from, to: win.to }),
+    );
+    // An auth failure mid-page is worth surfacing: the caller's reauth loop
+    // can retry the whole pull, and a partial merge must not be mistaken for
+    // a complete one.
+    if (!page.ok) return page;
+    if (!page.complete) incompletePages.push(`${win.from}..${win.to}`);
+    // Windows are disjoint by construction, so this is belt-and-braces against
+    // an overlap. The key is the FULL column tuple, matching the grouping the
+    // server itself applies — a narrower key would collapse two real events
+    // that differed only in a column it left out.
+    for (const row of page.rows) {
+      merged.set(SELECT_COLUMNS.map(([property]) => row[property]).join(" "), row);
+    }
+  }
+
+  const rows = [...merged.values()];
+  if (incompletePages.length) {
+    return {
+      ok: false, errorClass: "TRUNCATED",
+      error: `Store ${storeNumber} returned more than ${MAX_WINDOW} events even within a ` +
+             `${PAGE_DAYS}-day window (${incompletePages.join(", ")}). The pull would be ` +
+             `incomplete, so it has been refused rather than returned partially.`,
+      count: rows.length, storeNumber,
+    };
+  }
+  return {
+    ok: true,
+    rows, count: rows.length,
+    storeNumber, capturedAt: transport.capturedAt,
+    paged: true, pageCount: windows.length, complete: true,
   };
+}
+
+// POST one built query and decode it. Returns the same {ok:false, errorClass}
+// shape as runSearchPipeline so a failure inside a page propagates unchanged —
+// in particular AUTH, which the caller's reauth loop keys on.
+async function postQuery(transport, body) {
   let resp;
   try {
-    resp = await fetch(cap.url, { method: "POST", headers, body: JSON.stringify(body) });
+    resp = await fetch(transport.url, {
+      method: "POST",
+      headers: {
+        "Authorization": transport.auth,
+        "Content-Type": "application/json;charset=UTF-8",
+        "X-PowerBI-HostEnv": "Power BI Web App",
+        "Accept": "application/json, text/plain, */*",
+      },
+      body: JSON.stringify(body),
+    });
   } catch (e) {
-    return { ok: false, errorClass: "NETWORK", error: `Replay fetch failed: ${e?.message || e}.` };
+    return { ok: false, errorClass: "NETWORK", error: `Power BI query failed: ${e?.message || e}.` };
   }
-  const respContentType = resp.headers.get("content-type") || "";
+
   const respText = await resp.text();
-  const authStatus = classifyAuthResponse({ status: resp.status, contentType: respContentType, body: respText });
+  const authStatus = classifyAuthResponse({
+    status: resp.status, contentType: resp.headers.get("content-type") || "", body: respText,
+  });
   if (isAuthFailureStatus(authStatus)) {
-    return { ok: false, errorClass: "AUTH", authStatus, error: `Power BI replay returned ${authStatus} — autonomous reauth will retry.` };
+    return { ok: false, errorClass: "AUTH", authStatus, error: `Power BI returned ${authStatus} — autonomous reauth will retry.` };
   }
   if (!resp.ok) {
-    return { ok: false, errorClass: "HTTP", error: `Replay HTTP ${resp.status}: ${respText.slice(0, 300)}` };
+    return { ok: false, errorClass: "HTTP", error: `Power BI HTTP ${resp.status}: ${respText.slice(0, 300)}` };
   }
+
   let parsed;
   try { parsed = JSON.parse(respText); }
-  catch { return { ok: false, errorClass: "PARSE", error: "Replay response was not JSON." }; }
-  const data = parsed?.results?.[0]?.result?.data;
+  catch { return { ok: false, errorClass: "PARSE", error: "Power BI response was not JSON." }; }
+
+  const { data, complete, warnings } = readQueryResult(parsed);
   if (!data) {
-    return { ok: false, errorClass: "SHAPE", error: "Replay response missing results[0].result.data" };
+    return { ok: false, errorClass: "SHAPE", error: "Power BI response missing results[0].result.data" };
   }
-  const rows = decodeDsr(data);
-  return { ok: true, rows, count: rows.length, storeNumber, capturedAt: cap.capturedAt };
+  // The clamp warning is expected on every call — we deliberately ask for more
+  // than the server allows so it gives us its maximum rather than our guess.
+  for (const w of warnings) {
+    if (w?.Code !== "SpecifiedLimitExceedsMaxIntersections") {
+      console.warn(`[digitallocks] Power BI warning ${w?.Code}: ${w?.Message}`);
+    }
+  }
+  return { ok: true, rows: decodeDsr(data), complete };
 }
 
 // Returns { tab, opened } — or null when nothing is open and we were told not
@@ -532,7 +607,22 @@ async function ensurePowerBiTab({ openIfMissing }) {
   return { tab: await chrome.tabs.create({ url: POWER_BI_URL, active: false }), opened: true };
 }
 
-async function waitForCapture(tabId, timeoutMs) {
+// Wait until content/capture.js has seen ANY QES request, and pull the three
+// transport facts out of it: the tenant-specific url, the self-contained
+// MWCToken, and the modelId.
+//
+// The old version waited for the DATA GRID's query specifically, because it
+// was going to replay that query's body. We build our own body now, so any
+// request the report fires will do — including the small slicer queries that
+// land well before the grid finishes rendering. That makes the wait both
+// shorter and far more likely to succeed on a partly-rendered report.
+//
+// The injected half does only mechanical work — drop entries missing an auth
+// header or a request body, drop the captured RESPONSE bodies entirely (a
+// 5,000-row payload must not be serialised back across the executeScript
+// boundary just so we can read a url), and hand back the last few descriptors.
+// The actual choice lives in the pure, tested pickTransport().
+async function waitForTransport(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -542,12 +632,20 @@ async function waitForCapture(tabId, timeoutMs) {
         func: () => {
           const cap = window.__APAISUITE_DIGITALLOCKS_CAP;
           if (!cap) return { installed: false };
-          const q = cap.findDataGridQuery();
-          return { installed: true, capture: q };
+          const entries = cap.all()
+            .filter((r) => r.url && r.reqBody && (r.reqHeaders?.Authorization || r.reqHeaders?.authorization))
+            .slice(-3)
+            .map((r) => ({
+              url: r.url,
+              auth: r.reqHeaders.Authorization || r.reqHeaders.authorization,
+              body: r.reqBody,
+              capturedAt: r.capturedAt,
+            }));
+          return { installed: true, entries };
         },
       });
-      const got = result?.[0]?.result;
-      if (got?.capture) return got.capture;
+      const transport = pickTransport(result?.[0]?.result?.entries);
+      if (transport) return transport;
     } catch {}
     await sleep(800);
   }

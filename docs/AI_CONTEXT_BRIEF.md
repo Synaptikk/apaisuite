@@ -32,7 +32,7 @@ through `qrcallbox.com` (Chrome Web Store path is deferred — see
 | LicenseIntake | `licenseintake` | live | Scanner-driven DL capture (DS9808 / PDF417) + Auror person-draft + APPRISS card cross-reference. Native messaging bridge for scanner input. |
 | SparkFraud | `sparkfraud` | live | Register-event → Spark/Express/GMD delivery-driver trip correlation; OMS order/item drill-down. Canonical enums registry added. |
 | ClaimsDisposition | `claimsdisposition` | live | 30-day Looker Studio pull (`apscpi.wal-mart.com`), per-store/per-user outlier analysis. Uses BigQuery via Cloud Functions for historical roll-ups. |
-| DigitalLocks | `digitallocks` | live (V1) | Daily AP review of digital-lock unlock events; risk-scored, in-browser IndexedDB only, no network. Power BI driver content script on disk (V1.5). |
+| DigitalLocks | `digitallocks` | live | Daily AP review of digital-lock unlock events; risk-scored, stored in-browser (IndexedDB). Pulls a store by querying Power BI's DAX endpoint directly — the query is **built**, not replayed from the report, because replaying inherited the analyst's live slicers and returned 3.6% of one store's events (`CURRENT_TASKS.md` §4). Manual XLSX import shares the same parser/scorer path. |
 | Workvivo | `workvivo` | live | QRCallBox ↔ Workvivo token-heartbeat: reads `window.v2.chatConfig.access_token` hourly and POSTs it to QRCallBox. |
 | ClosingList | `closinglist` | live | Closing-shift email draft from CaseVisibility + IVR call-offs |
 | StockingPlan | `stockingplan` | live | Overnight stocking plan: freight from CaseVisibility → labour hours → associate assignments. |
@@ -158,10 +158,15 @@ the page navigates.
    step: cross-origin cookie check from extension SW → `api.hoops.wal-mart.com`,
    then add a `claimsdisposition.pullCvpPerformance` SW handler + a
    `Sell Through` column in the Store Comparison table.
-3. **DigitalLocks V1.5 — automated Power BI ingest.** Spec lives in
-   [`DIGITAL_LOCKS_MODULE.md`](DIGITAL_LOCKS_MODULE.md) (path A "Automated"
-   section). Power BI driver content script + xlsx download capture. V1
-   manual-import is shipped.
+3. **DigitalLocks — verify the fixed Power BI pull, then re-check calibration.**
+   The pull was silently returning 191 of a store's 5,338 events (inherited
+   report slicers + a replayed 500-row window); rewritten 2026-08-29 to build
+   its own query. Remaining: exercise the SW→content-script handoff in a
+   loaded extension, and re-check the risk calibration, which was tuned on the
+   broken pull's single-zone slice. `CURRENT_TASKS.md` §4 +
+   [`../dev/DIGITALLOCKS_PULL_FINDINGS.md`](../dev/DIGITALLOCKS_PULL_FINDINGS.md).
+   Note that `DIGITAL_LOCKS_MODULE.md`'s "A. Automated" section describes an
+   xlsx-export driver that was never built.
 4. **ClaimsBuddy** — Clearsight claims helper. Sitting in `modules/claimsbuddy/`
    with content script + native messaging host, but disabled in
    `_registry.js`. Re-enable when ready to QA.

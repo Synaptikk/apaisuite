@@ -327,9 +327,13 @@ export async function mount(host, container) {
     host.usage.record("search_store");
     showImportProgress(`Querying Power BI for store ${storeNumber}…`);
     try {
-      // V1.5: SW captures the Power BI data-grid DAX query (via MAIN-world
-      // content script) and replays it with our store filter. No UI driving,
-      // no .xlsx download. Returns rows already keyed by Power BI column names.
+      // V1.5: the SW takes auth + modelId from a captured Power BI request
+      // (MAIN-world content script) and issues its OWN query, filtered to this
+      // store and nothing else. No UI driving, no .xlsx download. Returns rows
+      // already keyed by Power BI column names.
+      //
+      // The SW refuses rather than returns a truncated store, so a resp.ok
+      // here means every event for the store is present.
       const resp = await host.messaging.sendRaw("searchByStore", { storeNumber }, { timeoutMs: 180_000 });
       if (!resp?.ok) throw new Error(resp?.error || "Search failed");
       const daxRows = resp.rows || [];
