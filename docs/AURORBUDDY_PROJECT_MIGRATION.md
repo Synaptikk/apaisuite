@@ -4,7 +4,18 @@ Moving AurorBuddy's data out of its standalone `aurorbuddy` Firebase project and
 into a named `aurorbuddy` database inside `apaisuite`, so the suite has one
 backend instead of two.
 
-**Status:** prep committed, nothing cut over. No production data has moved.
+**Status (2026-08-27):** steps 1 and 5 done, nothing cut over. No production
+data has moved and the extension still writes to the old project.
+
+| Step | State |
+|---|---|
+| 1. Create the database | **DONE** — `projects/apaisuite/databases/aurorbuddy`, nam5, matching `digitalmetrics`. Created with Firebase's default CLOSED rules, so nothing is exposed. |
+| 2. Deploy rules | **Needs you** — `firebase deploy` is denied to the agent by your own settings. |
+| 3. Copy the data | **Needs you** — gcloud is signed in as the wrong account (see below). |
+| 4. Copy the auth accounts | **Needs you** — the password hash parameters are only in the console. |
+| 5. Dashboard reads both | **DONE** — two Firebase apps, dual sign-in, merged and de-duplicated, with a source badge. Uncommitted in `~/shanesmith`. |
+| 6. Flip the extension | Blocked on 2-4. One line in `firestore_config.js`. |
+| 7. Retire | Later. |
 
 ---
 
