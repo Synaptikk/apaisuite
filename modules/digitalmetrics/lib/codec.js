@@ -35,7 +35,12 @@ const METRIC_COLUMNS = [
 // be derived automatically instead of ticked by hand (data/job_classify.js).
 // Storing it beside the token leaks nothing the token did not already imply.
 const SCHEDULE_FIELDS   = ["shiftStart", "shiftEnd", "startSlot", "endSlot", "jobName"];
-const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd"];
+// shiftLabel carries the REAL clock times ("5:40am-1:00pm"); shiftStart/End
+// on this shape are slot indices, which toSlot() has already floored to the
+// hour. Without it a saved day cannot say how much of its first and last
+// hour was actually worked, and adherence silently bills whole hours for
+// part-hours. It is a time range, not an identifier.
+const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd", "shiftLabel", "role"];
 
 function pick(src, fields) {
   const out = {};

@@ -779,3 +779,37 @@
   white-space: nowrap;
 }
 .vizpick-assoc-bin-left { color: var(--apai-ink); font-variant-numeric: tabular-nums; }
+
+/* ── Preview layout ─────────────────────────────────────────────
+   Additive only — every rule here is scoped under [data-layout="preview"],
+   so all .vizpick-* rules above are byte-for-byte unchanged under Current.
+   Same recipe as modules/digitalrollup/styles.css's Preview block (that
+   module's layout is deliberately cloned from this one — see its own file
+   header — so the two should keep matching geometry deltas too). No new
+   colors, no DOM/structural changes, no changed capture/sort/drag
+   behaviour — border-radius/shadow/hover only. */
+[data-layout="preview"] .module-vizpick .vizpick-panel,
+[data-layout="preview"] .module-vizpick .vizpick-stores,
+[data-layout="preview"] .module-vizpick .vizpick-picker {
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-1);
+}
+[data-layout="preview"] .module-vizpick .vizpick-store-card {
+  border-radius: var(--rad-lg);
+  transition: box-shadow var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+[data-layout="preview"] .module-vizpick .vizpick-store-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+[data-layout="preview"] .module-vizpick .vizpick-store-card.is-home:hover,
+[data-layout="preview"] .module-vizpick .vizpick-store-card.is-dragging:hover,
+[data-layout="preview"] .module-vizpick .vizpick-store-card.is-drop-target:hover {
+  transform: none; /* don't let the lift fight the accent spine / drag affordances */
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-layout="preview"] .module-vizpick .vizpick-store-card { transition: none; }
+  [data-layout="preview"] .module-vizpick .vizpick-store-card:hover { transform: none; }
+}

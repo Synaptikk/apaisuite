@@ -54,6 +54,27 @@ test("daily breakdown covers only the named associate, newest first", () => {
   assert.deepEqual(daily.map((d) => d.date), ["12/03/25", "12/01/25"]);
 });
 
+test("daily pick rate is a whole number, not Tableau's float", () => {
+  // Reported from a live report: the column showed 92.421 and 77.529 next to
+  // Hours and FTPR, which were already rounded.
+  const daily = dailyBreakdown([row({ "Pick Rate": 92.421 })], "JOHN SMITH");
+  assert.equal(daily[0].pickRate, 92);
+  assert.equal(String(daily[0].pickRate).includes("."), false, "no decimal point reaches the cell");
+});
+
+test("a missing pick rate is 0, not NaN", () => {
+  const daily = dailyBreakdown([row({ "Pick Rate": undefined })], "JOHN SMITH");
+  assert.equal(daily[0].pickRate, 0);
+});
+
+test("rounding the display value leaves the scoring input untouched", () => {
+  // metrics.js averages Tableau's raw column; only the per-day display row is
+  // rounded here. Guards against someone "tidying" this by rounding upstream.
+  const raw = row({ "Pick Rate": 92.421 });
+  dailyBreakdown([raw], "JOHN SMITH");
+  assert.equal(raw["Pick Rate"], 92.421, "the source row must not be mutated");
+});
+
 test("daily rows fold exception work into the rates", () => {
   const [d] = dailyBreakdown([row({
     "FTP Expected": 100, "FTP Actual": 80,

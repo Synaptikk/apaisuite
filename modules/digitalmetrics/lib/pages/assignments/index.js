@@ -3,27 +3,43 @@
 // The Assignments tab: toolbar, grid, keyboard entry, mobile task panel,
 // suggestions, finalise, autosave and print.
 //
-// Uses the store selected on the Dashboard — there is deliberately no second
-// store selector, because two selectors that can disagree is a bug generator.
+// PINNED to the signed-in user's home store, not the Dashboard picker. A daily
+// plan is written per store and shared with whoever else opens that store, so
+// browsing another store's metrics must not put you in a position to overwrite
+// its roster. There is still no second store selector here — the store is not
+// selectable at all now.
+//
+// Falls back to the selected store when the home store cannot be derived; see
+// view.js::assignmentStore().
 
 import { esc, empty } from "../_shared.js";
 import * as grid from "./grid.js";
 import {
-  TIME_SLOTS, resolveShortcut, dayName, emptyAssociate,
+  TIME_SLOTS, TASK_SHORTCUTS, TASK_LABELS, resolveShortcut, dayName, emptyAssociate,
 } from "../../data/grid.js";
 import { parsePastedTasks, applyPaste, tasksToClipboard, cellsInRange } from "../../data/paste.js";
 import { lunchSummary, isWithinShift } from "../../data/lunch.js";
 
 const AUTOSAVE_DELAY_MS = 3000;
 
+// Derived from TASK_SHORTCUTS so the buttons, the legend and the keyboard can
+// never disagree about what exists or which key produces it. Adding a task is
+// now one line in data/grid.js rather than four edits across two files.
+//
+// Order follows TASK_SHORTCUTS; the clear action is appended because it is not
+// a task.
 const TASK_BUTTONS = [
-  ["PICK", "Pick"], ["DISP", "Disp"], ["STAGE", "Stage"], ["PREP", "Prep"],
-  ["GMD", "GMD"], ["IP", "IP"], ["EXC", "Exc"], ["L", "Lunch"], ["B", "Break"],
-  ["", "Clear"],
+  ...Object.entries(TASK_SHORTCUTS)
+    .filter(([key, task]) => task && key.length === 1)
+    .map(([key, task]) => [task, TASK_LABELS[task] || task, key.toUpperCase()]),
+  ["", "Clear", "X"],
 ];
 
 function toolbar(ctx) {
-  const { date, store, locked, saveStatus = "", suggestionCount = 0 } = ctx;
+  const { date, locked, saveStatus = "", saveError = null, suggestionCount = 0,
+          homeStore = null, store: selectedStore = null } = ctx;
+  // Pinned to the signed-in user, not the dashboard picker.
+  const store = homeStore || selectedStore;
 
   return `
     <div class="dm-controls">
@@ -32,10 +48,17 @@ function toolbar(ctx) {
         <input class="dm-input" id="dm-asg-date" type="date" value="${esc(date || "")}">
       </label>
       <span class="pill">${esc(dayName(date))}</span>
-      <span class="dm-stat-note">Store ${esc(store || "—")}</span>
+      <span class="dm-stat-note" ${homeStore
+        ? 'title="Assignments are pinned to your home store."'
+        : 'title="Home store could not be determined, so the selected store is used."'
+      }>Store ${esc(store || "—")}${homeStore ? " 🔒" : ""}</span>
+      ${homeStore && selectedStore && homeStore !== selectedStore
+        ? `<span class="status-strip status-strip-info dm-save-reason">Showing your home
+           store ${esc(homeStore)}. The dashboard is on ${esc(selectedStore)} — a daily
+           plan is shared, so it is only ever edited by its own store.</span>`
+        : ""}
 
       <button class="btn" id="dm-asg-add" ${locked ? "disabled" : ""}>Add associate</button>
-      <button class="btn" id="dm-asg-import">Import schedule</button>
       <button class="btn" id="dm-asg-print">Print</button>
 
       ${suggestionCount ? `
@@ -44,7 +67,10 @@ function toolbar(ctx) {
         <button class="btn" id="dm-asg-dismiss-all">Dismiss</button>` : ""}
 
       <button class="btn" id="dm-asg-finalize">${locked ? "Unfinalize" : "Finalize"}</button>
-      <span class="pill" id="dm-asg-save">${esc(saveStatus)}</span>
+      <span class="pill ${saveError ? "pill-fail" : ""}" id="dm-asg-save"
+              ${saveError ? `title="${esc(saveError)}"` : ""}>${esc(saveStatus)}</span>
+        ${saveError ? `<span class="status-strip status-strip-error dm-save-reason">${
+          esc(saveError)}</span>` : ""}
     </div>`;
 }
 
@@ -57,10 +83,13 @@ function toolbar(ctx) {
  */
 function legend() {
   return `<div class="dm-legend dm-stat-note">
-    Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label]) =>
+    Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label, key]) =>
       `<span class="dm-legend-item">` +
         `<span class="dm-legend-swatch task-${esc(task.toLowerCase())}"></span>` +
-        `<kbd>${esc(label[0].toUpperCase())}</kbd> ${esc(label)}` +
+        // The REAL shortcut, not the label's first letter. That guess printed
+        // P for Prep (the key is R) and P again for Pick, so the legend told
+        // you to press a key that did something else.
+        `<kbd>${esc(key)}</kbd> ${esc(label)}` +
       `</span>`).join("")}
     <span class="dm-legend-item"><kbd>X</kbd> Clear</span>
   </div>`;
@@ -101,16 +130,33 @@ function lunchBanner(ctx) {
   </div>`;
 }
 
-export function render(ctx) {
-  if (!ctx.store) return empty("Select a store on the Dashboard first.");
+/**
+ * Store / date caption, shown ONLY on paper.
+ *
+ * On screen the toolbar says which store and day you are looking at, but print
+ * hides the toolbar — and a grid of 65 names with no date on it is useless the
+ * moment it leaves the printer.
+ */
+function printTitle(ctx) {
+  return `<div class="dm-print-title" hidden>` +
+    `Store ${esc(pageStore(ctx) || "—")} · ${esc(dayName(ctx.date))} ${esc(ctx.date || "")}` +
+  `</div>`;
+}
 
-  return toolbar(ctx) + legend() + lunchBanner(ctx) + grid.render(ctx) + mobilePanel(ctx);
+/** The store this page works on. Home store wins; picker is the fallback. */
+const pageStore = (ctx) => ctx.homeStore || ctx.store;
+
+export function render(ctx) {
+  if (!pageStore(ctx)) return empty("Select a store on the Dashboard first.");
+
+  return toolbar(ctx) + printTitle(ctx) + legend() + lunchBanner(ctx) +
+         grid.render(ctx) + mobilePanel(ctx);
 }
 
 export function wire(ctx, root) {
   const {
     host, onUiChange, onSetTask, onSetTasks, onSetStatus, onDateChange,
-    onAddAssociate, onFinalize, onImport, onAcceptAll, onDismissAll, onPrint,
+    onAddAssociate, onFinalize, onAcceptAll, onDismissAll, onPrint,
     locked, assignments = [], ui = {},
   } = ctx;
 
@@ -121,13 +167,31 @@ export function wire(ctx, root) {
     offs.push(() => el?.removeEventListener(ev, fn));
   };
 
+  // ── Condense the totals once the grid is scrolled ────────────────────────
+  //
+  // The summary is a reference while you are down among the roster rows, not
+  // something being read closely, so it gives its height back: ten pinned rows
+  // at 24px hold 268px of the viewport, at 17px they hold 198px.
+  //
+  // A class on the table, not inline styles, so the sticky offsets follow from
+  // the same --dm-summary-h the padding uses. Toggled straight on the DOM
+  // rather than through state: this fires on every scroll frame, and a
+  // re-render per frame would fight the focus and scroll restoration.
+  const scroller = root.querySelector("[data-dm-scroll='grid']");
+  const table = root.querySelector(".dm-grid");
+  if (scroller && table) {
+    const sync = () => table.classList.toggle("is-condensed", scroller.scrollTop > 4);
+    scroller.addEventListener("scroll", sync, { passive: true });
+    offs.push(() => scroller.removeEventListener("scroll", sync));
+    sync();   // a re-render mid-scroll must not come back expanded
+  }
+
   // ── Toolbar ──────────────────────────────────────────────────────────────
   on("#dm-asg-date", "change", (e) => onDateChange?.(e.target.value));
   on("#dm-asg-add", "click", () => {
     const name = prompt("Associate name");
     if (name?.trim()) onAddAssociate?.(emptyAssociate(name.trim().toUpperCase()));
   });
-  on("#dm-asg-import",      "click", () => onImport?.());
   on("#dm-asg-print",       "click", () => onPrint?.());
   on("#dm-asg-finalize",    "click", () => onFinalize?.(!locked));
   on("#dm-asg-accept-all",  "click", () => onAcceptAll?.());

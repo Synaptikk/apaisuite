@@ -15,10 +15,23 @@
 -->
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/base.css">
 <link rel="stylesheet" href="/styles/layout.css"><link rel="stylesheet" href="/styles/components.css">
+<!-- Inert unless data-layout="preview" is set below. -->
+<link rel="stylesheet" href="/styles/preview-shell.css"><link rel="stylesheet" href="/styles/preview-components.css">
 </head><body>
 <script>
 // Stub enough of the extension APIs for the shell to boot in a plain page.
-const sync = { "apai.userHomeStoreOverride": "1458", "apai.userRole": "market" };
+// ?layout=preview|current and ?theme=light|dark drive Preview-layout QA
+// screenshots; app.js's own renderSettings() reads localStorage for the
+// live radio state, so seed both there and in the sync stub.
+const qs = new URLSearchParams(location.search);
+const layoutParam = qs.get("layout") === "preview" ? "preview" : "current";
+const themeParam = qs.get("theme") === "dark" ? "dark" : (qs.get("theme") || null);
+localStorage.setItem("shell.layout", layoutParam);
+if (themeParam) localStorage.setItem("shell.theme", themeParam);
+document.documentElement.setAttribute("data-layout", layoutParam);
+if (themeParam) document.documentElement.setAttribute("data-theme", themeParam);
+const sync = { "apai.userHomeStoreOverride": "1458", "apai.userRole": "market", "shell.layout": layoutParam };
+if (themeParam) sync["shell.theme"] = themeParam;
 const local = { "aurorbuddy.fb_aurorIdentity": { aurorUserId: "samlp|wm-us|ses008s.s01458" } };
 const mk = (bag) => ({
   get: async (k) => {
@@ -49,7 +62,10 @@ window.chrome = {
 window.addEventListener("error", (e) => { window.__err = String(e.message); });
 </script>
 <div class="shell">
-  <header class="shell-header"><span class="pill" id="suite-version">…</span></header>
+  <header class="shell-header">
+    <span class="pill" id="suite-version">…</span>
+    <span id="shell-preview-badge" class="pill pill-warn" hidden>Preview</span>
+  </header>
   <div id="suite-update-banner" hidden></div>
   <nav class="shell-sidebar"><div id="shell-nav"></div></nav>
   <section class="shell-viewport"><main id="shell-main"></main></section>

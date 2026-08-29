@@ -119,10 +119,34 @@ export async function searchPeople({ token, stores, homeStore, days = "Last30day
 // ─── Internal helpers ───────────────────────────────────────────────────────
 
 async function fetchPage({ token, siteTraits, skip, includeTotal, days, signal }) {
+  // `timeRangeFilter` is a CLOSED ENUM and "Last60days"/"Last90days" are not
+  // in it — sending either is an unconditional HTTP 400. The valid presets we
+  // care about are Last7days / Last30days; see the complete list in
+  // shanesmith/docs/AUROR_API_MAP.md §"timeRangeFilter enum".
+  //
+  // Anything longer than 30 days must go through Auror's Custom range, which
+  // means: OMIT timeRangeFilter entirely and send bare YYYY-MM-DD dates.
+  // (Sending timeRangeFilter=Custom alongside them, or sending full ISO
+  // timestamps with time + Z, both still 400 — established in shanesmith
+  // v0.1.63/v0.1.65 before v0.1.70 landed this shape.)
+  let startDate = "", endDate = "";
+  let useCustom = false;
+  const timeRangeFilter = days || "Last30days";
+  const customMatch = /^Last(\d+)days$/i.exec(timeRangeFilter);
+  if (customMatch) {
+    const n = parseInt(customMatch[1], 10);
+    if (n > 30) {
+      const today = new Date();
+      const start = new Date(today.getTime() - n * 86_400_000);
+      startDate = start.toISOString().slice(0, 10);
+      endDate   = today.toISOString().slice(0, 10);
+      useCustom = true;
+    }
+  }
+
   const params = new URLSearchParams();
   params.append("configCaptureApiCalls", "");
   params.append("configProfile", "");
-  params.append("endDate", "");
   params.append("eventTypeFilters", "PosScoFraud");
   params.append("incidentCountMin", "2");
   params.append("includeTotalResultCount", includeTotal ? "true" : "false");
@@ -130,9 +154,17 @@ async function fetchPage({ token, siteTraits, skip, includeTotal, days, signal }
   for (const s of siteTraits) params.append("siteTraits", s);
   params.append("skip", String(skip));
   params.append("sortBy", "");
-  params.append("startDate", "");
-  params.append("timeRangeFilter", days);
   params.append("totalValueMin", "100");
+
+  if (useCustom) {
+    // Custom range: dates only, no preset.
+    params.append("startDate", startDate);
+    params.append("endDate", endDate);
+  } else {
+    params.append("startDate", "");
+    params.append("endDate", "");
+    params.append("timeRangeFilter", timeRangeFilter);
+  }
 
   const fullUrl = `${SEARCH_PEOPLE_URL}?${params.toString()}`;
   if (skip === 0) {
@@ -158,7 +190,14 @@ async function fetchPage({ token, siteTraits, skip, includeTotal, days, signal }
     throw new Error("Auror returned 401/403 — reload your Auror tab so the SPA refreshes its JWT and retry.");
   }
   if (!r.ok) {
-    throw new Error(`Auror searchPeople failed: HTTP ${r.status}`);
+    // Surface the response body in the error — a bare "HTTP 400" cannot
+    // distinguish a bad enum value from a bad date format from a rejected
+    // siteTraits string, and all three are live failure modes here.
+    let preview = "";
+    try { preview = (await r.text()).slice(0, 240); } catch { /* body already consumed / empty */ }
+    console.warn(`[auror] HTTP ${r.status} body:`, preview);
+    console.warn("[auror] failing URL:", fullUrl);
+    throw new Error(`Auror searchPeople failed: HTTP ${r.status}${preview ? " — " + preview : ""}`);
   }
 
   // Read raw body once; on the first page, log it so we can debug

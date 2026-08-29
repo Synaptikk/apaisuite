@@ -13,6 +13,11 @@
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/layout.css">
   <link rel="stylesheet" href="styles/components.css">
+  <!-- Inert unless <html data-layout="preview"> — see styles/preview-shell.css
+       and styles/preview-components.css headers. Loaded after their Current
+       counterparts so cascade order matches load order. -->
+  <link rel="stylesheet" href="styles/preview-shell.css">
+  <link rel="stylesheet" href="styles/preview-components.css">
 </head>
 <body>
 
@@ -28,6 +33,10 @@
       </svg>
       <span>APAISuite</span>
     </a>
+    <!-- Shown only when data-layout="preview" (app.js::applyLayout toggles
+         `hidden`). Requirement #7: Preview must be clearly identified as
+         Preview, not presented as a finished replacement. -->
+    <span id="shell-preview-badge" class="pill pill-warn" title="You're using the Preview layout. Switch back any time in Settings." hidden>Preview</span>
     <span class="shell-header-spacer"></span>
     <div class="shell-header-actions">
       <span class="pill" id="suite-version" title="APAISuite version">…</span>
@@ -43,12 +52,25 @@
       <!-- Populated by app.js from the module registry -->
     </div>
     <div class="shell-sidebar-footer">
+      <!-- Collapse toggle. Lives in the sidebar rather than the header because
+           it acts on the sidebar, and the header already carries the Preview
+           badge and version pill. app.js wires it; theme_boot.js has already
+           applied the saved state pre-paint. -->
+      <button type="button" id="shell-sidebar-toggle" class="shell-nav-item shell-sidebar-toggle"
+              aria-controls="shell-nav" aria-expanded="true" title="Collapse sidebar">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M3 4h14v12H3z"></path>
+          <path d="M8 4v12"></path>
+          <path class="shell-sidebar-toggle-arrow" d="M13.5 8.5 11 10l2.5 1.5"></path>
+        </svg>
+        <span>Collapse</span>
+      </button>
       <a href="#/settings" class="shell-nav-item" data-route="#/settings">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <circle cx="10" cy="10" r="2.5"></circle>
           <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"></path>
         </svg>
-        Settings
+        <span>Settings</span>
       </a>
       <a href="#/docs" class="shell-nav-item" data-route="#/docs">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -56,7 +78,7 @@
           <path d="M13 3v3h3"></path>
           <path d="M7 9h6M7 12h6M7 15h4"></path>
         </svg>
-        Docs
+        <span>Docs</span>
       </a>
     </div>
   </nav>

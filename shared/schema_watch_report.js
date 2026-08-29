@@ -82,6 +82,14 @@ export function watchSourceSchema(sourceId, textOrColumns, parsed = true) {
 // a busy usage collection.
 const COLLECTION = "suite_schema_drift";
 
+// Firestore refuses a create against an existing doc with HTTP 409
+// ALREADY_EXISTS; some paths surface the same condition as 400
+// FAILED_PRECONDITION. Matched on the status name rather than the code so
+// either spelling is caught.
+export function isAlreadyExists(err) {
+  return /ALREADY_EXISTS|already exists/i.test(String(err?.message ?? ""));
+}
+
 export async function flushSchemaDrift() {
   const pending = await readPendingDrift();
   if (!pending.length) return { drained: 0, remaining: 0 };
@@ -89,9 +97,8 @@ export async function flushSchemaDrift() {
   // Imported here, not at module scope: this file is pulled in by the capture
   // path, and a static import would drag the Firestore anonymous-auth dance
   // into every context that parses a CSV — including Node tests, which have no
-  // chrome.identity to stub.
-  const { commitCreateWithServerTimestamp, toFirestoreFields } =
-    await import("../modules/aurorbuddy/lib/firestore.js");
+  // chrome.storage to stub.
+  const { commitCreateWithServerTimestamp } = await import("./suiteBackend.js");
 
   let drained = 0;
   for (const row of pending) {
@@ -100,9 +107,22 @@ export async function flushSchemaDrift() {
       // analysts' machines converges on ONE document instead of five. What
       // matters is that a source changed, not how many people saw it.
       const docId = `${row.sourceId}__${row.fingerprint}`.replace(/[^A-Za-z0-9_.-]/g, "_");
-      await commitCreateWithServerTimestamp(COLLECTION, docId, toFirestoreFields(row), "serverDetectedAt");
+      // `row` goes in as a PLAIN object — the primitive encodes it. This call
+      // used to pass toFirestoreFields(row), which double-wrapped every value
+      // into a nested map; Firestore stores that happily rather than
+      // rejecting it, so the rows would have been structurally wrong even
+      // once the 403s were fixed.
+      await commitCreateWithServerTimestamp(COLLECTION, docId, row, "serverDetectedAt");
       drained++;
-    } catch {
+    } catch (e) {
+      // "Already there" is the SUCCESS case for this collection, not a
+      // failure: the doc id is a deterministic fingerprint precisely so
+      // repeat sightings of one drift converge on a single row, and the
+      // rules forbid updates. Counting it as drained is what stops the
+      // first duplicate from wedging the queue forever — every later flush
+      // would otherwise retry the same row, fail identically, and `break`
+      // before reaching anything new behind it.
+      if (isAlreadyExists(e)) { drained++; continue; }
       break;
     }
   }

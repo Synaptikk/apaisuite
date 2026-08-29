@@ -254,3 +254,87 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-4);
 }
+
+/* ── Collapsed sidebar ────────────────────────────────────────────────────
+   Icons only, at --shell-sidebar-collapsed-w. That token was already declared
+   in tokens.css and used by nothing, so the width was decided before this.
+
+   The collapse works by overriding --shell-sidebar-w rather than restyling
+   the grid, which means it applies to the Preview layout too — Preview only
+   changes that same token (to 248px), so one rule covers both shells and
+   cannot drift from whichever is active.
+
+   This file loads after tokens.css, so at equal specificity these win over
+   the Preview width. The explicit [data-layout="preview"] pairing below keeps
+   that true even if a later sheet re-declares it. */
+html[data-sidebar="collapsed"],
+html[data-layout="preview"][data-sidebar="collapsed"] {
+  --shell-sidebar-w: var(--shell-sidebar-collapsed-w);
+}
+
+/* The label is the only thing that goes. Icon, status dot and the active
+   marker all survive, so a collapsed rail still says where you are. */
+html[data-sidebar="collapsed"] .shell-nav-item > span:not(.shell-nav-status) {
+  display: none;
+}
+
+html[data-sidebar="collapsed"] .shell-nav-item {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+
+/* A status dot inside a 56px rail cannot sit after the label, because there is
+   no label. Corner it against the icon instead. */
+html[data-sidebar="collapsed"] .shell-nav-item {
+  position: relative;
+}
+html[data-sidebar="collapsed"] .shell-nav-item .shell-nav-status {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  margin: 0;
+}
+
+/* Section captions ("TOOLS") have nothing to say at this width. */
+html[data-sidebar="collapsed"] .shell-nav-section {
+  display: none;
+}
+
+/* Nothing may spill past a 56px rail. Without this the footer links pushed a
+   horizontal scrollbar into the sidebar. */
+html[data-sidebar="collapsed"] .shell-sidebar,
+html[data-sidebar="collapsed"] .shell-nav,
+html[data-sidebar="collapsed"] .shell-sidebar-footer {
+  overflow-x: hidden;
+}
+html[data-sidebar="collapsed"] .shell-nav-item {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.shell-sidebar-toggle {
+  /* It is a <button> among <a>s — strip the UA chrome so it sits in the list
+     as a peer rather than a control bolted on the end. */
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shell-sidebar-toggle-arrow {
+  transform-origin: 12px 10px;
+  transition: transform 140ms ease;
+}
+html[data-sidebar="collapsed"] .shell-sidebar-toggle-arrow {
+  transform: rotate(180deg);
+}
+
+/* Width is a grid column, so animating it reflows the viewport on every frame.
+   Honour reduced-motion and keep it short. */
+@media (prefers-reduced-motion: reduce) {
+  .shell-sidebar-toggle-arrow { transition: none; }
+}

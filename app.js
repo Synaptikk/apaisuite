@@ -26,6 +26,8 @@ import {
   isDebugUnlocked, setDebugUnlocked, startDebugFeed, readAlarms,
   UNLOCK_TAPS, UNLOCK_HINT_AT, FEED_MAX,
 } from "./shared/debug_feed.js";
+import { LAYOUTS, resolveLayoutPref } from "./shared/layoutPref.js";
+import { SIDEBAR, resolveSidebarPref, toggledSidebarPref } from "./shared/sidebarPref.js";
 
 const $nav  = $("#shell-nav");
 const $main = $("#shell-main");
@@ -279,6 +281,13 @@ async function route() {
                   || (!head && el.dataset.route === "#/home");
     el.classList.toggle("is-active", isActive);
   });
+
+  // Nav items are (re)built during routing, after the boot-time
+  // applySidebar() has already run — so the collapsed tooltips have to be
+  // reapplied here or a rail of unlabelled icons would have no tooltips at
+  // all on first paint.
+  window.__apaiSyncNavTitles?.(
+    document.documentElement.getAttribute("data-sidebar") === "collapsed");
 
   // Unmount previous — await so async cleanups (cancel polling loops,
   // unsubscribe from host.messaging.on, etc.) finish before we wipe the
@@ -540,6 +549,7 @@ async function detectedHomeStore() {
 
 function renderSettings() {
   const current = localStorage.getItem("shell.theme") || "system";
+  const currentLayout = resolveLayoutPref(localStorage.getItem("shell.layout"));
   $main.innerHTML = `
     <div class="stack" style="max-width:900px;margin:0 auto">
       <h1 id="settings-heading" title="Settings">Settings</h1>
@@ -557,6 +567,20 @@ function renderSettings() {
               <label class="check">
                 <input type="radio" name="shell-theme" value="${t}" ${t === current ? "checked" : ""}>
                 <span>${t[0].toUpperCase() + t.slice(1)}</span>
+              </label>
+            `).join("")}
+          </div>
+          <hr style="width:100%;border:none;border-top:1px solid var(--apai-border);margin:var(--sp-2) 0">
+          <p class="field-label" style="margin:0">Try the Preview layout</p>
+          <p class="muted" style="margin:0">
+            Use APAISuite's redesigned interface. You can switch back at any
+            time. Your theme choice above is unaffected either way.
+          </p>
+          <div class="cluster" role="radiogroup" aria-label="Layout">
+            ${[[LAYOUTS.CURRENT, "Current"], [LAYOUTS.PREVIEW, "Preview"]].map(([v, label]) => `
+              <label class="check">
+                <input type="radio" name="shell-layout" value="${v}" ${v === currentLayout ? "checked" : ""}>
+                <span>${label}${v === LAYOUTS.PREVIEW ? ' <span class="pill pill-warn">Preview</span>' : ""}</span>
               </label>
             `).join("")}
           </div>
@@ -673,6 +697,17 @@ function renderSettings() {
       localStorage.setItem("shell.theme", v);
       window.__apaiApplyTheme?.(v);
       chrome.storage.sync.set({ "shell.theme": v }).catch(() => {});
+    });
+  }
+
+  for (const radio of $main.querySelectorAll('input[name="shell-layout"]')) {
+    radio.addEventListener("change", () => {
+      // Independent of shell-theme above — this handler never reads or
+      // writes "shell.theme", so toggling one can never move the other.
+      const v = resolveLayoutPref(radio.value);
+      localStorage.setItem("shell.layout", v);
+      window.__apaiApplyLayout?.(v);
+      chrome.storage.sync.set({ "shell.layout": v }).catch(() => {});
     });
   }
 
@@ -1138,6 +1173,83 @@ function applyTheme(pref) {
 }
 // Exposed so renderSettings can call it on toggle.
 window.__apaiApplyTheme = applyTheme;
+
+// ── Layout bootstrap ──────────────────────────────────────────
+// Same shape as the theme bootstrap above, and deliberately independent of
+// it — this block never reads or writes "shell.theme". app.html applied
+// data-layout synchronously from localStorage (theme_boot.js) to avoid a
+// flash of the wrong layout; here we reconcile with chrome.storage.sync so a
+// preference set on another device propagates on next open.
+(async () => {
+  try {
+    const got = await chrome.storage.sync.get("shell.layout");
+    const synced = resolveLayoutPref(got?.["shell.layout"]);
+    const local  = resolveLayoutPref(localStorage.getItem("shell.layout"));
+    if (got?.["shell.layout"] !== undefined && synced !== local) {
+      localStorage.setItem("shell.layout", synced);
+      applyLayout(synced);
+    }
+  } catch (e) { /* sync unavailable — local-only is fine */ }
+})();
+
+/**
+ * Collapse the sidebar to icons only.
+ *
+ * Also retitles the toggle and keeps aria-expanded honest, and puts the module
+ * name on each nav item's `title` — with the label hidden, the tooltip is the
+ * only way left to read what a rail icon is.
+ */
+function applySidebar(pref) {
+  const resolved = resolveSidebarPref(pref);
+  document.documentElement.setAttribute("data-sidebar", resolved);
+
+  const collapsed = resolved === SIDEBAR.COLLAPSED;
+  const btn = document.getElementById("shell-sidebar-toggle");
+  if (btn) {
+    btn.setAttribute("aria-expanded", String(!collapsed));
+    btn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    const label = btn.querySelector("span");
+    if (label) label.textContent = collapsed ? "Expand" : "Collapse";
+  }
+  syncNavTitles(collapsed);
+}
+
+/** Tooltips only matter while collapsed; leave the DOM clean otherwise. */
+function syncNavTitles(collapsed) {
+  for (const el of document.querySelectorAll("a.shell-nav-item")) {
+    const name = el.querySelector("span:not(.shell-nav-status)")?.textContent?.trim();
+    if (collapsed && name) el.title = name;
+    else el.removeAttribute("title");
+  }
+}
+
+window.__apaiApplySidebar = applySidebar;
+window.__apaiSyncNavTitles = syncNavTitles;
+
+function applyLayout(pref) {
+  const resolved = resolveLayoutPref(pref);
+  document.documentElement.setAttribute("data-layout", resolved);
+  const badge = document.getElementById("shell-preview-badge");
+  if (badge) badge.hidden = resolved !== LAYOUTS.PREVIEW;
+}
+// Exposed so renderSettings can call it on toggle. Applies immediately —
+// Preview is a CSS reskin of the same DOM, so no reload is needed.
+window.__apaiApplyLayout = applyLayout;
+// Paint the badge correctly on first load too (theme_boot.js already set the
+// data-layout attribute pre-paint; this just syncs the badge to match).
+applyLayout(localStorage.getItem("shell.layout"));
+applySidebar(localStorage.getItem("shell.sidebar"));
+
+// The toggle is in the static shell markup, so one listener at boot is enough.
+document.getElementById("shell-sidebar-toggle")?.addEventListener("click", () => {
+  const next = toggledSidebarPref(localStorage.getItem("shell.sidebar"));
+  localStorage.setItem("shell.sidebar", next);
+  // sync so the choice follows the analyst to their other machine, same as
+  // theme and layout. Failure here is not worth surfacing — the local value
+  // already applied.
+  chrome.storage.sync.set({ "shell.sidebar": next }).catch(() => {});
+  applySidebar(next);
+});
 
 route().catch((e) => {
   console.error("[shell] boot route failed:", e);

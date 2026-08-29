@@ -13,9 +13,24 @@
 // any remaining legacy shanesmith installs. See BACKEND_MIGRATION_PLAN.md
 // for the cutover ordering.
 
+// ── Cutover switch ───────────────────────────────────────────────────────
+// These three values are the ONLY thing tying this module to a Firebase
+// project. `(default)` used to be hardcoded in seven places across two
+// files, which would have made the migration a scatter of edits instead of
+// one reviewable line.
+//
+// Migrating to the apaisuite project means:
+//     projectId:  "apaisuite"
+//     databaseId: "aurorbuddy"        (a NAMED database, as digitalmetrics is)
+//     webApiKey:  <apaisuite web key>
+//
+// Do NOT flip these before the data is copied and the rules are deployed:
+// the module would start writing into an empty database while the
+// dashboard still reads the old one.
 export const FIREBASE_CONFIG = {
-  projectId: "aurorbuddy",
-  webApiKey: "AIzaSyBVbIuRW8qSXS_CVhpkKGlwrt-AFWTrWnw",
+  projectId:  "aurorbuddy",
+  databaseId: "(default)",
+  webApiKey:  "AIzaSyBVbIuRW8qSXS_CVhpkKGlwrt-AFWTrWnw",
 };
 
 // Identifies the source extension on every write so the dashboard can

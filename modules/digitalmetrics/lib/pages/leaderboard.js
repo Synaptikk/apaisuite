@@ -2,7 +2,7 @@
 //
 // Ranking by any single metric, with volume outliers held back.
 
-import { section, empty, esc, table, associateCell } from "./_shared.js";
+import { section, empty, esc, table, associateCell, compareBy, flipDir, nextSort } from "./_shared.js";
 import { classificationOf, badgeClass, CLASSIFICATIONS, UNCLASSIFIED } from "../data/classify.js";
 import { excludeOutliers } from "../data/opportunities.js";
 
@@ -27,8 +27,17 @@ export function render(ctx) {
   const metricKey = ui.lbMetric || "ftpr";
   const group     = ui.lbGroup  || "All";
   const countKey  = ui.lbCount  || "top25";
-  const metric    = METRICS.find(([k]) => k === metricKey) || METRICS[0];
-  const [key, label, suffix, direction] = metric;
+  // Associate is sortable too but is not a ranking metric, so it lives outside
+  // METRICS — which still drives the Metric dropdown and the Top/Bottom slice.
+  const sortable  = [...METRICS, ["name", "Associate", "", "asc"]];
+  const metric    = sortable.find(([k]) => k === metricKey) || METRICS[0];
+  const [key, , , direction] = metric;
+
+  // The ranking direction is the metric's own "better first" unless the user
+  // has clicked the active header to invert it. Kept as a flag rather than a
+  // literal direction so the natural order stays the default when the metric
+  // changes — otherwise switching to Nil Rate would silently rank worst-first.
+  const dir = ui.lbRev ? flipDir(direction) : direction;
 
   const scoped = group === "All"
     ? associates
@@ -36,8 +45,7 @@ export function render(ctx) {
 
   const { ranked, excluded } = excludeOutliers(scoped);
 
-  const sorted = [...ranked].sort((a, b) =>
-    direction === "asc" ? (a[key] || 0) - (b[key] || 0) : (b[key] || 0) - (a[key] || 0));
+  const sorted = [...ranked].sort(compareBy(key, dir));
 
   const [, mode, size] = countKey.match(/^(top|bottom|all)(\d+)?$/) || [];
   const shown = mode === "all"    ? sorted
@@ -66,19 +74,29 @@ export function render(ctx) {
       </label>
     </div>`;
 
+  // Every metric is shown, always. Previously only the selected one had a
+  // column, so comparing two metrics meant switching the dropdown back and
+  // forth and holding the first set of numbers in your head.
   const rows = table([
-    { label: "#", key: "_rank", align: "right",
+    // Rank is the row's position in the current sort, so it has no order of
+    // its own to be sorted by.
+    { label: "#", key: "_rank", align: "right", sortable: false,
       format: (a) => String(shown.indexOf(a) + 1) },
     { label: "Associate", key: "name",
       format: (a) => {
         const cls = classificationOf(a.name, classifications);
         return associateCell(a.name, cls);
       } },
-    { label, key, align: "right", format: (a) => `${esc(a[key] ?? 0)}${esc(suffix)}` },
-    { label: "Pick Qty", key: "picked_qty", align: "right",
-      format: (a) => esc((a.picked_qty || 0).toLocaleString()) },
-    { label: "Hours", key: "hours", align: "right" },
-  ], shown, { emptyMessage: "No associates in this group." });
+    ...METRICS.map(([k, l, sfx]) => ({
+      label: l, key: k, align: "right",
+      format: (a) => k === "picked_qty"
+        ? esc((a[k] || 0).toLocaleString())
+        : `${esc(a[k] ?? 0)}${esc(sfx)}`,
+    })),
+  ], shown, {
+    emptyMessage: "No associates in this group.",
+    sort: { key, dir },
+  });
 
   // Exclusions are disclosed rather than silently dropped — a missing name on
   // a leaderboard reads as an error to the person looking for it.
@@ -95,17 +113,29 @@ export function render(ctx) {
 }
 
 export function wire(ctx, root) {
-  const { onUiChange, host, onSelectAssociate } = ctx;
-  const bind = (id, field) => {
+  const { onUiChange, host, onSelectAssociate, ui = {} } = ctx;
+  const bind = (id, field, extra = {}) => {
     const el = root.querySelector(id);
-    const fn = (e) => onUiChange?.({ [field]: e.target.value });
+    const fn = (e) => onUiChange?.({ [field]: e.target.value, ...extra });
     el?.addEventListener("change", fn);
     return () => el?.removeEventListener("change", fn);
   };
   const offs = [
-    bind("#dm-lb-metric", "lbMetric"),
+    // Picking a metric from the dropdown drops any inversion, so the new
+    // metric arrives in its natural best-first order.
+    bind("#dm-lb-metric", "lbMetric", { lbRev: false }),
     bind("#dm-lb-group",  "lbGroup"),
     bind("#dm-lb-count",  "lbCount"),
+    // Same convention as every file manager, so it needs no explaining.
+    host.ui.delegate(root, "click", "[data-dm-sort]", (_e, el) => {
+      onUiChange?.(nextSort({
+        clicked: el.dataset.dmSort,
+        current: ui.lbMetric || "ftpr",
+        rev: ui.lbRev,
+        keyField: "lbMetric",
+        revField: "lbRev",
+      }));
+    }),
     // Clicking a name anywhere opens that person's breakdown, not just on the
     // Associates tab.
     host.ui.delegate(root, "click", "[data-dm-associate]", (_e, el) => {

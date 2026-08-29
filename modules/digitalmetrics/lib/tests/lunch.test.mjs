@@ -116,3 +116,30 @@ test("lunchIssues names the people, so the banner can be acted on", () => {
   const issues = lunchIssues([assoc({ name: "ADA" }), assoc({ name: "GRACE", slots: { 4: "L" } })]);
   assert.deepEqual(issues.map((i) => i.name), ["ADA"]);
 });
+
+// ── absence ──────────────────────────────────────────────────────────────
+
+test("an absent associate is not flagged for a lunch they never took", () => {
+  // The flag would be unclearable: you cannot give a lunch to someone who did
+  // not come in, so it would sit on the row forever and teach people to
+  // ignore lunch flags generally.
+  const long = { name: "OUT", shiftStart: 0, shiftEnd: 8, slots: {}, status: "absent" };
+  assert.equal(lunchIssue(long), null);
+});
+
+test("absence hides only the MISSING case, never a real mistake", () => {
+  // A lunch entered before they were marked absent still gets checked, so
+  // marking someone absent cannot quietly bury a duplicate or a bad slot.
+  const dup = { name: "OUT", shiftStart: 0, shiftEnd: 8, status: "absent",
+                slots: { 3: "L", 4: "L" } };
+  assert.equal(lunchIssue(dup)?.kind, "duplicate");
+
+  const edge = { name: "OUT", shiftStart: 0, shiftEnd: 8, status: "absent",
+                 slots: { 0: "L" } };
+  assert.equal(lunchIssue(edge)?.kind, "edge");
+});
+
+test("a present associate with no lunch is still flagged", () => {
+  const here = { name: "HERE", shiftStart: 0, shiftEnd: 8, slots: {}, status: null };
+  assert.equal(lunchIssue(here)?.kind, "missing");
+});

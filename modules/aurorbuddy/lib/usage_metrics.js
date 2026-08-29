@@ -14,9 +14,9 @@
 import { FIREBASE_CONFIG, ANALYST_SOURCE } from "./firestore_config.js";
 import { commonRowFields, toFirestoreFields, getUid } from "./firestore.js";
 
-const { projectId } = FIREBASE_CONFIG;
+const { projectId, databaseId } = FIREBASE_CONFIG;
 
-const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents`;
 
 const STORE_KEY_PENDING = "aurorbuddy.fb_pendingMetrics";
 const STORE_KEY_TOKEN   = "aurorbuddy.fb_idToken";      // shared with firestore.js for token lookups

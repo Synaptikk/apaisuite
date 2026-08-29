@@ -49,10 +49,35 @@ test("slots after 7pm are ignored", () => {
   assert.equal(assignedPickHours({ slots: { 13: "Pick", 14: "Pick", 15: "Pick" } }), 1);
 });
 
-test("half-hour shift boundaries count as half slots", () => {
-  const a = { slots: pickSlots(3), startSlot: 0, endSlot: 2,
-              shiftStart: "5:30 AM", shiftEnd: "1:30 PM" };
+test("part-hour shift boundaries count as half slots", () => {
+  // The shape a SAVED assignment actually has: shiftStart/End are slot
+  // indices and the real clock times live on shiftLabel. The old version of
+  // this test used the schedule shape ("5:30 AM" in shiftStart), which is
+  // not what this function is ever handed — so the half-hour branch it was
+  // asserting could never fire in production.
+  const a = { slots: pickSlots(3), shiftStart: 0, shiftEnd: 3,
+              shiftLabel: "5:30am-7:30am" };
   assert.equal(assignedPickHours(a), 2);   // 0.5 + 1 + 0.5
+});
+
+test("a :40 start is charged as half an hour, not a whole one", () => {
+  const a = { slots: pickSlots(2), shiftStart: 0, shiftEnd: 2,
+              shiftLabel: "5:40am-7:00am" };
+  assert.equal(assignedPickHours(a), 1.5);
+});
+
+test("an unbounded row still counts its assigned slots", () => {
+  // Added by hand, or a schedule that never imported: no window, but the
+  // tasks are real. Counting 0 would erase their adherence denominator.
+  assert.equal(assignedPickHours({ slots: pickSlots(4) }), 4);
+});
+
+test("an absent associate is assigned nothing", () => {
+  // Otherwise the plan is billed against them and zero picks are measured
+  // against it: a performance problem manufactured out of a day off.
+  const a = { slots: pickSlots(4), shiftStart: 0, shiftEnd: 4,
+              shiftLabel: "5:00am-9:00am", status: "absent" };
+  assert.equal(assignedPickHours(a), 0);
 });
 
 test("an empty or missing assignment is zero, not a crash", () => {

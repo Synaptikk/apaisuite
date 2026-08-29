@@ -30,6 +30,48 @@ import { CLASSIFICATIONS } from "./classify.js";
 /** Job titles that mean the dedicated digital fulfilment team. */
 export const DIGITAL_JOB_RE = /\bdigital\b/i;
 
+/**
+ * Leadership roles, read off the same job title.
+ *
+ * Patterns come from the real roster rather than guesswork — store 1458's
+ * schedule for 2026-08-27 carries "Digital TL" (x3) and "Digital Coach" (x1)
+ * among 57 distinct titles, beside non-digital ones like "Fashion TL",
+ * "GM Coach", "AP Team Lead" and "People Lead".
+ *
+ * Coach is tested FIRST: "Digital Coach" is a coach, and a looser lead pattern
+ * would otherwise claim it.
+ *
+ * Deliberately tight. `\blead\b` on its own would swallow "People Lead", which
+ * is not a digital floor role; if a title needs adding, add it here rather
+ * than widening the pattern until it catches something it should not.
+ */
+export const COACH_JOB_RE     = /\bcoach\b/i;
+export const TEAM_LEAD_JOB_RE = /\bTLS?\b|\bteam\s*lead\b/i;
+
+/** Task code shown for a leadership row that has no explicit assignment. */
+export const ROLE_TASKS = { COACH: "COACH", TL: "TL" };
+
+/**
+ * "COACH", "TL", or null. A role is not a classification — a Digital TL is
+ * still Digital — so this is answered separately and never written into the
+ * classification map.
+ */
+export function leadershipForJob(jobName) {
+  const s = String(jobName ?? "").trim();
+  if (!s) return null;
+  if (COACH_JOB_RE.test(s)) return "COACH";
+  if (TEAM_LEAD_JOB_RE.test(s)) return "TL";
+  return null;
+}
+
+/**
+ * Sort comparator that floats leadership to the top: coach, then team leads,
+ * then everyone else. Ties fall through to the caller's own ordering.
+ */
+export const ROLE_RANK = { COACH: 0, TL: 1 };
+export const byLeadershipFirst = (a, b) =>
+  (ROLE_RANK[a?.role] ?? 9) - (ROLE_RANK[b?.role] ?? 9);
+
 /** Classifications a human set that a job title must not overwrite. */
 export const MANUAL_ONLY = ["Exceptions"];
 

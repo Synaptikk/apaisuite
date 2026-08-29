@@ -24,7 +24,7 @@ import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
-import { parseSchedulePayload } from "./lib/data/schedule_import.js";
+import { leadershipForJob, byLeadershipFirst } from "./lib/data/job_classify.js";
 import { weekLabel } from "./lib/data/wmweek.js";
 
 const PAGES = {
@@ -87,6 +87,7 @@ export async function mount(host, container) {
     // Assignments tab
     assignmentDate: defaultDate(),
     assignments: [],
+    homeStore:   null,
     suggestions: {},
     locked: false,
     saveStatus: "",
@@ -105,18 +106,28 @@ export async function mount(host, container) {
   // this has to catch as well as check — an uncaught rejection here shows up in
   // the console as a bare "digitalmetrics.<type> failed" with the real reason
   // nowhere in sight, which is exactly what it did.
+  // The reason the LAST call failed. call() returns null on failure, which is
+  // convenient at the call site but throws the reason away — and "save failed"
+  // with the reason discarded is a dead end for whoever has to fix it. Kept
+  // here so a caller can surface it without every caller having to unwrap the
+  // envelope itself.
+  let lastCallError = null;
+
   async function call(type, payload = {}) {
     let res;
+    lastCallError = null;
     try {
       res = await host.messaging.send(type, payload);
     } catch (e) {
       const message = String(e?.message ?? e);
+      lastCallError = message;
       setStatus(`error: ${message}`);
       host.ui.toast(`${type}: ${message}`, { kind: "error" });
       return null;
     }
     if (!res?.ok) {
-      setStatus(`error: ${res?.error || "unknown"}`);
+      lastCallError = res?.error || "unknown";
+      setStatus(`error: ${lastCallError}`);
       return null;
     }
     return res.data;
@@ -155,7 +166,6 @@ export async function mount(host, container) {
       onFinalize:      setFinalized,
       onAcceptAll:     acceptAllSuggestions,
       onDismissAll:    () => { state.suggestions = {}; renderPage(); },
-      onImport:        importSchedule,
       onPrint:         () => window.print(),
     };
 
@@ -282,6 +292,12 @@ export async function mount(host, container) {
 
     // Empty is the FIRST-RUN state, not an error: the database starts empty and
     // stores only appear once data is imported.
+    // The Assignments tab is pinned to this and ignores the picker above.
+    // Fetched once at mount: it comes from the cached identity, not the
+    // network, and it does not change while the tab is open.
+    const home = await call("get_home_store");
+    state.homeStore = home?.store ? String(home.store) : null;
+
     const dflt = await call("get_default_store");
     if (dflt?.store) {
       state.store = dflt.store;
@@ -407,14 +423,32 @@ export async function mount(host, container) {
       .reduce((n, slots) => n + Object.keys(slots || {}).length, 0);
   }
 
+  /**
+   * The store the Assignments tab works on.
+   *
+   * Pinned to the signed-in user's home store, NOT the dashboard picker. A
+   * daily plan is per store and shared; someone browsing another store's
+   * metrics should not be able to overwrite that store's roster by leaving the
+   * picker where they left it.
+   *
+   * Falls back to the selected store when the home store cannot be derived —
+   * no cached identity yet, or a WIN this parser does not recognise. Locking
+   * someone out of their own roster is a worse failure than the one the lock
+   * prevents.
+   */
+  function assignmentStore() {
+    return state.homeStore || state.store;
+  }
+
   async function loadAssignments() {
-    if (!state.store || !state.assignmentDate) return;
+    const store = assignmentStore();
+    if (!store || !state.assignmentDate) return;
 
     setStatus("loading assignments…");
     const [doc, suggestions, schedule] = await Promise.all([
-      call("get_assignments", { store: state.store, date: state.assignmentDate }),
-      call("get_suggestions", { store: state.store, date: state.assignmentDate }),
-      call("get_schedule",    { store: state.store, date: state.assignmentDate }),
+      call("get_assignments", { store, date: state.assignmentDate }),
+      call("get_suggestions", { store, date: state.assignmentDate }),
+      call("get_schedule",    { store, date: state.assignmentDate }),
     ]);
 
     // A day with no assignments yet starts from the imported schedule, so the
@@ -423,6 +457,18 @@ export async function mount(host, container) {
     state.assignments = doc?.associates?.length
       ? digitalTeamOnly(mergeShifts(doc.associates, schedule?.associates))
       : rosterFromSchedule(schedule);
+
+    // An empty grid is ambiguous — no schedule pulled, or a genuinely empty
+    // day? The Workforce Planning pull only captures the week the scheduler
+    // page happens to be showing, so picking a date outside it silently
+    // produced a blank grid. Fetch what IS covered so the empty state can say
+    // which dates exist instead of leaving you to guess.
+    //
+    // Only on the empty path: this is a collection listing, and there is no
+    // reason to pay for it on the normal one.
+    state.scheduleDates = state.assignments.length
+      ? null
+      : (await call("list_dates", { store, collection: "schedules" })) || [];
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
     // Suggestions for cells that are already filled are noise; drop them here
     // rather than making every consumer re-check.
@@ -484,7 +530,6 @@ export async function mount(host, container) {
     const roster = known ? list.filter((a) => isDigitalTeam(a.name)) : list;
 
     return [...roster]
-      .sort((a, b) => (a.startSlot ?? 99) - (b.startSlot ?? 99) || a.name.localeCompare(b.name))
       .map((a) => ({
         name:       a.name,
         slots:      {},
@@ -492,7 +537,14 @@ export async function mount(host, container) {
         shiftStart: a.startSlot ?? null,
         shiftEnd:   a.endSlot ?? null,
         shiftLabel: a.shiftStart && a.shiftEnd ? `${a.shiftStart}-${a.shiftEnd}` : null,
-      }));
+        // Straight off the scheduler's job title: "Digital TL", "Digital Coach".
+        role:       leadershipForJob(a.jobName),
+      }))
+      // Leadership first; everyone else keeps the shift-start order the
+      // board is read in.
+      .sort((a, b) => byLeadershipFirst(a, b)
+        || (a.shiftStart ?? 99) - (b.shiftStart ?? 99)
+        || a.name.localeCompare(b.name));
   }
 
   /**
@@ -511,11 +563,18 @@ export async function mount(host, container) {
       if (!s) return a;
       return {
         ...a,
+        // Re-derived from the schedule on every load, so a promotion shows
+        // up without anyone having to re-save the day. Falls back to the
+        // stored role when the title is missing.
+        role:       leadershipForJob(s.jobName) ?? a.role ?? null,
         shiftStart: s.startSlot ?? a.shiftStart,
         shiftEnd:   s.endSlot ?? a.shiftEnd,
         shiftLabel: s.shiftStart && s.shiftEnd ? `${s.shiftStart}-${s.shiftEnd}` : a.shiftLabel,
       };
-    });
+    })
+    // A SAVED day is stored in its old order, so the pin has to be
+    // reapplied on load rather than only when the roster is first built.
+    .sort((a, b) => byLeadershipFirst(a, b));
   }
 
   function pruneSuggestions(raw) {
@@ -674,27 +733,38 @@ export async function mount(host, container) {
 
   async function saveAssignments(extra = {}) {
     clearTimeout(saveTimer);
-    if (!state.store || !state.assignmentDate) return;
+    const store = assignmentStore();
+    if (!store || !state.assignmentDate) return;
 
     state.saveStatus = "saving…";
     renderPage();
 
     const ok = await call("put_assignments", {
-      store: state.store,
+      store,
       date:  state.assignmentDate,
       doc: {
         associates:  state.assignments,
         date:        state.assignmentDate,
         day:         dayName(state.assignmentDate),
         updatedAt:   new Date().toISOString(),
-        store:       state.store,
+        store,
         finalized:   state.locked,
         finalizedAt: state.locked ? new Date().toISOString() : null,
         ...extra,
       },
     });
 
+    // "save failed" on its own is a dead end — the reason is the whole point,
+    // and it is the difference between a kill switch, an expired token and a
+    // rules rejection. It goes on the pill's tooltip and into the console,
+    // because a day's assignments silently not persisting is worse than most
+    // things this module can do wrong.
     state.saveStatus = ok ? "saved" : "save failed";
+    state.saveError  = ok ? null : lastCallError;
+    if (!ok) {
+      console.error("[digitalmetrics] assignments save failed:", lastCallError,
+                    { store: state.store, date: state.assignmentDate });
+    }
     renderPage();
   }
 
@@ -715,53 +785,11 @@ export async function mount(host, container) {
   // back the import_metrics / import_daily_board handlers, which remain
   // available for a one-off recovery.
 
-  /**
-   * Import a week of schedules from the scraper's clipboard export.
-   *
-   * Uses a modal rather than reading the clipboard directly: clipboard-read
-   * permission prompts are confusing here, and the paste box also lets someone
-   * see and correct what they are about to import.
-   */
-  async function importSchedule() {
-    if (!state.store) {
-      host.ui.toast("Select a store on the Dashboard first.", { kind: "error" });
-      return;
-    }
-
-    const text = prompt(
-      `Paste the schedule export for store ${state.store}.\n\n` +
-      `Copy it from the extension's schedule scrape.`);
-    if (!text) return;
-
-    const parsed = parseSchedulePayload(text);
-    if (!parsed.ok) {
-      host.ui.toast(parsed.reason, { kind: "error" });
-      return;
-    }
-
-    // A paste from the wrong store would write another store's roster into
-    // this one, which is very hard to notice afterwards.
-    if (parsed.store && parsed.store !== state.store) {
-      const proceed = confirm(
-        `That export is for store ${parsed.store}, but store ${state.store} is selected.\n\n` +
-        `Import it into ${state.store} anyway?`);
-      if (!proceed) return;
-    }
-
-    setStatus("importing schedules…");
-    const result = await call("import_schedules", {
-      store: state.store, schedules: parsed.schedules,
-    });
-    if (!result) return;
-
-    for (const w of parsed.warnings || []) host.ui.toast(w, { kind: "error" });
-    host.ui.toast(
-      `Imported ${result.written.length} days (${parsed.associateCount} shifts) ` +
-      `into store ${state.store}.`);
-
-    setStatus("ready");
-    if (state.page === "assignments") await loadAssignments();
-  }
+  // Schedule import was removed 2026-08-26. It asked you to paste an export
+  // from "the extension's schedule scrape" — a scraper that never existed in
+  // the suite — and the automated pull now reads the Workforce Planning portal
+  // directly (lib/sources/wfm_schedule.js). lib/data/schedule_import.js and
+  // the import_schedules handler remain for a one-off recovery.
 
   // ── Automated pull ───────────────────────────────────────────────────────
   //

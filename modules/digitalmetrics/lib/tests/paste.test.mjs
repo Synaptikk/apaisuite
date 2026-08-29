@@ -8,7 +8,7 @@ import {
 import { TIME_SLOTS } from "../data/grid.js";
 
 test("the task vocabulary comes from the grid's own shortcut table", () => {
-  for (const t of ["PICK", "DISP", "STAGE", "PREP", "GMD", "IP", "EXC", "L", "B", "30"]) {
+  for (const t of ["PICK", "DISP", "STAGE", "PREP", "QC", "DRV", "DS", "TRN", "IP", "EXC", "L", "B", "30"]) {
     assert.ok(TASKS.includes(t), t);
   }
 });

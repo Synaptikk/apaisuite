@@ -592,6 +592,10 @@ and nothing noticed. Our sources are internal dashboards other teams republish
 at will, not APIs with contracts, so a shape change is an expected event and
 needs to be treated as one.
 
+**Nothing was ever uploaded until 2026-08-29 — see §11.** Detection, dedupe and
+the debug panel worked; the Firestore half returned 403 on every write. Treat
+`suite_schema_drift` as empty before that date.
+
 **What landed:** `shared/schema_watch.js` (pure diff + dedupe, 13 tests),
 `shared/schema_watch_report.js` (baseline load, telemetry mirror, upload),
 `shared/data/source_schemas.json` (the approved shapes, in git), Firestore
@@ -927,6 +931,33 @@ sentinel conflated *tried and failed* with *hold no record*, and clobbered any
 title the record did carry. **Gate on `hasName()`, never on `get()`/`getMany()`
 returning something.**
 
+**Names resolved and then rendered as ids anyway — two causes, both fixed
+2026-08-25.** The symptom was "some associates still show a WIN", which read as
+Workvivo missing those people. It was not.
+
+1. **Key mismatch.** `associateDirectory` keys every record by
+   `normalizeWin(win)` (trimmed, LOWER-CASED), so `getMany()` returns
+   lower-cased keys. The location-details export passes the scanner's WIN
+   through verbatim, and those are not all lower case. The view wrote the map
+   from `getMany` (normalised) and read it with the raw export value — so a WIN
+   with any upper case resolved successfully and printed as an id, with the name
+   sitting in the map under a key nobody asked for. The same raw-key read backed
+   the "is this resolved?" test, so those WINs also looked permanently
+   unresolved to the retry logic and to `nameResolveNote()`. All reads now go
+   through `dirGet()`. **This is why it looked like "only some" people —
+   it tracked the casing of the scan record, not the person.**
+2. **A transient pass was banked as final.** `attempted` was filled from
+   `missing` unconditionally, including WINs whose lookup failed only because
+   Workvivo had no tab/session yet. Nothing re-queried them for the life of the
+   mount, however many refreshes landed behind it. Transient passes now set a
+   60s cooldown instead of marking anything attempted, and `source_complete`
+   clears `attempted` — a completed capture is the one moment worth re-asking:
+   new rows, and time has passed. Definitive misses stay cheap to re-ask
+   (associateDirectory answers them from storage for an hour, no network).
+
+Pinned by `modules/vizpick/lib/tests/directory_keys.test.mjs` — a source scan,
+because what regresses is a call site inside `mount()`'s closure.
+
 **Bare WINs in the Associates view are now explained, not silent (2026-08-22).**
 Rendering an id when name resolution fails is deliberate — better an id than a
 confidently wrong name on a list about who is not doing their picks — but three
@@ -1207,6 +1238,62 @@ installed with `ensureAlarm()` from `module.js` top level behind the
 3. Watch the first few alarm ticks. Per §7 these handlers are the
    least-exercised code in the suite, and this one has never run in the wild.
 4. Consider the Region tab (`/api/region`) — same renderer, one endpoint.
+
+### 11. Suite telemetry backend — landed 2026-08-29
+
+**What was wrong:** every suite-wide telemetry write had been returning
+**403 PERMISSION_DENIED** since the collections were created. Both writers
+(`shared/usage_metrics.js` → `suite_usage_events`, `shared/schema_watch_report.js`
+→ `suite_schema_drift`) borrowed the write primitive from
+`modules/aurorbuddy/lib/firestore.js`, which is pinned to the **`aurorbuddy`**
+project — while the rules governing those collections live in
+`backend/firestore.suite.rules`, which `firebase.json` deploys to **`apaisuite`**.
+Rules in one project, client in another. A half-landed migration: the rules
+moved, the client never did.
+
+**Why it stayed invisible for so long.** Both writers queue on failure and
+retry on an alarm, which is correct behaviour for a network outage and
+indistinguishable from one here. The only outward sign was the same 403
+repeating in the console at every boot — which reads as one flaky write, not as
+"this subsystem has never once succeeded". **A bounded retry queue in front of a
+permanent error looks exactly like a temporary error.** Worth remembering for
+the other queues in the suite.
+
+**What landed:** `shared/suiteBackend.js` — the suite's own anonymous-auth
+client against `apaisuite`'s `(default)` database, with a refresh-token path so
+an install keeps one Firebase user instead of minting a fresh anonymous account
+on every cold worker start. Both writers import it; `commitCreateWithServerTimestamp`
+is no longer exported from aurorbuddy's client. That also removes the layering
+inversion where `shared/` reached into `modules/aurorbuddy/` — suite telemetry
+no longer depends on one module's Firestore client being loaded and healthy.
+15 tests across `shared/tests/suiteBackend.test.mjs` and
+`shared/tests/schema_drift_flush.test.mjs`.
+
+**Two bugs the 403s were masking**, both of which would have shipped the moment
+writes started landing:
+
+- **Schema-drift rows were double-encoded.** `flushSchemaDrift` passed
+  `toFirestoreFields(row)` into a primitive that encodes internally, wrapping
+  every value into a nested `mapValue`. Firestore accepts that and stores
+  structurally wrong data rather than rejecting it.
+- **The first duplicate drift would have wedged the queue forever.** The doc id
+  is a deterministic source+fingerprint *by design*, so N installs reporting one
+  drift converge on a single row — but the write is create-only, so the second
+  install gets `ALREADY_EXISTS`. The drain loop stops at the first error, so
+  that row would fail identically on every future flush and block every new
+  drift queued behind it. `ALREADY_EXISTS` now counts as drained; a genuine
+  failure still stops the drain.
+
+**Not done — this needs a deploy before it works:**
+
+```bash
+firebase deploy --only firestore --project apaisuite
+```
+
+and **Anonymous auth must be enabled** on `apaisuite` (Authentication →
+Sign-in method) — a console step the CLI cannot perform. `suiteBackend.js`
+names that condition in its sign-in error rather than surfacing a bare 400.
+Until both are done the writes keep queueing, exactly as before.
 
 ---
 

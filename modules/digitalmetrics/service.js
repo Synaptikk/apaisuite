@@ -16,6 +16,7 @@ import { pullMetrics } from "./lib/sources/tableau_metrics.js";
 import { pullSchedule } from "./lib/sources/wfm_schedule.js";
 import { datesToPull, isPullDue, isoDay } from "./lib/pull_schedule.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
+import { ensureAlarm } from "../../shared/alarms.js";
 import { deriveClassifications } from "./lib/data/job_classify.js";
 
 const ALIAS_KEY = "digitalmetrics.aliases";
@@ -29,6 +30,11 @@ const PULL_ENABLED_KEY = "digitalmetrics.pullEnabled";
 // restarts the worker constantly, and each pull opens a real background tab
 // against a corporate report.
 const MIN_PULL_GAP_MS = 45 * 60 * 1000;
+
+// Alarm identity lives beside its installer. module.js only decides WHETHER to
+// install (service-worker context only); it does not own the schedule.
+export const PULL_ALARM = "digitalmetrics.pull";
+const PULL_PERIOD_MIN = 60;
 
 async function getPullState() {
   const got = await chrome.storage.local.get(PULL_STATE_KEY);
@@ -272,6 +278,24 @@ async function runPull({ force = false, stores = null } = {}) {
  * top-level script execution — an MV3 service worker that registers a listener
  * inside a handler will never be woken by it (MODULE_CONTRACT §4).
  */
+/**
+ * Install the hourly pull alarm.
+ *
+ * Uses ensureAlarm rather than chrome.alarms.create: create() RESETS the
+ * schedule every time it runs, and an MV3 worker boots constantly, so a bare
+ * create() at top level keeps pushing the next fire out by delayInMinutes and
+ * the hourly cadence never settles. ensureAlarm only writes when the alarm is
+ * missing or its period has drifted from the code.
+ */
+export async function installPullAlarm() {
+  return ensureAlarm(PULL_ALARM, {
+    periodInMinutes: PULL_PERIOD_MIN,
+    // A freshly installed alarm should do something soon rather than after a
+    // full hour, but not during boot itself.
+    delayInMinutes: 5,
+  });
+}
+
 export async function onPullAlarm() {
   if (!(await pullEnabled())) return;
   await runPull().catch(() => {});
@@ -302,6 +326,19 @@ export const handlers = {
 
   "get_schedule":      withAliases((m)     => schedules.get(m.store, m.date)),
   "put_schedule":      withAliases((m)     => schedules.put(m.store, m.date, m.doc)),
+
+  // The store the ASSIGNMENTS tab is pinned to. Derived from the signed-in
+  // identity (shared/userStore.js reads the cached Auror JWT and takes the
+  // store out of the WIN suffix), never from the dashboard picker: a daily
+  // plan is written per store and there is no reason for one person to be
+  // editing another store's day.
+  //
+  // Returns null rather than throwing when it cannot be derived — the caller
+  // falls back to the selected store, because locking someone out of their own
+  // roster is worse than the thing the lock prevents.
+  "get_home_store":    withAliases(async () => ({
+    store: await getUserHomeStore().catch(() => null),
+  })),
 
   "get_assignments":   withAliases((m)     => assignments.get(m.store, m.date)),
   "recent_assignments": withAliases((m)    => assignments.recent(m.store, m.limit ?? 30)),
