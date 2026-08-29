@@ -65,6 +65,15 @@ export const SUMMARY_TASKS = [
  */
 export const isAbsent = (assoc) => assoc?.status === "absent";
 
+/**
+ * Is this a leadership row (coach or team lead)?
+ *
+ * They are on the board so their day can be seen and, when needed, overridden
+ * — not because they are cover. A coach counted as a picker overstates the
+ * hour and inflates the estimated picks derived from it.
+ */
+export const isLeadership = (assoc) => assoc?.role === "TL" || assoc?.role === "COACH";
+
 // Estimated picks per picker per hour. A planning figure, not a measurement —
 // the grid uses it to answer "is this enough people for the volume?".
 export const PICKS_PER_PICKER_HOUR = 75;
@@ -193,6 +202,11 @@ export function summarise(assignments, suggestions = {}) {
     // the floor, and they are not.
     if (isAbsent(assoc)) continue;
 
+    // Leadership does not count as cover. An explicitly assigned task is a
+    // deliberate override and DOES count — the exclusion is about their
+    // default role, not about ignoring a decision someone made on purpose.
+    if (isLeadership(assoc) && !Object.keys(assoc.slots || {}).length) continue;
+
     for (let i = 0; i < TIME_SLOTS.length; i++) {
       const actual     = assoc.slots?.[i];
       const suggestion = !actual ? suggestions[assoc.name]?.[i]?.task : null;
@@ -235,6 +249,9 @@ export function fillPercentage(assignments) {
     // a fully-planned day read as under-filled purely because someone called
     // in, which is the opposite of what the number is for.
     if (isAbsent(a)) continue;
+    // Same for the fill percentage: a leadership row is not an unfilled
+    // assignment waiting to be made.
+    if (isLeadership(a) && !Object.keys(a.slots || {}).length) continue;
 
     const start = typeof a.shiftStart === "number" ? a.shiftStart : 0;
     const end   = typeof a.shiftEnd   === "number" ? a.shiftEnd   : TIME_SLOTS.length;

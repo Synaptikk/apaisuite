@@ -15,6 +15,7 @@ import { inRange } from "../../data/paste.js";
 import { isWithinShift, lunchIssue } from "../../data/lunch.js";
 import {
   TIME_SLOTS, SUMMARY_TASKS, summarise, fillPercentage, isHalfSlot, partialSide,
+  isLeadership,
 } from "../../data/grid.js";
 
 const STATUSES = [
@@ -24,14 +25,24 @@ const STATUSES = [
 
 function cell(assoc, idx, suggestions, locked, selected) {
   const task       = assoc.slots?.[idx] || "";
-  const suggestion = !task ? suggestions[assoc.name]?.[idx] : null;
+  // No suggestions on a leadership row — the role default occupies the cell,
+  // and two greyed-out proposals in one cell is not a readable state.
+  const suggestion = !task && !isLeadership(assoc) ? suggestions[assoc.name]?.[idx] : null;
 
   const inShift = typeof assoc.shiftStart === "number"
                 && typeof assoc.shiftEnd === "number"
                 && idx >= assoc.shiftStart && idx < assoc.shiftEnd;
 
+  // A leadership row shows its role in every in-shift hour, unless something
+  // was assigned over it. It is a DISPLAY default, never written to slots:
+  // saving it would turn "this person is the coach" into "the coach was
+  // assigned coaching for nine hours", which is an assignment nobody made
+  // and which the totals would then have to know to ignore.
+  const roleDefault = !task && inShift && isLeadership(assoc) ? assoc.role : null;
+
   const classes = [
     "dm-cell",
+    roleDefault ? `task-${esc(roleDefault.toLowerCase())} is-role-default` : "",
     inShift ? "in-shift" : "",
     selected ? "is-selected" : "",
     task ? `task-${esc(task.toLowerCase())}` : "",
@@ -44,6 +55,8 @@ function cell(assoc, idx, suggestions, locked, selected) {
 
   const content = task
     ? esc(task)
+    : roleDefault
+      ? esc(roleDefault)
     : suggestion
       ? `<span class="dm-suggestion-hint" title="${esc(suggestion.confidence)}% of recent days">${
           esc(suggestion.task)}</span>`
@@ -68,10 +81,13 @@ function associateRow(assoc, suggestions, locked, isSelected) {
             data-dm-status="${esc(assoc.name)}" data-dm-status-key="${esc(s.key)}"
             title="${esc(s.title)}" ${locked ? "disabled" : ""}>${esc(s.label)}</button>`).join("");
 
-  return `<tr class="${[status ? `is-${esc(status)}` : "", lunch ? "has-lunch-issue" : ""].filter(Boolean).join(" ")}">
+  return `<tr class="${[status ? `is-${esc(status)}` : "",
+    lunch ? "has-lunch-issue" : "",
+    isLeadership(assoc) ? "is-leadership" : ""].filter(Boolean).join(" ")}">
     <th scope="row" class="dm-name-cell">
       <span class="dm-name">${esc(assoc.name)}${
         lunch ? `<span class="dm-lunch-flag" title="${esc(lunch.message)}" aria-label="${esc(lunch.message)}">!</span>` : ""}</span>
+      ${isLeadership(assoc) ? `<span class="badge badge-info dm-role">${esc(assoc.role)}</span>` : ""}
       ${assoc.shiftLabel ? `<span class="dm-stat-note">${esc(assoc.shiftLabel)}</span>` : ""}
       <span class="dm-status-group">${buttons}</span>
     </th>

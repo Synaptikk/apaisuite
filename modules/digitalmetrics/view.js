@@ -24,6 +24,7 @@ import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
+import { leadershipForJob, byLeadershipFirst } from "./lib/data/job_classify.js";
 import { weekLabel } from "./lib/data/wmweek.js";
 
 const PAGES = {
@@ -529,7 +530,6 @@ export async function mount(host, container) {
     const roster = known ? list.filter((a) => isDigitalTeam(a.name)) : list;
 
     return [...roster]
-      .sort((a, b) => (a.startSlot ?? 99) - (b.startSlot ?? 99) || a.name.localeCompare(b.name))
       .map((a) => ({
         name:       a.name,
         slots:      {},
@@ -537,7 +537,14 @@ export async function mount(host, container) {
         shiftStart: a.startSlot ?? null,
         shiftEnd:   a.endSlot ?? null,
         shiftLabel: a.shiftStart && a.shiftEnd ? `${a.shiftStart}-${a.shiftEnd}` : null,
-      }));
+        // Straight off the scheduler's job title: "Digital TL", "Digital Coach".
+        role:       leadershipForJob(a.jobName),
+      }))
+      // Leadership first; everyone else keeps the shift-start order the
+      // board is read in.
+      .sort((a, b) => byLeadershipFirst(a, b)
+        || (a.shiftStart ?? 99) - (b.shiftStart ?? 99)
+        || a.name.localeCompare(b.name));
   }
 
   /**
@@ -556,11 +563,18 @@ export async function mount(host, container) {
       if (!s) return a;
       return {
         ...a,
+        // Re-derived from the schedule on every load, so a promotion shows
+        // up without anyone having to re-save the day. Falls back to the
+        // stored role when the title is missing.
+        role:       leadershipForJob(s.jobName) ?? a.role ?? null,
         shiftStart: s.startSlot ?? a.shiftStart,
         shiftEnd:   s.endSlot ?? a.shiftEnd,
         shiftLabel: s.shiftStart && s.shiftEnd ? `${s.shiftStart}-${s.shiftEnd}` : a.shiftLabel,
       };
-    });
+    })
+    // A SAVED day is stored in its old order, so the pin has to be
+    // reapplied on load rather than only when the roster is first built.
+    .sort((a, b) => byLeadershipFirst(a, b));
   }
 
   function pruneSuggestions(raw) {

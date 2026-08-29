@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   classificationForJob, deriveClassifications, isValidClassification, MANUAL_ONLY,
+  leadershipForJob, byLeadershipFirst,
 } from "../data/job_classify.js";
 
 // Real job titles from the store 1458 roster, 2026-08-25.
@@ -126,4 +127,45 @@ test("rows without a name or a title are ignored", () => {
   );
   assert.equal(r.derivedFrom, 0);
   assert.equal(r.changes.length, 0);
+});
+
+// ── leadership roles ─────────────────────────────────────────────────────
+//
+// Titles taken from store 1458's real schedule for 2026-08-27 (57 distinct).
+
+test("real leadership titles map to a role", () => {
+  assert.equal(leadershipForJob("Digital TL"), "TL");
+  assert.equal(leadershipForJob("Digital Coach"), "COACH");
+  assert.equal(leadershipForJob("Fashion TL"), "TL");
+  assert.equal(leadershipForJob("AP Team Lead"), "TL");
+  assert.equal(leadershipForJob("Overnight Stocking Coach"), "COACH");
+});
+
+test("coach wins over lead, so a Digital Coach is not filed as a TL", () => {
+  assert.equal(leadershipForJob("Stocking 1 Coach"), "COACH");
+});
+
+test("ordinary titles have no role", () => {
+  assert.equal(leadershipForJob("Digital Personal Shopper"), null);
+  assert.equal(leadershipForJob("Stocking ON TA"), null);
+  assert.equal(leadershipForJob(""), null);
+  assert.equal(leadershipForJob(null), null);
+});
+
+test("the pattern stays tight enough to leave People Lead alone", () => {
+  // A loose \blead\b would claim it; it is not a digital floor role, and
+  // widening the pattern until it catches something it should not is exactly
+  // how this kind of rule rots.
+  assert.equal(leadershipForJob("People Lead"), null);
+});
+
+test("a role is not a classification — a Digital TL is still Digital", () => {
+  assert.equal(classificationForJob("Digital TL"), "Digital");
+  assert.equal(classificationForJob("Digital Coach"), "Digital");
+});
+
+test("sorting floats coach above lead above everyone else", () => {
+  const rows = [{ role: null }, { role: "TL" }, { role: "COACH" }, { role: null }];
+  assert.deepEqual([...rows].sort(byLeadershipFirst).map((r) => r.role),
+    ["COACH", "TL", null, null]);
 });

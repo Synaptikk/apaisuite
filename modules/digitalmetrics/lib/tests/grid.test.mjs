@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import {
   TIME_SLOTS, resolveShortcut, isHalfSlot, summarise,
   fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate, isAbsent,
-  slotCoverage, partialSide,
+  slotCoverage, partialSide, isLeadership,
   PICKS_PER_PICKER_HOUR,
 } from "../data/grid.js";
 
@@ -299,4 +299,39 @@ test("a fully-worked or unworked slot has no dead side", () => {
   const a = assoc({ shiftStart: 0, shiftEnd: 8, shiftLabel: "5:40am-1:00pm" });
   assert.equal(partialSide(a, 3), null, "worked end to end");
   assert.equal(partialSide(a, 15), null, "outside the shift entirely");
+});
+
+// ── leadership ───────────────────────────────────────────────────────────
+
+test("a coach or team lead is not counted as cover", () => {
+  const { counts } = summarise([
+    assoc({ name: "PICKER", slots: { 0: "PICK" } }),
+    assoc({ name: "COACH",  slots: {}, role: "COACH" }),
+    assoc({ name: "LEAD",   slots: {}, role: "TL" }),
+  ]);
+  assert.equal(counts.pickers[0], 1, "only the picker counts");
+});
+
+test("an explicit assignment on a leadership row DOES count", () => {
+  // The exclusion is about their default role, not about ignoring a decision
+  // someone made on purpose — a TL put on picking for an hour is real cover.
+  const { counts } = summarise([assoc({ name: "LEAD", role: "TL", slots: { 0: "PICK" } })]);
+  assert.equal(counts.pickers[0], 1);
+});
+
+test("leadership does not drag the fill percentage down", () => {
+  // Their empty cells are not unfilled assignments waiting to be made.
+  const full = fillPercentage([
+    assoc({ name: "P", slots: Object.fromEntries([...Array(8)].map((_, i) => [i, "PICK"])) }),
+    assoc({ name: "COACH", slots: {}, role: "COACH" }),
+  ]);
+  assert.equal(full, 100);
+});
+
+test("isLeadership recognises both roles and nothing else", () => {
+  assert.equal(isLeadership({ role: "TL" }), true);
+  assert.equal(isLeadership({ role: "COACH" }), true);
+  assert.equal(isLeadership({ role: null }), false);
+  assert.equal(isLeadership({}), false);
+  assert.equal(isLeadership(undefined), false);
 });

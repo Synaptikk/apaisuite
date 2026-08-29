@@ -593,6 +593,8 @@
   --dm-task-drv:   #FFE4E6;
   --dm-task-ds:    #ECFCCB;
   --dm-task-trn:   #E0E7FF;
+  --dm-task-tl:    #FDE68A;
+  --dm-task-coach: #FBCFE8;
   --dm-task-rest:  var(--apai-border-soft);
 }
 
@@ -612,6 +614,26 @@
 .module-digitalmetrics .dm-legend-swatch.task-ds    { background-color: var(--dm-task-ds); }
 .module-digitalmetrics .dm-cell.task-trn,
 .module-digitalmetrics .dm-legend-swatch.task-trn   { background-color: var(--dm-task-trn); }
+/* Leadership. Their rows sit above everyone and carry their role in every
+   in-shift hour as a DISPLAY default — it is not in slots, and the totals
+   ignore it. Muted on purpose: context, not an assignment competing for
+   attention with the real tasks below. */
+.module-digitalmetrics .dm-cell.task-tl,
+.module-digitalmetrics .dm-legend-swatch.task-tl    { background-color: var(--dm-task-tl); }
+.module-digitalmetrics .dm-cell.task-coach,
+.module-digitalmetrics .dm-legend-swatch.task-coach { background-color: var(--dm-task-coach); }
+.module-digitalmetrics .dm-cell.is-role-default {
+  color: var(--apai-muted);
+  font-style: italic;
+}
+
+/* A rule under the last leadership row, so the pinned block reads as its own
+   group rather than as the first few names of the roster. */
+.module-digitalmetrics .dm-grid tr.is-leadership + tr:not(.is-leadership) th,
+.module-digitalmetrics .dm-grid tr.is-leadership + tr:not(.is-leadership) td {
+  border-top: 2px solid var(--apai-border);
+}
+.module-digitalmetrics .dm-name-cell .dm-role { margin-left: var(--sp-1); }
 .module-digitalmetrics .dm-cell.task-exc,
 .module-digitalmetrics .dm-legend-swatch.task-exc   { background-color: var(--dm-task-exc); }
 .module-digitalmetrics .dm-cell.task-ip,
@@ -908,6 +930,8 @@
     --dm-task-drv:   #FFE4E6;
     --dm-task-ds:    #ECFCCB;
     --dm-task-trn:   #E0E7FF;
+    --dm-task-tl:    #FDE68A;
+    --dm-task-coach: #FBCFE8;
     --dm-task-exc:   #FFEDD5;
     --dm-task-ip:    #E0F2FE;
     --dm-task-rest:  #E5E7EB;
@@ -1158,6 +1182,8 @@
   --dm-task-drv:   color-mix(in srgb, #FFE4E6 26%, var(--forge-black));
   --dm-task-ds:    color-mix(in srgb, #ECFCCB 26%, var(--forge-black));
   --dm-task-trn:   color-mix(in srgb, #E0E7FF 26%, var(--forge-black));
+  --dm-task-tl:    color-mix(in srgb, #FDE68A 26%, var(--forge-black));
+  --dm-task-coach: color-mix(in srgb, #FBCFE8 26%, var(--forge-black));
   --dm-task-exc:   color-mix(in srgb, #FFEDD5 26%, var(--forge-black));
   --dm-task-ip:    color-mix(in srgb, #E0F2FE 26%, var(--forge-black));
   --dm-task-rest:  color-mix(in srgb, var(--steel) 30%, var(--forge-black));

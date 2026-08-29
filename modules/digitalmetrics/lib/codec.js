@@ -40,7 +40,7 @@ const SCHEDULE_FIELDS   = ["shiftStart", "shiftEnd", "startSlot", "endSlot", "jo
 // hour. Without it a saved day cannot say how much of its first and last
 // hour was actually worked, and adherence silently bills whole hours for
 // part-hours. It is a time range, not an identifier.
-const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd", "shiftLabel"];
+const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd", "shiftLabel", "role"];
 
 function pick(src, fields) {
   const out = {};
