@@ -12,13 +12,26 @@ data has moved and the extension still writes to the old project.
 | 1. Create the database | **DONE** — `projects/apaisuite/databases/aurorbuddy`, nam5, matching `digitalmetrics`. Created with Firebase's default CLOSED rules, so nothing is exposed. |
 | 2. Deploy rules | **DONE** 2026-08-29 — all three databases released to `apaisuite`. |
 | 3. Copy the data | **DONE** 2026-08-29 — 222 docs, all 8 collections verified equal, then `firestore_config.js` flipped by `dev/cutover-aurorbuddy.mjs`. The extension now writes to `apaisuite/aurorbuddy`. |
-| 4. Copy the auth accounts | **Needs you** — two commands; `scripts/auth-hash-config.mjs` prints them filled in. The "only in the console" blocker was wrong (see §4). |
-| 5. Dashboard reads both | **Code DONE, DEPLOYED 2026-08-29** — two Firebase apps, dual sign-in, merged and de-duplicated, with a source badge. Still uncommitted in `~/shanesmith`. Shows `apaisuite ✗` until step 4 lands. |
+| 4. Copy the auth accounts | **DONE** 2026-08-29 — 75 accounts exported from `aurorbuddy` and imported into `apaisuite`, uids preserved. Hash parameters came from `scripts/auth-hash-config.mjs`; the "only in the console" blocker was wrong (see §4). |
+| 5. Dashboard reads both | **DONE, DEPLOYED 2026-08-29** — two Firebase apps, dual sign-in, merged and de-duplicated, with a source badge. Still **uncommitted** in `~/shanesmith`. |
 
-**Where this actually stands:** the extension writes to the new project, and
-the dashboard cannot yet read it. Existing rows still display from the legacy
-project, so the page looks healthy while silently no longer growing — step 4 is
-what closes that, and nothing else is outstanding.
+**All five steps are done.** The extension writes to `apaisuite/aurorbuddy`,
+the dashboard authenticates against both projects and merges them, and the
+data is present in both.
+
+Two loose ends, neither blocking:
+
+- **`~/shanesmith/dashboard/` is deployed but uncommitted** (`app.js`,
+  `index.html`, `styles.css`). The live site is ahead of that repo's history,
+  so a fresh checkout would rebuild an older dashboard than the one serving.
+- **Accounts and data now exist in BOTH projects, deliberately.** That is what
+  lets legacy shanesmith installs in the field keep working. Retiring the
+  `aurorbuddy` project is a separate decision that cannot happen until those
+  installs are gone — see the shanesmith sunset in `BACKEND_MIGRATION_PLAN.md`.
+  Until then, do not delete anything from the legacy project.
+
+**`dev/migration-copy.mjs` is retired.** It writes by document id and would now
+revert live rows. `dev/cutover-aurorbuddy.mjs` refuses to run for that reason.
 | 6. Flip the extension | Blocked on 2-4. One line in `firestore_config.js`. |
 | 7. Retire | Later. |
 
