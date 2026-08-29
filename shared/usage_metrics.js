@@ -12,14 +12,15 @@
 // Mixing the two shapes in one collection would quietly re-identify these,
 // so they are separate collections and stay that way.
 //
-// Layering note: this imports the Firestore write primitive from an
-// aurorbuddy lib. That inverts the usual direction, and it is deliberate —
-// docs/USAGE_METRICS_MODEL.md §2 specifies exactly this ("consumable by other
-// modules via the same helper"), and duplicating the anonymous-auth dance
-// would give the suite two token caches racing for the same Firebase user.
-// The store build never strips aurorbuddy, so the import always resolves.
+// Backend: the `apaisuite` project, via shared/suiteBackend.js. This used to
+// import the write primitive from modules/aurorbuddy/lib/firestore.js, on the
+// reasoning that one client meant one token cache. But that client is pinned
+// to the `aurorbuddy` project while these rows are governed by
+// backend/firestore.suite.rules, which deploys to `apaisuite` — so every write
+// 403'd. Sharing a token cache is worth nothing if it points at the wrong
+// project; see the header of suiteBackend.js.
 
-import { commitCreateWithServerTimestamp } from "../modules/aurorbuddy/lib/firestore.js";
+import { commitCreateWithServerTimestamp } from "./suiteBackend.js";
 import { getUserHomeStore, getUserHomeMarket, getUserRole } from "./userStore.js";
 
 const COLLECTION = "suite_usage_events";
