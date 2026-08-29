@@ -318,15 +318,108 @@ const REOPEN_DEDUPE_MS = 30_000;
 
 function noteModuleOpened(moduleId) {
   if (!moduleId) return;
+
   // Bouncing between two modules is real usage; re-entering the SAME one
   // within half a minute is usually a back-button or a re-render, and
   // counting it would inflate exactly the number this exists to inform.
+  //
+  // ALL THREE signals sit behind this one check, deliberately. Arming the
+  // dwell timer or clearing the interaction flag above it would let a single
+  // back-button bounce credit the same visit twice — the exact inflation the
+  // dedupe exists to prevent, reintroduced by the finer-grained signals meant
+  // to make the number more honest.
   const now = Date.now();
   if (_lastOpened.id === moduleId && now - _lastOpened.at < REOPEN_DEDUPE_MS) return;
   _lastOpened = { id: moduleId, at: now };
 
+  startDwell(moduleId);
+  _interacted = null;
+
   recordUsage({ moduleName: moduleId, actionName: "module_opened" }).catch(() => {});
 }
+
+// ── Dwell: opening is not using, but LOOKING is ────────────────────────────
+//
+// Some modules have nothing to click. VizPick, Market120 and DigitalRollup
+// render a board and that is the whole interaction — so instrumenting only
+// buttons reported them as opened-and-never-used however long someone studied
+// them. Reading a dashboard for half a minute is using it.
+//
+// Fires ONCE per open, after DWELL_MS of the module being both mounted and
+// VISIBLE. Visibility is the part that matters: the suite is a pinned tab that
+// sits in the background all day, and a timer that ignored that would mark
+// every module used every time the browser was left running — which is a
+// number that looks like engagement and measures nothing.
+const DWELL_MS = 25_000;
+
+let _dwell = null;   // { moduleId, visibleMs, since, timer }
+
+function clearDwell() {
+  if (_dwell?.timer) clearTimeout(_dwell.timer);
+  _dwell = null;
+}
+
+function armDwell() {
+  if (!_dwell || document.visibilityState !== "visible") return;
+  _dwell.since = Date.now();
+  _dwell.timer = setTimeout(() => {
+    const id = _dwell?.moduleId;
+    clearDwell();
+    if (id) recordUsage({ moduleName: id, actionName: "module_viewed" }).catch(() => {});
+  }, Math.max(0, DWELL_MS - _dwell.visibleMs));
+}
+
+function startDwell(moduleId) {
+  clearDwell();
+  _dwell = { moduleId, visibleMs: 0, since: 0, timer: null };
+  armDwell();
+}
+
+// Hidden time is banked rather than discarded, so glancing at another tab
+// mid-read does not restart the clock and lose a genuine view.
+document.addEventListener("visibilitychange", () => {
+  if (!_dwell) return;
+  if (document.visibilityState === "visible") {
+    armDwell();
+  } else if (_dwell.timer) {
+    clearTimeout(_dwell.timer);
+    _dwell.timer = null;
+    _dwell.visibleMs += Date.now() - _dwell.since;
+  }
+});
+
+// ── Interaction: the strongest signal, and the cheapest ────────────────────
+//
+// A click on ANY control inside a module is better evidence than time on
+// screen, and it catches everything the per-module instrumentation does not:
+// expanding a card, switching an internal tab, changing a store picker,
+// sorting a column. Those are all someone working, and hand-instrumenting
+// each one would be endless and would drift the moment a module gained a
+// control.
+//
+// Delegated on the container so it survives every re-render, and fired ONCE
+// per open — the question is "did they engage with this", not "how many times
+// did they click", which durations and per-action rows already answer.
+//
+// Whitespace clicks do not count: the target must be an actual control, or
+// this measures nothing but the mouse landing somewhere.
+const INTERACTIVE =
+  'button, a, input, select, textarea, label, summary, [role="button"], [data-action], th';
+
+let _interacted = null;   // moduleId already credited for this open
+
+function noteInteraction(moduleId) {
+  if (!moduleId || _interacted === moduleId) return;
+  _interacted = moduleId;
+  recordUsage({ moduleName: moduleId, actionName: "module_interacted" }).catch(() => {});
+}
+
+document.addEventListener("click", (e) => {
+  const id = currentMount?.moduleId;
+  if (!id) return;                                    // home, settings, docs
+  if (!e.target?.closest?.(INTERACTIVE)) return;
+  noteInteraction(id);
+}, true);   // capture: a module that stops propagation must not hide its own use
 
 window.addEventListener("hashchange", route);
 
