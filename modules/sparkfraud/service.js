@@ -192,9 +192,31 @@ async function _clickGoViaCdp(tabId) {
 // Avoids "another debugger is already attached" errors on overlapping calls.
 const _spoofedTabs = new Set();
 chrome.tabs.onRemoved.addListener(tabId => _spoofedTabs.delete(tabId));
-chrome.debugger.onDetach.addListener(source => {
-  if (source?.tabId != null) _spoofedTabs.delete(source.tabId);
-});
+
+// ── chrome.debugger is OPTIONAL, and absent in the store build ──────────────
+//
+// `debugger` is the most heavily scrutinised permission in this manifest and
+// only this module wants it, so scripts/pack-cws.sh strips it from the staged
+// manifest for the Chrome Web Store package. Everything below must therefore
+// work when the API simply is not there.
+//
+// This listener was the one place that could not: it runs at MODULE LOAD, so
+// an unguarded `chrome.debugger.onDetach` throws during service-worker
+// registration and takes EVERY module down with it — the suite would not start
+// at all, and nothing would point at SparkFraud as the cause.
+//
+// The other two call sites already degrade on their own — _clickGoViaCdp falls
+// back to chrome.scripting when no tab is attached — but _spoofVisibility is
+// given an explicit check below rather than relying on its try/catch swallowing
+// a TypeError, because "the API is missing" and "attaching failed" deserve
+// different log lines.
+const HAS_DEBUGGER = typeof chrome !== "undefined" && !!chrome.debugger;
+
+if (HAS_DEBUGGER) {
+  chrome.debugger.onDetach.addListener(source => {
+    if (source?.tabId != null) _spoofedTabs.delete(source.tabId);
+  });
+}
 
 // Spoof document.visibilityState for the tab BEFORE its next navigation.
 // Background tabs throttle JS heavily (timer clamps, deferred Promise
@@ -204,6 +226,13 @@ chrome.debugger.onDetach.addListener(source => {
 // the SSO chain runs with visibilityState = "visible" and the throttling
 // never engages. Same pattern lib/evidence_downloader.js uses for CCTV.
 async function _spoofVisibility(tabId) {
+  if (!HAS_DEBUGGER) {
+    // Store build. SSO still runs — it just loses the throttling workaround,
+    // so a stalled chain ends in the tab being foregrounded for a manual
+    // click instead of completing silently.
+    console.info("[SparkFraud auth] no chrome.debugger in this build — background SSO may need a manual click");
+    return false;
+  }
   if (_spoofedTabs.has(tabId)) return true;
   try {
     await chrome.debugger.attach({ tabId }, "1.3");
