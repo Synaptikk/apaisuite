@@ -10,10 +10,15 @@ data has moved and the extension still writes to the old project.
 | Step | State |
 |---|---|
 | 1. Create the database | **DONE** — `projects/apaisuite/databases/aurorbuddy`, nam5, matching `digitalmetrics`. Created with Firebase's default CLOSED rules, so nothing is exposed. |
-| 2. Deploy rules | **Needs you** — `firebase deploy` is denied to the agent by your own settings. |
-| 3. Copy the data | **Needs you** — gcloud is signed in as the wrong account (see below). |
-| 4. Copy the auth accounts | **Needs you** — the password hash parameters are only in the console. |
-| 5. Dashboard reads both | **DONE** — two Firebase apps, dual sign-in, merged and de-duplicated, with a source badge. Uncommitted in `~/shanesmith`. |
+| 2. Deploy rules | **DONE** 2026-08-29 — all three databases released to `apaisuite`. |
+| 3. Copy the data | **DONE** 2026-08-29 — 222 docs, all 8 collections verified equal, then `firestore_config.js` flipped by `dev/cutover-aurorbuddy.mjs`. The extension now writes to `apaisuite/aurorbuddy`. |
+| 4. Copy the auth accounts | **Needs you** — two commands; `scripts/auth-hash-config.mjs` prints them filled in. The "only in the console" blocker was wrong (see §4). |
+| 5. Dashboard reads both | **Code DONE, DEPLOYED 2026-08-29** — two Firebase apps, dual sign-in, merged and de-duplicated, with a source badge. Still uncommitted in `~/shanesmith`. Shows `apaisuite ✗` until step 4 lands. |
+
+**Where this actually stands:** the extension writes to the new project, and
+the dashboard cannot yet read it. Existing rows still display from the legacy
+project, so the page looks healthy while silently no longer growing — step 4 is
+what closes that, and nothing else is outstanding.
 | 6. Flip the extension | Blocked on 2-4. One line in `firestore_config.js`. |
 | 7. Retire | Later. |
 
@@ -153,12 +158,33 @@ firebase auth:import users.json --project apaisuite \
   --hash-algo=SCRYPT --hash-key=<key> --salt-separator=<sep> --rounds=<n> --mem-cost=<n>
 ```
 
-The hash parameters come from the **source** project: Firebase console →
-Authentication → Users → ⋮ → Password hash parameters. Without them the accounts
-import but every password fails, and there is no way to tell until someone tries
-to log in. Verify with a real login before announcing anything.
+The hash parameters come from the **source** project. Get them — and the filled-in
+import command — with:
 
-Keep `users.json` out of git — it contains password hashes. Delete it after.
+```bash
+node scripts/auth-hash-config.mjs          # redacted
+node scripts/auth-hash-config.mjs --reveal # runnable
+```
+
+This section used to say the parameters "are only in the console". **That was
+wrong**, and it mattered: the console is unreachable from a Walmart machine
+(the corp proxy blocks Google web sign-in for personal accounts) so it read as
+a hard blocker on a step that is actually two commands. The Identity Toolkit
+admin config resource returns them as `signIn.hashConfig`, from the same
+endpoint `scripts/enable-anon-auth.mjs` already calls. Confirmed live against
+`aurorbuddy` on 2026-08-29: `SCRYPT`, rounds 8, memoryCost 14.
+
+The console path (Authentication → Users → ⋮ → Password hash parameters) still
+works and remains the fallback if the API ever stops returning `hashConfig`.
+
+Without the parameters the accounts import but every password fails, and there
+is no way to tell until someone tries to log in. Verify with a real login
+before announcing anything.
+
+`users.json` contains password hashes — write it somewhere disposable rather
+than into a repo, keep it out of git, and delete it once the import succeeds.
+The signer key is a secret too: do not paste a revealed one into a ticket or a
+chat.
 
 ### 5. Dashboard reads both
 
