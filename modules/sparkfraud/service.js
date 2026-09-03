@@ -18,6 +18,7 @@
 import { createAuth } from "../../shared/auth.js";
 import { ensureAlarm, IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
+import { observeIdentity, parseWireId } from "../../shared/identity.js";
 
 const MODULE_ID = "sparkfraud";
 
@@ -336,6 +337,61 @@ function isStuckGscopeUrl(url) {
       || url.includes("/login");
 }
 
+// gscope's session cookies carry the two best identity signals in the suite:
+// `store-no` is the store Walmart's own session is scoped to (the only source
+// that is not a WIN suffix, i.e. the only one that is right after a transfer),
+// and `wire-id` is "Display Name - loginId". Both were already being read here
+// and thrown away after building a request header.
+//
+// Recorded for the whole suite so the home store stops depending on whether
+// this particular analyst happens to use AurorBuddy. Fire-and-forget: identity
+// is a convenience, and nothing about a Dispatcher search should fail because
+// a storage write did.
+function recordGscopeIdentity(ci) {
+  try {
+    const store = String(ci["store-no"] || ci.storeno || "").trim();
+    const { displayName, win } = parseWireId(ci["wire-id"]);
+    if (!store && !win && !displayName) return;
+    observeIdentity({
+      source: "gscope_session",
+      store: /^\d{1,5}$/.test(store) ? String(parseInt(store, 10)) : "",
+      win,
+      displayName,
+    }).catch(() => {});
+  } catch { /* never let identity bookkeeping break a search */ }
+}
+
+// The real test of "is this session alive". isStuckGscopeUrl only judges the
+// URL, and an expired session sits on a URL that looks completely fine.
+function hasAuthCookies(cookies) {
+  if (!cookies) return false;
+  const lower = Object.keys(cookies).map(k => k.toLowerCase());
+  return lower.includes("authtoken") && lower.includes("authheader");
+}
+
+// Read cookies from the first responsive tab. (Walmart-corp-Edge gutted
+// chrome.cookies.getAll({}), so we read document.cookie via in-tab
+// executeScript and merge with chrome.cookies.getAll({url}) for the HttpOnly
+// ones.) Returns { cookies, usedTab } — cookies is null if every tab timed out.
+async function readCookiesFromTabs(tabs, log = () => {}) {
+  for (const tab of tabs) {
+    try {
+      log("trying tab", tab.id, tab.url);
+      const merged = await Promise.race([
+        auth.readCookiesViaTab(tab.id),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("readCookiesViaTab-5s-timeout")), 5000)
+        ),
+      ]);
+      log("got cookies from tab", tab.id, "count:", Object.keys(merged).length);
+      return { cookies: merged, usedTab: tab };
+    } catch (e) {
+      log("tab", tab.id, "failed:", String(e));
+    }
+  }
+  return { cookies: null, usedTab: null };
+}
+
 // Open / find the gscope auth tab in BACKGROUND. Drives the SSO chain end-to-
 // end via driveGscopeAuthChain (clicks Go on pfedprod AND wmstoresso). Per
 // the suite-wide background-auth convention, never foregrounds tabs unless
@@ -409,10 +465,20 @@ async function ensureGscopeAuthTab() {
     }
   }
 
-  // Step 4: no tab exists — open a blank background tab, attach debugger for
-  // the visibility spoof (so the SSO chain's intermediate pages aren't
-  // throttled), then navigate to pfedprod. driveGscopeAuthChain handles the
-  // Go-clicks on pfedprod → wmstoresso → /apphome chain.
+  // Step 4: no tab exists — open our own and drive the chain.
+  return openAndDriveOwnAuthTab();
+}
+
+// Open a blank background tab of OUR OWN, attach the debugger for the
+// visibility spoof (so the SSO chain's intermediate pages aren't throttled),
+// then navigate to pfedprod. driveGscopeAuthChain handles the Go-clicks on
+// the pfedprod → wmstoresso → /apphome chain.
+//
+// Always a NEW tab, never one the user might be working in: this also runs
+// when a perfectly good-looking gscope tab exists whose session has expired,
+// and navigating that tab out from under the user to an SSO endpoint is
+// exactly what `MEMORY.md::Never adopt a user's tab and navigate it` forbids.
+async function openAndDriveOwnAuthTab() {
   const tab = await chrome.tabs.create({ url: "about:blank", active: false });
   await chrome.storage.session.set({ [STORAGE_AUTH_TAB_KEY]: tab.id });
   // This tab BECOMES the working gscope tab once the SSO chain lands, so it
@@ -428,7 +494,7 @@ async function ensureGscopeAuthTab() {
   if (arrived) {
     const nowTabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
     const usableNow = nowTabs.filter(t => !isStuckGscopeUrl(t.url));
-    if (usableNow.length) return { ready: true, tabs: usableNow };
+    if (usableNow.length) return { ready: true, tabs: usableNow, drivenTabId: tab.id };
   }
   const interactive = await _foregroundIfStillStuck(tab.id);
   if (interactive) return interactive;
@@ -1015,59 +1081,83 @@ export const handlers = {
           tabId: authRes.tabId,
         };
       }
-      const tabs = authRes.tabs;
+      let tabs = authRes.tabs;
       log("tabs found:", tabs.length, tabs.map(t => `${t.id}:${t.url}`));
 
-      // Try each tab — first one to return cookies via the readCookiesViaTab
-      // workaround wins. (Walmart-corp-Edge gutted chrome.cookies.getAll({}),
-      // so we read document.cookie via in-tab executeScript and merge with
-      // chrome.cookies.getAll({url}) for the HttpOnly cookies.)
-      let cookies = null;
-      let usedTab = null;
-      for (const tab of tabs) {
-        try {
-          log("trying tab", tab.id, tab.url);
-          const merged = await Promise.race([
-            auth.readCookiesViaTab(tab.id),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("readCookiesViaTab-5s-timeout")), 5000)
-            ),
-          ]);
-          cookies = merged;
-          usedTab = tab;
-          log("got cookies from tab", tab.id, "count:", Object.keys(merged).length);
-          break;
-        } catch (e) {
-          log("tab", tab.id, "failed:", String(e));
+      let read = await readCookiesFromTabs(tabs, log);
+
+      // An EXPIRED session is the one state ensureGscopeAuthTab cannot see.
+      // Its step 1 accepts any gscope tab whose URL is not on the stuck list,
+      // and an expired session leaves a tab sitting on /apphome — a perfectly
+      // usable-looking URL with cookies but no authToken. So the readiness
+      // test passed, no step ever drove the SSO chain, and this branch used to
+      // dead-end by telling the user to go sign in by hand. That is the bug:
+      // the background-auth convention is "don't FOREGROUND a tab", not
+      // "don't re-authenticate".
+      //
+      // Drive the chain once, in a tab of our own, then re-read. Once at most,
+      // because a second failure means the chain needs a human (MFA, a
+      // password prompt) and retrying just burns tabs.
+      if (read.cookies && !hasAuthCookies(read.cookies)) {
+        log("cookies present but no authToken — session expired; driving SSO in our own tab");
+        try { await chrome.storage.session.remove(STORAGE_AUTH_TAB_KEY); } catch (_) {}
+        const reauth = await openAndDriveOwnAuthTab();
+        if (reauth.ready) {
+          tabs = reauth.tabs;
+          const retry = await readCookiesFromTabs(tabs, log);
+          if (retry.cookies) read = retry;
+          log("post-reauth cookie read:", read.cookies ? Object.keys(read.cookies).length : 0,
+              "hasAuth:", read.cookies ? hasAuthCookies(read.cookies) : false);
+        } else {
+          // The chain stalled — either mid-flight ("auth-opening") or on a
+          // page only a human can clear ("auth-needs-interaction", which
+          // _foregroundIfStillStuck has already surfaced in its own window).
+          // Hand back the same shape the not-ready path uses so the UI says
+          // what is actually happening rather than "your session may have
+          // expired".
+          log("reauth did not land:", reauth.reason);
+          return {
+            ok: false,
+            error: reauth.reason || "auth-pending",
+            message: reauth.message,
+            tabId: reauth.tabId,
+            stuckUrl: reauth.stuckUrl,
+          };
         }
       }
 
-      if (!cookies) {
+      if (!read.cookies) {
         return { ok: false, error: "All gscope tabs unresponsive — try refreshing one" };
       }
+      const { cookies, usedTab } = read;
 
-      // Auth-presence check (case-insensitive).
-      const lowerKeys = Object.keys(cookies).map(k => k.toLowerCase());
-      const hasAuth = lowerKeys.includes("authtoken") && lowerKeys.includes("authheader");
-      if (!hasAuth) {
-        // Background-auth convention: do NOT foreground the tab. Surface
-        // "auth-cookies-missing" so the UI shows the error and the user
-        // can re-auth in the (still-background) tab when convenient.
-        // Clear stored authTabId so a follow-up ensureGscopeAuthTab call
-        // doesn't spin on a stale tab.
-        try { await chrome.storage.session.remove(STORAGE_AUTH_TAB_KEY); } catch (_) {}
+      if (!hasAuthCookies(cookies)) {
+        // Re-auth was attempted above and did not produce auth cookies. Per
+        // the background-auth convention the tab is still not foregrounded
+        // here — _foregroundIfStillStuck already had its chance inside
+        // openAndDriveOwnAuthTab, and it declined, meaning the page looks
+        // usable but is not authenticating.
         return {
           ok: false,
           error: "auth-cookies-missing",
-          message: "gscope tab is loaded but auth cookies are missing — your session may have expired. " +
-                   "Open https://gscope.walmartlabs.com/apphome to re-authenticate, then click Find candidates again.",
+          message: "Signed-in session could not be established automatically — the SSO chain " +
+                   "completed but gscope issued no auth cookies. Open " +
+                   "https://gscope.walmartlabs.com/apphome to sign in, then click Find candidates again.",
           diag: {
             tabUrl: usedTab.url,
+            reauthAttempted: true,
             cookieCount: Object.keys(cookies).length,
             cookieNames: Object.keys(cookies).sort(),
           },
         };
       }
+
+      // Cookies are inconsistently cased across gscope services, so lowercase
+      // once for the identity read. The caller does its own lowercasing for
+      // header building; this must not depend on that happening.
+      const ciCookies = {};
+      for (const k of Object.keys(cookies)) ciCookies[k.toLowerCase()] = cookies[k];
+      recordGscopeIdentity(ciCookies);
 
       return {
         ok: true,
@@ -1350,26 +1440,41 @@ async function _buildSwiftHeaders() {
   if (!authRes.ready) {
     return { ok: false, reason: authRes.reason, message: authRes.message };
   }
-  const tabs = authRes.tabs;
-  let cookies = null;
-  for (const tab of tabs) {
-    try {
-      cookies = await Promise.race([
-        auth.readCookiesViaTab(tab.id),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("readCookiesViaTab-5s-timeout")), 5000)),
-      ]);
-      if (cookies) break;
-    } catch (_) { /* try next tab */ }
+  let tabs = authRes.tabs;
+  let read = await readCookiesFromTabs(tabs);
+
+  // Same expired-session blind spot the UI path has: ensureGscopeAuthTab
+  // judges readiness by URL, so a tab parked on /apphome with a dead session
+  // reads as ready. This runs from the watchlist alarm with no UI open, so
+  // there is nobody to show a "go sign in" message to — driving the chain in
+  // the background is the only thing that can fix it.
+  if (read.cookies && !hasAuthCookies(read.cookies)) {
+    console.log("[SparkFraud auth] watchlist poll: session expired — driving SSO in our own tab");
+    try { await chrome.storage.session.remove(STORAGE_AUTH_TAB_KEY); } catch (_) {}
+    const reauth = await openAndDriveOwnAuthTab();
+    if (reauth.ready) {
+      tabs = reauth.tabs;
+      const retry = await readCookiesFromTabs(tabs);
+      if (retry.cookies) read = retry;
+    } else {
+      return { ok: false, reason: reauth.reason, message: reauth.message };
+    }
   }
+
+  const cookies = read.cookies;
   if (!cookies) return { ok: false, reason: "no-cookies", message: "Couldn't read gscope cookies" };
 
   // Lowercase keys for case-insensitive lookup (cookies are inconsistently
   // cased — `loginid` vs `loginId` etc).
   const ci = {};
   for (const k of Object.keys(cookies)) ci[k.toLowerCase()] = cookies[k];
-  if (!ci.authtoken) {
-    return { ok: false, reason: "auth-cookies-missing", message: "gscope authToken cookie missing" };
+  if (!hasAuthCookies(cookies)) {
+    return {
+      ok: false, reason: "auth-cookies-missing",
+      message: "gscope auth cookies missing after an automatic re-auth attempt",
+    };
   }
+  recordGscopeIdentity(ci);
 
   const loginId      = ci.loginid || "";
   const display      = ci.displayname || "";
