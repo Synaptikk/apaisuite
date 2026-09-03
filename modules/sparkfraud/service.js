@@ -64,6 +64,7 @@ async function waitForTabUrl(tabId, urlSubstr, timeoutMs) {
 
 async function injectAndRetry(tabId, fn, args, maxAttempts = 10, delayMs = 1500) {
   let lastResult = null;
+  let lastError = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const results = await chrome.scripting.executeScript({
@@ -75,12 +76,19 @@ async function injectAndRetry(tabId, fn, args, maxAttempts = 10, delayMs = 1500)
       const hit = results.find(r => r.result && r.result.ok);
       if (hit) return hit.result;
       lastResult = results;
+      // Remember the most specific thing a frame said. "exhausted retries"
+      // on its own told the user nothing — it covered both "the form never
+      // appeared" and "the request fired but nothing captured it".
+      const said = results.map(r => r?.result).find(r => r && !r.skipped && r.error);
+      if (said) lastError = said.error;
+      else if (results.every(r => r?.result?.skipped)) lastError = "no frame had the form";
     } catch (e) {
       lastResult = String(e);
+      lastError = String(e);
     }
     await sleep(delayMs);
   }
-  return { ok: false, error: "exhausted retries", lastResult };
+  return { ok: false, error: `exhausted retries — ${lastError || "no result"}`, lastResult };
 }
 
 // Drive the gscope SSO chain to a usable state. Polls the tab and clicks
@@ -922,9 +930,22 @@ export const handlers = {
         async (orderIds, captureGlobalName) => {
           const sleep = ms => new Promise(r => setTimeout(r, ms));
           const startTs = Date.now();
+          const perfStart = performance.now();
 
-          const input = document.querySelector('input[name="orderNo"]');
-          if (!input) return { ok: false, skipped: true };
+          // The form lives in the top document. Child frames (Quantum
+          // Metric's hidden about:blank, any embedded MFE) bail at once so
+          // they don't hold the whole executeScript open while they poll.
+          if (window !== window.top) return { ok: false, skipped: true };
+
+          // Wait for the MFE to render the form rather than returning
+          // "skipped" and burning a retry: on a busy browser the Order
+          // Resolution SPA can take well past the 5s post-load sleep to mount.
+          let input = null;
+          for (let i = 0; i < 40 && !input; i++) {
+            input = document.querySelector('input[name="orderNo"]');
+            if (!input) await sleep(500);
+          }
+          if (!input) return { ok: false, error: "Order Resolution form did not appear within 20s" };
 
           const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
           setter.call(input, orderIds.join(","));
@@ -953,14 +974,31 @@ export const handlers = {
               };
             }
           }
-          return { ok: false, error: "Timed out (30s) waiting for /provider-oms response" };
+          // Say WHICH half failed. Resource timing sees the request whether
+          // or not any capture script did, so "fired but not captured" (a
+          // capture-script regression, like 2026-08-20's) is distinguishable
+          // from "never fired" (the click did nothing) from here.
+          const fired = performance.getEntriesByType("resource")
+            .some(r => r.name.includes("/provider-oms/orders") && r.startTime >= perfStart);
+          const seen = cap.filter(e => e.url && e.url.includes("/provider-oms/orders") && e.ts >= startTs).length;
+          return {
+            ok: false,
+            error: !fired
+              ? "clicked View details but no /provider-oms request fired in 30s"
+              : seen
+                ? "/provider-oms request captured but its response never arrived in 30s"
+                : `/provider-oms request fired but the capture script did not see it ` +
+                  `(buffer ${Array.isArray(window[captureGlobalName]) ? "present" : "MISSING"}, ` +
+                  `${cap.length} entries)`,
+          };
         },
         [orderIds, CAPTURE_GLOBAL_NAME],
-        // Two attempts, not five: each is ~32s and the view gives up on the
-        // whole message at 90s. Five attempts meant the view always saw a
-        // bare messaging timeout while the worker kept clicking View details
-        // in a tab nobody was going to read. Two fits under the deadline, so
-        // the specific error above is what reaches the card.
+        // Two attempts, not five: each is up to ~50s (20s form wait + 30s
+        // capture wait) and the view gives up on the whole message at 150s.
+        // Five attempts meant the view always saw a bare messaging timeout
+        // while the worker kept clicking View details in a tab nobody was
+        // going to read. The form wait is inside the attempt now, so the
+        // second attempt only ever re-clicks a form that exists.
         2,
         2000,
       );

@@ -895,7 +895,10 @@ ${itemsHtml}
   async function _runOmsBatch(batch, tag) {
     const t0 = Date.now();
     try {
-      const r = await send("driveOrderResolution", { orderIds: batch }, 90_000);
+      // 150s: the SW side is up to 30s page load + 5s settle + two attempts
+      // of (20s form wait + 30s capture wait). 90s used to cut the second
+      // attempt off mid-flight and report a bare messaging timeout.
+      const r = await send("driveOrderResolution", { orderIds: batch }, 150_000);
       const durationMs = Date.now() - t0;
       if (!r.ok) {
         console.warn(`[SparkFraud] OMS ${tag} failed in ${durationMs}ms:`, r.error || `HTTP ${r.status}`);
