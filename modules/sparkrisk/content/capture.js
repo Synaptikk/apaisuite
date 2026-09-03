@@ -61,49 +61,57 @@
     }
   };
 
-  // Patch XMLHttpRequest
-  const OrigXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = function () {
-    const xhr = new OrigXHR();
-    const entry = { via: "xhr", ts: Date.now(), headers: {} };
-    
-    const origOpen = xhr.open;
-    xhr.open = function (method, url, ...args) {
-      entry.method = method;
-      entry.url = url;
-      return origOpen.call(this, method, url, ...args);
-    };
-    
-    const origSetRequestHeader = xhr.setRequestHeader;
-    xhr.setRequestHeader = function (k, v) {
-      entry.headers[k.toLowerCase()] = v;
-      return origSetRequestHeader.call(this, k, v);
-    };
-    
-    const origSend = xhr.send;
-    xhr.send = function (body) {
+  // Patch XMLHttpRequest — on the PROTOTYPE, never by replacing the
+  // constructor. The original version of this file did
+  // `window.XMLHttpRequest = function () { ... }`, which broke two things:
+  //   1. Every other MAIN-world script that patches XMLHttpRequest.prototype
+  //      (sparkfraud's capture.js, on the same gscope pages) landed its patch
+  //      on the wrapper's empty prototype and captured nothing. SparkFraud's
+  //      item lookup was dead from 2026-08-20 until this was found.
+  //   2. Page code lost XMLHttpRequest.DONE/OPENED constants and
+  //      `instanceof XMLHttpRequest`.
+  // Prototype patches compose: whichever script runs last wraps the one
+  // before it, and each records into its own buffer.
+  const XHR = window.XMLHttpRequest;
+  // If someone else already swapped the constructor for a wrapper, its
+  // .prototype is not the real one — reach the real prototype through an
+  // instance.
+  let proto = XHR.prototype;
+  if (typeof proto.open !== "function") {
+    try { proto = Object.getPrototypeOf(new XHR()); } catch (_) {}
+  }
+  const origOpen = proto.open;
+  const origSetRequestHeader = proto.setRequestHeader;
+  const origSend = proto.send;
+
+  proto.open = function (method, url) {
+    this.__sparkrisk = { via: "xhr", ts: Date.now(), method, url, headers: {} };
+    return origOpen.apply(this, arguments);
+  };
+  proto.setRequestHeader = function (k, v) {
+    if (this.__sparkrisk) this.__sparkrisk.headers[String(k).toLowerCase()] = v;
+    return origSetRequestHeader.apply(this, arguments);
+  };
+  proto.send = function (body) {
+    const entry = this.__sparkrisk;
+    if (entry) {
       entry.body = body ? String(body).slice(0, 5000) : null;
-      
-      xhr.addEventListener("load", () => {
-        entry.status = xhr.status;
+      this.addEventListener("load", () => {
+        entry.status = this.status;
         try {
-          entry.responseText = xhr.responseText.length <= 10_000_000 
-            ? xhr.responseText 
-            : xhr.responseText.slice(0, 10_000_000);
+          entry.responseText = this.responseText.length <= 10_000_000
+            ? this.responseText
+            : this.responseText.slice(0, 10_000_000);
         } catch (_) {}
         record(entry);
       });
-      
-      xhr.addEventListener("error", () => {
+      this.addEventListener("error", () => {
         entry.error = "XHR error";
         record(entry);
       });
-      
-      return origSend.call(this, body);
-    };
-    
-    return xhr;
+    }
+    return origSend.apply(this, arguments);
   };
-  
+
   console.log("[SparkRisk] Network capture installed");
 })();

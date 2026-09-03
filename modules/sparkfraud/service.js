@@ -956,7 +956,12 @@ export const handlers = {
           return { ok: false, error: "Timed out (30s) waiting for /provider-oms response" };
         },
         [orderIds, CAPTURE_GLOBAL_NAME],
-        5,
+        // Two attempts, not five: each is ~32s and the view gives up on the
+        // whole message at 90s. Five attempts meant the view always saw a
+        // bare messaging timeout while the worker kept clicking View details
+        // in a tab nobody was going to read. Two fits under the deadline, so
+        // the specific error above is what reaches the card.
+        2,
         2000,
       );
 

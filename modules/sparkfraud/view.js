@@ -48,6 +48,12 @@ export async function mount(host, container) {
   let allTrips = [];
   let allNormalizedTrips = [];
   let itemsByOrder = {};
+  // First OMS batch failure of the most recent fetchOrderItems run, or null.
+  // Read by renderItemsForTrip so a trip whose items never arrived says WHY
+  // instead of the same "No item details returned" it shows for an order
+  // OMS genuinely has no lines for. (2026-09-03: every batch was timing out
+  // and the UI looked identical to "nothing to show".)
+  let lastOmsError = null;
   let lastWidenInfo = null;
   let lastConfidenceCounts = null;
   let lastSearchResult = null;
@@ -942,6 +948,8 @@ ${itemsHtml}
 
     let totalRows = 0;
     let failedBatches = 0;
+    lastOmsError = null;
+    const noteFailure = r => { if (!lastOmsError) lastOmsError = r.error || "unknown error"; };
 
     const omsT0 = Date.now();
     const tag0 = `batch 1/${batches.length} (${batches[0].length} order${batches[0].length === 1 ? "" : "s"}, warm-up)`;
@@ -953,7 +961,7 @@ ${itemsHtml}
         try { onBatchComplete({ batchNum: 1, totalBatches: batches.length, batchOrderIds: batches[0], rowsAdded: added }); }
         catch (e) { console.warn("[SparkFraud] onBatchComplete threw:", e); }
       }
-    } else failedBatches++;
+    } else { failedBatches++; noteFailure(r0); }
     const warmupMs = Date.now() - omsT0;
 
     let parallelMs = 0;
@@ -980,7 +988,7 @@ ${itemsHtml}
       );
       parallelMs = Date.now() - parT0;
       for (const r of restResults) {
-        if (!r.ok && !r._merged) failedBatches++;
+        if (!r.ok && !r._merged) { failedBatches++; noteFailure(r); }
       }
     }
 
@@ -988,6 +996,10 @@ ${itemsHtml}
       console.warn(
         `[SparkFraud] OMS: ${failedBatches}/${batches.length} batches failed. ` +
         `Returning ${totalRows} rows from ${batches.length - failedBatches} successful batch(es).`
+      );
+      setStatus(
+        `Item lookup failed for ${failedBatches}/${batches.length} order batch${batches.length === 1 ? "" : "es"} — ${lastOmsError}`,
+        "err"
       );
     }
     console.log(
@@ -1267,7 +1279,10 @@ ${itemsHtml}
     // were unreadable when everything flattened into one big table).
     const totalRows = orders.reduce((s, o) => s + (o.items?.length || 0), 0);
     if (!totalRows) {
-      itemsContainer.innerHTML = `<p class="muted">No item details returned for this trip's orders.</p>`;
+      itemsContainer.innerHTML = lastOmsError
+        ? `<p class="error">Items could not be loaded — ${escapeHtml(String(lastOmsError))}. ` +
+          `Click Find candidates again to retry.</p>`
+        : `<p class="muted">No item details returned for this trip's orders.</p>`;
       tripEl.dataset.itemsReady = "1";
       return;
     }
