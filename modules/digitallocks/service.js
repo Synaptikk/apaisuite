@@ -41,6 +41,7 @@ import {
   SELECT_COLUMNS, MAX_WINDOW, PAGE_DAYS,
 } from "./lib/powerBiQuery.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
+import { observeIdentityFromJwt } from "../../shared/identity.js";
 import { fetchAllLocksFromPage } from "./lib/buildCaseMap.js";
 import { fetchAllUsersFromPage, deleteUserFromPage } from "./lib/fetchAllUsersFromPage.js";
 
@@ -645,7 +646,15 @@ async function waitForTransport(tabId, timeoutMs) {
         },
       });
       const transport = pickTransport(result?.[0]?.result?.entries);
-      if (transport) return transport;
+      if (transport) {
+        // The MWCToken carries the user's UPN in its workloadClaims. Recording
+        // it costs nothing here and identifies analysts who use DigitalLocks
+        // but never touch AurorBuddy — the module the home store used to be
+        // an exclusive side effect of. Fire-and-forget; a pull must never fail
+        // over identity bookkeeping.
+        observeIdentityFromJwt("powerbi_token", transport.auth).catch(() => {});
+        return transport;
+      }
     } catch {}
     await sleep(800);
   }

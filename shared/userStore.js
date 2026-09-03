@@ -10,18 +10,33 @@
 // Sources, in priority order:
 //   1. Manual override in chrome.storage.sync["apai.userHomeStoreOverride"]
 //      (per-profile, syncs across Edge sign-ins)
-//   2. WIN ID parsed from the Auror JWT identity cached at
-//      chrome.storage.local["aurorbuddy.fb_aurorIdentity"].aurorUserId
-//      (populated by aurorbuddy/lib/firestore.js::captureAurorIdentityFromJwt
-//      on first successful AurorBuddy auth)
+//   2. shared/identity.js — whatever ANY module has observed: gscope's
+//      session store, a Power BI token's UPN, the Auror JWT, the browser
+//      profile account. See that file for the ranking and for why the store
+//      is no longer a side effect of one module's auth.
+//   3. Legacy direct read of the Auror JWT identity cached at
+//      chrome.storage.local["aurorbuddy.fb_aurorIdentity"].aurorUserId.
+//
+//      Kept as a fallback rather than deleted: installs that predate
+//      shared/identity.js already hold that cached identity, and dropping
+//      this read would un-identify every one of them until their next
+//      AurorBuddy auth. It costs one storage read on a path that only runs
+//      when nothing better exists.
 //
 // WIN ID format observed in Auror sub claims: "samlp|wm-us|<wid>.s<NNNNN>"
 // where the trailing 3–5 digits are the user's home store number.
 // Example: "samlp|wm-us|ses008s.s01458" → store 1458.
 //
+// NOTE: that suffix is the HIRE store, which is not necessarily where the
+// person works now. shared/identity.js ranks gscope's session store above it
+// for that reason. This file's fallback path can only ever return the
+// hire-store answer.
+//
 // Returns null when nothing is available; callers should fall back to a
 // "Set your store" UX rather than guessing a default. Works in both
 // service-worker and view-page contexts (only uses chrome.storage).
+
+import { getIdentity } from "./identity.js";
 
 export const OVERRIDE_KEY = "apai.userHomeStoreOverride";
 export const MARKET_KEY   = "apai.userHomeMarket";
@@ -34,10 +49,31 @@ export async function getUserHomeStore() {
   const override = await readOverride();
   if (override) return override;
 
+  const observed = await getIdentity().catch(() => ({}));
+  if (observed?.store) return String(observed.store);
+
   const identity = await readAurorIdentity();
   const wid = extractWidFromAurorSub(identity.aurorUserId);
   const store = extractStoreFromWid(wid);
   return store || null;
+}
+
+/**
+ * Which source produced the current answer — "manual", one of
+ * shared/identity.js's SOURCES, "auror_jwt_legacy", or null when unresolved.
+ *
+ * Exposed so the usage dashboard can report identity COVERAGE (how people are
+ * being identified, and how many are not) rather than leaving you to infer it
+ * from blank store cells, which is how the 2026-08-31 unknown-store row went
+ * unnoticed.
+ */
+export async function getUserHomeStoreSource() {
+  if (await readOverride()) return "manual";
+  const observed = await getIdentity().catch(() => ({}));
+  if (observed?.store) return observed.storeSource || "unknown";
+  const identity = await readAurorIdentity();
+  if (extractStoreFromWid(extractWidFromAurorSub(identity.aurorUserId))) return "auror_jwt_legacy";
+  return null;
 }
 
 export function extractWidFromAurorSub(sub) {

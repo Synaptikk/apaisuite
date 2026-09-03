@@ -24,6 +24,7 @@
 // 30s idle-sleep cycle. Same rationale as the donor.
 
 import { FIREBASE_CONFIG, ANALYST_SOURCE } from "./firestore_config.js";
+import { observeIdentity, winFromAurorSub } from "../../../shared/identity.js";
 
 const { projectId, databaseId, webApiKey } = FIREBASE_CONFIG;
 
@@ -107,6 +108,13 @@ export async function captureAurorIdentityFromJwt(rawHeader) {
     if (id[k] && !next[k]) { next[k] = id[k]; changed = true; }
   }
   if (changed) await chrome.storage.local.set({ [STORE_KEYS.aurorIdentity]: next });
+  // Also feed the suite-wide store. This module's cached identity used to be
+  // the ONLY non-manual source of the home store for the whole suite, which
+  // meant anyone who never opened AurorBuddy was permanently unidentified.
+  // It is now one source among several — shared/identity.js ranks them.
+  if (next.aurorUserId) {
+    observeIdentity({ source: "auror_jwt", win: winFromAurorSub(next.aurorUserId) }).catch(() => {});
+  }
   return next;
 }
 

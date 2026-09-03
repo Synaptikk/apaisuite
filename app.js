@@ -26,7 +26,8 @@ import {
   isDebugUnlocked, setDebugUnlocked, startDebugFeed, readAlarms,
   UNLOCK_TAPS, UNLOCK_HINT_AT, FEED_MAX,
 } from "./shared/debug_feed.js";
-import { maybeRunOnboarding, resetOnboarding, runSetup, runTips } from "./shared/onboarding.js";
+import { maybeRunOnboarding, needsOnboarding, resetOnboarding, runSetup, runTips } from "./shared/onboarding.js";
+import { getIdentity, enableProfileEmailIdentity } from "./shared/identity.js";
 import { LAYOUTS, resolveLayoutPref } from "./shared/layoutPref.js";
 import { SIDEBAR, resolveSidebarPref, toggledSidebarPref } from "./shared/sidebarPref.js";
 
@@ -656,7 +657,15 @@ const AUROR_IDENTITY_KEY = "aurorbuddy.fb_aurorIdentity";
 // The store that WOULD be used if no manual override existed. Shown so the
 // user can tell "detected 1458" from "I typed 1458", which matters when
 // deciding whether clearing the override is safe.
+// What the suite has worked out on its own, ignoring any manual override.
+// Consults shared/identity.js first — the store is no longer a side effect of
+// AurorBuddy alone — and falls back to the legacy Auror-only read so installs
+// predating shared/identity.js still show a detected value.
 async function detectedHomeStore() {
+  try {
+    const observed = await getIdentity();
+    if (observed?.store) return String(observed.store);
+  } catch { /* fall through */ }
   try {
     const got = await chrome.storage.local.get(AUROR_IDENTITY_KEY);
     const sub = got?.[AUROR_IDENTITY_KEY]?.aurorUserId;
@@ -665,6 +674,20 @@ async function detectedHomeStore() {
     return null;
   }
 }
+
+// Plain-English name for where a detected store came from, for the Settings
+// note. Naming the source matters here because they do not mean the same
+// thing: gscope reports the store the session is scoped to, while everything
+// else derives it from the WIN, which is the store the person was HIRED at.
+// Someone who transferred sees two different numbers and deserves to know why.
+const SOURCE_LABEL = {
+  gscope_session: "your gscope session",
+  profile_email:  "your browser sign-in",
+  powerbi_token:  "your Power BI sign-in",
+  auror_jwt:      "your Auror sign-in",
+  workvivo:       "your Workvivo session",
+  unknown:        "your sign-in",
+};
 
 function renderSettings() {
   const current = localStorage.getItem("shell.theme") || "system";
@@ -764,6 +787,18 @@ function renderSettings() {
               sign-in identifies a market, so it can't be detected for you.
             </p>
           </div>
+
+          <div class="field">
+            <span class="field-label">Detect my store from my Windows sign-in</span>
+            <div class="cluster">
+              <button class="btn btn-secondary btn-sm" id="set-profile-identity">Use my sign-in</button>
+            </div>
+            <p class="muted tiny" id="set-profile-identity-note" style="margin:0">
+              Optional. Reads the email of the account this browser is signed in
+              with — nothing else, and it never leaves your machine. Lets the
+              suite work out your store without you opening any other tool.
+            </p>
+          </div>
           <div class="row row-between" style="margin-top:14px">
             <p class="muted" style="margin:0">
               Re-run the welcome walkthrough — role, store, market, and the
@@ -843,7 +878,10 @@ function renderSettings() {
   // Re-runs the walkthrough in place. Deliberately does NOT clear the
   // completion flag: someone asking to see it again has not become a new user,
   // and forgetting that would make it reappear unprompted on their next boot.
-  $("settings-rerun-setup")?.addEventListener("click", async () => {
+  // `$` is querySelector, so the id needs its `#`. Without it this looked for
+  // a <settings-rerun-setup> element, matched nothing, and the optional-chain
+  // swallowed it — so "Run setup again" has never done anything, silently.
+  $("#settings-rerun-setup")?.addEventListener("click", async () => {
     await runSetup({ force: true });
     await runTips();
   });
@@ -1035,20 +1073,25 @@ function wireDefaults() {
   };
 
   async function paintStore() {
-    const [effective, detected, override] = await Promise.all([
+    const [effective, detected, override, identity] = await Promise.all([
       getUserHomeStore().catch(() => null),
       detectedHomeStore(),
       chrome.storage.sync.get(OVERRIDE_KEY).then((g) => g?.[OVERRIDE_KEY] ?? null).catch(() => null),
+      getIdentity().catch(() => ({})),
     ]);
     storeInput.value = effective || "";
+    const via = SOURCE_LABEL[identity?.storeSource] || "your sign-in";
     if (override) {
       say(storeNote, detected
-        ? `Set manually. Detected from your sign-in: ${detected}.`
-        : "Set manually. Nothing detected from your sign-in yet.");
+        ? `Set manually. Detected from ${via}: ${detected}.`
+        : "Set manually. Nothing detected from your sign-ins yet.");
     } else if (detected) {
-      say(storeNote, `Detected from your sign-in. Type a different number to override.`);
+      say(storeNote, `Detected from ${via}. Type a different number to override.`);
     } else {
-      say(storeNote, "Not set. Sign in to AurorBuddy once to detect it, or type it here.", "muted");
+      // No longer "sign in to AurorBuddy" — any of several tools now resolves
+      // it, and naming only one sent people to a module they may never use.
+      say(storeNote, "Not set. Using any tool that signs in to gscope, Auror or " +
+                     "Power BI will detect it — or type it here.", "muted");
     }
   }
 
@@ -1070,6 +1113,52 @@ function wireDefaults() {
   $("#set-home-store-clear")?.addEventListener("click", async () => {
     await clearUserHomeStoreOverride().catch(() => {});
     await paintStore();
+  });
+
+  // Browser-profile identity. The ONLY source that can identify someone who
+  // opens the suite and does nothing — every other source needs them to have
+  // authenticated against some Walmart system first.
+  //
+  // Behind an OPTIONAL permission, requested here and nowhere else:
+  // `identity` is a privacy disclosure on a store listing, and the store build
+  // was just trimmed of `debugger` for that kind of reason. It must stay
+  // something the user turns on, not something the package demands.
+  //
+  // This click is also THE PROBE for whether the route works at all. Edge
+  // implements chrome.identity, but whether a managed AAD profile returns the
+  // corporate address is untested on a real machine — so every failure reason
+  // is reported verbatim rather than collapsed into "couldn't detect".
+  const profileBtn  = $("#set-profile-identity");
+  const profileNote = $("#set-profile-identity-note");
+  profileBtn?.addEventListener("click", async () => {
+    profileBtn.disabled = true;
+    say(profileNote, "Asking the browser…", "muted");
+    try {
+      const res = await enableProfileEmailIdentity();
+      if (res.ok) {
+        await paintStore();
+        const store = await getUserHomeStore().catch(() => null);
+        say(profileNote, store
+          ? `Signed in as ${res.email} — store ${store}.`
+          : `Signed in as ${res.email}, but that address carries no store number. ` +
+            `Type your store above instead.`, store ? "muted" : "state-error");
+      } else if (res.reason === "denied") {
+        say(profileNote, "Permission declined. Nothing was read.", "muted");
+      } else if (res.reason === "no-email") {
+        // The interesting negative: permission granted, API present, no email.
+        // Means this browser profile is not signed in, or Edge does not expose
+        // a managed account here — in which case this route is a dead end and
+        // the other detection sources are what you get.
+        say(profileNote, "This browser profile reports no signed-in account, " +
+                         "so your store can't be detected this way.", "state-error");
+      } else {
+        say(profileNote, `Couldn't read the account (${res.reason}).`, "state-error");
+      }
+    } catch (e) {
+      say(profileNote, `Couldn't read the account (${e?.message ?? e}).`, "state-error");
+    } finally {
+      profileBtn.disabled = false;
+    }
   });
 
   $("#set-home-market-save")?.addEventListener("click", async () => {
@@ -1385,15 +1474,52 @@ document.getElementById("shell-sidebar-toggle")?.addEventListener("click", () =>
   applySidebar(next);
 });
 
-route().catch((e) => {
+// First-run setup is SPLIT around the first route, and the split is
+// load-bearing in both directions:
+//
+//   · The WIZARD must finish BEFORE anything mounts. Usage rows stamp the home
+//     store at emit time (shared/usage_metrics.js::buildUsageRow) and the first
+//     route emits `module_opened` immediately. This used to be one unawaited
+//     call placed after route(), so a brand-new install recorded its first
+//     event while the store was still unset — a permanently `(no store)` row
+//     per install, even for someone who filled the wizard in ten seconds
+//     later. It reads in the usage dashboard as an unidentified user.
+//   · The COACH MARKS must run AFTER it, because they anchor to sidebar
+//     elements that do not exist until the first route has rendered.
+//     Anchoring to missing elements silently drops every tip.
+//
+// Existing users pay one storage read for needsOnboarding() and see neither.
+//
+// The wizard is raced against a timeout because route() now sits behind it: a
+// runSetup() that never resolves would otherwise leave a permanently blank
+// suite, which is a far worse failure than the row it is here to fix. On
+// timeout we simply proceed and paint behind the still-open wizard — exactly
+// what the old unawaited version did, so the fallback is the previous
+// behaviour rather than anything new.
+const SETUP_BLOCK_MAX_MS = 120_000;
+let showTips = false;
+try {
+  showTips = await needsOnboarding();
+  if (showTips) {
+    await Promise.race([
+      runSetup(),
+      new Promise((resolve) => setTimeout(resolve, SETUP_BLOCK_MAX_MS)),
+    ]);
+  }
+} catch (e) {
+  console.warn("[shell] onboarding setup:", e?.message ?? e);
+}
+
+try {
+  await route();
+} catch (e) {
   console.error("[shell] boot route failed:", e);
   $main.innerHTML = `<div class="state-error">Shell boot failed: ${escapeHtml(String(e?.message ?? e))}</div>`;
-});
+}
 
-// First-run setup. Runs AFTER the first route so the coach marks have a
-// rendered sidebar to point at — anchoring to elements that do not exist yet
-// would silently drop every tip. No-ops unless setup has never been completed.
-maybeRunOnboarding().catch((e) => console.warn("[shell] onboarding:", e?.message ?? e));
+if (showTips) {
+  runTips().catch((e) => console.warn("[shell] onboarding tips:", e?.message ?? e));
+}
 
 // ── "The suite was opened" ────────────────────────────────────────────────
 //

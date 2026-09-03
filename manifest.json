@@ -40,6 +40,9 @@
     "alarms",
     "notifications"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
   "host_permissions": [
     "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
     "https://ivrattcloud-prod.wal-mart.com/*",
