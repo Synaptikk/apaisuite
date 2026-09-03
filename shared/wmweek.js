@@ -1,6 +1,10 @@
-// modules/digitalmetrics/lib/data/wmweek.js
+// shared/wmweek.js
 //
 // Walmart fiscal week numbering. Pure.
+//
+// Promoted here from modules/digitalmetrics/lib/data/ when livedashboard
+// became the second consumer (README::Shared helper inventory — generalize on
+// the 2nd consumer, not the 1st).
 //
 // ── The rule, and how it was pinned down ───────────────────────────────────
 // The fiscal year starts 1 February, and weeks run Saturday–Friday. So week 1

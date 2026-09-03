@@ -12,6 +12,7 @@ const STALE_DEFAULT_MS = {
   accident:     60 * 60 * 1000,
   cvp:          30 * 60 * 1000,
   register:     24 * 60 * 60 * 1000,
+  recognition:  12 * 60 * 60 * 1000,
 };
 
 export async function read(sourceId) {
@@ -26,7 +27,13 @@ export async function read(sourceId) {
   return { ...f, sourceId, staleAfterMs, isStale };
 }
 
-export async function readAll(sourceIds = ["absences","compliance","accident","cvp","register"]) {
+// Keep this list in sync with service.js::ALARM_NAMES / BOOTSTRAP_STALE_MS.
+// A source missing here reads back as `undefined` everywhere: bootstrap's
+// inFlight/age guards are skipped (so every dashboard open fires another
+// heavy pull, and concurrent pulls fight over the same capture tab) and the
+// view gets no lastError to render, so a failing source silently keeps
+// painting its last good cache. That's what happened to `recognition`.
+export async function readAll(sourceIds = ["absences","compliance","accident","cvp","register","recognition"]) {
   const out = {};
   for (const id of sourceIds) out[id] = await read(id);
   return out;

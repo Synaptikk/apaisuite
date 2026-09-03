@@ -122,6 +122,14 @@
     latest:      () => ring.length ? ring[ring.length - 1] : null,
     findRecognition: findLatest,
     clear:        () => { ring.length = 0; },
+    // The fetch that was installed BEFORE this patch — so it necessarily
+    // bypasses this patch. The SW replays through it (see recognition.js::
+    // replayInTab): a replay body still matches BODY_MARKER, so replaying
+    // through the patched window.fetch records our own replay into the ring,
+    // and the next pull decodes THAT as if it were the page's capture. When
+    // the replay swaps the observation type, the ring silently starts serving
+    // Engagement rows labelled as Recognition.
+    rawFetch:    (...args) => origFetch.apply(window, args),
   };
 
   console.log("[livedashboard recognition_capture] installed (MAIN-world fetch+XHR patch on Description_of_the_Safety_Observation)");

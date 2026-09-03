@@ -25,7 +25,7 @@ import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
 import { leadershipForJob, byLeadershipFirst } from "./lib/data/job_classify.js";
-import { weekLabel } from "./lib/data/wmweek.js";
+import { weekLabel } from "../../shared/wmweek.js";
 
 const PAGES = {
   dashboard,
@@ -360,7 +360,7 @@ export async function mount(host, container) {
     // Saturdays — they think in Walmart fiscal weeks, which is what Tableau's
     // WM_WEEK and the scheduler's "WK 30" both use. Label them that way and
     // keep the date range alongside, since the number alone does not say which
-    // days you are looking at. See data/wmweek.js.
+    // days you are looking at. See shared/wmweek.js.
     const recentFirst = [...weeks].reverse();
     $("#dm-week").innerHTML = recentFirst.length
       ? recentFirst.map((w) =>

@@ -23,8 +23,15 @@
 
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../../../shared/auth.js";
 
-const REPORT_ID    = "52d28de7-a2ba-44e5-ab04-689e66eba90f";
-const PAGE_ID      = "e8acdf337be7254e2859";   // Safety Observations All Stores
+// Field_Dashboard was republished on/around 2026-08-12 under a new workspace
+// (fd8e7aa4-…) with a NEW report id. The old artifact 52d28de7-a2ba-44e5-ab04-
+// 689e66eba90f now answers "Failed to get access request info for this
+// artifact" and bounces to app.powerbi.com/ — the report never renders, so the
+// SPA never fires its QES queries and every pull died with NO_CAPTURE.
+// `/groups/me/` still resolves the new id (Power BI rewrites it), so the URL
+// shape is unchanged. Verified 2026-08-31: cold deep-link captures in ~8s.
+const REPORT_ID    = "04aa0743-2bb9-4e34-b19d-5089b1832b6a";
+const PAGE_ID      = "ceebb331d49c3b32c6a2";   // Safety Observations
 const REPORT_URL   = `https://app.powerbi.com/groups/me/reports/${REPORT_ID}/${PAGE_ID}?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi`;
 const TAB_PATTERN  = `https://app.powerbi.com/*${REPORT_ID}*`;
 
@@ -107,7 +114,7 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
   const replay = capturedStore && requested !== capturedStore;
   if (replay) {
     const newBody = swapStoreFilter(cap.reqBody, requested);
-    const replayResult = await replayInTab(tabId, cap.url, newBody);
+    const replayResult = await replayInTab(tabId, cap.url, newBody, cap.reqHeaders);
     if (replayResult.ok) {
       respBody        = replayResult.body;
       respStatus      = replayResult.status ?? 200;
@@ -146,6 +153,24 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
   const rows = decodeRecognitionResponse(respBody);
   // Rows == 0 isn't an error — the store may simply have no recognitions in
   // the date window. Surface that distinct from a missing result-block.
+
+  // The visual we capture is hard-filtered to one half of the data:
+  //   Is_this_safety_observation_engagement_or_recognition IN ('Recognition')
+  // Engagements are the other half and have no visual of their own on this
+  // page, so the only way to get them is to replay the same query with the
+  // type literal swapped. Best-effort: a store has safety observations either
+  // way, and losing engagements shouldn't fail the whole pull.
+  const engagementBody = swapObservationType(replay ? swapStoreFilter(cap.reqBody, requested) : cap.reqBody, "Engagement");
+  let engagementRows = [];
+  if (engagementBody) {
+    const engResult = await replayInTab(tabId, cap.url, engagementBody, cap.reqHeaders);
+    if (engResult.ok) {
+      engagementRows = decodeRecognitionResponse(engResult.body);
+    } else {
+      console.log(`[livedashboard recognition] engagement replay failed (${engResult.status ?? engResult.error}) — recognition-only this pull`);
+    }
+  }
+
   const importedAt = new Date().toISOString();
 
   // We're done with the tab. Only close it if WE opened it — leave alone
@@ -155,6 +180,7 @@ async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
   return {
     ok: true,
     rows,
+    engagementRows,
     capturedAt:     importedAt,
     capturedStore,
     requestedStore: requested,
@@ -221,18 +247,32 @@ async function readCapture(tabId) {
   }
 }
 
-async function replayInTab(tabId, url, body) {
+// Replaying a QES query has two hard requirements, both learned the hard way
+// (verified against the live endpoint 2026-08-31):
+//
+//   credentials: "omit"  — the QES host is cross-origin from app.powerbi.com
+//     and answers preflight without Access-Control-Allow-Credentials. Sending
+//     "include" makes the browser reject the response before we see it, which
+//     surfaces as an opaque `TypeError: Failed to fetch`. This is exactly what
+//     register.js has been dying of since 2026-08-12.
+//   the captured request headers — QES authenticates on the Authorization
+//     bearer the SPA minted, NOT on cookies. Omit them and it's a flat 401.
+//
+// Both together: 200. Either alone: broken. Don't "simplify" this.
+async function replayInTab(tabId, url, body, reqHeaders) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world:  "MAIN",
-      args:   [url, body],
-      func:   async (u, b) => {
+      args:   [url, body, reqHeaders || null, "__APAISUITE_LIVEDASHBOARD_RECOGNITION_CAP"],
+      func:   async (u, b, h, capKey) => {
         try {
-          const r = await fetch(u, {
+          // Pre-patch fetch, so this replay isn't recorded into our own ring.
+          const send = window[capKey]?.rawFetch || fetch;
+          const r = await send(u, {
             method:      "POST",
-            credentials: "include",
-            headers:     { "Content-Type": "application/json;charset=UTF-8", "Accept": "application/json" },
+            credentials: "omit",
+            headers:     h || { "Content-Type": "application/json;charset=UTF-8", "Accept": "application/json" },
             body:        b,
           });
           const contentType = r.headers.get("content-type") || "";
@@ -265,6 +305,21 @@ function extractStoreFilter(body) {
   if (typeof body !== "string") return null;
   const m = body.match(/"Property":"fascility_nbr_padded"[\s\S]{0,400}?"Value":"'(\d+)'"/);
   return m ? m[1] : null;
+}
+
+// The observation-type Where clause, e.g.
+//   "Property":"Is_this_safety_observation_engagement_or_recognition" … "Value":"'Recognition'"
+// Returns null when the clause isn't present, so the caller can skip the
+// engagement replay instead of POSTing an unmodified (duplicate) query.
+const OBSERVATION_TYPE_RE =
+  /("Property":"Is_this_safety_observation_engagement_or_recognition"[\s\S]{0,400}?"Value":")'[^']*'(")/g;
+
+function swapObservationType(body, type) {
+  if (typeof body !== "string") return null;
+  OBSERVATION_TYPE_RE.lastIndex = 0;
+  if (!OBSERVATION_TYPE_RE.test(body)) return null;
+  OBSERVATION_TYPE_RE.lastIndex = 0;
+  return body.replace(OBSERVATION_TYPE_RE, `$1'${type}'$2`);
 }
 
 function swapStoreFilter(body, newStorePadded) {

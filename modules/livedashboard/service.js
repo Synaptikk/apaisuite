@@ -128,9 +128,15 @@ export async function bootstrapIfNeeded() {
   return { ok: true, pulled: tasks.length };
 }
 
+// An attempt is only believed to still be running for this long. inFlight is
+// cleared by markSuccess/markError only, so an SW killed mid-pull (MV3 idle
+// death during a 25s Power BI capture poll) leaves it stuck true forever and
+// the source never bootstraps again.
+const INFLIGHT_MAX_AGE_MS = 10 * 60_000;
+
 function shouldBootstrap(fresh, staleMs) {
   if (!fresh || !fresh.lastSuccess) return true;
-  if (fresh.inFlight) return false;
+  if (fresh.inFlight && !inFlightExpired(fresh)) return false;
   // If the most recent attempt errored, ALWAYS retry on bootstrap. Common
   // case: CVP/Hoops auth expired, user signs into Hoops in another tab,
   // returns to dashboard — we want the next bootstrap to clear the error
@@ -141,6 +147,11 @@ function shouldBootstrap(fresh, staleMs) {
   // regardless of the per-source threshold.
   if (age > BOOTSTRAP_MAX_AGE_MS) return true;
   return age > staleMs;
+}
+
+function inFlightExpired(fresh) {
+  if (!fresh?.lastAttempt) return true;
+  return Date.now() - new Date(fresh.lastAttempt).getTime() > INFLIGHT_MAX_AGE_MS;
 }
 
 // Idempotent — see shared/alarms.js. Previously a bare chrome.alarms.create()
@@ -377,19 +388,24 @@ async function pullRecognition({ storeNbr } = {}) {
     broadcast("source_complete", { sourceId: "recognition", ok: false, error: res.error });
     return res;
   }
-  const rolling7d = recognitionRollup7d(res.rows);
+  // Two series: Recognition and Engagement. Same table, different value of the
+  // observation-type filter — see recognition.js::swapObservationType.
+  const rolling7d    = recognitionRollup7d(res.rows);
+  const engagement7d = recognitionRollup7d(res.engagementRows || []);
   await chrome.storage.local.set({
     [K.recognitionCache(storeNbr)]: {
       storeNbr,
-      rows:       res.rows,
+      rows:           res.rows,
+      engagementRows: res.engagementRows || [],
       rolling7d,
+      engagement7d,
       capturedAt: res.capturedAt,
       replayed:   res.replayed,
     },
   });
   await freshness.markSuccess("recognition");
-  broadcast("source_complete", { sourceId: "recognition", ok: true, rolledUp: { rolling7d } });
-  return { ok: true, rows: res.rows, rolling7d };
+  broadcast("source_complete", { sourceId: "recognition", ok: true, rolledUp: { rolling7d, engagement7d } });
+  return { ok: true, rows: res.rows, rolling7d, engagement7d };
 }
 
 // ── refresh_all ─────────────────────────────────────────────────────

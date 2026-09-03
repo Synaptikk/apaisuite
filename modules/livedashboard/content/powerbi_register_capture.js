@@ -145,6 +145,9 @@
     findGrid:     () => findLatest(isGridQuery),
     findOperator: () => findLatest(isOperatorQuery),
     clear:        () => { ring.length = 0; },
+    // Pre-patch fetch, so a replay issued through it can't be recorded back
+    // into this ring. See the same field in powerbi_recognition_capture.js.
+    rawFetch:     (...args) => origFetch.apply(window, args),
   };
 
   console.log("[livedashboard register_capture] installed (MAIN-world fetch+XHR patch on qryLongShortSignOn)");

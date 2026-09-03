@@ -114,41 +114,41 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
     };
   }
 
-  // If captured store differs from requested, replay with the new filter.
-  let gridResp = grid.respBody;
+  // ALWAYS replay — never decode the captured response as-is. The capture only
+  // supplies the query SHAPE and a valid bearer; both of its filters are the
+  // report's saved slicer state and neither can be trusted: the store is
+  // whoever's the viewer last looked at, and the date window drifts out of
+  // retention (see swapDateWindow). Decoding it verbatim is what produced
+  // "EMPTY: Decoded zero cells" on every pull.
   let operatorResp = operator?.respBody ?? null;
-  let gridStatus = 200, gridContentType = "application/json";
   const capturedStore = extractStoreFilter(grid.reqBody);
-  const replay = String(storeNbr) !== String(capturedStore);
-  if (replay) {
-    const newGridBody = swapStoreFilter(grid.reqBody, storeNbr);
-    const gridReplay = await replayInTab(tabId, grid.url, newGridBody);
-    if (gridReplay.ok) {
-      gridResp        = gridReplay.body;
-      gridStatus      = gridReplay.status ?? 200;
-      gridContentType = gridReplay.contentType || gridContentType;
-    } else {
-      // Classify replay failures. 401/403 or 200-with-login-HTML means the
-      // captured bearer expired; signal AUTH to the outer retry loop which
-      // will reload the tab and re-attempt with a fresh token.
-      const replayAuth = classifyAuthResponse({
-        status: gridReplay.status ?? 0,
-        contentType: gridReplay.contentType || "",
-        body: gridReplay.body || "",
-      });
-      if (isAuthFailureStatus(replayAuth)) {
-        return {
-          ok: false, errorClass: "AUTH", authStatus: replayAuth,
-          error: `Power BI register replay returned ${replayAuth} — autonomous reauth will retry.`,
-        };
-      }
-      return { ok: false, errorClass: "REPLAY", error: `Grid replay failed: ${gridReplay.error || gridReplay.status}` };
+  const rewrite = (body) => swapDateWindow(swapStoreFilter(body, storeNbr));
+
+  const gridReplay = await replayInTab(tabId, grid.url, rewrite(grid.reqBody), grid.reqHeaders);
+  if (!gridReplay.ok) {
+    // Classify replay failures. 401/403 or 200-with-login-HTML means the
+    // captured bearer expired; signal AUTH to the outer retry loop which
+    // will reload the tab and re-attempt with a fresh token.
+    const replayAuth = classifyAuthResponse({
+      status: gridReplay.status ?? 0,
+      contentType: gridReplay.contentType || "",
+      body: gridReplay.body || "",
+    });
+    if (isAuthFailureStatus(replayAuth)) {
+      return {
+        ok: false, errorClass: "AUTH", authStatus: replayAuth,
+        error: `Power BI register replay returned ${replayAuth} — autonomous reauth will retry.`,
+      };
     }
-    if (operator) {
-      const newOpBody = swapStoreFilter(operator.reqBody, storeNbr);
-      const opReplay = await replayInTab(tabId, operator.url, newOpBody);
-      if (opReplay.ok) operatorResp = opReplay.body;
-    }
+    return { ok: false, errorClass: "REPLAY", error: `Grid replay failed: ${gridReplay.error || gridReplay.status}` };
+  }
+  const gridResp        = gridReplay.body;
+  const gridStatus      = gridReplay.status ?? 200;
+  const gridContentType = gridReplay.contentType || "application/json";
+
+  if (operator) {
+    const opReplay = await replayInTab(tabId, operator.url, rewrite(operator.reqBody), operator.reqHeaders);
+    if (opReplay.ok) operatorResp = opReplay.body;
   }
 
   // Pre-decode auth check on the grid body. A stale capture could contain
@@ -168,7 +168,13 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
   // Decode.
   const cells = decodeGridResponse(gridResp);
   if (!cells.length) {
-    return { ok: false, errorClass: "EMPTY", error: "Decoded zero cells from grid response." };
+    // Genuinely no long/short activity for this store in the window — not an
+    // error condition to panic over, but surface the window so a recurrence of
+    // the stale-slicer bug is obvious from the message alone.
+    return {
+      ok: false, errorClass: "EMPTY",
+      error: `Decoded zero cells from grid response (store ${storeNbr}, window ending ${isoToday()}).`,
+    };
   }
   const shifts = operatorResp ? decodeOperatorResponse(operatorResp) : [];
 
@@ -185,7 +191,7 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
     _source: {
       module:       "livedashboard",
       capturedAt:   importedAt,
-      sourceMethod: replay ? "powerbi-replay" : "powerbi-capture",
+      sourceMethod: "powerbi-replay",
       reportId:     REPORT_ID,
     },
   }));
@@ -198,7 +204,7 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
     discrepancies: rows,
     capturedAt:    importedAt,
     capturedStore,
-    replayed:      replay,
+    replayed:      true,
     cellCount:     cells.length,
     shiftCount:    shifts.length,
   };
@@ -265,18 +271,27 @@ async function readCapture(tabId, findFn) {
   }
 }
 
-async function replayInTab(tabId, url, body) {
+// See the long note on recognition.js::replayInTab. QES needs
+// credentials:"omit" (the host answers preflight without
+// Access-Control-Allow-Credentials, so "include" fails CORS as an opaque
+// `TypeError: Failed to fetch`) AND the captured Authorization bearer (cookies
+// don't authenticate it — without the header it's a 401). Verified against the
+// live endpoint 2026-08-31; "Failed to fetch" is the error this source had been
+// recording on every pull since 2026-08-12.
+async function replayInTab(tabId, url, body, reqHeaders) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world:  "MAIN",
-      args:   [url, body],
-      func:   async (u, b) => {
+      args:   [url, body, reqHeaders || null, "__APAISUITE_LIVEDASHBOARD_REGISTER_CAP"],
+      func:   async (u, b, h, capKey) => {
         try {
-          const r = await fetch(u, {
+          // Pre-patch fetch, so this replay isn't recorded into our own ring.
+          const send = window[capKey]?.rawFetch || fetch;
+          const r = await send(u, {
             method:      "POST",
-            credentials: "include",
-            headers:     { "Content-Type": "application/json;charset=UTF-8", "Accept": "application/json" },
+            credentials: "omit",
+            headers:     h || { "Content-Type": "application/json;charset=UTF-8", "Accept": "application/json" },
             body:        b,
           });
           const contentType = r.headers.get("content-type") || "";
@@ -314,6 +329,40 @@ function swapStoreFilter(body, newStoreNbr) {
   if (typeof body !== "string") return body;
   return body.replace(/("Property":"Store_Nbr"[\s\S]{0,400}?"Right":\{"Literal":\{"Value":")'\d+'(")/g,
     `$1'${newStoreNbr}'$2`);
+}
+
+// The date filter is an In-clause holding one explicit `datetime'…'` literal
+// per day — NOT a range — so the window is exactly whatever the report's
+// slicer held when we captured it. That is the user's last-saved filter state,
+// which is not necessarily recent: on 2026-08-31 the live report was still
+// pinned to 2026-06-01…06-30, and the source retains only ~60 days, so every
+// replay came back with an empty grid ("EMPTY: Decoded zero cells").
+//
+// Rewrite the literals in place to end at `endIso`, preserving both the count
+// and the captured ordering (the report emits newest-first, but don't assume).
+const DATE_LITERAL_RE = /datetime'\d{4}-\d{2}-\d{2}T00:00:00'/g;
+
+function swapDateWindow(body, endIso = isoToday()) {
+  if (typeof body !== "string") return body;
+  const lits = body.match(DATE_LITERAL_RE);
+  if (!lits || lits.length < 2) return body;
+  const iso = (s) => s.slice(9, 19);
+  const descending = iso(lits[1]) < iso(lits[0]);
+  const end = new Date(endIso + "T00:00:00Z").getTime();
+  let i = 0;
+  return body.replace(DATE_LITERAL_RE, () => {
+    const offset = descending ? i : lits.length - 1 - i;
+    i++;
+    const d = new Date(end - offset * 86_400_000);
+    return `datetime'${d.toISOString().slice(0, 10)}T00:00:00'`;
+  });
+}
+
+function isoToday() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${dd}`;
 }
 
 // ── DSR decoder: grid (register × date pivot of long_short_amt) ────

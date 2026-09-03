@@ -5,6 +5,8 @@
 // styles.css, requests dashboard state from the SW, paints 5 widgets,
 // wires drill-downs for Callouts + CVP.
 
+import { wmWeek } from "../../shared/wmweek.js";
+
 export async function mount(host, container) {
   // 1. Inject CSS
   const link = document.createElement("link");
@@ -412,7 +414,10 @@ export async function mount(host, container) {
     const accidentHtml = c?.records?.length
       ? buildAccidentSection(c)
       : `<div class="ld-empty">No accident records yet. Click Refresh to pull from CAS storage.</div>`;
-    const recognitionHtml = buildRecognitionSection(lastState?.sources?.recognition);
+    const recognitionHtml = buildRecognitionSection(
+      lastState?.sources?.recognition,
+      lastState?.freshness?.recognition,
+    );
     drillBody.innerHTML = accidentHtml + recognitionHtml;
   }
 
@@ -469,37 +474,129 @@ export async function mount(host, container) {
     `;
   }
 
-  function buildRecognitionSection(src) {
-    const header = `<h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#4a4a4a">Recognition — last 7 days</h4>`;
+  function buildRecognitionSection(src, fresh) {
+    const header = `<h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#4a4a4a">Safety Observations — last 7 days</h4>`;
     const c = src?.cache;
     if (!c?.rolling7d?.length) {
-      return `${header}<div class="ld-empty">No recognition data yet. Click Refresh — pulls from the Field_Dashboard Power BI report.</div>`;
+      if (fresh?.inFlight) {
+        return `${header}<div class="ld-empty">Pulling from the Field_Dashboard Power BI report…</div>`;
+      }
+      if (fresh?.lastError) {
+        return `${header}<div class="ld-empty">⚠ Safety observations pull failed: ${escapeHtml(String(fresh.lastError).slice(0, 160))}</div>`;
+      }
+      return `${header}<div class="ld-empty">No safety observation data yet. Click Refresh — pulls from the Field_Dashboard Power BI report.</div>`;
     }
     // Oldest → newest reads naturally left-to-right.
-    const days  = c.rolling7d.slice().reverse();
-    const total = days.reduce((a, r) => a + (r.count || 0), 0);
-    const dateCells  = days.map((r) => `<th>${escapeHtml(fmtDateShort(r.dateIso))}</th>`).join("");
-    const countCells = days.map((r) => `<td style="text-align:center">${r.count}</td>`).join("");
+    const days = c.rolling7d.slice().reverse();
+    // engagement7d is absent on caches written before the two-series pull;
+    // fall back to a zero row rather than mis-labelling recognition as both.
+    const engDays = (c.engagement7d || []).slice().reverse();
+    const engByDate = new Map(engDays.map((r) => [r.dateIso, r.count || 0]));
+    const hasEngagement = !!c.engagement7d;
+
+    const sum = (arr) => arr.reduce((a, r) => a + (r.count || 0), 0);
+    const recTotal = sum(days);
+    const engTotal = sum(engDays);
+
+    // The source lands yesterday's data, so the current day's slot is always
+    // zero — which reads as "nobody logged anything" rather than "not in yet".
+    // Mark it instead of printing a count nobody should act on.
+    const todayIso = isoTodayLocal();
+    const isToday  = (iso) => iso === todayIso;
+    const NOT_LIVE = `<td style="text-align:center;color:#8a8a8a" title="Current day — not live">—</td>`;
+
+    const dateCells = days
+      .map((r) => `<th>${escapeHtml(fmtDateShort(r.dateIso))}${isToday(r.dateIso) ? "&nbsp;*" : ""}</th>`)
+      .join("");
+    const seriesRow = (label, cells, total, strong) => `
+      <tr>
+        <td style="white-space:nowrap">${label}</td>
+        ${cells}
+        <td style="text-align:right">${strong ? `<strong>${total}</strong>` : total}</td>
+      </tr>`;
+    const recCells = days
+      .map((r) => (isToday(r.dateIso) ? NOT_LIVE : `<td style="text-align:center">${r.count}</td>`))
+      .join("");
+    const engCells = days
+      .map((r) => (isToday(r.dateIso) ? NOT_LIVE : `<td style="text-align:center">${engByDate.get(r.dateIso) ?? 0}</td>`))
+      .join("");
+    const allCells = days
+      .map((r) => (isToday(r.dateIso)
+        ? NOT_LIVE
+        : `<td style="text-align:center"><strong>${(r.count || 0) + (engByDate.get(r.dateIso) ?? 0)}</strong></td>`))
+      .join("");
+
+    // Self-describing first line, so a pasted block still says which store and
+    // when it was captured once it's out of the dashboard's context.
+    const weekText = wmWeekRangeLabel(days);
+    const copyLabel = [
+      lastState?.storeNbr ? `Store ${lastState.storeNbr}` : null,
+      "Safety Observations — last 7 days",
+      weekText || null,
+      c.capturedAt ? `(captured ${c.capturedAt.slice(0, 10)})` : null,
+    ].filter(Boolean).join(" · ");
+
+    const dataHeader = `<h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#4a4a4a">Safety Observations — last 7 days${weekText ? ` · ${escapeHtml(weekText)}` : ""}</h4>`;
+
     return `
-      ${header}
+      <div data-ld-copy-scope>
+      ${headerWithCopy(dataHeader, copyLabel)}
       <table class="ld-table">
         <thead>
-          <tr>${dateCells}<th style="text-align:right">7d&nbsp;total</th></tr>
+          <tr><th></th>${dateCells}<th style="text-align:right">7d&nbsp;total</th></tr>
         </thead>
         <tbody>
-          <tr>${countCells}<td style="text-align:right"><strong>${total}</strong></td></tr>
+          ${seriesRow("Recognition", recCells, recTotal, !hasEngagement)}
+          ${hasEngagement ? seriesRow("Engagement", engCells, engTotal, false) : ""}
+          ${hasEngagement ? seriesRow("<strong>Total</strong>", allCells, recTotal + engTotal, true) : ""}
         </tbody>
       </table>
       <div class="ld-empty" style="margin-top:6px">
-        Captured ${escapeHtml(c.capturedAt || "?")}${c.replayed ? " (store-filter replay)" : ""}
+        * ${escapeHtml(fmtDateShort(todayIso))} is the current day — not live; the 7d totals cover the six completed days.
+      </div>
+      <div class="ld-empty" style="margin-top:2px">
+        Captured ${escapeHtml(c.capturedAt || "?")}${c.capturedAt ? ` (${escapeHtml(fmtAgo(new Date(c.capturedAt).getTime()))})` : ""}${c.replayed ? " · store-filter replay" : ""}
+        ${fresh?.isStale ? " · <strong>stale</strong>" : ""}
+        ${fresh?.lastError ? ` · ⚠ last pull failed: ${escapeHtml(String(fresh.lastError).slice(0, 120))}` : ""}
+      </div>
       </div>
     `;
+  }
+
+  // Renders a section heading with a Copy button on the right. The button's
+  // data-ld-copy value becomes the first line of the copied text.
+  function headerWithCopy(headerHtml, copyLabel) {
+    const buttons = `<span style="float:right;font-weight:400">
+      <button type="button" class="btn btn-sm" data-ld-copy data-ld-copy-builder="safety-obs-chat"
+        title="Copy as short lines — for a Workvivo chat or a text message">Copy for chat</button>
+      <button type="button" class="btn btn-sm" data-ld-copy="${escapeHtml(copyLabel)}"
+        title="Copy as tab-separated cells — for Excel or Sheets">Copy as table</button>
+    </span>`;
+    // Inject before the heading's closing tag so the buttons sit on its line.
+    return headerHtml.replace(/<\/h4>\s*$/, `${buttons}</h4>`);
   }
 
   function fmtDateShort(iso) {
     if (!iso) return "—";
     const [y, m, d] = iso.split("-");
     return `${Number(m)}/${Number(d)}/${y}`;
+  }
+
+  function isoTodayLocal() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  // A rolling 7-day window is not a fiscal week, so it can straddle two of
+  // them. Take the first and last day in chronological order rather than
+  // sorting the numbers — across the fiscal-year boundary the weeks run
+  // 52 → 1, and a numeric sort would render that backwards as "WK 1–52".
+  function wmWeekRangeLabel(daysOldestFirst) {
+    if (!daysOldestFirst?.length) return "";
+    const first = wmWeek(daysOldestFirst[0].dateIso);
+    const last  = wmWeek(daysOldestFirst[daysOldestFirst.length - 1].dateIso);
+    if (!first || !last) return "";
+    return first.week === last.week ? `WK ${first.week}` : `WK ${first.week}–${last.week}`;
   }
 
   function prettyEvidence(field) {
@@ -738,6 +835,132 @@ export async function mount(host, container) {
   }
   drillClose.addEventListener("click", closeDrill);
 
+  // ── Copy-to-clipboard (delegated) ───────────────────────────────
+  //
+  // drillBody.innerHTML is replaced on every render, so this is delegated
+  // rather than bound per button. To make any drill table copyable: wrap it in
+  // [data-ld-copy-scope] and add a <button data-ld-copy="<heading line>">.
+  drillBody.addEventListener("click", onDrillCopy);
+
+  // Named builders produce a purpose-shaped string from state instead of
+  // scraping the DOM. Without a builder a button falls back to table TSV.
+  const COPY_BUILDERS = {
+    "safety-obs-chat": () => safetyObsChatText(lastState),
+  };
+
+  async function onDrillCopy(ev) {
+    const btn = ev.target.closest("[data-ld-copy]");
+    if (!btn) return;
+    const builder = COPY_BUILDERS[btn.dataset.ldCopyBuilder];
+    let text;
+    if (builder) {
+      text = builder();
+    } else {
+      const scope = btn.closest("[data-ld-copy-scope]") || drillBody;
+      const table = scope.querySelector("table");
+      if (!table) return;
+      const heading = btn.dataset.ldCopy || "";
+      const body = tsvFromTable(table);
+      text = heading ? `${heading}\n${body}` : body;
+    }
+    if (!text) return;
+    const ok = await copyText(text);
+    flashButton(btn, ok ? "Copied ✓" : "Copy failed");
+  }
+
+  // Chat-shaped: one short line per day, no leading-space alignment and no
+  // tabs. Workvivo/Sendbird collapses runs of whitespace and has no monospace,
+  // so a padded or tab-separated grid arrives as mush — especially on mobile,
+  // where a 9-column row wraps. Newlines survive; that's what we lean on.
+  function safetyObsChatText(state) {
+    const c = state?.sources?.recognition?.cache;
+    if (!c?.rolling7d?.length) return "";
+    const days   = c.rolling7d.slice().reverse();   // oldest → newest
+    const engMap = new Map((c.engagement7d || []).map((r) => [r.dateIso, r.count || 0]));
+    const hasEng = !!c.engagement7d;
+
+    const weekText = wmWeekRangeLabel(days);
+    const todayIso = isoTodayLocal();
+    const header = [
+      "Safety Observations",
+      state.storeNbr ? `Store ${state.storeNbr}` : null,
+      weekText || null,
+    ].filter(Boolean).join(" — ");
+
+    const lines = [`${header} (last 7 days)`];
+    let recTotal = 0, engTotal = 0;
+    for (const d of days) {
+      if (d.dateIso === todayIso) {
+        // Never print a bare 0 for today — it reads as "nobody logged
+        // anything" when it means "the source hasn't landed it yet".
+        lines.push(`${fmtDayLabel(d.dateIso)}: Current Day - Not Live`);
+        continue;
+      }
+      const rec = d.count || 0;
+      const eng = engMap.get(d.dateIso) ?? 0;
+      recTotal += rec;
+      engTotal += eng;
+      lines.push(`${fmtDayLabel(d.dateIso)}: ${hasEng ? `${rec} rec, ${eng} eng` : `${rec}`}`);
+    }
+    lines.push(hasEng
+      ? `Total: ${recTotal} recognition + ${engTotal} engagement = ${recTotal + engTotal}`
+      : `Total: ${recTotal}`);
+    return lines.join("\n");
+  }
+
+  function fmtDayLabel(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);   // local, so the weekday matches the date
+    return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()]} ${m}/${d}`;
+  }
+
+  // Tab-separated: pastes as real cells in Excel/Sheets and still reads as an
+  // aligned block in an email or Workvivo post.
+  function tsvFromTable(table) {
+    // textContent, not innerText: innerText returns the RENDERED text, so the
+    // headers' CSS text-transform:uppercase would paste "7D TOTAL" instead of
+    // the "7d total" that's actually in the markup. &nbsp; → space so the
+    // pasted cells don't carry U+00A0 into Excel.
+    const cell = (c) => (c.textContent || "").replace(/ /g, " ").trim();
+    return [...table.querySelectorAll("tr")]
+      .map((tr) => [...tr.querySelectorAll("th,td")].map(cell).join("\t"))
+      .join("\n");
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Clipboard API needs a focused document; fall back to the old path so a
+      // background-focused shell tab still copies.
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        return ok;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  function flashButton(btn, msg) {
+    if (btn.dataset.ldFlashing) return;
+    const original = btn.textContent;
+    btn.dataset.ldFlashing = "1";
+    btn.textContent = msg;
+    setTimeout(() => {
+      btn.textContent = original;
+      delete btn.dataset.ldFlashing;
+    }, 1400);
+  }
+
   // ── Refresh + store change ─────────────────────────────────────
   async function onRefreshClick() {
     // Deliberately NOT on `bootstrap`, which fires whenever the dashboard is
@@ -763,9 +986,11 @@ export async function mount(host, container) {
       if (r.accident?.ok)   lines.push(`Accident ${r.accident.counts?.withMissing ?? 0} with missing / ${r.accident.counts?.highPriority ?? 0} high`);
       else                  lines.push(`Accident: ${shortErr(r.accident?.error)}`);
       if (r.recognition?.ok) {
-        const total7d = (r.recognition.rolling7d || []).reduce((a, x) => a + (x.count || 0), 0);
-        lines.push(`Recognition ${total7d}/7d`);
-      } else                lines.push(`Recognition: ${shortErr(r.recognition?.error)}`);
+        const sum7d = (s) => (s || []).reduce((a, x) => a + (x.count || 0), 0);
+        const rec = sum7d(r.recognition.rolling7d);
+        const eng = sum7d(r.recognition.engagement7d);
+        lines.push(`Safety Obs ${rec + eng}/7d (${rec} rec · ${eng} eng)`);
+      } else                lines.push(`Safety Obs: ${shortErr(r.recognition?.error)}`);
       statusText.textContent = lines.join(" · ");
     } catch (e) {
       statusText.textContent = `Refresh failed: ${shortErr(e)}`;
@@ -863,6 +1088,7 @@ export async function mount(host, container) {
       w.removeEventListener("click", onWidgetClick);
     }
     drillClose.removeEventListener("click", closeDrill);
+    drillBody.removeEventListener("click", onDrillCopy);
     refreshBtn.removeEventListener("click", onRefreshClick);
     storeInput.removeEventListener("change", onStoreCommit);
     document.removeEventListener("visibilitychange", onVisibilityChange);
