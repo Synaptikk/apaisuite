@@ -553,7 +553,10 @@ export const handlers = {
       // Negative cache: 24 hours.
       const POSITIVE_TTL = 7 * 24 * 3600 * 1000;
       const NEGATIVE_TTL =     24 * 3600 * 1000;
-      if (entry) {
+      // v2 entries are the ones written after the redirect check below.
+      // Older positive entries may hold a picture of some other product, so
+      // they are refetched once rather than trusted for their 7 days.
+      if (entry && entry.v === 2) {
         const age = Date.now() - entry.ts;
         const ttl = entry.url ? POSITIVE_TTL : NEGATIVE_TTL;
         if (age < ttl) {
@@ -565,9 +568,22 @@ export const handlers = {
         method: "GET",
         credentials: "omit",
       });
+      // walmart.com does not 404 an item id it doesn't sell online. It
+      // redirects to whatever listing its matcher likes — /ip/19239958105
+      // (Apple & Eve apple juice, per OMS) landed on an iPhone, and the card
+      // showed the phone. Only trust the page if its final URL still ends in
+      // the id we asked for.
+      const finalPath = (() => { try { return new URL(r.url).pathname; } catch { return ""; } })();
+      const sameItem = !finalPath || finalPath.endsWith(`/${itemId}`);
+      if (r.ok && !sameItem) {
+        await chrome.storage.local.set({
+          [cacheKey]: { v: 2, url: null, ts: Date.now(), redirectedTo: finalPath.slice(-40) },
+        });
+        return { ok: false, error: `walmart.com redirected to a different item (${finalPath.slice(-40)})` };
+      }
       if (!r.ok) {
         await chrome.storage.local.set({
-          [cacheKey]: { url: null, ts: Date.now(), httpStatus: r.status },
+          [cacheKey]: { v: 2, url: null, ts: Date.now(), httpStatus: r.status },
         });
         return { ok: false, status: r.status, error: `walmart.com HTTP ${r.status}` };
       }
@@ -576,12 +592,12 @@ export const handlers = {
       const url = m ? m[1] : null;
       if (!url) {
         await chrome.storage.local.set({
-          [cacheKey]: { url: null, ts: Date.now() },
+          [cacheKey]: { v: 2, url: null, ts: Date.now() },
         });
         return { ok: false, error: "no og:image found" };
       }
       await chrome.storage.local.set({
-        [cacheKey]: { url, ts: Date.now() },
+        [cacheKey]: { v: 2, url, ts: Date.now() },
       });
       return { ok: true, url, cached: false };
     } catch (e) {
