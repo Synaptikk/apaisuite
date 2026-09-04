@@ -386,7 +386,14 @@ function hasAuthCookies(cookies) {
 // chrome.cookies.getAll({}), so we read document.cookie via in-tab
 // executeScript and merge with chrome.cookies.getAll({url}) for the HttpOnly
 // ones.) Returns { cookies, usedTab } — cookies is null if every tab timed out.
+// Returns the first tab whose cookies include the auth pair. A responsive tab
+// WITHOUT auth is remembered as a fallback but not returned while others
+// remain: an analyst's stale /apphome tab (2-3 cookies, no authToken) sat
+// first in tab order and was read every time, so each search declared the
+// session expired and drove SSO in yet another tab of our own — even though
+// the tab we drove last time was still open and fully authenticated.
 async function readCookiesFromTabs(tabs, log = () => {}) {
+  let fallback = { cookies: null, usedTab: null };
   for (const tab of tabs) {
     try {
       log("trying tab", tab.id, tab.url);
@@ -396,14 +403,33 @@ async function readCookiesFromTabs(tabs, log = () => {}) {
           setTimeout(() => reject(new Error("readCookiesViaTab-5s-timeout")), 5000)
         ),
       ]);
-      log("got cookies from tab", tab.id, "count:", Object.keys(merged).length);
-      return { cookies: merged, usedTab: tab };
+      log("got cookies from tab", tab.id, "count:", Object.keys(merged).length,
+          hasAuthCookies(merged) ? "(auth)" : "(no auth)");
+      if (hasAuthCookies(merged)) return { cookies: merged, usedTab: tab };
+      if (!fallback.cookies) fallback = { cookies: merged, usedTab: tab };
     } catch (e) {
       log("tab", tab.id, "failed:", String(e));
     }
   }
-  return { cookies: null, usedTab: null };
+  return fallback;
 }
+
+// The gscope tab to run same-origin fetches through: the first one whose
+// session is actually authenticated, else the first usable one.
+async function authedGscopeTab() {
+  const tabs = await usableGscopeTabs();
+  if (!tabs.length) return null;
+  const read = await readCookiesFromTabs(tabs);
+  return read.usedTab ?? tabs[0];
+}
+
+// One Order Resolution drive at a time. The slow path opens a helper tab and
+// holds it for up to ~2.5 minutes; the view fires up to 15 batches in
+// parallel, and with no header cache every one of them took the slow path —
+// thirteen helper tabs, thirteen 150s timeouts, a Find button greyed out for
+// five minutes. Batches that arrive while a drive is in flight wait for it,
+// then replay through the headers it captured.
+let _omsDriveInFlight = null;
 
 // Every gscope tab that is on a real content page, with `preferTabId` FIRST.
 //
@@ -983,37 +1009,59 @@ export const handlers = {
       const targetUrl = "https://gscope.walmartlabs.com/mfe/ordermanagement/orderresolution";
 
       // FAST PATH ──────────────────────────────────────────────────
-      const cached = (await chrome.storage.session.get(STORAGE_OMS_HEADERS_KEY))[STORAGE_OMS_HEADERS_KEY];
-      if (cached) {
-        const gscopeTabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
-        if (gscopeTabs.length) {
-          try {
-            const url = "https://gscope.walmartlabs.com/api/gateway/provider-oms/orders" +
-                        `?limit=200&offset=0&orderNo=${encodeURIComponent(orderIds.join(","))}`;
-            const [{ result }] = await chrome.scripting.executeScript({
-              target: { tabId: gscopeTabs[0].id },
-              args: [url, cached],
-              func: async (url, headers) => {
-                try {
-                  const r = await fetch(url, {
-                    method: "GET", headers, credentials: "include",
-                  });
-                  return { ok: r.ok, status: r.status, text: await r.text() };
-                } catch (e) { return { ok: false, status: 0, error: String(e) }; }
-              },
-            });
-            if (result?.ok && result.status === 200) {
-              let data = null;
-              try { data = JSON.parse(result.text); } catch (_) {}
-              return { ok: true, status: 200, data, snippet: result.text.slice(0, 300), via: "fast-replay" };
-            }
-            // 401/403: stale headers, clear and fall through
+      // Replays the captured OMS headers through an AUTHENTICATED gscope
+      // tab. It used to pick chrome.tabs.query()[0] — the analyst's stale
+      // /apphome tab — get a 401, discard perfectly good headers, and fall
+      // through to the slow path for every batch.
+      const fastPath = async () => {
+        const cached = (await chrome.storage.session.get(STORAGE_OMS_HEADERS_KEY))[STORAGE_OMS_HEADERS_KEY];
+        if (!cached) return null;
+        const tab = await authedGscopeTab();
+        if (!tab) return null;
+        try {
+          const url = "https://gscope.walmartlabs.com/api/gateway/provider-oms/orders" +
+                      `?limit=200&offset=0&orderNo=${encodeURIComponent(orderIds.join(","))}`;
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            args: [url, cached],
+            func: async (url, headers) => {
+              try {
+                const r = await fetch(url, {
+                  method: "GET", headers, credentials: "include",
+                });
+                return { ok: r.ok, status: r.status, text: await r.text() };
+              } catch (e) { return { ok: false, status: 0, error: String(e) }; }
+            },
+          });
+          if (result?.ok && result.status === 200) {
+            let data = null;
+            try { data = JSON.parse(result.text); } catch (_) {}
+            return { ok: true, status: 200, data, snippet: result.text.slice(0, 300), via: "fast-replay" };
+          }
+          // 401/403 from an authenticated tab: the headers themselves are
+          // stale. Clear so the slow path re-captures.
+          if (result?.status === 401 || result?.status === 403) {
             await chrome.storage.session.remove(STORAGE_OMS_HEADERS_KEY);
-          } catch (_) { /* fall through to slow path */ }
-        }
+          }
+        } catch (_) { /* fall through to slow path */ }
+        return null;
+      };
+
+      const fast = await fastPath();
+      if (fast) return fast;
+
+      // Another batch is already driving the form. Wait for it, then replay
+      // through whatever headers it captured instead of opening our own tab.
+      if (_omsDriveInFlight) {
+        await _omsDriveInFlight.catch(() => {});
+        const afterWait = await fastPath();
+        if (afterWait) return { ...afterWait, via: "fast-replay-after-wait" };
       }
 
       // SLOW PATH (drive the UI, capture headers for next time) ───
+      let releaseDrive = null;
+      _omsDriveInFlight = new Promise((resolve) => { releaseDrive = resolve; });
+      try {
       helperTab = await chrome.tabs.create({ url: targetUrl, active: false });
       await waitForTabUrl(helperTab.id, "/orderresolution", 30_000);
       await sleep(5_000);
@@ -1110,6 +1158,10 @@ export const handlers = {
       let data = null;
       try { data = JSON.parse(result.text); } catch (_) { data = result.text; }
       return { ok: true, status: result.status, data, snippet: (result.text || "").slice(0, 300), via: "slow-drive" };
+      } finally {
+        _omsDriveInFlight = null;
+        if (releaseDrive) releaseDrive();
+      }
     } catch (e) {
       return { ok: false, error: String(e) };
     } finally {
