@@ -19,6 +19,11 @@ import { createAuth } from "../../shared/auth.js";
 import { ensureAlarm, IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
 import { observeIdentity, parseWireId } from "../../shared/identity.js";
+import {
+  GSCOPE_HOST,
+  isStuckGscopeUrl,
+  isUsableGscopeUrl,
+} from "./lib/gscope_urls.js";
 
 const MODULE_ID = "sparkfraud";
 
@@ -119,9 +124,7 @@ async function driveGscopeAuthChain(tabId, timeoutMs = SSO_REDIRECT_TIMEOUT_MS) 
     catch { return false; }
     const url = tab.url || "";
 
-    if (url.includes("gscope.walmartlabs.com") &&
-        !isStuckGscopeUrl(url) &&
-        tab.status === "complete") {
+    if (isUsableGscopeUrl(url) && tab.status === "complete") {
       return true;
     }
 
@@ -200,7 +203,16 @@ async function _clickGoViaCdp(tabId) {
 // Tracks tabs where we've attached chrome.debugger for the visibility spoof.
 // Avoids "another debugger is already attached" errors on overlapping calls.
 const _spoofedTabs = new Set();
-chrome.tabs.onRemoved.addListener(tabId => _spoofedTabs.delete(tabId));
+
+// Tabs _foregroundIfStillStuck has handed to the user for an interactive step
+// (Okta MFA, consent, "stay signed in?"). ourAuthTab() must not re-drive one:
+// navigating it back to pfedprod destroys the prompt the user is answering.
+const _foregroundedTabs = new Set();
+
+chrome.tabs.onRemoved.addListener(tabId => {
+  _spoofedTabs.delete(tabId);
+  _foregroundedTabs.delete(tabId);
+});
 
 // ── chrome.debugger is OPTIONAL, and absent in the store build ──────────────
 //
@@ -289,12 +301,13 @@ async function _foregroundIfStillStuck(tabId) {
     if (!tab) return null;
     const url = tab.url || "";
     // If we somehow landed on usable gscope, no foreground needed.
-    if (url.includes("gscope.walmartlabs.com") && !isStuckGscopeUrl(url)) {
+    if (isUsableGscopeUrl(url)) {
       return null;
     }
     // Detach debugger so the user doesn't see the "automated test software"
     // banner during their manual sign-in.
     await _unspoofVisibility(tabId);
+    _foregroundedTabs.add(tabId);
 
     // Try to move the auth tab into its own focused window. If the tab is
     // already the sole tab in its window, Chrome silently no-ops the move
@@ -333,17 +346,9 @@ async function _foregroundIfStillStuck(tabId) {
   }
 }
 
-// A gscope tab is "usable" only if it's on a normal content page. Tabs
-// parked on intermediate SSO endpoints (/api/wmstoresso, /api/sso*, /login)
-// can't run injected scripts and don't have the full auth-cookie set yet —
-// they're transient stops in the SSO chain that got stuck. Treat as not-
-// ready and re-navigate through pfedprod.
-function isStuckGscopeUrl(url) {
-  if (!url) return true;
-  return url.includes("/api/wmstoresso")
-      || url.includes("/api/sso")
-      || url.includes("/login");
-}
+// isStuckGscopeUrl / isUsableGscopeUrl / GSCOPE_HOST live in
+// ./lib/gscope_urls.js — pure, and tested there. Read the header of that file
+// before touching the readiness test: it is a HOSTNAME comparison on purpose.
 
 // gscope's session cookies carry the two best identity signals in the suite:
 // `store-no` is the store Walmart's own session is scoped to (the only source
@@ -400,6 +405,26 @@ async function readCookiesFromTabs(tabs, log = () => {}) {
   return { cookies: null, usedTab: null };
 }
 
+// Every gscope tab that is on a real content page, with `preferTabId` FIRST.
+//
+// Ordering is load-bearing on the re-auth path. `chrome.tabs.query` returns
+// window/index order, so the tab we just drove through the SSO chain lands
+// wherever the user happens to have it — and `readCookiesFromTabs` reads the
+// FIRST responsive tab. Reading the analyst's stale /apphome tab instead of
+// the one we just authenticated is how a successful re-auth reported
+// `hasAuth: false`.
+async function usableGscopeTabs(preferTabId = null) {
+  const all = await chrome.tabs.query({ url: `https://${GSCOPE_HOST}/*` });
+  const usable = all.filter(t => isUsableGscopeUrl(t.url));
+  // A tab that reached a real content page is no longer mid-prompt, so it
+  // becomes re-drivable again once its session next expires.
+  for (const t of usable) _foregroundedTabs.delete(t.id);
+  if (preferTabId == null) return usable;
+  const idx = usable.findIndex(t => t.id === preferTabId);
+  if (idx <= 0) return usable;
+  return [usable[idx], ...usable.slice(0, idx), ...usable.slice(idx + 1)];
+}
+
 // Open / find the gscope auth tab in BACKGROUND. Drives the SSO chain end-to-
 // end via driveGscopeAuthChain (clicks Go on pfedprod AND wmstoresso). Per
 // the suite-wide background-auth convention, never foregrounds tabs unless
@@ -407,8 +432,8 @@ async function readCookiesFromTabs(tabs, log = () => {}) {
 // _foregroundIfStillStuck pops the tab into its own window.
 async function ensureGscopeAuthTab() {
   // Step 1: existing gscope tab on a usable content URL? Use it.
-  let tabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
-  const usable = tabs.filter(t => !isStuckGscopeUrl(t.url));
+  const tabs = await chrome.tabs.query({ url: `https://${GSCOPE_HOST}/*` });
+  const usable = tabs.filter(t => isUsableGscopeUrl(t.url));
   if (usable.length) return { ready: true, tabs: usable };
 
   // Step 2: a gscope tab exists but it's parked on an intermediate URL.
@@ -431,9 +456,8 @@ async function ensureGscopeAuthTab() {
                 ") arrived:", arrived);
     await _unspoofVisibility(stuckTab.id);
     if (arrived) {
-      tabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
-      const usableNow = tabs.filter(t => !isStuckGscopeUrl(t.url));
-      if (usableNow.length) return { ready: true, tabs: usableNow };
+      const usableNow = await usableGscopeTabs(stuckTab.id);
+      if (usableNow.length) return { ready: true, tabs: usableNow, drivenTabId: stuckTab.id };
     }
     const interactive = await _foregroundIfStillStuck(stuckTab.id);
     if (interactive) return interactive;
@@ -456,9 +480,8 @@ async function ensureGscopeAuthTab() {
       const arrived = await driveGscopeAuthChain(stored, 10_000);
       await _unspoofVisibility(stored);
       if (arrived) {
-        tabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
-        const usableNow = tabs.filter(t => !isStuckGscopeUrl(t.url));
-        if (usableNow.length) return { ready: true, tabs: usableNow };
+        const usableNow = await usableGscopeTabs(stored);
+        if (usableNow.length) return { ready: true, tabs: usableNow, drivenTabId: stored };
       }
       const interactive = await _foregroundIfStillStuck(stored);
       if (interactive) return interactive;
@@ -482,26 +505,47 @@ async function ensureGscopeAuthTab() {
 // then navigate to pfedprod. driveGscopeAuthChain handles the Go-clicks on
 // the pfedprod → wmstoresso → /apphome chain.
 //
-// Always a NEW tab, never one the user might be working in: this also runs
-// when a perfectly good-looking gscope tab exists whose session has expired,
-// and navigating that tab out from under the user to an SSO endpoint is
-// exactly what `MEMORY.md::Never adopt a user's tab and navigate it` forbids.
-async function openAndDriveOwnAuthTab() {
+// Never a tab the user might be working in: this also runs when a perfectly
+// good-looking gscope tab exists whose session has expired, and navigating that
+// tab out from under the user to an SSO endpoint is exactly what
+// `MEMORY.md::Never adopt a user's tab and navigate it` forbids.
+//
+// It IS allowed to re-drive the auth tab we opened on a previous attempt.
+// Creating a fresh one every time meant a stalling chain left one dead tab per
+// click of Find candidates (3 → 4 → 5 across three attempts in the reported
+// log). The one exception is a tab _foregroundIfStillStuck has handed to the
+// user: re-driving that navigates away from the MFA prompt they are in the
+// middle of answering.
+async function ourAuthTab() {
+  const stored = (await chrome.storage.session.get(STORAGE_AUTH_TAB_KEY))[STORAGE_AUTH_TAB_KEY];
+  if (stored != null && !_foregroundedTabs.has(stored)) {
+    try {
+      await chrome.tabs.get(stored);
+      await touchSessionTab(stored);
+      return { id: stored, reused: true };
+    } catch (_) { /* tab is gone */ }
+  }
   const tab = await chrome.tabs.create({ url: "about:blank", active: false });
   await chrome.storage.session.set({ [STORAGE_AUTH_TAB_KEY]: tab.id });
   // This tab BECOMES the working gscope tab once the SSO chain lands, so it
   // can't be closed when auth finishes — but it also shouldn't outlive the
   // session, which is what it used to do. Hand it to the idle reaper.
   await registerSessionTab(MODULE_ID, tab.id);
+  return { id: tab.id, reused: false };
+}
+
+async function openAndDriveOwnAuthTab() {
+  const tab = await ourAuthTab();
   await _spoofVisibility(tab.id);
   try {
     await chrome.tabs.update(tab.id, { url: SSO_START_URL, active: false });
   } catch (_) {}
   const arrived = await driveGscopeAuthChain(tab.id, 15_000);
   await _unspoofVisibility(tab.id);
+  console.log("[SparkFraud auth] own-tab drive — tab:", tab.id,
+              "reused:", tab.reused, "arrived:", arrived);
   if (arrived) {
-    const nowTabs = await chrome.tabs.query({ url: "https://gscope.walmartlabs.com/*" });
-    const usableNow = nowTabs.filter(t => !isStuckGscopeUrl(t.url));
+    const usableNow = await usableGscopeTabs(tab.id);
     if (usableNow.length) return { ready: true, tabs: usableNow, drivenTabId: tab.id };
   }
   const interactive = await _foregroundIfStillStuck(tab.id);
@@ -1144,6 +1188,7 @@ export const handlers = {
       log("tabs found:", tabs.length, tabs.map(t => `${t.id}:${t.url}`));
 
       let read = await readCookiesFromTabs(tabs, log);
+      let drivenTabId = authRes.drivenTabId ?? null;
 
       // An EXPIRED session is the one state ensureGscopeAuthTab cannot see.
       // Its step 1 accepts any gscope tab whose URL is not on the stuck list,
@@ -1158,15 +1203,21 @@ export const handlers = {
       // because a second failure means the chain needs a human (MFA, a
       // password prompt) and retrying just burns tabs.
       if (read.cookies && !hasAuthCookies(read.cookies)) {
-        log("cookies present but no authToken — session expired; driving SSO in our own tab");
-        try { await chrome.storage.session.remove(STORAGE_AUTH_TAB_KEY); } catch (_) {}
+        log("cookies present but no authToken — session expired; driving SSO in our own tab",
+            "— had:", Object.keys(read.cookies).sort().join(","));
         const reauth = await openAndDriveOwnAuthTab();
         if (reauth.ready) {
+          // reauth.tabs is ordered driven-tab-first by usableGscopeTabs, which
+          // is the whole point: reading the analyst's stale /apphome tab after
+          // a successful re-auth is how this used to report hasAuth: false.
           tabs = reauth.tabs;
+          drivenTabId = reauth.drivenTabId ?? drivenTabId;
           const retry = await readCookiesFromTabs(tabs, log);
           if (retry.cookies) read = retry;
           log("post-reauth cookie read:", read.cookies ? Object.keys(read.cookies).length : 0,
-              "hasAuth:", read.cookies ? hasAuthCookies(read.cookies) : false);
+              "hasAuth:", read.cookies ? hasAuthCookies(read.cookies) : false,
+              "names:", read.cookies ? Object.keys(read.cookies).sort().join(",") : "—",
+              "drivenTab:", reauth.drivenTabId, "readFrom:", read.usedTab?.id);
         } else {
           // The chain stalled — either mid-flight ("auth-opening") or on a
           // page only a human can clear ("auth-needs-interaction", which
@@ -1205,6 +1256,16 @@ export const handlers = {
           diag: {
             tabUrl: usedTab.url,
             reauthAttempted: true,
+            // Which tab the chain was actually driven in, and where it ended
+            // up. Without this the message above asserts "the SSO chain
+            // completed" on no evidence — that claim was wrong for the whole
+            // life of the substring readiness bug, and it sent three separate
+            // investigations looking at cookies instead of at the chain.
+            drivenTabId,
+            drivenTabUrl: drivenTabId != null
+              ? await chrome.tabs.get(drivenTabId).then(t => t.url).catch(() => "(tab gone)")
+              : null,
+            readFromTabId: usedTab.id,
             cookieCount: Object.keys(cookies).length,
             cookieNames: Object.keys(cookies).sort(),
           },
