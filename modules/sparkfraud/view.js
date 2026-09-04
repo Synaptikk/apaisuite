@@ -17,7 +17,7 @@
 //   - Debug globals __SPARK_TRIPS / __SPARK_EVENT_MS → namespaced
 //     __APAISUITE_SPARKFRAUD_TRIPS / __APAISUITE_SPARKFRAUD_EVENT_MS
 
-import { toTrip, toCandidateMatch, computeInStoreWindow, attachOmsItems, toItem } from "./models/index.js";
+import { toTrip, toCandidateMatch, computeInStoreWindow, isWithinPresenceWindow, attachOmsItems, toItem } from "./models/index.js";
 import { emit, EVENTS } from "./telemetry/events.js";
 import { saveInvestigation, toInvestigationRecord } from "./journal.js";
 
@@ -55,6 +55,14 @@ export async function mount(host, container) {
   // and the UI looked identical to "nothing to show".)
   let lastOmsError = null;
   let lastWidenInfo = null;
+  // The ± minutes the analyst actually typed, for the most recent search.
+  // Distinct from lastWidenInfo, which is null whenever no widening happened —
+  // the presence filter needs the user's number in BOTH cases.
+  let lastWindowMin = null;
+  // Summary text renderTrips produced. applyItemFilter("") runs after every
+  // render and owns the same element, so it restores this instead of
+  // recomputing a different (and wrong) number.
+  let lastRenderSummary = "";
   let lastConfidenceCounts = null;
   let lastSearchResult = null;
   let eventTimestampMs = null;
@@ -1073,9 +1081,19 @@ ${itemsHtml}
     });
 
     const viableOnly = !lookupMode && ($("sf-viable-only")?.checked ?? true);
-    const viableFiltered = viableOnly
+    const viableOnlyFiltered = viableOnly
       ? completedNorm.filter(x => x.win.viable)
       : completedNorm;
+
+    // The Window (± minutes) filter. The Dispatcher QUERY is floored at ±120m
+    // on purpose (see DISPATCHER_MIN_HALFWINDOW_MIN), so this is the only place
+    // the analyst's number does anything. Not applied in lookup mode, where
+    // there is no event time to be ±N of.
+    const windowMin = lookupMode ? null : lastWindowMin;
+    const viableFiltered = viableOnlyFiltered.filter(
+      x => isWithinPresenceWindow(x.win, eventTimestampMs, windowMin)
+    );
+    const outsideWindow = viableOnlyFiltered.length - viableFiltered.length;
 
     if (Object.keys(itemsByOrder).length) {
       attachOmsItems(completedNorm.flatMap(c => c.normalized.orders), itemsByOrder, toItem);
@@ -1090,6 +1108,8 @@ ${itemsHtml}
       dropped: completedNorm.length - viableCountAll,
       hasTaskEventsCount: hasEventsCount,
       noTaskEventsCount: completedNorm.length - hasEventsCount,
+      windowMin,
+      outsideWindow,
       lookupMode,
     });
 
@@ -1099,13 +1119,29 @@ ${itemsHtml}
       const totalCompleted = completed.length;
       const viableCount = completedNorm.filter(x => x.win.viable).length;
       lastConfidenceCounts = { verified: 0, likely: 0, possible: 0, unknown: 0, conflicting: 0 };
+      // Nothing rendered — clear the stored summary so a later
+      // applyItemFilter("") can't restore the previous search's line.
+      lastRenderSummary = `0 viable trip(s) (of ${completed.length} fetched)`;
+      $("sf-result-summary").textContent = lastRenderSummary;
+      // Distinguish "nothing was viable" from "viable trips existed but your
+      // ±N excluded them" — the second has an obvious next action (widen), and
+      // before the window filter did anything it could not arise at all.
+      const windowNote = outsideWindow
+        ? ` ${outsideWindow} viable trip(s) were at the POS outside ±${windowMin}m of ` +
+          `${formatEventTime()} — widen Window to see them.`
+        : "";
       root.innerHTML =
         `<p class="muted">No viable candidate trips for event time ${formatEventTime()}. ` +
-        `(Trips in window: ${totalCompleted}, of which viable: ${viableCount}. ` +
-        `${!viableOnly ? "" : 'Uncheck "Only viable" to see all trips in window.'})</p>`;
+        `(Trips fetched: ${totalCompleted}, of which viable: ${viableCount}.` +
+        `${windowNote}` +
+        `${!viableOnly || outsideWindow ? "" : ' Uncheck "Only viable" to see all trips in window.'})</p>`;
       return;
     }
 
+    // Conflict detection deliberately runs against ALL viable trips, not the
+    // window-filtered set: whether the register moment is ambiguous is a fact
+    // about the data, not about how tight a ± the analyst happened to type.
+    // Narrowing the window must not turn a CONFLICTING row into a clean one.
     const normalizedAllViable = completedNorm.filter(x => x.win.viable).map(x => x.normalized);
 
     lastConfidenceCounts = { verified: 0, likely: 0, possible: 0, unknown: 0, conflicting: 0 };
@@ -1269,10 +1305,19 @@ ${itemsHtml}
       }
       root.appendChild(tripEl);
     }
-    $("sf-result-summary").textContent =
+    // The old summary read "72 trip(s) · searched ±120m (widened from ±3m)",
+    // which described the FETCH and left the analyst to wonder why a ±3m search
+    // was showing four hours of trips. Lead with the filter that actually
+    // decided what is on screen.
+    const inProgressShown = viableFiltered.filter(x => !x.win.hasEvents).length;
+    lastRenderSummary =
       `${viableFiltered.length} viable trip(s)` +
-      ` (of ${completed.length} in window)` +
-      (lastWidenInfo ? ` · searched ±${lastWidenInfo.dispatcherWindowMin}m (widened from ±${lastWidenInfo.windowMin}m to catch shopper presence)` : "");
+      (windowMin ? ` at POS within ±${windowMin}m` : "") +
+      ` (of ${completed.length} fetched)` +
+      (outsideWindow ? ` · ${outsideWindow} outside ±${windowMin}m` : "") +
+      (inProgressShown ? ` · ${inProgressShown} in-progress (no POS window — matched on promised delivery window)` : "") +
+      (lastWidenInfo ? ` · fetched ±${lastWidenInfo.dispatcherWindowMin}m to catch shopper presence` : "");
+    $("sf-result-summary").textContent = lastRenderSummary;
   }
 
   function renderItemsForTrip(tripEl, orders) {
@@ -1387,10 +1432,15 @@ ${itemsHtml}
       tripEl.classList.toggle("hidden", !matches);
       if (matches) visible++;
     }
+    // `allTrips` is EVERY trip Dispatcher returned for the ±120m fetch — it is
+    // not what is on screen. Using it here printed "72 trip(s)" above five
+    // rendered cards, and because applyItemFilter("") runs after every render
+    // it clobbered renderTrips' own (correct) summary every time. Count the
+    // rendered cards, and with no query restore the summary renderTrips wrote.
+    const rendered = container.querySelectorAll(".trip").length;
     $("sf-result-summary").textContent =
-      q ? `${visible} of ${allTrips.length} trip(s) contain "${q}"`
-        : `${allTrips.length} trip(s)` +
-          (lastWidenInfo ? ` · searched ±${lastWidenInfo.dispatcherWindowMin}m (widened from ±${lastWidenInfo.windowMin}m)` : "");
+      q ? `${visible} of ${rendered} shown trip(s) contain "${q}"`
+        : (lastRenderSummary || `${rendered} trip(s)`);
   }
 
   // ── 12. Search flows ───────────────────────────────────────────────
@@ -1419,6 +1469,7 @@ ${itemsHtml}
       const dispatcherWindowMin = Math.max(windowMin, DISPATCHER_MIN_HALFWINDOW_MIN);
       const widened = dispatcherWindowMin > windowMin;
       lastWidenInfo = widened ? { windowMin, dispatcherWindowMin } : null;
+      lastWindowMin = windowMin;
       const startDate = new Date(eventDate.getTime() - dispatcherWindowMin * 60_000);
       const endDate   = new Date(eventDate.getTime() + dispatcherWindowMin * 60_000);
       if (widened) {

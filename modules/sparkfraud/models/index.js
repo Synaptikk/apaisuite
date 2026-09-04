@@ -6,7 +6,7 @@
 // replay data. Subsequent MODEL-* tasks switch real consumers (printTrip,
 // renderTrips) to use these instead of raw response shapes.
 
-export { toTrip, computeInStoreWindow } from "./trip.js";
+export { toTrip, computeInStoreWindow, isWithinPresenceWindow } from "./trip.js";
 export { toDriver }                    from "./driver.js";
 export { toOrder, attachOmsItems }     from "./order.js";
 export { toItem }                      from "./item.js";

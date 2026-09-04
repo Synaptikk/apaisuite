@@ -104,7 +104,8 @@
     <label class="field"><span class="field-label">Event time (HH:MM)</span>
       <input type="time" id="sf-event-time" class="input" value="08:40">
     </label>
-    <label class="field"><span class="field-label">Window (± minutes)</span>
+    <label class="field" title="How far either side of the event time a shopper's time at the POS (PICKED → DISPATCHED) may fall and still count. Dispatcher is always queried ±120m — it filters by the customer's promised delivery window, not by when the shopper was in the store — and this narrows what that returns. In-progress trips have no POS window and are not affected by this.">
+      <span class="field-label">Window (± minutes)</span>
       <input type="number" id="sf-window-min" class="input" value="30" min="5" max="240">
     </label>
   </div>
