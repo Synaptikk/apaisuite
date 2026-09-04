@@ -61,8 +61,14 @@ export function assessConfidence(trip, context = {}) {
   metrics.eventInsideWindow = win.viable;
 
   if (!win.hasEvents) {
-    rationale.push("Missing PICKED/DISPATCHED taskEvents — incomplete dispatcher lifecycle");
-    ambiguity.push("Cannot establish in-store window without taskEvents");
+    if (win.arrivedMs) {
+      const arrivedIso = new Date(win.arrivedMs).toISOString();
+      rationale.push(`Trip in progress — shopper ${win.arrivalSource} at ${arrivedIso}; no PICKED/DISPATCHED yet`);
+      ambiguity.push("In-store window is open-ended (arrival → now); register time not yet bracketed");
+    } else {
+      rationale.push("Missing PICKED/DISPATCHED taskEvents — incomplete dispatcher lifecycle");
+      ambiguity.push("Cannot establish in-store window without taskEvents");
+    }
     return finalize(CONFIDENCE.UNKNOWN, rationale, ambiguity, metrics);
   }
 

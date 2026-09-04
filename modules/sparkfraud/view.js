@@ -1229,8 +1229,10 @@ ${itemsHtml}
         ? Math.round((win.dispatchedMs - win.pickedMs) / 60000) : null;
       const windowLabel = win.pickedMs && win.dispatchedMs
         ? `<span class="in-store-window" title="Shopper at POS / register: between PICKED (completed shopping) and DISPATCHED (left store with goods). Times in ${STORE_TZ}.">At POS between ${pickedFmt}→${dispFmt} ${tzAbbr} (${inStoreMins}m)</span>`
+        : win.inProgress && win.arrivedMs
+          ? `<span class="in-store-window in-progress-window" title="Trip in progress — ${win.arrivalSource} at ${fmtTimeMs(win.arrivedMs)} ${tzAbbrFor(new Date(win.arrivedMs), STORE_TZ)}, still inside. POS bracket closes when PICKED/DISPATCHED fire.">In store since ${fmtTimeMs(win.arrivedMs)} ${tzAbbrFor(new Date(win.arrivedMs), STORE_TZ)} · ${normalizedTrip.status.display || ""}</span>`
         : win.inProgress
-          ? `<span class="in-store-window in-progress-window" title="Trip in progress — shopper is active at this store. Customer window: ${fmtTimeMs(normalizedTrip.customerWindow.startMs)}–${fmtTimeMs(normalizedTrip.customerWindow.endMs)} ${tzAbbrFor(new Date(), STORE_TZ)}. In-store window available after PICKED/DISPATCHED events fire.">In progress — active in store · ${normalizedTrip.status.display || ""}</span>`
+          ? `<span class="in-store-window in-progress-window" title="Trip in progress but no ARRIVED_AT_STORE/PICK_STARTED event in the payload — matched on the customer window ${fmtTimeMs(normalizedTrip.customerWindow.startMs)}–${fmtTimeMs(normalizedTrip.customerWindow.endMs)} ${tzAbbrFor(new Date(), STORE_TZ)} instead. Weak signal.">In progress — arrival unknown · ${normalizedTrip.status.display || ""}</span>`
           : `<span class="in-store-window missing" title="No PICKED/DISPATCHED events in this trip's data">At POS: unknown</span>`;
 
       const _tipLines = [
@@ -1361,7 +1363,7 @@ ${itemsHtml}
       (windowMin ? ` at POS within ±${windowMin}m` : "") +
       ` (of ${completed.length} fetched)` +
       (outsideWindow ? ` · ${outsideWindow} outside ±${windowMin}m` : "") +
-      (inProgressShown ? ` · ${inProgressShown} in-progress (no POS window — matched on promised delivery window)` : "") +
+      (inProgressShown ? ` · ${inProgressShown} in-progress (in store at event time, POS bracket still open)` : "") +
       (lastWidenInfo ? ` · fetched ±${lastWidenInfo.dispatcherWindowMin}m to catch shopper presence` : "");
     $("sf-result-summary").textContent = lastRenderSummary;
   }

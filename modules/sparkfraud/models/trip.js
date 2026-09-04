@@ -76,44 +76,95 @@ const VIABILITY_POST_BUFFER_MS =  5 * 60 * 1000;
 // X→Y", so a row can never be on screen contradicting the filter that let it
 // through.
 //
-// Trips with no bracket (`hasEvents: false` — the in-progress fallback in
-// computeInStoreWindow) are EXEMPT. They have no in-store interval to test, so
-// there is nothing here that could include or exclude them honestly; they
-// remain governed by the customer-window viability fallback. Callers that want
-// them gone want a different filter, not this one.
+// In-progress trips (`hasEvents: false`) come in two shapes:
+//   - arrival known (`arrivedMs` set): the shopper is in the store from
+//     ARRIVED_AT_STORE until now. That is a real interval, [arrivedMs, openEndMs],
+//     and it is tested exactly like a PICKED→DISPATCHED bracket.
+//   - arrival unknown: nothing to test, so the trip is EXEMPT and remains
+//     governed by whatever computeInStoreWindow decided for viability.
 export function isWithinPresenceWindow(win, eventTimestampMs, windowMin) {
   if (!Number.isFinite(windowMin) || windowMin <= 0) return true;
   if (!eventTimestampMs) return true;
-  if (!win?.hasEvents) return true;
   const half = windowMin * 60 * 1000;
-  return win.pickedMs <= eventTimestampMs + half &&
-         win.dispatchedMs >= eventTimestampMs - half;
+  if (win?.hasEvents) {
+    return win.pickedMs <= eventTimestampMs + half &&
+           win.dispatchedMs >= eventTimestampMs - half;
+  }
+  if (win?.arrivedMs && win?.openEndMs) {
+    return win.arrivedMs <= eventTimestampMs + half &&
+           win.openEndMs  >= eventTimestampMs - half;
+  }
+  return true;
 }
 
-export function computeInStoreWindow(trip, eventTimestampMs) {
+// Dispatcher's per-order taskEvents chain, in lifecycle order (observed on the
+// live /v4/dashboard payload, recon/archive/artifacts/dispatcher_today_v2.json):
+//   COURIER_REQUESTED → ENROUTE_TO_PICKUP → ARRIVED_AT_STORE → PICK_STARTED →
+//   PICKED → DISPATCHED → ENROUTE_TO_DROPOFF → ARRIVED_AT_CUSTOMERS_LOCATION → DELIVERED
+// ARRIVED_AT_STORE is the first moment the shopper is physically inside.
+// PICK_STARTED is the fallback when arrival didn't fire — it can only happen
+// in the store, so it is a late-but-safe lower bound.
+const ARRIVAL_EVENTS = ["ARRIVED_AT_STORE", "PICK_STARTED"];
+const ACTIVE_STATUSES = new Set(["enrouteToPickup", "atPickup", "tripInProgress"]);
+// Statuses that assert the shopper is inside the store even if the arrival
+// event is missing from the payload (drift guard — see enums.json drift_risk).
+const IN_STORE_STATUSES = new Set(["atPickup", "tripInProgress"]);
+
+export function computeInStoreWindow(trip, eventTimestampMs, nowMs = Date.now()) {
   let earliestPicked = null;
   let latestDispatched = null;
+  let earliestArrived = null;
+  let earliestPickStarted = null;
   for (const order of trip.orders) {
     for (const e of order.taskEvents) {
       if (e.statusName === "PICKED") {
         if (earliestPicked === null || e.timeMs < earliestPicked) earliestPicked = e.timeMs;
       } else if (e.statusName === "DISPATCHED") {
         if (latestDispatched === null || e.timeMs > latestDispatched) latestDispatched = e.timeMs;
+      } else if (e.statusName === ARRIVAL_EVENTS[0]) {
+        if (earliestArrived === null || e.timeMs < earliestArrived) earliestArrived = e.timeMs;
+      } else if (e.statusName === ARRIVAL_EVENTS[1]) {
+        if (earliestPickStarted === null || e.timeMs < earliestPickStarted) earliestPickStarted = e.timeMs;
       }
     }
   }
   const hasEvents = earliestPicked !== null && latestDispatched !== null;
 
-  // Active in-progress trips without PICKED/DISPATCHED: fall back to the
-  // customer delivery window for viability. The shopper is physically in
-  // the store but hasn't completed picking yet. In-store register window
-  // isn't bracketable, but the event time within the promised window is a
-  // meaningful lead worth surfacing (UNKNOWN confidence, not dropped).
+  // Active in-progress trips without PICKED/DISPATCHED. The shopper may be in
+  // the store right now, but "right now" is not the event time: an analyst
+  // searching 14:40 at 16:30 was getting every shopper currently picking,
+  // because viability fell back to the customer's promised delivery window
+  // (typically 3-4 hours wide). Use the moment the shopper actually walked
+  // in instead — ARRIVED_AT_STORE (or PICK_STARTED) — as an open-ended
+  // bracket [arrived, now]. A 14:40 event against a 16:10 arrival is not
+  // viable; a 16:20 event is.
   if (!hasEvents && eventTimestampMs) {
-    const ACTIVE = new Set(["enrouteToPickup", "atPickup", "tripInProgress"]);
+    const isActive = ACTIVE_STATUSES.has(trip.status?.display);
+    const arrivedMs = earliestArrived ?? earliestPickStarted;
+    if (isActive && arrivedMs !== null) {
+      const viable =
+        eventTimestampMs >= arrivedMs - VIABILITY_PRE_BUFFER_MS &&
+        eventTimestampMs <= nowMs     + VIABILITY_POST_BUFFER_MS;
+      return {
+        pickedMs: null,
+        dispatchedMs: null,
+        durationMin: null,
+        hasEvents: false,
+        viable,
+        inProgress: true,
+        arrivedMs,
+        arrivalSource: earliestArrived !== null ? ARRIVAL_EVENTS[0] : ARRIVAL_EVENTS[1],
+        openEndMs: nowMs,
+      };
+    }
+    // No arrival event. If the status itself says "in store" the event name
+    // has probably drifted — keep the old customer-window fallback so the
+    // trip still surfaces (UNKNOWN confidence) rather than vanishing. If the
+    // status is enrouteToPickup, the shopper has not arrived and cannot have
+    // been at a register at any past time.
+    const inStoreByStatus = IN_STORE_STATUSES.has(trip.status?.display);
     const cwStart = trip.customerWindow?.startMs;
     const cwEnd   = trip.customerWindow?.endMs;
-    const isActive = ACTIVE.has(trip.status?.display);
     const inWindow = !!(cwStart && cwEnd &&
       eventTimestampMs >= cwStart - VIABILITY_PRE_BUFFER_MS &&
       eventTimestampMs <= cwEnd   + VIABILITY_POST_BUFFER_MS);
@@ -122,8 +173,11 @@ export function computeInStoreWindow(trip, eventTimestampMs) {
       dispatchedMs: null,
       durationMin: null,
       hasEvents: false,
-      viable: isActive && inWindow,
+      viable: inStoreByStatus && inWindow,
       inProgress: isActive,
+      arrivedMs: null,
+      arrivalSource: null,
+      openEndMs: null,
     };
   }
 
