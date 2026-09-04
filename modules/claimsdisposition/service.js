@@ -80,6 +80,12 @@ const MAX_REAUTH_ATTEMPTS = 2;
 // wedges the batch and leaves the view stuck on "fetching" forever.
 const FETCH_TIMEOUT_MS = 60_000;
 
+// How long ensureEmbedTab waits for a freshly opened embed tab to reach
+// status "complete" on the embed URL. 30s was enough on a warm Google
+// session; a cold one has to bounce through accounts.google.com and the
+// corp proxy first, which is where the old limit was tripping.
+const EMBED_LOAD_TIMEOUT_MS = 45_000;
+
 // Number of historic pulls to retain in IndexedDB before auto-eviction.
 // Each full 10-store/30-day pull is ~50MB of rows, so 30 ≈ 1.5GB worst case.
 const KEEP_LAST_N_PULLS = 30;
@@ -116,20 +122,48 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
   // but the same-origin fetch only succeeds once Looker's bootstrap has
   // set up its anti-CSRF cookie chain. Probing every 500ms keeps happy-
   // path fast.
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + EMBED_LOAD_TIMEOUT_MS;
+  let last = { status: "?", url: "" };
   while (Date.now() < deadline) {
     await sleep(500);
     const t = await chrome.tabs.get(tab.id).catch(() => null);
-    if (t?.status === "complete" && (t.url ?? "").includes("/embed/reporting/")) {
+    if (!t) return { ok: false, error: "embed tab was closed before it finished loading" };
+    last = { status: t.status ?? "?", url: t.url ?? t.pendingUrl ?? "" };
+    if (last.status === "complete" && last.url.includes("/embed/reporting/")) {
       await sleep(1500); // one more breath for the bootstrap
       await registerSessionTab("claimsdisposition", tab.id);
       return { ok: true, tabId: tab.id, opened: true };
     }
   }
-  // Timeout — close the tab we opened so failed attempts don't accumulate
-  // a graveyard of broken embed tabs.
+  // Timeout. Two very different situations land here, and the tab URL
+  // tells them apart:
+  //  - Still on (or redirected to) the embed URL but never "complete":
+  //    slow load. Close the tab so failed attempts don't accumulate a
+  //    graveyard of broken embed tabs.
+  //  - Anywhere else (accounts.google.com chooser, SAML IdP, "session
+  //    expired" interstitial): Google wants the user. Closing the tab here
+  //    is what made this fail silently forever — the user never saw the
+  //    sign-in page. Foreground it instead and say so in the error. Google
+  //    account auth has no auto-clickable SSO button, so this is the one
+  //    case the suite's background-only auth rule allows a foreground tab.
+  const onEmbed = last.url.includes("/embed/reporting/");
+  const where = last.url ? new URL(last.url).host : "(no url yet)";
+  if (!onEmbed && last.url) {
+    LOG(`embed tab stuck on ${where} (status=${last.status}) — foregrounding for sign-in`);
+    try { await chrome.tabs.update(tab.id, { active: true }); } catch (_) {}
+    try { await chrome.windows.update(tab.windowId, { focused: true }); } catch (_) {}
+    return {
+      ok: false,
+      error: `Looker sign-in required — the embed tab is waiting on ${where}. ` +
+             `Sign in there, then run the pull again.`,
+    };
+  }
   try { await chrome.tabs.remove(tab.id); } catch (_) {}
-  return { ok: false, error: `embed tab did not reach complete state within 30s` };
+  return {
+    ok: false,
+    error: `embed tab did not reach complete state within ${EMBED_LOAD_TIMEOUT_MS / 1000}s ` +
+           `(last seen status=${last.status} at ${where})`,
+  };
 }
 
 // Execute one batchedDataV2 fetch from inside the embed tab. The injected
