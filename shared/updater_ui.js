@@ -7,21 +7,24 @@
 // element. Re-renders reactively when storage changes.
 //
 // Banner UX (load-unpacked installs):
-//   [↑ Update available — v0.8.0]  release-notes-truncated…  [Download & Update] [Later]
+//   [↑ Update available — v1.0.3]  release-notes-truncated…  [Get update] [Later]
 //
-// Clicking "Download & Update":
-//   1. chrome.downloads.download(zipUrl)  — fires a Save dialog-less download
-//      to the user's Downloads folder.
-//   2. chrome.tabs.create({ url: "chrome://extensions" }) — opens the page
-//      they need to be on to finish the swap.
-//   3. Expands the banner with step-by-step instructions including the
-//      extension ID (so they can locate "their" entry on chrome://extensions).
+// Clicking "Get update":
+//   1. chrome.tabs.create({ url: downloadUrl }) — opens the qrcallbox.com
+//      landing page, whose "Download to folder" button writes the new files
+//      straight into the existing install folder (File System Access API,
+//      fed by pkg.json — the only delivery the corp proxy lets through).
+//   2. Expands the banner with step-by-step instructions including the
+//      extension ID (so they can locate "their" entry on edge://extensions).
+//
+// The ZIP path (chrome.downloads on zipUrl) was retired: the proxy 403s
+// archive downloads, so the button failed silently for everyone on corp.
 //
 // Why this isn't true one-click: Chrome blocks extensions from self-replacing
 // their own files. The only true zero-click path is a Chrome Web Store install
 // (Chrome's own updater polls every ~5h). For load-unpacked installs this is
-// the best you can do — auto-download + auto-navigate + crystal-clear next
-// steps; the user still does the unzip + reload by hand.
+// the best you can do — open the installer page + crystal-clear next steps;
+// the user still does the folder pick + reload by hand.
 
 import { UPDATER_STORAGE_KEYS } from "./updater.js";
 
@@ -56,8 +59,8 @@ function buildBanner(payload) {
 
   const primary = document.createElement("button");
   primary.className = "is-primary";
-  primary.textContent = "Download & Update";
-  primary.title = "Download the new ZIP and open chrome://extensions";
+  primary.textContent = "Get update";
+  primary.title = "Open the download page — use \"Download to folder\" on your existing install folder, then Reload";
   primary.addEventListener("click", () => startUpdate(root, payload));
   actions.appendChild(primary);
 
@@ -78,61 +81,52 @@ function buildBanner(payload) {
 }
 
 /**
- * Trigger the download + open-extensions-page flow, then show inline help so
- * the user knows what to do next.
+ * Send the user to the landing page's folder installer, then show inline
+ * help so they know what to do next.
+ *
+ * Why not chrome.downloads on the ZIP: the corp proxy 403s .zip/octet-stream
+ * archives, so the old "Download & Update" button silently produced a
+ * failed download and a chrome://extensions tab with nothing to load. The
+ * landing page's "Download to folder" path fetches pkg.json (plain JSON,
+ * which the proxy lets through) and writes every file straight into the
+ * install folder via the File System Access API — no archive ever crosses
+ * the wire. release.sh keeps pkg.json in lockstep with the ZIP.
  */
 async function startUpdate(root, payload) {
-  const zipUrl = payload?.zipUrl;
   const newVer = String(payload?.version ?? "?");
+  const pageUrl = payload?.downloadUrl || "https://qrcallbox.com/extension/";
 
-  // 1. Kick off the download. saveAs:false so the browser doesn't prompt
-  //    for a location — file lands in default Downloads folder.
-  let downloadId = null;
-  if (zipUrl) {
-    try {
-      downloadId = await chrome.downloads.download({ url: zipUrl, saveAs: false });
-    } catch (e) {
-      console.warn("[APAISuite updater_ui] download failed:", e);
-    }
-  }
-
-  // 2. Open chrome://extensions in a new tab so they're one click from
-  //    "Load unpacked" / "Reload" buttons.
+  // 1. Open the landing page. That's where the firewall-safe installer lives.
   try {
-    await chrome.tabs.create({ url: "chrome://extensions" });
+    await chrome.tabs.create({ url: pageUrl });
   } catch (e) {
     console.warn("[APAISuite updater_ui] tabs.create failed:", e);
   }
 
-  // 3. Expand banner with step-by-step help. We can't auto-locate the install
-  //    folder (Chrome doesn't expose it to JS), but the extension ID + the
-  //    open chrome://extensions tab gets them there in 2 clicks.
+  // 2. Expand banner with step-by-step help. We can't auto-locate the install
+  //    folder (Chrome doesn't expose it to JS), but the extension ID gets
+  //    them to the right card on chrome://extensions in 2 clicks.
   const help = document.createElement("div");
   help.className = "wv-banner-help";
   const extId = chrome.runtime.id;
   help.innerHTML = `
-    <strong>Downloading apaisuite-${newVer}.zip…</strong>
-    Once it finishes:
+    <strong>Update page opened in a new tab.</strong>
+    On that page:
     <ol>
-      <li>Unzip it (any folder works — but easiest is to <em>overwrite the existing install folder</em> so you don't have to re-pick it).</li>
-      <li>On the <code>chrome://extensions</code> tab that just opened, find <strong>APAISuite</strong>
+      <li>Click <strong>Download to folder</strong> and pick your <em>existing</em> APAISuite install folder
+          (files are overwritten in place — no ZIP, no extracting).</li>
+      <li>Wait for it to report all files written.</li>
+      <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong>
           (ID: <code>${extId}</code>) and click <strong>Reload</strong>.</li>
-      <li>If you unzipped to a new folder, click <strong>Load unpacked</strong> and select it,
-          then <strong>Remove</strong> the old install.</li>
     </ol>
     The banner will clear automatically once the SW sees you're on v${newVer}.
   `;
-  // Replace primary button label so the user knows it's progressing.
   const primary = root.querySelector("button.is-primary");
   if (primary) {
-    primary.textContent = "Downloading…";
+    primary.textContent = "Update page opened";
     primary.disabled = true;
   }
-  // Append the help block beneath the inline row (re-flowed via grid).
   root.classList.add("is-expanded");
-  // Insert help into the parent grid as a sibling so it spans full width
-  // properly via grid-area:banner; we append to root for simplicity and
-  // let CSS handle layout.
   root.appendChild(help);
 }
 
