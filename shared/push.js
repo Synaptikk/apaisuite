@@ -59,11 +59,29 @@ async function getInstallationId() {
   return id;
 }
 
+function waitForActivation(timeoutMs = 10_000) {
+  const reg = self.registration;
+  if (!reg || reg.active) return Promise.resolve();
+  const pending = reg.installing || reg.waiting;
+  if (!pending) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    pending.addEventListener("statechange", () => {
+      if (pending.state === "activated" || reg.active) { clearTimeout(timer); resolve(); }
+    });
+  });
+}
+
 /**
  * Idempotent: get the existing PushSubscription or create one. Returns
  * the subscription (already a PushSubscription, has toJSON()).
  */
 async function getOrCreateSubscription() {
+  // On the first boot after an install/update the worker is still
+  // "installing"/"activating" when top-level code runs, and
+  // pushManager.subscribe() rejects with "no active Service Worker".
+  // Wait for activation instead of logging a spurious failure every reload.
+  await waitForActivation();
   let sub = await self.registration.pushManager.getSubscription();
   if (sub) return sub;
   sub = await self.registration.pushManager.subscribe({

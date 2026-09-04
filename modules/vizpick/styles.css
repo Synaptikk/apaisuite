@@ -262,17 +262,23 @@
 /* --module-accent-ink, not #fff: the dark theme's accent is a LIGHT hue
    (Molten Ember) and white on it is unreadable. The token is the per-theme
    answer to "what colour goes on top of the accent fill". */
+/* Sits at the head of the sub line ("YOURS  A · Region 12"), not beside the
+   store number: the number line is bold 13px and shares its row with the
+   composite gauge, so a pill appended there ran under the ring and clipped
+   ("YOUR"). The sub line is 11px muted text with the full card width. */
 .vizpick-home-chip {
-  margin-left: var(--sp-2);
-  padding: 1px 6px;
+  display: inline-block;
+  margin-right: var(--sp-2);
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--module-accent);
   color: var(--module-accent-ink);
-  font-size: var(--fs-xs);
+  font-size: 10px;
+  line-height: 15px;
   font-weight: var(--fw-semi);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  vertical-align: middle;
+  vertical-align: baseline;
 }
 /* The card being dragged. */
 .vizpick-store-card.is-dragging { opacity: 0.4; }

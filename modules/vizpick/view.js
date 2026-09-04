@@ -1565,10 +1565,10 @@ export async function mount(host, container) {
                aria-label="Store ${escapeHtml(r.store)}${isHome ? " — your store" : ""} — drag to rearrange">
         <header class="vizpick-store-card-summary">
           <div class="vizpick-store-card-id">
-            <div class="vizpick-store-card-num">#${escapeHtml(r.store)}${
+            <div class="vizpick-store-card-num">#${escapeHtml(r.store)}</div>
+            <div class="vizpick-store-card-sub">${
               isHome ? `<span class="vizpick-home-chip" title="Your home store, from Settings > Defaults">yours</span>` : ""
-            }</div>
-            <div class="vizpick-store-card-sub">${sub}</div>
+            }${sub}</div>
           </div>
           <div class="vizpick-store-card-gauge">${gauge}</div>
           <div class="vizpick-card-actions">
