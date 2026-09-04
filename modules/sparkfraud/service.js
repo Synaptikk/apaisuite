@@ -15,7 +15,7 @@
 //   - gscope cookies read via host.auth.readCookiesViaTab (the Walmart-corp-
 //     Edge workaround SparkFraud documented in its registries/auth_modes.json)
 
-import { createAuth } from "../../shared/auth.js";
+import { createAuth, reloadTabAndWait } from "../../shared/auth.js";
 import { ensureAlarm, IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
 import { observeIdentity, parseWireId } from "../../shared/identity.js";
@@ -561,6 +561,39 @@ async function openAndDriveOwnAuthTab() {
 
 // ── Exported handlers ──────────────────────────────────────────────────
 export const handlers = {
+  // Autonomous reauth for Swift. ensureGscopeAuthTab only checks the tab's
+  // URL, so a gscope tab parked on /apphome with an expired authtoken looks
+  // "ready" while Swift answers every Dispatcher call with an empty 400.
+  // Reloading the tab re-runs gscope's bootstrap: cached AAD creds mint a
+  // fresh token silently, or the tab lands on the SSO chain and we drive it
+  // in the background exactly like a cold start. Caller re-reads cookies.
+  async refreshGscopeAuth() {
+    const log = (...a) => console.log("[SW refreshGscopeAuth]", ...a);
+    try {
+      const tabs = await chrome.tabs.query({ url: `https://${GSCOPE_HOST}/*` });
+      if (!tabs.length) return { ok: false, error: "no gscope tab to refresh" };
+      const usable = tabs.filter(t => isUsableGscopeUrl(t.url));
+      const tab = usable[0] ?? tabs[0];
+      log("reloading tab", tab.id, tab.url);
+      const bootstrapped = await reloadTabAndWait(tab.id, { settleMs: 2_000, timeoutMs: 30_000 });
+      if (!bootstrapped.ok) return { ok: false, error: `reload failed: ${bootstrapped.reason}` };
+      const after = await chrome.tabs.get(tab.id).catch(() => null);
+      if (after && isUsableGscopeUrl(after.url)) {
+        log("tab back on content URL after reload");
+        return { ok: true, tabId: tab.id, drove: false };
+      }
+      // Reload bounced into the SSO chain — drive it, background-only.
+      await _spoofVisibility(tab.id);
+      const arrived = await driveGscopeAuthChain(tab.id);
+      await _unspoofVisibility(tab.id);
+      log("drove SSO chain after reload, arrived:", arrived);
+      if (arrived) return { ok: true, tabId: tab.id, drove: true };
+      return { ok: false, error: "gscope SSO did not complete after reload", tabId: tab.id };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  },
+
   async clearGscopeState() {
     try {
       const origins = [
@@ -1154,17 +1187,46 @@ export const handlers = {
       }
 
       // swift.walmart.com (cross-origin from extension is fine — uses
-      // header-based auth via x-authheader/x-authtoken, no cookies needed)
-      const r = await fetch(msg.url, {
-        method: msg.method || "GET",
-        headers: msg.headers || {},
-        credentials: "include",
-        body: msg.body ? JSON.stringify(msg.body) : undefined,
-      });
-      const text = await r.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch (_) { data = text; }
-      return { ok: r.ok, status: r.status, data };
+      // header-based auth via x-authheader/x-authtoken, no cookies needed).
+      //
+      // `credentials: "include"` still ships every cookie scoped to
+      // swift.walmart.com / .walmart.com. That jar grows with every SSO
+      // round-trip across Walmart sites, and once the Cookie header pushes
+      // the request past Tomcat's header limit Swift answers with its stock
+      // "HTTP Status 400 – Bad Request" HTML page — before the Dispatcher
+      // app ever sees the call. Measure the jar, and if a cookie-bearing
+      // attempt comes back as a container-level 400, retry without cookies.
+      const doFetch = async (credentials) => {
+        const r = await fetch(msg.url, {
+          method: msg.method || "GET",
+          headers: msg.headers || {},
+          credentials,
+          body: msg.body ? JSON.stringify(msg.body) : undefined,
+        });
+        const text = await r.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) { data = text; }
+        return { ok: r.ok, status: r.status, data, text };
+      };
+      const isContainer400 = (r) =>
+        r.status === 400 && typeof r.data === "string" && /HTTP Status 400/i.test(r.data);
+
+      let cookieBytes = -1;
+      try {
+        const jar = await chrome.cookies.getAll({ url: msg.url });
+        cookieBytes = jar.reduce((n, c) => n + c.name.length + c.value.length + 3, 0);
+        console.log(`[SW fetchJson] swift cookie jar: ${jar.length} cookie(s), ~${cookieBytes} bytes on the Cookie header`);
+      } catch (_) {}
+
+      let r = await doFetch("include");
+      let credentialsUsed = "include";
+      if (isContainer400(r)) {
+        console.warn(`[SW fetchJson] container-level 400 with cookies (~${cookieBytes}B) — retrying with credentials: "omit"`);
+        const r2 = await doFetch("omit");
+        if (!isContainer400(r2)) { r = r2; credentialsUsed = "omit"; }
+      }
+      const { text: _t, ...rest } = r;
+      return { ...rest, diag: { credentialsUsed, cookieBytes } };
     } catch (e) {
       return { ok: false, status: 0, error: String(e) };
     }

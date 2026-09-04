@@ -881,11 +881,28 @@ ${itemsHtml}
   }
 
   // ── 10. API calls ──────────────────────────────────────────────────
+  // Swift returns an EMPTY 400 (no body) when the gscope authtoken it was
+  // handed has expired — indistinguishable from a malformed request by
+  // status alone. Treat any 400/401/403 as a possible stale session: ask the
+  // SW to reload the gscope tab (which mints a fresh token or re-drives SSO
+  // in the background), re-read cookies, and retry ONCE. Genuine bad-request
+  // 400s fail the same way on the retry and surface with whatever body
+  // Swift sent.
+  const AUTH_SHAPED_STATUSES = new Set([400, 401, 403]);
+
+  function describeHeaders(h) {
+    // Presence + length only — never log token values.
+    const out = {};
+    for (const k of ["x-authheader", "x-authtoken", "x-userid", "x-storeid", "x-loggedinusername"]) {
+      out[k] = h[k] ? `len=${String(h[k]).length}` : "EMPTY";
+    }
+    return out;
+  }
+
   async function fetchTrips({ store, startISO, endISO, services, serviceTypes }) {
     const replayName = isReplayMode();
     if (replayName) return loadDispatcherFixture(replayName);
 
-    const headers = await buildHeaders();
     const body = {
       startTime: startISO, endTime: endISO,
       pickupPointIds: [String(store)], clients: ["0"],
@@ -893,9 +910,38 @@ ${itemsHtml}
       ...(serviceTypes.length ? { serviceTypes } : {}),
     };
     console.log("[SparkFraud] Dispatcher request:", body);
-    const r = await send("fetchJson", { url: SWIFT_DASHBOARD, method: "POST", headers, body });
-    console.log("[SparkFraud] Dispatcher response:", r);
-    if (!r.ok) throw new Error(`Dispatcher: HTTP ${r.status}`);
+
+    let r = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const headers = await buildHeaders();
+      console.log(`[SparkFraud] Dispatcher headers (attempt ${attempt + 1}):`, describeHeaders(headers));
+      r = await send("fetchJson", { url: SWIFT_DASHBOARD, method: "POST", headers, body });
+      console.log("[SparkFraud] Dispatcher response:", r);
+      if (r.ok || !AUTH_SHAPED_STATUSES.has(r.status) || attempt > 0) break;
+
+      setStatus("Dispatcher rejected the session — refreshing gscope auth…", "err");
+      console.warn(`[SparkFraud] Dispatcher HTTP ${r.status} — reloading gscope tab for a fresh token, then retrying once`);
+      const refreshed = await send("refreshGscopeAuth", {}, 90_000);
+      console.log("[SparkFraud] refreshGscopeAuth:", refreshed);
+      if (!refreshed?.ok) break;
+    }
+
+    if (!r.ok) {
+      // Swift's proxy puts the reason in the body (`message` / `error` /
+      // `errors[]`, or bare text). A bare "HTTP 400" hides whether the
+      // request was malformed or the gscope token has expired; surface it.
+      const d = r.data;
+      const detail = r.error
+        || (typeof d === "string" ? d
+          : d?.message || d?.error?.message || d?.error
+            || (Array.isArray(d?.errors) ? d.errors.map((e) => e?.message || e).join("; ") : "")
+            || (d ? JSON.stringify(d) : ""));
+      const hint = AUTH_SHAPED_STATUSES.has(r.status) && !detail
+        ? " (empty response — Swift does this when the gscope session is stale; a background refresh was tried. " +
+          "Reload https://gscope.walmartlabs.com/apphome, confirm it shows content, then retry)"
+        : "";
+      throw new Error(`Dispatcher: HTTP ${r.status}${detail ? ` — ${String(detail).slice(0, 300)}` : ""}${hint}`);
+    }
     const cb = r.data?.payload?.tasksByClientId?.["0"];
     return cb?.trips || [];
   }
@@ -1459,6 +1505,9 @@ ${itemsHtml}
     let journalResult = null;
     try {
       const store = $("sf-store").value.trim() || "";
+      if (!/^\d{1,6}$/.test(store)) {
+        throw new Error("Enter a store number (digits only) before searching — Dispatcher rejects an empty pickup point with HTTP 400.");
+      }
       const date  = $("sf-date").value || new Date().toISOString().slice(0, 10);
       const evtTime = $("sf-event-time").value || "08:40";
       const windowMin = Number($("sf-window-min").value || 30);
