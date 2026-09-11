@@ -310,8 +310,8 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
         const model = body?.vqlCmdResponse?.cmdResultList?.[0]?.commandReturn?.dataTablePresModel;
         if (!model?.showDataFormattedTable) return { ok: false, reason: "summary returned no table" };
         const table = JSON.parse(model.showDataFormattedTable).table;
-        const columns = (table.schema || []).map((name) =>
-          model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name);
+        const columns = (table.schema || []).map((name) => normaliseSummaryCaption(
+          model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name));
         const quote = (value) => {
           const s = String(value ?? "");
           return /[\t\r\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -329,6 +329,16 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
   } catch (e) {
     return { ok: false, reason: String(e?.message ?? e) };
   }
+}
+
+/** Tableau wraps calculated captions for summary responses (AGG(New Location
+ * %) and SUM(0)); crosstab exports remove those wrappers. Keep the adapter's
+ * TSV shape identical to the existing parsers instead of teaching every
+ * parser about two equivalent caption dialects. */
+export function normaliseSummaryCaption(caption) {
+  const value = String(caption ?? "").trim();
+  const wrapped = value.match(/^(?:AGG|SUM|MAX|MIN|ATTR)\((.*)\)$/i);
+  return (wrapped ? wrapped[1] : value).trim();
 }
 
 /** base64 → Uint8Array, for handing xlsx bytes to the reader. */
