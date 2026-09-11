@@ -20,18 +20,11 @@
 // for the blob — and then wait DIALOG_SETTLE_MS (20 s) for the toolbar to come
 // back before the next sheet. Twice per store, ten stores per market.
 //
-// THE ONE THING THAT CANNOT BE DERIVED: sheetdocId
-// ------------------------------------------------
-// It is a workbook-scoped GUID and is not in the bootstrap payload (checked —
-// the GUIDs there are zone and image ids, sitting next to "Navigation" and
-// "zoom-icon 1.png"). The dialog command that would list sheets rejects the
-// arguments we know how to send.
-//
-// So it is LEARNED, not guessed: run the DOM export once, and read the GUID
-// out of the request the page itself made. content/tableau_capture.js already
-// records reqBody on every patched fetch, so the multipart body carrying
-// sheetdocId is already sitting in the ring — no new instrumentation. One DOM
-// dialog per market instead of two per store.
+// SHEET DISCOVERY (verified live 2026-09-11)
+// The export-crosstab-server-dialog command lists sheetdocIds without opening
+// any UI. It requires thumbnailUris; an empty object is sufficient when no
+// thumbnails are displayed. Discover per tab to respect device layouts and
+// workbook publishes, without hardcoded GUIDs or an initial manual export.
 //
 // SAFETY
 // ------
@@ -201,6 +194,45 @@ export async function readVizqlContext(tabId) {
   return null;
 }
 
+/** Discover the current layout's exportable sheets over HTTP, without a dialog. */
+export async function discoverExportSheets(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true }, world: "MAIN",
+      func: async () => {
+        const c = window.tsConfig;
+        if (!c?.sessionid || !c.repositoryUrl || !c.site_root) return null;
+        const [wb, view] = String(c.repositoryUrl).split("/");
+        if (!wb || !view) return null;
+        const base = `${location.origin}/vizql${c.site_root}/w/${wb}/v/${view}/sessions/${c.sessionid}`;
+        const form = new FormData();
+        form.append("thumbnailUris", "{}");
+        form.append("telemetryCommandId", "apai-discovery-" + Date.now());
+        const response = await fetch(base + "/commands/tabsrv/export-crosstab-server-dialog", {
+          method: "POST", body: form, credentials: "include", signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) return { ok: false, reason: `sheet discovery HTTP ${response.status}` };
+        const body = await response.json();
+        const sheetIds = {};
+        const visit = value => {
+          if (!value || typeof value !== "object") return;
+          if (typeof value.sheetName === "string" && typeof value.sheetdocId === "string") {
+            sheetIds[value.sheetName.trim().toLowerCase()] = value.sheetdocId;
+          }
+          for (const child of Object.values(value)) visit(child);
+        };
+        visit(body);
+        if (!Object.keys(sheetIds).length) return { ok: false, reason: "sheet discovery returned no sheets" };
+        return { ok: true, base, sessionId: c.sessionid, sheetIds };
+      },
+    });
+    for (const r of results || []) if (r?.result?.ok) return { ...r.result, tabId };
+    return results?.find(r => r?.result)?.result || { ok: false, reason: "no viz frame answered discovery" };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message ?? e) };
+  }
+}
+
 /**
  * Do the export by replay. Runs IN the page so the request carries the same
  * session cookies the UI would send.
@@ -215,6 +247,9 @@ export async function replayExport(tabId, { base, sheetdocId }) {
       world: "MAIN",
       args: [base, sheetdocId],
       func: async (baseUrl, sheetId) => {
+        // Only the owning viz frame may export, not its portal wrapper.
+        const c = window.tsConfig;
+        if (!c?.sessionid || !baseUrl.endsWith(`/sessions/${c.sessionid}`)) return null;
         const t0 = performance.now();
         const bnd = "----apai" + Math.random().toString(36).slice(2);
         const part = (nm, v) =>
@@ -229,6 +264,7 @@ export async function replayExport(tabId, { base, sheetdocId }) {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "multipart/form-data; boundary=" + bnd },
+          signal: AbortSignal.timeout(20000),
           body,
         });
         // 410 Gone is what a dead session returns — verified live. Reported
@@ -247,7 +283,7 @@ export async function replayExport(tabId, { base, sheetdocId }) {
         // otherwise have been handed to the parser as if it were a sheet.
         const fileUrl = baseUrl.replace(/\/sessions\//, "/tempfile/sessions/")
           + "?key=" + key + "&keepfile=yes&attachment=yes";
-        const get = await fetch(fileUrl, { credentials: "include" });
+        const get = await fetch(fileUrl, { credentials: "include", signal: AbortSignal.timeout(20000) });
         if (!get.ok) return { ok: false, reason: "file fetch " + get.status, status: get.status };
         const buf = await get.arrayBuffer();
         if (!buf.byteLength) return { ok: false, reason: "empty file" };

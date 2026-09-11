@@ -41,7 +41,7 @@ import { watchSourceSchema } from "../../../../shared/schema_watch_report.js";
 import { readXlsxFile } from "../../../../shared/xlsx.js";
 import { getUserHomeStore } from "../../../../shared/userStore.js";
 import {
-  readVizqlContext, replayExport, learnSheetIds, normaliseSheetName, summariseExportAttempt,
+  readVizqlContext, replayExport, discoverExportSheets, learnSheetIds, normaliseSheetName, summariseExportAttempt,
   base64ToBytes, base64ToText, directSummaryExport,
 } from "./tableau_export_replay.js";
 
@@ -527,6 +527,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           replayMs: replay.ms,
           summaries: replay.summaries || 0,
           summaryFailures: replay.summaryFailures || [],
+          discoveries: replay.discoveries || 0,
+          discoveryFailures: replay.discoveryFailures || [],
+          domExports: replay.domExports || 0,
           haveContext: replay.ctxByTab.size,
         } : { disabled: true },
         failures,
@@ -1293,9 +1296,8 @@ async function pollForCsv(tabId, timeoutMs, needle) {
 
 // ── Export: replay if we can, drive the dialog if we must ────────────────
 //
-// See tableau_export_replay.js. The GUID a replay needs is learned from the
-// first DOM export of each sheet, so a market pays one dialog per sheet
-// instead of one per store per sheet.
+// Discover sheet GUIDs over HTTP once per tab, then request Excel directly.
+// The dialog driver is only a compatibility fallback on a failed HTTP path.
 //
 // Scoped to a single crawl deliberately. The session id is only valid while
 // the tab lives, and a stale one costs a 410 and a fallback — cheap, but
@@ -1440,15 +1442,26 @@ async function exportSheetText(tabId, sheet, needle, replay) {
     });
   }
 
-  const ctx = replay?.ctxByTab?.get(tabId) || null;
+  let ctx = replay?.ctxByTab?.get(tabId) || null;
+  if (replay && !ctx) {
+    const discovered = await discoverExportSheets(tabId);
+    if (discovered.ok) {
+      ctx = discovered;
+      replay.ctxByTab.set(tabId, ctx);
+      replay.discoveries = (replay.discoveries || 0) + 1;
+    } else {
+      (replay.discoveryFailures ||= []).push({ tabId, reason: discovered.reason });
+    }
+  }
   // Refuse a context belonging to another tab. Replaying against another
   // lane's session returns THAT lane's store's rows under this store's name.
   if (ctx && ctx.tabId != null && ctx.tabId !== tabId) {
     throw new Error(
       `replay context tab mismatch: ctx is for tab ${ctx.tabId}, exporting on ${tabId}`);
   }
-  if (ctx && replay.sheetIds[key]) {
-    const r = await replayExport(tabId, { base: ctx.base, sheetdocId: replay.sheetIds[key] });
+  const sheetdocId = ctx?.sheetIds ? ctx.sheetIds[key] : replay?.sheetIds?.[key];
+  if (ctx && sheetdocId) {
+    const r = await replayExport(tabId, { base: ctx.base, sheetdocId });
     if (r.ok) {
       try {
         const text = r.isZip
@@ -1478,6 +1491,7 @@ async function exportSheetText(tabId, sheet, needle, replay) {
   }
   await clearRing(tabId);
   const triggered = await triggerCrosstabExport(tabId, sheet);
+  if (replay) replay.domExports = (replay.domExports || 0) + 1;
   if (!triggered.ok) return { ok: false, reason: `export UI: ${triggered.reason}` };
   const blob = await pollForCsv(tabId, EXPORT_WAIT_MS, needle);
 
