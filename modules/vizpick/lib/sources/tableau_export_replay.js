@@ -310,7 +310,12 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
         const model = body?.vqlCmdResponse?.cmdResultList?.[0]?.commandReturn?.dataTablePresModel;
         if (!model?.showDataFormattedTable) return { ok: false, reason: "summary returned no table" };
         const table = JSON.parse(model.showDataFormattedTable).table;
-        const columns = (table.schema || []).map((name) => normaliseSummaryCaption(
+        const normaliseCaption = (caption) => {
+          const value = String(caption ?? "").trim();
+          const wrapped = value.match(/^(?:AGG|SUM|MAX|MIN|ATTR)\((.*)\)$/i);
+          return (wrapped ? wrapped[1] : value).trim();
+        };
+        const columns = (table.schema || []).map((name) => normaliseCaption(
           model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name));
         const quote = (value) => {
           const s = String(value ?? "");
