@@ -871,8 +871,19 @@ async function readSourceStamp(tabId) {
     const p = parseLastUpdate(fromDom);
     if (p.ok) return { raw: p.raw, iso: p.iso, hasTime: p.hasTime, via: "dom" };
   }
-  // Fallback: the authoritative sheet. Costs an export cycle, so it only runs
-  // when the page did not show a stamp we could read.
+  // Fast fallback: the authoritative sheet through Tableau's permitted
+  // worksheet-summary JSON command. The old export fallback below could spend
+  // the full UPDATE_WAIT_MS (20s) waiting for a Blob that never arrived.
+  try {
+    const direct = await directSummaryExport(tabId, { sheet: "Last update" });
+    if (direct.ok && direct.text) {
+      const p = parseLastUpdate(direct.text);
+      if (p.ok) return { raw: p.raw, iso: p.iso, hasTime: p.hasTime, via: "summary" };
+    }
+  } catch { /* use the export fallback */ }
+
+  // Compatibility fallback: export the authoritative sheet when the summary
+  // command is unavailable in an older Tableau session.
   try {
     await clearRing(tabId);
     const t = await triggerCrosstabExport(tabId, UPDATE_SHEET);
