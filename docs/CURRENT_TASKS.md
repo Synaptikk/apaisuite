@@ -177,6 +177,21 @@ both lines in `modules/_registry.js`.
 
 ### 6. VizPick Market Rollup — remaining UI + caching work
 
+**2026-09-11 capture repair:** Live Playwright + installed-extension verification
+found literal `"Null"` summary cells being parsed as zero-valued health arcs,
+incomplete rows suppressing same-stamp retries, and header Refresh always
+pulling Yesterday. Fixed with null normalization, per-row data revision and
+section coverage, same-source section merging, active-tab Refresh routing,
+and a service-worker capture guard acquired before async storage reads.
+The debug browser actually loads `Desktop/APAISuite-dev/unified-extension-suite`;
+updating only this repo or QRCallBox's `public/extension/app` does not update it.
+Market 120 verification: 10/10 stores, all health/groups/locations present,
+30 successful direct summaries, no summary or replay fallback failures,
+55.6 seconds including setup. Department totals still use crosstab export;
+their summary is measure tuples without the authoritative Total row.
+155 VizPick tests pass, including isolated serialized-function execution.
+
+
 **Direct JSON path verified 2026-09-11; not integrated yet.** Playwright live
 tests found `api-get-worksheet-summary-logical-table-data` returns all four
 Today datasets without exports. Market 120: 10/10 stores in 30.809 s using

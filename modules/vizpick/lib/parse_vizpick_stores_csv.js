@@ -705,6 +705,9 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   if (iLoc < 0) {
     return { ok: false, reason: `no column holds "<group>/<bin>" location codes; got: ${headers.join(", ")}` };
   }
+  if (iDone < 0 || iSug < 0 || iWin < 0 || iTs < 0) {
+    return { ok: false, reason: "location detail missing required pick counts, associate, or scan timestamp columns" };
+  }
 
   // NOT a department. Corrected 2026-08-22 on the analyst's call: the leading
   // segment of a location code is a BIN GROUP — the bins beginning 002 are

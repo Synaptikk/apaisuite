@@ -303,7 +303,7 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
         for (const [k, v] of Object.entries(args)) form.append(k, v);
         const t0 = performance.now();
         const response = await fetch(`${base}/commands/tabdoc/api-get-worksheet-summary-logical-table-data`, {
-          method: "POST", body: form, credentials: "include",
+          method: "POST", body: form, credentials: "include", signal: AbortSignal.timeout(15000),
         });
         if (!response.ok) return { ok: false, reason: `summary HTTP ${response.status}` };
         const body = await response.json();
@@ -318,7 +318,9 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
         const columns = (table.schema || []).map((name) => normaliseCaption(
           model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name));
         const quote = (value) => {
-          const s = String(value ?? "");
+          // Summary JSON uses literal "Null" for missing cells. Crosstabs
+          // leave them empty; otherwise parsers select background arcs as data.
+          const s = value == null || /^null$/i.test(String(value).trim()) ? "" : String(value);
           return /[\t\r\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         };
         return {
@@ -329,6 +331,7 @@ export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick D
         };
       },
     });
+    for (const r of results || []) if (r?.result?.ok) return r.result;
     for (const r of results || []) if (r?.result) return r.result;
     return { ok: false, reason: "no viz frame answered" };
   } catch (e) {

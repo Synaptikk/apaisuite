@@ -8,6 +8,7 @@
 // Details search box.
 
 import { gaugeSvg, bandFor } from "./lib/charts.js";
+import { isTodayRowComplete } from "./lib/today_coverage.js";
 import { getUserHomeMarket, getUserHomeStore, onUserMarketChange } from "../../shared/userStore.js";
 import { rollUpSkippedByAssociate } from "./lib/parse_vizpick_stores_csv.js";
 import { buildPerformanceHtml, buildPickListHtml, buildCardEmail } from "./lib/card_report.js";
@@ -255,8 +256,8 @@ export async function mount(host, container) {
   await loadUiPrefs();
 
   // 4. Wire handlers.
-  btnRefresh.addEventListener("click", () => runRefresh(false));
-  btnForce.addEventListener("click", () => runRefresh(true));
+  btnRefresh.addEventListener("click", () => activeTab === "today" ? runToday(false) : runRefresh(false));
+  btnForce.addEventListener("click", () => activeTab === "today" ? runToday(true) : runRefresh(true));
   btnLoadToday.addEventListener("click", () => runToday(false));
   btnForceToday.addEventListener("click", () => runToday(true));
   container.querySelector('[data-action="dismiss-error"]')?.addEventListener("click", dismissError);
@@ -657,6 +658,7 @@ export async function mount(host, container) {
   }
 
   async function runToday(force) {
+    if (btnLoadToday.disabled || state?.todayProgress) return;
     host.usage.record(force ? "refresh_today_forced" : "refresh_today");
     const stores = rosterRows().map((r) => r.store);
     if (!stores.length) {
@@ -664,6 +666,7 @@ export async function mount(host, container) {
       return;
     }
     btnLoadToday.disabled = true;
+    setBusy(btnRefresh, true);
     btnCancel.hidden = false;
     btnForceToday.hidden = true;
     let res = null;
@@ -675,6 +678,7 @@ export async function mount(host, container) {
       console.warn("[vizpick] pull_today failed:", e?.message ?? e);
     } finally {
       btnLoadToday.disabled = false;
+      setBusy(btnRefresh, false);
       btnCancel.hidden = true;
       await paint();
       lastRunNote = noteFor(res, "today");
@@ -953,11 +957,11 @@ export async function mount(host, container) {
     const missing = Math.max(0, roster - n);
     // Captured but thin is a DIFFERENT problem and deserves different words:
     // the store is there, some of its rings are not.
-    const thin = todayRows().filter((r) => !r.hasHealth).length;
+    const thin = todayRows().filter((r) => !isTodayRowComplete(r)).length;
     const coverageNote = missing
       ? ` ${missing} store${missing === 1 ? "" : "s"} could not be captured — see the capture details below.`
       : thin
-        ? ` ${thin} store${thin === 1 ? " is" : "s are"} missing health rings — see the capture details below.`
+        ? ` ${thin} store${thin === 1 ? " needs" : "s need"} a data repair — Refresh retries incomplete stores.`
         : "";
 
     renderTodayBar(

@@ -244,25 +244,25 @@ async function pullToday(msg) {
     return { ok: false, errorClass: "INPUT", error: "No stores supplied for the Today capture." };
   }
 
-  // Only reuse the stored stamp when it belongs to the SAME market — a
-  // different market needs a different set of stores regardless of how fresh
-  // the timestamp is. todayIsCurrent() enforces that.
-  const snapStore = await snapshots.read();
-  const knownSourceKey = snapshots.todayIsCurrent(snapStore, snapStore.today?.sourceKey, market)
-    ? snapStore.today.sourceKey
-    : null;
-  // Which stores that stamp actually covers. Without this the capture treats a
-  // partial snapshot as complete and never fetches the stores it is missing.
-  const coveredStores = knownSourceKey ? snapshots.todayCoveredStores(snapStore, market) : [];
-
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
-  await freshness.startAttempt("today");
   // The Today crawl runs for minutes. It happens to survive today only because
   // it polls chrome.tabs/chrome.scripting constantly, which resets the idle
   // timer by accident — this makes it deliberate rather than lucky.
   const releaseAwake = keepAwake("vizpick.pullToday");
 
   try {
+    await freshness.startAttempt("today");
+    // Only reuse the stored stamp when it belongs to the SAME market — a
+    // different market needs a different set of stores regardless of how fresh
+    // the timestamp is. todayIsCurrent() enforces that.
+    const snapStore = await snapshots.read();
+    const knownSourceKey = snapshots.todayIsCurrent(snapStore, snapStore.today?.sourceKey, market)
+      ? snapStore.today.sourceKey
+      : null;
+    // Which stores that stamp actually covers. Without this the capture treats a
+    // partial snapshot as complete and never fetches the stores it is missing.
+    const coveredStores = knownSourceKey ? snapshots.todayCoveredStores(snapStore, market) : [];
+
     // A full crawl (changed stamp) must REPLACE the stale rows on its first
     // write; every later write merges. A top-up merges from the start, since
     // the rows it is adding to are still valid at the same stamp.

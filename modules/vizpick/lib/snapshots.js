@@ -1,3 +1,5 @@
+import { isTodayRowComplete, mergeTodayRow } from "./today_coverage.js";
+
 let writeQueue = Promise.resolve();
 function serializeWrite(operation) {
   const run = () => globalThis.navigator?.locks?.request
@@ -206,7 +208,7 @@ async function recordTodayImpl({ rows, sourceUpdate, capturedAt, partial, market
     const merged = new Map((old.rows || []).map((r) => [String(r.store), r]));
     for (const row of rows) {
       const oldRow = merged.get(String(row.store));
-      if (!oldRow?.hasHealth || row.hasHealth) merged.set(String(row.store), row);
+      merged.set(String(row.store), mergeTodayRow(oldRow, row));
     }
     rows = [...merged.values()];
     partial = old.partial;
@@ -240,7 +242,7 @@ export function todayCoveredStores(store, market) {
   const t = store?.today;
   if (!t?.rows?.length) return [];
   if (market != null && t.market != null && String(t.market) !== String(market)) return [];
-  return t.rows.map((r) => String(r.store));
+  return t.rows.filter(isTodayRowComplete).map((r) => String(r.store));
 }
 
 /**
@@ -259,7 +261,7 @@ async function mergeTodayImpl({ rows, sourceUpdate, capturedAt, partial, market 
   const byStore = new Map((sameSource ? store.today?.rows || [] : []).map((r) => [String(r.store), r]));
   for (const r of rows) {
     const oldRow = byStore.get(String(r.store));
-    if (!oldRow?.hasHealth || r.hasHealth) byStore.set(String(r.store), r);
+    byStore.set(String(r.store), mergeTodayRow(oldRow, r));
   }
   if (sameSource && partial && store.today?.partial === false) {
     partial = false;

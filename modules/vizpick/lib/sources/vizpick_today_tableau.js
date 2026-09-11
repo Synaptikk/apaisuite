@@ -1,4 +1,5 @@
 import { createCaptureTab } from "../background_tab.js";
+import { TODAY_DATA_REVISION, isTodayRowComplete } from "../today_coverage.js";
 // modules/vizpick/lib/sources/vizpick_today_tableau.js
 //
 // Current-day ("Today") capture from the VizPickDetails view.
@@ -504,7 +505,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
       partial: missingStores.length > 0,
       missingStores,
       // Captured, but thin — present in `rows` with some sheet absent.
-      incompleteStores: rows.filter((r) => !r.hasHealth).map((r) => String(r.store)),
+      incompleteStores: rows.filter((r) => !isTodayRowComplete(r)).map((r) => String(r.store)),
       // The caller must MERGE rather than replace when this is a top-up, or it
       // throws away the stores it already had.
       topUp,
@@ -524,6 +525,8 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           replayed: replay.replayed,
           fellBack: replay.fellBack,
           replayMs: replay.ms,
+          summaries: replay.summaries || 0,
+          summaryFailures: replay.summaryFailures || [],
           haveContext: replay.ctxByTab.size,
         } : { disabled: true },
         failures,
@@ -706,7 +709,7 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
         // sheet to get it is the duplicate pull this replaces.
         const L = parseLocationDetails(loc.text, { allScans: isHomeStore });
         watchSourceSchema("vizpick.locationDetails", loc.text, L.ok);
-        if (L.ok) locations = { byDept: L.byDept, gaps: L.gaps, scans: L.scans, locationCount: L.locationCount };
+        if (L.ok) locations = { byLocGroup: L.byLocGroup, gaps: L.gaps, scans: L.scans, locationCount: L.locationCount };
         else failures.push({ store, reason: `locations parse: ${L.reason}`, soft: true });
       }
     } catch (e) {
@@ -714,7 +717,7 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
     }
 
     return {
-      store, ...parsed.total, ...(health || {}),
+      store, ...parsed.total, ...(health || {}), dataRevision: TODAY_DATA_REVISION,
       depts: parsed.depts || [], deptCount: parsed.deptCount, hasHealth: !!health,
       // Per-department location rollup + the bins still holding picks.
       locations,
@@ -1424,9 +1427,17 @@ async function exportSheetText(tabId, sheet, needle, replay) {
     : key.includes("last update") ? "Last update" : null;
   if (directName) {
     const direct = await directSummaryExport(tabId, { sheet: directName });
-    if (direct.ok && direct.text && direct.text.includes(needle)) {
+    const validate = directName === "VizPick Donut Health" ? parseDonutHealth
+      : directName === "Department Groups Donuts Health" ? parseDepartmentGroups
+      : directName === "Download Location Details" ? parseLocationDetails : null;
+    const parsed = direct.ok && direct.text && validate ? validate(direct.text) : null;
+    if (direct.ok && direct.text && direct.text.includes(needle) && (!validate || parsed?.ok)) {
+      if (replay) replay.summaries = (replay.summaries || 0) + 1;
       return { ok: true, text: direct.text, via: "summary", ms: direct.ms };
     }
+    if (replay) (replay.summaryFailures ||= []).push({
+      tabId, sheet: directName, reason: direct.reason || parsed?.reason || "summary missing required columns",
+    });
   }
 
   const ctx = replay?.ctxByTab?.get(tabId) || null;
