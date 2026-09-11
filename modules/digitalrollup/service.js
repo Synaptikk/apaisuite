@@ -172,7 +172,7 @@ async function autoTargetMarket() {
   const home = await getUserHomeMarket();
   if (home) return { market: String(home), from: "home" };
   const first = hierarchy?.markets?.[0]?.market;
-  if (first) return { market: String(first), from: "hierarchy" };
+  if (first && hierarchy.markets.length === 1) return { market: String(first), from: "hierarchy" };
   return { market: null, from: "none" };
 }
 

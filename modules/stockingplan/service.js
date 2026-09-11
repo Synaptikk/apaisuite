@@ -93,6 +93,7 @@ async function searchAndScrapeDetailed(storeNbr, businessDate) {
     }
     return false;
   }
+  try {
   await waitReady(aisleWin, 15_000);
   await new Promise((r) => setTimeout(r, 2_000));  // async table-render buffer
 
@@ -118,6 +119,7 @@ async function searchAndScrapeDetailed(storeNbr, businessDate) {
   }
 
   return { byDept, byAisle };
+  } finally { try { aisleWin?.close(); } catch {} }
 }
 
 // --- Handlers ---------------------------------------------------------------
@@ -136,13 +138,6 @@ export const handlers = {
       });
 
       const { byDept = [], byAisle = [], error } = res?.result ?? {};
-
-      // Close any aisle/dept child tabs that window.open() left open — they
-      // would be picked up as the "existing CV tab" on the next Collect run.
-      const staleTabs = await chrome.tabs.query({
-        url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/casesBy*",
-      });
-      for (const t of staleTabs) chrome.tabs.remove(t.id).catch(() => {});
 
       if (error && !byDept.length) return { ok: false, error };
 

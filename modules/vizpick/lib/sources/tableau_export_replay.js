@@ -277,6 +277,60 @@ export async function replayExport(tabId, { base, sheetdocId }) {
   }
 }
 
+/**
+ * Read a worksheet's summary table directly from the live vizql session.
+ * Tableau's server-rendered dashboard still exposes this permitted summary
+ * command to its own embedding client; it returns the same values as the
+ * crosstab without opening a dialog or creating a file.
+ */
+export async function directSummaryExport(tabId, { sheet, dashboard = "VizPick Details" }) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [sheet, dashboard],
+      func: async (worksheet, dashboardName) => {
+        const c = window.tsConfig;
+        if (!c?.sessionid || !c.repositoryUrl || !c.site_root) return null;
+        const [wb, view] = String(c.repositoryUrl).split("/");
+        if (!wb || !view) return null;
+        const base = `${location.origin}/vizql${c.site_root}/w/${wb}/v/${view}/sessions/${c.sessionid}`;
+        const form = new FormData();
+        const args = {
+          visualIdPresModel: JSON.stringify({ worksheet, dashboard: dashboardName }),
+          versionName: "1.0", maxRows: "0", ignoreAliases: "false", ignoreSelection: "true",
+        };
+        for (const [k, v] of Object.entries(args)) form.append(k, v);
+        const t0 = performance.now();
+        const response = await fetch(`${base}/commands/tabdoc/api-get-worksheet-summary-logical-table-data`, {
+          method: "POST", body: form, credentials: "include",
+        });
+        if (!response.ok) return { ok: false, reason: `summary HTTP ${response.status}` };
+        const body = await response.json();
+        const model = body?.vqlCmdResponse?.cmdResultList?.[0]?.commandReturn?.dataTablePresModel;
+        if (!model?.showDataFormattedTable) return { ok: false, reason: "summary returned no table" };
+        const table = JSON.parse(model.showDataFormattedTable).table;
+        const columns = (table.schema || []).map((name) =>
+          model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name);
+        const quote = (value) => {
+          const s = String(value ?? "");
+          return /[\t\r\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        return {
+          ok: true,
+          text: [columns, ...(table.tuples || [])].map((row) => row.map(quote).join("\t")).join("\r\n"),
+          ms: Math.round(performance.now() - t0),
+          rowCount: (table.tuples || []).length,
+        };
+      },
+    });
+    for (const r of results || []) if (r?.result) return r.result;
+    return { ok: false, reason: "no viz frame answered" };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message ?? e) };
+  }
+}
+
 /** base64 → Uint8Array, for handing xlsx bytes to the reader. */
 export function base64ToBytes(b64) {
   const bin = atob(b64);

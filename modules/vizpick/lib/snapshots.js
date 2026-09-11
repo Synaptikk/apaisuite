@@ -1,3 +1,13 @@
+let writeQueue = Promise.resolve();
+function serializeWrite(operation) {
+  const run = () => globalThis.navigator?.locks?.request
+    ? navigator.locks.request("apaisuite.vizpick.snapshots", operation)
+    : operation();
+  const result = writeQueue.then(run, run);
+  writeQueue = result.catch(() => {});
+  return result;
+}
+
 // modules/vizpick/lib/snapshots.js
 //
 // Day-scoped, versioned snapshot store for the VizPick tabs.
@@ -142,7 +152,11 @@ async function write(store) {
  *
  * @returns {Promise<{store:object, rolled:boolean, reason:string}>}
  */
-export async function recordYesterday({ rows, grandTotal, sourceUpdate, capturedAt }) {
+export async function recordYesterday(...args) {
+  return serializeWrite(() => recordYesterdayImpl(...args));
+}
+
+async function recordYesterdayImpl({ rows, grandTotal, sourceUpdate, capturedAt }) {
   const store = await read();
   const sourceKey = sourceUpdate?.raw ?? null;
   const dataDate  = deriveDataDate(sourceUpdate, capturedAt);
@@ -179,8 +193,25 @@ export async function recordYesterday({ rows, grandTotal, sourceUpdate, captured
  * Record a Today-view capture. Today has no history to preserve — it is
  * simply replaced, keyed by its own (much finer-grained) source timestamp.
  */
-export async function recordToday({ rows, sourceUpdate, capturedAt, partial, market }) {
+export async function recordToday(...args) {
+  return serializeWrite(() => recordTodayImpl(...args));
+}
+
+async function recordTodayImpl({ rows, sourceUpdate, capturedAt, partial, market }) {
   const store = await read();
+  const old = store.today;
+  const sameSource = !!sourceUpdate?.raw && old?.sourceKey === sourceUpdate.raw
+    && String(old?.market) === String(market);
+  if (sameSource && partial) {
+    const merged = new Map((old.rows || []).map((r) => [String(r.store), r]));
+    for (const row of rows) {
+      const oldRow = merged.get(String(row.store));
+      if (!oldRow?.hasHealth || row.hasHealth) merged.set(String(row.store), row);
+    }
+    rows = [...merged.values()];
+    partial = old.partial;
+    capturedAt = old.capturedAt;
+  }
   store.today = {
     sourceKey:    sourceUpdate?.raw ?? null,
     sourceUpdate: sourceUpdate || null,
@@ -217,10 +248,23 @@ export function todayCoveredStores(store, market) {
  * stores. Replacing outright would discard the stores already captured, which
  * is the entire point of only visiting the gaps.
  */
-export async function mergeToday({ rows, sourceUpdate, capturedAt, partial, market }) {
+export async function mergeToday(...args) {
+  return serializeWrite(() => mergeTodayImpl(...args));
+}
+
+async function mergeTodayImpl({ rows, sourceUpdate, capturedAt, partial, market }) {
   const store = await read();
-  const byStore = new Map((store.today?.rows || []).map((r) => [String(r.store), r]));
-  for (const r of rows) byStore.set(String(r.store), r);
+  const sameSource = !!sourceUpdate?.raw && store.today?.sourceKey === sourceUpdate.raw
+    && String(store.today?.market) === String(market);
+  const byStore = new Map((sameSource ? store.today?.rows || [] : []).map((r) => [String(r.store), r]));
+  for (const r of rows) {
+    const oldRow = byStore.get(String(r.store));
+    if (!oldRow?.hasHealth || r.hasHealth) byStore.set(String(r.store), r);
+  }
+  if (sameSource && partial && store.today?.partial === false) {
+    partial = false;
+    capturedAt = store.today.capturedAt;
+  }
 
   store.today = {
     sourceKey:    sourceUpdate?.raw ?? store.today?.sourceKey ?? null,
@@ -253,7 +297,11 @@ export async function mergeToday({ rows, sourceUpdate, capturedAt, partial, mark
  * The snapshot-level fields are only initialised when there is no Today
  * snapshot at all; otherwise they are left exactly as they were.
  */
-export async function upsertTodayRow({ row, capturedAt, sourceUpdate, market = null }) {
+export async function upsertTodayRow(...args) {
+  return serializeWrite(() => upsertTodayRowImpl(...args));
+}
+
+async function upsertTodayRowImpl({ row, capturedAt, sourceUpdate, market = null }) {
   if (!row?.store) throw new Error("upsertTodayRow: row.store is required");
   const store = await read();
   const existing = store.today;
@@ -284,6 +332,10 @@ export function rowCapturedAt(row, today) {
   return row?.capturedAt ?? today?.capturedAt ?? null;
 }
 
-export async function clearAll() {
+export async function clearAll(...args) {
+  return serializeWrite(() => clearAllImpl(...args));
+}
+
+async function clearAllImpl() {
   await chrome.storage.local.remove([KEY, LEGACY_ROWS, LEGACY_GT]);
 }

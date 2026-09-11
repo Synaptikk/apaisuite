@@ -23,6 +23,7 @@ import * as insights     from "./lib/pages/insights.js";
 import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
+import { editorText } from "./lib/audit.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
 import { leadershipForJob, byLeadershipFirst } from "./lib/data/job_classify.js";
 import { weekLabel } from "../../shared/wmweek.js";
@@ -198,6 +199,12 @@ export async function mount(host, container) {
     // looked like they worked.
     try {
       el.innerHTML = page.render(ctx);
+      if (state.page === "classify") {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = editorText(state.classificationEditor);
+        el.prepend(note);
+      }
     } catch (err) {
       el.innerHTML =
         `<div class="dm-section"><h3 class="dm-section-title">${host.ui.escapeHtml(state.page)} failed to render</h3>` +
@@ -281,10 +288,18 @@ export async function mount(host, container) {
         .map((s) => `<option value="${host.ui.escapeHtml(s)}"></option>`).join("");
     }
 
-    state.classifications = (await call("get_classifications")) || {};
+    // The Assignments tab is pinned to this and ignores the picker above.
+    // Fetched once at mount: it comes from the cached identity, not the
+    // network, and it does not change while the tab is open.
+    const home = await call("get_home_store");
+    state.homeStore = home?.store ? String(home.store) : null;
 
-    if (list.length) {
-      state.store = state.store && list.includes(state.store) ? state.store : list[0];
+    if (state.store || state.homeStore) {
+      // Default to the analyst's OWN store. `list` is the shared, string-sorted
+      // `metrics/stores` document — the same for every install — so `list[0]`
+      // is whichever store sorts lowest, not this analyst's. Opening on it put
+      // a store-5151 analyst onto store 1458's data.
+      state.store = state.store || state.homeStore;
       $("#dm-store").value = state.store;
       await loadWeeks();
       return;
@@ -292,12 +307,6 @@ export async function mount(host, container) {
 
     // Empty is the FIRST-RUN state, not an error: the database starts empty and
     // stores only appear once data is imported.
-    // The Assignments tab is pinned to this and ignores the picker above.
-    // Fetched once at mount: it comes from the cached identity, not the
-    // network, and it does not change while the tab is open.
-    const home = await call("get_home_store");
-    state.homeStore = home?.store ? String(home.store) : null;
-
     const dflt = await call("get_default_store");
     if (dflt?.store) {
       state.store = dflt.store;
@@ -349,11 +358,23 @@ export async function mount(host, container) {
     await loadWeeks();
   }
 
+  let weeksRequest = 0;
   async function loadWeeks() {
     if (!state.store) return;
+    const request = ++weeksRequest;
+    const store = state.store;
     setStatus("loading weeks…");
 
-    const weeks = await call("list_weeks", { store: state.store });
+    // Classifications are per store, so they reload with every store switch —
+    // this is the one place every store selection passes through.
+    const [classifications, editor, weeks] = await Promise.all([
+      call("get_classifications", { store }),
+      call("get_classification_editor", { store }),
+      call("list_weeks", { store }),
+    ]);
+    if (request !== weeksRequest || store !== state.store) return;
+    state.classifications = classifications || {};
+    state.classificationEditor = editor;
     if (!weeks) return;
 
     // Weeks are stored by their Saturday, but nobody at the store thinks in
@@ -381,7 +402,10 @@ export async function mount(host, container) {
     }
 
     setStatus("loading…");
-    const doc = await call("get_week", { store: state.store, weekKey: state.week });
+    const store = state.store;
+    const week = state.week;
+    const doc = await call("get_week", { store, weekKey: week });
+    if (store !== state.store || week !== state.week) return;
     state.rawData = doc?.rawData || [];
     state.adherence = {};
     recompute();
@@ -470,6 +494,8 @@ export async function mount(host, container) {
       ? null
       : (await call("list_dates", { store, collection: "schedules" })) || [];
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
+    state.lastEditor = doc?.lastEditor || null;
+    state.scheduleEditor = schedule?.lastEditor || null;
     // Suggestions for cells that are already filled are noise; drop them here
     // rather than making every consumer re-check.
     state.suggestions = pruneSuggestions(suggestions || {});
@@ -760,6 +786,7 @@ export async function mount(host, container) {
     // because a day's assignments silently not persisting is worse than most
     // things this module can do wrong.
     state.saveStatus = ok ? "saved" : "save failed";
+    if (ok?.lastEditor) state.lastEditor = ok.lastEditor;
     state.saveError  = ok ? null : lastCallError;
     if (!ok) {
       console.error("[digitalmetrics] assignments save failed:", lastCallError,
@@ -773,7 +800,9 @@ export async function mount(host, container) {
     recompute();
     renderPage();
     setStatus("saving…");
-    const ok = await call("put_classifications", { map: state.classifications });
+    const ok = await call("put_classifications", { store: state.store, map: state.classifications });
+    if (ok?.lastEditor) state.classificationEditor = ok.lastEditor;
+    renderPage();
     setStatus(ok ? "saved" : "save failed");
   }
 

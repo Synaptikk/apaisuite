@@ -177,6 +177,14 @@ both lines in `modules/_registry.js`.
 
 ### 6. VizPick Market Rollup — remaining UI + caching work
 
+**Direct JSON path verified 2026-09-11; not integrated yet.** Playwright live
+tests found `api-get-worksheet-summary-logical-table-data` returns all four
+Today datasets without exports. Market 120: 10/10 stores in 30.809 s using
+three independent Tableau sessions. This corrects the older "crosstab is the
+only route" conclusion below. See
+[`../dev/VIZPICK_DIRECT_DATA_FINDINGS.md`](../dev/VIZPICK_DIRECT_DATA_FINDINGS.md)
+for validation, timing scope, and the adapter/fallback work needed to ship it.
+
 **Why:** `modules/vizpick/` (v0.1.0, alpha) replaces typing store numbers
 one at a time into Tableau's VizPick Details search box. Pick a market once,
 see every store in it side by side.

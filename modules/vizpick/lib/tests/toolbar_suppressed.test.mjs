@@ -22,6 +22,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const SRC = readFileSync(
   new URL("../sources/vizpick_today_tableau.js", import.meta.url), "utf8");
@@ -67,15 +68,19 @@ test("`toolbar=n` without the Tableau colon prefix is not a match", () => {
   assert.equal(TOOLBAR_SUPPRESSED.test(u), false);
 });
 
-test("the url is re-checked at the moment of use, not only at query time", () => {
-  // The original guard filtered chrome.tabs.query results. That result is a
-  // snapshot: a tab still loading reports its PRE-REDIRECT url, so a
-  // :toolbar=n tab passed the filter and was adopted anyway. The fix re-reads
-  // the tab before committing to it.
-  assert.ok(SRC.includes("async function isToolbarSuppressed(tabId)"),
-    "the re-check helper must exist");
-  assert.ok(SRC.includes("if (!(await isToolbarSuppressed(live.id)))"),
-    "findOrOpenReportTab must re-check before adopting");
+test("concurrent captures create exclusive tabs instead of adopting another lane", async () => {
+  const start = SRC.indexOf("async function findOrOpenReportTab()");
+  const end = SRC.indexOf("\n}", start) + 2;
+  let nextId = 10;
+  const context = vm.createContext({
+    DETAILS_URL: "https://example.com/details",
+    createCaptureTab: async () => ({ id: nextId++ }),
+    keepAwake: async () => {},
+  });
+  vm.runInContext(SRC.slice(start, end), context);
+  const captures = await vm.runInContext("Promise.all([findOrOpenReportTab(), findOrOpenReportTab()])", context);
+  assert.notEqual(captures[0].tab.id, captures[1].tab.id);
+  assert.ok(captures.every((capture) => capture.didOpen));
 });
 
 test("suppression is detected from the DOM, not from the url", () => {

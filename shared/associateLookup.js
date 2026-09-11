@@ -1,3 +1,4 @@
+import { withSessionTabs } from "./tabSessions.js";
 // shared/associateLookup.js
 //
 // WIN → real-name resolver, shared across the suite.
@@ -125,7 +126,11 @@ export function getNameSync(username) {
  * Async lookup. Tries memory → chrome.storage.local → network.
  * De-dupes concurrent calls for the same username.
  */
-export async function lookupName(username) {
+export async function lookupName(...args) {
+  return withSessionTabs("associateLookup", () => lookupNameImpl(...args));
+}
+
+async function lookupNameImpl(username) {
   if (!username) return null;
   const u = String(username).toLowerCase();
 
@@ -205,7 +210,11 @@ export async function lookupName(username) {
  * lookups have settled (resolved or failed); the drawer doesn't await it,
  * it just lets subscribe() drive re-renders as names trickle in.
  */
-export async function warmCache(usernames) {
+export async function warmCache(...args) {
+  return withSessionTabs("associateLookup", () => warmCacheImpl(...args));
+}
+
+async function warmCacheImpl(usernames) {
   const uniq = Array.from(new Set(
     (usernames || []).filter(Boolean).map((u) => String(u).toLowerCase())
   ));
@@ -296,6 +305,7 @@ async function _ensureWorkvivoTab() {
     // None open — open a background tab and wait for it to finish loading.
     // `active: false` keeps the user's current tab focused.
     const tab = await chrome.tabs.create({ url: "https://workvivo.walmart.com/", active: false });
+    await registerSessionTab("associateLookup", tab.id);
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         chrome.tabs.onUpdated.removeListener(onUpdated);
@@ -418,7 +428,11 @@ async function _fetchFromDirectory(username) {
  * but returns nothing, so both shapes are offered rather than forcing every
  * caller into one.
  */
-export async function lookupNames(wins) {
+export async function lookupNames(...args) {
+  return withSessionTabs("associateLookup", () => lookupNamesImpl(...args));
+}
+
+async function lookupNamesImpl(wins) {
   const uniq = [...new Set((wins || []).filter(Boolean).map((w) => String(w).toLowerCase()))];
   const out = new Map();
   await Promise.allSettled(uniq.map(async (w) => { out.set(w, await lookupName(w)); }));
@@ -579,7 +593,11 @@ export function needsWorkdayLookup(record) {
  *
  * @returns {Promise<{name?:string, title?:string, tenureDays?:number}|null>}
  */
-export async function lookupTitle(win) {
+export async function lookupTitle(...args) {
+  return withSessionTabs("associateLookup", () => lookupTitleImpl(...args));
+}
+
+async function lookupTitleImpl(win) {
   const u = Directory.normalizeWin(win);
   if (!u) return null;
 
@@ -616,7 +634,11 @@ export async function lookupTitle(win) {
 /** Titles for many WINs. Serial on purpose — each one may drive the same
  *  single Workday tab, and running them concurrently makes them fight over it
  *  the way the vizpick lanes once fought over one Tableau tab. */
-export async function lookupTitles(wins) {
+export async function lookupTitles(...args) {
+  return withSessionTabs("associateLookup", () => lookupTitlesImpl(...args));
+}
+
+async function lookupTitlesImpl(wins) {
   const uniq = [...new Set((wins || []).map(Directory.normalizeWin).filter(Boolean))];
   const out = new Map();
   for (const w of uniq) out.set(w, await lookupTitle(w));

@@ -79,7 +79,7 @@ export async function decodeWeek(doc) {
   return { ...doc, rawData: rows };
 }
 
-// ── metrics/classifications ──────────────────────────────────────────────
+// ── stores/{store}/classifications/current (legacy: metrics/classifications) ──
 export async function encodeClassifications(map) {
   const data = {};
   for (const [name, classification] of Object.entries(map || {})) {

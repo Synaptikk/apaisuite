@@ -1,3 +1,4 @@
+import { createCaptureTab } from "../background_tab.js";
 // modules/vizpick/lib/sources/vizpick_stores_tableau.js
 //
 // Store-level VizPick capture via the Tableau *crosstab CSV export* — same
@@ -239,11 +240,9 @@ export async function fetchVizpickStoresTableau(opts = {}) {
   } finally {
     // Never leave the interceptor armed — a user-initiated download in this
     // tab afterwards must behave normally.
-    await setSuppressDownloads(tab.id, false);
-    // Close the tab only if we opened it AND the capture succeeded. Leaving
-    // a failed tab open lets the user re-auth / inspect. No focus restore is
-    // needed: we never took focus in the first place.
-    if (didOpen && (succeeded || !keepFailedTab)) {
+    await setSuppressDownloads(tab.id, false).catch(() => {});
+    // Close owned tabs after success, error, or timeout.
+    if (didOpen) {
       chrome.tabs.remove(tab.id).catch(() => {});
     }
   }
@@ -251,24 +250,8 @@ export async function fetchVizpickStoresTableau(opts = {}) {
 
 // ── Tab management (same lifecycle as market120's clearance_stores_tableau.js) ──
 async function findOrOpenReportTab() {
-  const all = await chrome.tabs.query({ url: TAB_PATTERN });
-  const existing = all.filter((t) => VIEW_FRAGMENT.test(t.url || ""));
-  if (existing.length) {
-    // Prefer a tab Chrome has not reclaimed. `frozen` is the one that looks
-    // healthy and is not: status stays "complete" while the event loop is
-    // SUSPENDED, so the viz never renders and injected polls never run. See
-    // the long note in vizpick_today_tableau.js — this source has only been
-    // luckier, not immune, because its tab tends to have been used recently.
-    const live = existing.find((t) => !t.discarded && !t.frozen) || existing[0];
-    if (live.discarded || live.frozen) {
-      await chrome.tabs.reload(live.id, { bypassCache: false }).catch(() => {});
-    }
-    await keepAwake(live.id);
-    return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
-  }
-  // active:false — the capture runs entirely in the background and must
-  // never pull the user off the page they are on.
-  const tab = await chrome.tabs.create({ url: REPORT_URL, active: false });
+  // Exclusive capture tab: another module may still be using a matching viz.
+  const tab = await createCaptureTab(REPORT_URL);
   if (tab) await keepAwake(tab.id);
   return tab ? { tab, didOpen: true } : null;
 }

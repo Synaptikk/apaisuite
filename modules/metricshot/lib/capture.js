@@ -88,18 +88,8 @@ export async function captureMetric(metric, opts = {}) {
     const resolvedUrl = await _expandUrlTemplates(metric.url);
     const target = new URL(resolvedUrl);
     const originPattern = `${target.origin}/*`;
-    const existing = await chrome.tabs.query({ url: originPattern });
+    // Own the capture tab so concurrent rollups cannot close or navigate it.
     let tab;
-    if (existing.length) {
-      // Only reuse a tab that's already on the exact viz + filters we want.
-      // Otherwise we'd hijack the user's own Tableau tab (navigating it to
-      // a different store or viz mid-session). The URL comparison is
-      // hash-route aware and ignores Tableau session-only params.
-      const matching = existing
-        .filter((t) => typeof t.id === "number" && _pathMatches(t.url, resolvedUrl))
-        .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
-      tab = matching[0];
-    }
     if (!tab) {
       tab = await chrome.tabs.create({ url: resolvedUrl, active: false });
       openedFresh = true;

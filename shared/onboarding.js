@@ -22,8 +22,8 @@
 // value here is user-entered.
 
 import { USER_ROLES, isValidRole,
-         setUserRole, setUserHomeMarket, setUserHomeStoreOverride,
          getUserRole, getUserHomeMarket, getUserHomeStore } from "./userStore.js";
+import { OVERRIDE_KEY, MARKET_KEY, ROLE_KEY } from "./userStore.js";
 
 const DONE_KEY = "apai.onboardingCompletedAt";
 const TIPS_KEY = "apai.onboardingTipsSeenAt";
@@ -68,7 +68,6 @@ function el(tag, props = {}, ...kids) {
   return node;
 }
 
-const digitsOnly = (s) => /^\d+$/.test(String(s ?? "").trim());
 
 // ── Setup wizard ──────────────────────────────────────────────────────────
 
@@ -98,12 +97,24 @@ export function runSetup({ force = false } = {}) {
 
     async function skip() { await completeOnboarding(); close(false); }
 
+    let saving = false;
     async function finish() {
-      if (state.role)   await setUserRole(state.role);
-      if (state.store)  await setUserHomeStoreOverride(state.store);
-      if (state.market) await setUserHomeMarket(state.market);
-      await completeOnboarding();
-      close(true);
+      if (saving) return;
+      saving = true;
+      try {
+        // One write prevents partially saved setup. Empty values also clear
+        // previous defaults when setup is run again.
+        await chrome.storage.sync.set({
+          [ROLE_KEY]: state.role || "",
+          [OVERRIDE_KEY]: state.store || "",
+          [MARKET_KEY]: state.market || "",
+          [DONE_KEY]: new Date().toISOString(),
+        });
+        close(true);
+      } catch (error) {
+        const err = card.querySelector(".ob-error");
+        if (err) { err.textContent = `Setup could not be saved: ${error?.message || error}. Retry or skip setup.`; err.hidden = false; }
+      } finally { saving = false; }
     }
 
     // ── Step 1: role ──────────────────────────────────────────────────────
@@ -146,14 +157,14 @@ export function runSetup({ force = false } = {}) {
         el("p", { class: "ob-step", text: "Step 2 of 3" }),
         el("h2", { id: "ob-title", text: "Your home store" }),
         el("p", { class: "ob-lead",
-                  text: "Used to highlight your store in market views and to seed the dashboards. Digits only, no leading zeros." }),
+                  text: "Optional for Market users: leave blank to work across stores. Otherwise enter your home store (1–5 digits)." }),
         input, err,
       );
 
       const next = () => {
         const v = input.value.trim();
-        if (v && !digitsOnly(v)) {
-          err.textContent = "Store number must be digits only.";
+        if (v && !/^\d{1,5}$/.test(v)) {
+          err.textContent = "Store number must be 1–5 digits.";
           err.hidden = false;
           return;
         }
@@ -184,8 +195,8 @@ export function runSetup({ force = false } = {}) {
 
       const next = () => {
         const v = input.value.trim();
-        if (v && !digitsOnly(v)) {
-          err.textContent = "Market number must be digits only.";
+        if (v && !/^\d{1,8}$/.test(v)) {
+          err.textContent = "Market number must be 1–8 digits.";
           err.hidden = false;
           return;
         }

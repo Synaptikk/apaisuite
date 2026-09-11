@@ -1,3 +1,4 @@
+import { withSessionTabs } from "../../shared/tabSessions.js";
 // modules/workvivo/service.js
 //
 // Token-heartbeat service worker.
@@ -124,7 +125,11 @@ async function getStoredStatus() {
  *
  * @returns {Promise<{ok:boolean, ...}>}
  */
-async function runHeartbeat({ reason, openIfMissing } = { reason: "manual", openIfMissing: false }) {
+async function runHeartbeat(...args) {
+  return withSessionTabs("workvivo", () => runHeartbeatImpl(...args));
+}
+
+async function runHeartbeatImpl({ reason, openIfMissing } = { reason: "manual", openIfMissing: false }) {
   const at = Date.now();
 
   const { endpointUrl, apiKey } = await getConfig();

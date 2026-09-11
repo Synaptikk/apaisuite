@@ -53,11 +53,13 @@ service cloud.firestore {
       allow write: if signedIn() && request.resource.data.list is list;
     }
 
+    // LEGACY. Classifications moved to stores/{store}/classifications/current
+    // (2026-09-06) after installs at different stores kept rewriting this one
+    // shared map. Still readable as a one-time seed for a store with no map of
+    // its own; never written again.
     match /metrics/classifications {
       allow read:  if signedIn();
-      // data is { <token>: { c, n } } — a map keyed by HMAC token, never a name.
-      allow write: if signedIn() && encryptedSchema()
-                   && request.resource.data.data is map;
+      allow write: if false;
     }
 
     // ── Per-store data ───────────────────────────────────────────────────
@@ -95,6 +97,14 @@ service cloud.firestore {
                           || request.resource.data.finalized == false);
 
         allow delete: if false;
+      }
+
+      match /classifications/{doc} {
+        allow read:  if signedIn();
+        // data is { <token>: { c, n } } — a map keyed by HMAC token, never a name.
+        allow write: if signedIn() && encryptedSchema()
+                     && doc == 'current'
+                     && request.resource.data.data is map;
       }
 
       match /suggestions/{date} {

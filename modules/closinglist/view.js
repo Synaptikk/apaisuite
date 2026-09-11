@@ -104,7 +104,7 @@ export async function mount(host, container) {
   //    User never has to leave APAISuite as long as their SSO is cached.
   //    Shared SSO_SELECTORS list lives in shared/auth.js so adding a new
   //    Walmart-corp-SSO button variant is a single edit.
-  async function findOrOpenCaseVisibilityTab() {
+  async function findOrOpenCaseVisibilityTab(onCreated) {
     const existing = await host.tabs.query({
       url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
     });
@@ -112,6 +112,7 @@ export async function mount(host, container) {
 
     setStatus("Opening CaseVisibility (background)…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
+    onCreated(created.id);
     const loaded = await host.tabs.waitForLoad(created.id, 30_000);
     if (!loaded) throw new Error("CaseVisibility tab load timed out.");
 
@@ -146,6 +147,7 @@ export async function mount(host, container) {
     const $collect = $("cl-collect");
     $collect.disabled = true;
     setStatus("Finding CaseVisibility tab…");
+    let ownedTabId = null;
     try {
       await saveDefaults();
       const storeNbr         = $("cl-storeNbr").value.trim() || DEFAULTS.storeNbr;
@@ -157,7 +159,7 @@ export async function mount(host, container) {
       const includeIvr       = $("cl-includeIvr").checked;
       const showJobTitles    = $("cl-showJobTitles").checked;
 
-      const tab = await findOrOpenCaseVisibilityTab();
+      const tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; });
       setStatus("Calling CaseVisibility…");
       const resp = await host.messaging.sendToTab(
         tab.id,
@@ -170,6 +172,10 @@ export async function mount(host, container) {
         }
       );
       if (!resp || !resp.ok) throw new Error(resp?.error || "Unknown response");
+      if (ownedTabId != null) {
+        await host.tabs.remove(ownedTabId).catch(() => {});
+        ownedTabId = null;
+      }
 
       let ivrRows = [];
       let ivrStatus = "";
@@ -225,6 +231,7 @@ export async function mount(host, container) {
       // user navigated away mid-collect (container detached). Setting .disabled
       // on a detached node is a safe no-op.
       $collect.disabled = false;
+      if (ownedTabId != null) await host.tabs.remove(ownedTabId).catch(() => {});
     }
   }
 

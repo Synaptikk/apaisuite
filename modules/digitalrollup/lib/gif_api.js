@@ -150,7 +150,11 @@ async function findOrOpenTab() {
   if (ready) return { tabId: ready.id, opened: false };
 
   const tab = await chrome.tabs.create({ url: ORIGIN + ANCHOR_PATH, active: false });
-  await waitForLoad(tab.id);
+  try { await waitForLoad(tab.id); }
+  catch (error) {
+    await chrome.tabs.remove(tab.id).catch(() => {});
+    throw error;
+  }
   return { tabId: tab.id, opened: true };
 }
 

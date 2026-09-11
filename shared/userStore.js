@@ -48,6 +48,9 @@ const WID_STORE_RE = /\.s(\d{3,5})\b/i;
 export async function getUserHomeStore() {
   const override = await readOverride();
   if (override) return override;
+  // Market users may deliberately have no home store. Do not infer one
+  // from their hire-store identity when they have not selected a store.
+  if (await getUserRole() === "market") return null;
 
   const observed = await getIdentity().catch(() => ({}));
   if (observed?.store) return String(observed.store);
@@ -69,6 +72,7 @@ export async function getUserHomeStore() {
  */
 export async function getUserHomeStoreSource() {
   if (await readOverride()) return "manual";
+  if (await getUserRole() === "market") return null;
   const observed = await getIdentity().catch(() => ({}));
   if (observed?.store) return observed.storeSource || "unknown";
   const identity = await readAurorIdentity();

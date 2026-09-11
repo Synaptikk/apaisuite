@@ -469,6 +469,10 @@ async function renderHome() {
     try { await _renderHomePromise; } catch {}
   }
   _renderHomePromise = (async () => {
+    // Yield until the promise is assigned, even when no header is mounted.
+    // Otherwise finally clears the flag before assignment restores a settled
+    // promise, and the next render spins forever in the wait loop above.
+    await Promise.resolve();
     try {
       // Tear down any prior inline-mounted module (home-header surface).
       // route() does this on hashchange, but renderHome can be invoked

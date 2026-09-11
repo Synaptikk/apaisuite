@@ -1,3 +1,4 @@
+import { withSessionTabs } from "../../shared/tabSessions.js";
 // modules/claimsdisposition/service.js
 //
 // Service-worker handlers for claimsdisposition. Loaded statically by the
@@ -26,7 +27,7 @@ import { fetchCvpForMarket } from "./lib/cvp.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
 import { getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster } from "../../shared/marketRoster.js";
-import { registerSessionTab, touchSessionTab } from "../../shared/tabSessions.js";
+import { registerSessionTab, touchSessionTab, forgetSessionTab } from "../../shared/tabSessions.js";
 
 const MODULE_ID = "claimsdisposition";
 
@@ -112,12 +113,9 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
   }
   if (!openIfMissing) return { ok: false, error: "no embed tab open" };
 
-  // This tab is intentionally left open after a successful pull — Looker's
-  // anti-CSRF cookie chain is anchored to it, and closing it forces a 30s
-  // reauth on every subsequent pull. It is registered with the suite's idle
-  // reaper below instead, which closes it once nobody has pulled for a while.
-  // That is the sessionManager this comment used to be waiting for.
+  // Retained for all stores in this pull, then released by withSessionTabs.
   const tab = await chrome.tabs.create({ url: EMBED_URL, active: false });
+  await registerSessionTab("claimsdisposition", tab.id);
   // Wait for SSO + initial JS to settle. The embed itself loads in ~2-3s
   // but the same-origin fetch only succeeds once Looker's bootstrap has
   // set up its anti-CSRF cookie chain. Probing every 500ms keeps happy-
@@ -152,6 +150,8 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
     LOG(`embed tab stuck on ${where} (status=${last.status}) — foregrounding for sign-in`);
     try { await chrome.tabs.update(tab.id, { active: true }); } catch (_) {}
     try { await chrome.windows.update(tab.windowId, { focused: true }); } catch (_) {}
+    // This is now an interactive sign-in tab, not a disposable helper.
+    await forgetSessionTab(tab.id);
     return {
       ok: false,
       error: `Looker sign-in required — the embed tab is waiting on ${where}. ` +
@@ -562,3 +562,7 @@ function lookerIntToIso(n) {
   if (s.length !== 8) return s;
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
+
+// Only a data pull owns the embed lifetime; status checks must not close it.
+const pullHandler = handlers.pull;
+handlers.pull = (...args) => withSessionTabs("claimsdisposition", () => pullHandler(...args));

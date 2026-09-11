@@ -259,6 +259,7 @@ async function ensureAurorAuth() {
   const opened = !tab;
   console.log("[AurorBuddy.ensureAurorAuth] tab lookup:", { existed: !opened, id: tab?.id, url: tab?.url });
   if (!tab) tab = await chrome.tabs.create({ url: AUROR_HOME, active: false });
+  try {
   console.log("[AurorBuddy.ensureAurorAuth] using tab", { id: tab.id, url: tab.url });
 
   if (!opened) {
@@ -324,6 +325,7 @@ async function ensureAurorAuth() {
     reason: "Auror tab loaded but we didn't see a JWT on any auror.co request within " +
             `${Math.round(AUROR_SLOW_MS / 1000)}s. Switch to the Auror tab, click anywhere or scroll, then retry.`,
   };
+  } finally { if (opened) await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 
 // ── APPRISS auth flow ──────────────────────────────────────────────────
@@ -374,12 +376,13 @@ async function ensureApprissAuth({ waitMs = 30_000 } = {}) {
   // Open / find the APPRISS tab in BACKGROUND. The shell auto-clicks
   // SSO; if SAML/AAD is cached the chain completes silently.
   let tab = await findTab(APPRISS_TAB_PATTERN);
-  const opened = !tab;
+  let opened = !tab;
   console.log("[AurorBuddy.ensureApprissAuth] tab lookup:", { existed: !opened, id: tab?.id, url: tab?.url });
   if (!tab) {
     tab = await chrome.tabs.create({ url: APPRISS_HOME, active: false });
     console.log("[AurorBuddy.ensureApprissAuth] created tab:", { id: tab?.id, url: tab?.url });
   }
+  try {
   await waitForTabLoad(tab.id).catch(() => {});
 
   // Attempt 1: clickSso + poll.
@@ -403,7 +406,8 @@ async function ensureApprissAuth({ waitMs = 30_000 } = {}) {
   console.log("[AurorBuddy.ensureApprissAuth] attempt 1 timed out; reloading tab for autonomous reauth attempt 2");
   const tabStillThere = await chrome.tabs.get(tab.id).catch(() => null);
   if (!tabStillThere) {
-    // User closed the auth tab mid-attempt. Open a fresh one and try again.
+    // User closed the auth tab mid-attempt. Own the replacement tab.
+    opened = true;
     tab = await chrome.tabs.create({ url: APPRISS_HOME, active: false });
     await waitForTabLoad(tab.id).catch(() => {});
   } else {
@@ -445,6 +449,7 @@ async function ensureApprissAuth({ waitMs = 30_000 } = {}) {
     reason: "Autonomous APPRISS reauth did not complete (2 attempts). " +
             "Background SAML chain may need interactive MFA — will retry on next operation.",
   };
+  } finally { if (opened) await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 
 // ── Broadcast helper for streaming progress to the UI ──────────────────

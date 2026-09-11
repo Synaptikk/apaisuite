@@ -42,6 +42,83 @@ const load = () => import(`../tabSessions.js?t=${process.hrtime.bigint()}`);
 
 const MIN = 60 * 1000;
 
+test("interactive sign-in handoff survives operation cleanup", async () => {
+  const { tabs } = installChromeStub([1]);
+  const api = await load();
+  await api.withSessionTabs("claims", async () => {
+    await api.registerSessionTab("claims", 1);
+    await api.forgetSessionTab(1);
+  });
+  assert.ok(tabs.has(1));
+});
+
+test("another module consuming a helper prevents early cleanup", async () => {
+  const { tabs } = installChromeStub([1]);
+  const api = await load();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const consumer = api.withSessionTabs("consumer", () => gate);
+  await api.withSessionTabs("owner", async () => {
+    await api.registerSessionTab("owner", 1);
+  });
+  assert.ok(tabs.has(1));
+  release();
+  await consumer;
+  assert.ok(!tabs.has(1));
+});
+
+test("status operation cannot close helpers registered by another context", async () => {
+  const { tabs } = installChromeStub([1]);
+  const owner = await load();
+  await owner.registerSessionTab("lookup", 1);
+  const otherContext = await load();
+  await otherContext.withSessionTabs("lookup", async () => {});
+  assert.ok(tabs.has(1));
+});
+
+test("operation closes owned tabs on success and failure, preserving user tabs", async () => {
+  const { tabs } = installChromeStub([1, 2, 3]);
+  const api = await load();
+  assert.equal(await api.withSessionTabs("test", async () => {
+    await api.registerSessionTab("test", 1);
+    return "data";
+  }), "data");
+  await assert.rejects(api.withSessionTabs("test", async () => {
+    await api.registerSessionTab("test", 2);
+    throw new Error("capture failed");
+  }), /capture failed/);
+  assert.deepEqual([...tabs], [3]);
+});
+
+test("concurrent and nested batch consumers keep the tab until all finish", async () => {
+  const { tabs } = installChromeStub([1]);
+  const api = await load();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let ready;
+  const started = new Promise((resolve) => { ready = resolve; });
+  const first = api.withSessionTabs("lookup", async () => {
+    await api.registerSessionTab("lookup", 1);
+    ready();
+    await gate;
+  });
+  await started;
+  await api.withSessionTabs("lookup", () => api.withSessionTabs("lookup", async () => {}));
+  assert.ok(tabs.has(1));
+  await api.reapIdleTabs(Date.now() + 60 * MIN);
+  assert.ok(tabs.has(1), "idle reaper must not interrupt an active batch");
+  release();
+  await first;
+  assert.ok(!tabs.has(1));
+});
+
+test("concurrent registrations do not overwrite another module's ownership", async () => {
+  installChromeStub([1, 2]);
+  const api = await load();
+  await Promise.all([api.registerSessionTab("a", 1), api.registerSessionTab("b", 2)]);
+  assert.equal((await api.listSessionTabs()).length, 2);
+});
+
 test("reaps a tab that has gone quiet past its idle window", async () => {
   const { tabs } = installChromeStub([1]);
   const { registerSessionTab, reapIdleTabs, DEFAULT_IDLE_MS } = await load();

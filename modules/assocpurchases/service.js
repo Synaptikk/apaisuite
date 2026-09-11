@@ -45,6 +45,7 @@ async function ensureApprissAuth() {
     tab = await chrome.tabs.create({ url: APPRISS_HOME, active: false });
     LOG("ensureApprissAuth: opened background APPRISS tab", tab.id);
   }
+  try {
   await _waitForTabLoad(tab.id);
 
   // If we landed on the sign-in page, click the SSO button.
@@ -69,6 +70,7 @@ async function ensureApprissAuth() {
     ok,
     reason: ok ? "session established" : "sign in to APPRISS in the browser, then try again",
   };
+  } finally { if (weOpened) await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 
 export const handlers = {

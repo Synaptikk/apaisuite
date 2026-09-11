@@ -45,6 +45,7 @@ export async function fetchClearanceTableau() {
   }
   const { tab, didOpen } = opened;
 
+  try {
   await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
 
   // If the tab existed but capture didn't install (e.g. extension reloaded
@@ -129,6 +130,7 @@ export async function fetchClearanceTableau() {
       matchedStrings: Object.entries(values).filter(([_, v]) => v !== null).map(([k]) => k),
     },
   };
+  } finally { if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 
 // ── Tab management ─────────────────────────────────────────────────

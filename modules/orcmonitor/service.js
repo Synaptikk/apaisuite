@@ -70,6 +70,7 @@ async function ensureAurorAuth() {
     await chrome.tabs.reload(tab.id, { bypassCache:false }).catch(() => {});
   }
 
+  try {
   await _waitLoad(tab.id);
   if (await _pollToken(AUROR_FAST_MS)) {
     if (weOpened) chrome.tabs.remove(tab.id).catch(() => {});
@@ -92,6 +93,7 @@ async function ensureAurorAuth() {
       ? "Sign in to Auror in the background tab, then click Analyze."
       : "Could not establish Auror session automatically.",
   };
+  } finally { if (weOpened) await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────

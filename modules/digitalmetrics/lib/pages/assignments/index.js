@@ -13,6 +13,7 @@
 // view.js::assignmentStore().
 
 import { esc, empty } from "../_shared.js";
+import { editorText } from "../../audit.js";
 import * as grid from "./grid.js";
 import {
   TIME_SLOTS, TASK_SHORTCUTS, TASK_LABELS, resolveShortcut, dayName, emptyAssociate,
@@ -67,6 +68,8 @@ function toolbar(ctx) {
         <button class="btn" id="dm-asg-dismiss-all">Dismiss</button>` : ""}
 
       <button class="btn" id="dm-asg-finalize">${locked ? "Unfinalize" : "Finalize"}</button>
+      <span class="dm-stat-note">${esc(editorText(ctx.lastEditor))}</span>
+      ${ctx.scheduleEditor ? `<span class="dm-stat-note">Schedule import: ${esc(editorText(ctx.scheduleEditor))}</span>` : ""}
       <span class="pill ${saveError ? "pill-fail" : ""}" id="dm-asg-save"
               ${saveError ? `title="${esc(saveError)}"` : ""}>${esc(saveStatus)}</span>
         ${saveError ? `<span class="status-strip status-strip-error dm-save-reason">${

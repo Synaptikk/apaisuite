@@ -219,6 +219,7 @@ async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
   }
   if (!creds) {
     const probe = await _runInTab(tab.id, IN_PAGE_INTROSPECT, []).catch(() => null);
+    await chrome.tabs.remove(tab.id).catch(() => {});
     step("creds-not-found", { probe });
     return {
       ok: false, errorClass: "NO_SESSION",

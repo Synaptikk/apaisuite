@@ -1,3 +1,4 @@
+import { createCaptureTab } from "../background_tab.js";
 // modules/vizpick/lib/sources/vizpick_today_tableau.js
 //
 // Current-day ("Today") capture from the VizPickDetails view.
@@ -40,7 +41,7 @@ import { readXlsxFile } from "../../../../shared/xlsx.js";
 import { getUserHomeStore } from "../../../../shared/userStore.js";
 import {
   readVizqlContext, replayExport, learnSheetIds, normaliseSheetName, summariseExportAttempt,
-  base64ToBytes, base64ToText,
+  base64ToBytes, base64ToText, directSummaryExport,
 } from "./tableau_export_replay.js";
 
 const DETAILS_URL = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
@@ -224,7 +225,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // said "still rendering — retrying often works".
     if (!primaryReady.ok && primaryReady.toolbarSuppressed && !opened.didOpen) {
       stage("The open tab has no toolbar — opening our own");
-      const fresh = await chrome.tabs.create({ url: DETAILS_URL, active: false }).catch(() => null);
+      const fresh = await createCaptureTab(DETAILS_URL).catch(() => null);
       if (fresh?.id != null) {
         opened = { tab: fresh, didOpen: true };
         tabs[0] = opened;
@@ -359,7 +360,7 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     const laneCount = Math.min(laneTarget, toVisit.length);
     if (laneCount > 1) stage(`Opening ${laneCount} background tabs`);
     for (let i = 1; i < laneCount; i++) {
-      const t = await chrome.tabs.create({ url: DETAILS_URL, active: false }).catch(() => null);
+      const t = await createCaptureTab(DETAILS_URL).catch(() => null);
       // Lane tabs are unfocused for the whole crawl — prime Memory Saver bait.
       if (t) { await keepAwake(t.id); tabs.push({ tab: t, didOpen: true }); }
     }
@@ -530,12 +531,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     };
   } finally {
     for (const rec of tabs) {
-      await setSuppressDownloads(rec.tab.id, false);
-      // At most ONE tab survives a failure, and only when the user is sitting
-      // there to look at it. The extra lanes are identical views — three
-      // orphans diagnose nothing and just clutter the tab strip.
-      const keepThis = !succeeded && keepFailedTab && rec.tab.id === primaryId;
-      if (rec.didOpen && !keepThis) chrome.tabs.remove(rec.tab.id).catch(() => {});
+      await setSuppressDownloads(rec.tab.id, false).catch(() => {});
+      // Every helper lane belongs to this capture, including failed lanes.
+      if (rec.didOpen) await chrome.tabs.remove(rec.tab.id).catch(() => {});
     }
   }
 }
@@ -988,39 +986,8 @@ async function isToolbarSuppressed(tabId) {
 }
 
 async function findOrOpenReportTab() {
-  const all = await chrome.tabs.query({ url: TAB_PATTERN });
-  const existing = all.filter((t) =>
-    VIEW_FRAGMENT.test(t.url || "") && !TOOLBAR_SUPPRESSED.test(t.url || ""));
-  if (existing.length) {
-    // Chrome reclaims background tabs two different ways, and only one of them
-    // is obvious:
-    //
-    //   discarded — the document is gone; the tab is a placeholder.
-    //   frozen    — the document is intact but its event loop is SUSPENDED.
-    //
-    // Frozen is the nastier one. The tab still reports status "complete", still
-    // matches this query and looks entirely healthy — but nothing runs in it,
-    // so the viz never finishes rendering and injected polls never execute.
-    // Waiting on it just burns the whole readiness budget.
-    //
-    // Observed in the field 2026-08-16: a tab left open by a failed run was
-    // frozen by Memory Saver, and every capture afterwards reused it and failed
-    // identically, forever. The user's diagnostics showed the Details tab
-    // frozen:true while the Yesterday tab — used minutes earlier — was not,
-    // which is exactly why Yesterday kept working and Today never did.
-    const live = existing.find((t) => !t.discarded && !t.frozen) || existing[0];
-    // Re-check at the moment of use, not at query time. See
-    // isToolbarSuppressed: the url in a query result can still be the
-    // pre-redirect one, which is how a `:toolbar=n` tab slipped past the
-    // filter above and cost every store a 120s timeout.
-    if (!(await isToolbarSuppressed(live.id))) {
-      return { tab: live, didOpen: false, dormant: !!(live.discarded || live.frozen) };
-    }
-    // Fall through and open our own rather than driving a tab with no toolbar.
-  }
-  // active:false — the capture runs entirely in the background and must
-  // never pull the user off the page they are on.
-  const tab = await chrome.tabs.create({ url: DETAILS_URL, active: false });
+  // Exclusive capture tab: another module may still be using a matching viz.
+  const tab = await createCaptureTab(DETAILS_URL);
   if (tab) await keepAwake(tab.id);
   return tab ? { tab, didOpen: true } : null;
 }
@@ -1433,6 +1400,23 @@ async function learnFromRing(tabId, replay) {
  */
 async function exportSheetText(tabId, sheet, needle, replay) {
   const key = normaliseSheetName(sheet.match);
+
+  // The worksheet summary API is the fast path for current-day sheets. It
+  // returns the same formatted table as Tableau's export, without the dialog
+  // or a generated file. Department breakout stays on the existing path until
+  // its measure-tuple pivot is fully parity-tested; the other three sheets map
+  // directly to the existing parsers. Any failure falls through normally.
+  const directName = key.includes("download department breakout") ? null
+    : key.includes("vizpick donut health") ? "VizPick Donut Health"
+    : key.includes("department groups donuts health") ? "Department Groups Donuts Health"
+    : key.includes("download location details") ? "Download Location Details"
+    : key.includes("last update") ? "Last update" : null;
+  if (directName) {
+    const direct = await directSummaryExport(tabId, { sheet: directName });
+    if (direct.ok && direct.text && direct.text.includes(needle)) {
+      return { ok: true, text: direct.text, via: "summary", ms: direct.ms };
+    }
+  }
 
   const ctx = replay?.ctxByTab?.get(tabId) || null;
   // Refuse a context belonging to another tab. Replaying against another

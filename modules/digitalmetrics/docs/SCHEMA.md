@@ -51,10 +51,11 @@ Everything else here is CLI-reachable, which is unaffected.
 
 ```
 metrics/
-├── stores            { list: ["1458", …] }
-└── classifications   { data: { <token>: { c, n } } }
+├── stores            { list: ["1458", …] }      ← shared picker suggestions only; never a pull target
+└── classifications   LEGACY, read-only seed — superseded by stores/{store}/classifications/current
 
 stores/{store}/
+├── classifications/current         { data: { <token>: { c, n } } }
 ├── weeks/{YYYY-MM-DD}              ← Saturday that starts the week
 ├── schedules/{YYYY-MM-DD}
 ├── dailyAssignments/{YYYY-MM-DD}
@@ -88,7 +89,10 @@ what stops a stale client writing plaintext names back into a clean database.
 { list: string[], schemaVersion: 2, writerSource: "suite" }
 ```
 
-### `metrics/classifications`
+### `stores/{store}/classifications/current`
+Per store since 2026-09-06. `metrics/classifications` is the legacy suite-wide
+document; it is read as a seed when a store has no document of its own and is
+never written.
 ```ts
 { data: { [token: string]: { c: "Digital"|"Exceptions"|"Fashion"|"Store Help",
                              n: string } } }

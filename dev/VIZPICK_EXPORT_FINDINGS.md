@@ -1,5 +1,12 @@
 # VizPick — is the crosstab export the slow way round?
 
+> **Correction, 2026-09-11:** The bootstrap observations below remain historical
+> evidence, but the conclusion that export is the only data route is wrong.
+> A separate worksheet summary JSON API was verified live for all four Today
+> datasets; ten stores completed in 30.809 seconds using three sessions.
+> See [VIZPICK_DIRECT_DATA_FINDINGS.md](VIZPICK_DIRECT_DATA_FINDINGS.md) for
+> evidence, comparison limits, and reproducible Playwright probes.
+
 **Investigated 2026-08-21**, live, against the analyst's authenticated Edge
 profile over CDP (`localhost:9222`) by reading the capture ring that
 `modules/vizpick/content/tableau_capture.js` already maintains. Read-only:

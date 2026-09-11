@@ -370,14 +370,21 @@ export async function pullSchedule({ onProgress = () => {}, store: expectedStore
         `with weekEvents: ${diag?.withWeekEvents ?? "?"}, with shifts: ${diag?.withShifts ?? "?"}` +
         `${diag?.filtersActive ? ", FILTER ACTIVE on the scheduler" : ""})`);
     }
-    // The caller usually knows which store this pull is FOR. Trust that over
-    // anything scraped, and only use the page's own reading to flag a
-    // disagreement — a schedule written under the wrong store id is close to
-    // impossible to notice later.
+    // The caller says which store this pull is FOR; the page says which store
+    // it is showing. When both are known and they disagree, REFUSE. The old
+    // behaviour relabelled the page's roster as the expected store, which is
+    // how store 5151's schedule got written under stores/1458/ by an install
+    // whose store list happened to start with 1458. A schedule written under
+    // the wrong store id is close to impossible to notice later, so a loud
+    // failure here is the cheaper outcome. The expected store still fills in
+    // when the page's own reading is unavailable (it only accepts <=5-digit
+    // values, so the 116580 internal-id leak cannot reach this point).
     if (expectedStore) {
       if (built.store && String(built.store) !== String(expectedStore)) {
-        built.warnings = [...(built.warnings || []),
-          `The scheduler page reported store ${built.store} but this pull is for ${expectedStore}; using ${expectedStore}.`];
+        throw new Error(
+          `The scheduler page is showing store ${built.store} but this pull is for ` +
+          `store ${expectedStore}; nothing was written. Open Workforce Planning for ` +
+          `store ${expectedStore} and retry.`);
       }
       built.pageStore = built.store ?? null;
       built.store = String(expectedStore);

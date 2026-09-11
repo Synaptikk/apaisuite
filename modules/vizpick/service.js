@@ -280,6 +280,9 @@ async function pullToday(msg) {
       // at 1 lane vs 3. Unset in normal use, so the source picks its default.
       concurrency: msg?.concurrency,
       onStore: async ({ row, sourceUpdate, topUp }) => {
+        // Without a source version we cannot safely merge incremental lanes.
+        // Keep the previous snapshot until the final result supplies all rows.
+        if (!sourceUpdate?.raw) return;
         const payload = {
           rows: [row],
           sourceUpdate,

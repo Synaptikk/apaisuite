@@ -73,6 +73,7 @@ export async function mount(host, container) {
 
     setStatus("Opening CaseVisibility (background)…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
+    try {
     
     const loaded  = await host.tabs.waitForLoad(created.id, 30_000);
     if (!loaded) throw new Error("CaseVisibility tab load timed out.");
@@ -91,8 +92,12 @@ export async function mount(host, container) {
       if (CV_MATCH.test(finalTab.url || "")) return { tab: finalTab, opened: true };
     }
     throw new Error(
-      "Couldn't auto-sign in to CaseVisibility. Finish sign-in in the background tab, then click Collect again."
+      "Couldn't auto-sign in to CaseVisibility. Open CaseVisibility, sign in, then click Collect again."
     );
+    } catch (error) {
+      await host.tabs.remove(created.id).catch(() => {});
+      throw error;
+    }
   }
 
   // --- Collect -------------------------------------------------------------

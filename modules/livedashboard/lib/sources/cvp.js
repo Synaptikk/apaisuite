@@ -1,3 +1,4 @@
+import { withSessionTabs } from "../../../../shared/tabSessions.js";
 // modules/livedashboard/lib/sources/cvp.js
 //
 // Hoops CVP per-store fetch. Endpoint discovered in
@@ -89,7 +90,11 @@ async function tryDirectFetch(url) {
   }
 }
 
-async function tryFetchInsideHoopsTab(url) {
+async function tryFetchInsideHoopsTab(...args) {
+  return withSessionTabs("livedashboard", () => tryFetchInsideHoopsTabImpl(...args));
+}
+
+async function tryFetchInsideHoopsTabImpl(url) {
   // Prefer an authenticated ops-portal tab. Skip soteria/login tabs —
   // they're in the logged-out interstitial state and any fetch from
   // them returns 401. We can only carry real auth from a tab that's
@@ -97,13 +102,7 @@ async function tryFetchInsideHoopsTab(url) {
   let tabs = await chrome.tabs.query({ url: HOOPS_TAB_PATTERN });
   tabs = tabs.filter((t) => !HOOPS_LOGGED_OUT_URL_RE.test(t.url || ""));
   if (!tabs.length) {
-    // NOTE: this tab is intentionally LEFT OPEN after a successful pull —
-    // it serves as the authenticated session host for subsequent dashboard
-    // refreshes (alarm-driven, every few minutes). Closing on success would
-    // force a SAML round-trip on every poll. The Pass-2 sessionManager will
-    // own tab-lifecycle (close idle tabs we opened after N minutes); for
-    // now we accept one persistent background hoops tab per session.
-    // See docs/AUTH_AUDIT.md::Recommendation.
+    // Reuse within this request; withSessionTabs closes our tab at completion.
     let openedTab;
     try { openedTab = await chrome.tabs.create({ url: HOOPS_OPS_PORTAL_URL, active: false }); }
     catch (e) { return { ok: false, errorClass: "TAB", error: `Could not open hoops tab: ${e?.message ?? e}` }; }

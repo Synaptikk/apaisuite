@@ -13,6 +13,7 @@
 // than a shared import; the module contract keeps modules self-contained.
 
 import { BACKEND, WRITER_ENABLED_KEY } from "./config.js";
+import { encodeEditor, decodeEditor } from "./audit.js";
 import {
   encodeWeek, decodeWeek,
   encodeClassifications, decodeClassifications,
@@ -113,17 +114,21 @@ async function request(path, { method = "GET", body } = {}) {
 
 async function getDoc(path) {
   const doc = await request(path);
-  return doc ? fromFields(doc.fields) : null;
+  if (!doc) return null;
+  const decoded = fromFields(doc.fields);
+  decoded.lastEditor = await decodeEditor(decoded.lastEditor);
+  return decoded;
 }
 
 async function setDoc(path, obj) {
   if (!(await writerEnabled())) return { ok: false, error: "writer disabled" };
+  obj = { ...obj, lastEditor: await encodeEditor() };
   // Last line of defence before anything leaves the device.
   assertNoPlaintextNames(obj);
   // PATCH with no updateMask overwrites the whole document — the REST
   // equivalent of the donor's .set(), which is the semantics every caller wants.
   await request(path, { method: "PATCH", body: { fields: toFields(obj) } });
-  return { ok: true };
+  return { ok: true, data: { lastEditor: await decodeEditor(obj.lastEditor) } };
 }
 
 async function listDocs(collectionPath, { pageSize = 300 } = {}) {
@@ -171,9 +176,30 @@ export const weeks = {
   async put(s, k, doc) { return setDoc(wk(s, k), await encodeWeek(doc)); },
 };
 
+// Classifications are PER STORE. They used to be one suite-wide document
+// (metrics/classifications), which every install read and rewrote — so store
+// 5151's job-title derivations landed in store 1458's map and vice versa. The
+// legacy document is still READ, as a one-time seed, when a store has no
+// document of its own yet; the first write goes to the per-store path and the
+// legacy one is never written again (rules make it read-only).
+const cls = (s) => `stores/${s}/classifications/current`;
+const LEGACY_CLASSIFICATIONS = "metrics/classifications";
+
 export const classifications = {
-  async get()    { return decodeClassifications(await getDoc("metrics/classifications")); },
-  async put(map) { return setDoc("metrics/classifications", await encodeClassifications(map)); },
+  async editor(s) {
+    if (!s) return null;
+    return (await getDoc(cls(s)))?.lastEditor || null;
+  },
+  async get(s) {
+    if (!s) throw new Error("digitalmetrics: classifications.get needs a store");
+    const own = await getDoc(cls(s));
+    if (own) return decodeClassifications(own);
+    return decodeClassifications(await getDoc(LEGACY_CLASSIFICATIONS));
+  },
+  async put(s, map) {
+    if (!s) throw new Error("digitalmetrics: classifications.put needs a store");
+    return setDoc(cls(s), await encodeClassifications(map));
+  },
 };
 
 export const schedules = {

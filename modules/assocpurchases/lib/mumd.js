@@ -88,7 +88,11 @@ async function _ensureMumdTab() {
     const tab = await chrome.tabs.create({ url: MUMD_URL, active: false });
     console.log("[assocpurchases] MUMD: opened background tab", tab.id);
 
-    await _waitAndHandleAuth(tab.id, 25_000);
+    try { await _waitAndHandleAuth(tab.id, 25_000); }
+    catch (error) {
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      throw error;
+    }
     _mumdTabId = tab.id;
     _mumdTabOpened = true;
     return _mumdTabId;

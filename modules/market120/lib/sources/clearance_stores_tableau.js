@@ -118,10 +118,8 @@ export async function fetchClearanceStoresTableau() {
       debug: { capturedUrl: csv.url, storeCount: parsed.rows.length, market: MARKET, hasNational: nat.ok },
     };
   } finally {
-    // Close the tab only if we opened it AND the capture succeeded. Leaving a
-    // failed tab open lets the user re-auth / inspect. Restore focus to the
-    // tab the user was on before we hijacked the foreground.
-    if (didOpen && succeeded) {
+    // Close owned capture tabs on every outcome, then restore focus.
+    if (didOpen) {
       chrome.tabs.remove(tab.id).catch(() => {});
     }
     if (prevActive?.id && prevActive.id !== tab.id) {

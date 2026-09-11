@@ -48,6 +48,21 @@ installChromeStub();
 
 const US = await import("../userStore.js");
 
+test("Market users can leave home store blank despite a cached hire store", async () => {
+  installChromeStub();
+  chrome.storage.local.get = async () => ({
+    "aurorbuddy.fb_aurorIdentity": { aurorUserId: "samlp|wm-us|person.s01458" },
+  });
+  await US.setUserRole("market");
+  assert.equal(await US.getUserHomeStore(), null);
+  assert.equal(await US.getUserHomeStoreSource(), null);
+  await US.setUserHomeStoreOverride("5151");
+  assert.equal(await US.getUserHomeStore(), "5151");
+  await US.clearUserHomeStoreOverride();
+  assert.equal(await US.getUserHomeStore(), null);
+  installChromeStub();
+});
+
 test("market round-trips and clears", async () => {
   assert.equal(await US.getUserHomeMarket(), null);
   await US.setUserHomeMarket("120");

@@ -118,11 +118,21 @@ async function storedDates(storeId) {
 /**
  * Which stores should a pull cover?
  *
- * `metrics/stores` is the normal answer, but it is EMPTY on a fresh database —
- * and it only ever gets filled by importing data, which the pull cannot do
- * without knowing a store. That circle has to be broken from outside, so fall
- * back to the user's own home store (shared/userStore.js derives it from the
- * Auror JWT's WIN suffix).
+ * The user's OWN store, derived from the cached Auror identity
+ * (shared/userStore.js). Only when that cannot be derived does the shared
+ * `metrics/stores` list stand in, and only as a last resort.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ `metrics/stores` is ONE document shared by every install — every     │
+ * │ analyst signs in anonymously to the same database. It used to be the │
+ * │ primary answer here, which meant that as soon as two stores were in  │
+ * │ it, EVERY install pulled for BOTH, and the schedule pull (which      │
+ * │ scrapes whatever store the analyst's own scheduler shows) wrote that  │
+ * │ analyst's roster under the list's first store. Store 5151's roster   │
+ * │ landed in stores/1458/schedules/* on 2026-09-06 that way.            │
+ * │                                                                      │
+ * │ So: the shared list is a picker suggestion, not a pull target.       │
+ * └──────────────────────────────────────────────────────────────────────┘
  *
  * Returns [] rather than inventing a default; the caller reports that as a
  * setup problem instead of silently pulling nothing.
@@ -140,10 +150,9 @@ async function resolveStores(explicit) {
   // becomes the default for everything downstream — which is precisely how a
   // schedule ended up written under stores/116580/.
   if (explicit?.length) return explicit.map(String).filter(isStoreNumber);
-  const known = (await store.listStores().catch(() => [])).filter(isStoreNumber);
-  if (known.length) return known;
   const home = await getUserHomeStore().catch(() => null);
-  return home && isStoreNumber(home) ? [String(home)] : [];
+  if (home && isStoreNumber(home)) return [String(home)];
+  return [];
 }
 
 /**
@@ -179,12 +188,16 @@ async function runPull({ force = false, stores = null } = {}) {
   const result = { startedAt: new Date().toISOString(), metrics: [], schedule: null, errors: [] };
 
   try {
-    // Resolve up front so the schedule pull knows which store it is FOR. It
-    // can still self-identify when we have nothing (first run), but a scraped
-    // id must never override a known one — `locations[0].locationId` is an
-    // internal id (116580 for store 1458) and writing under it is silent
-    // corruption.
     const preResolved = await resolveStores(stores);
+
+    // The schedule pull scrapes whatever store the analyst's OWN scheduler
+    // page shows, so the only store it may be written under is that
+    // analyst's home store. Never `preResolved[0]`: an explicit or shared
+    // list can name someone else's store, and pullSchedule() now refuses to
+    // write when the page disagrees with the expected store rather than
+    // relabelling the roster.
+    const home = await getUserHomeStore().catch(() => null);
+    const scheduleStore = home && isStoreNumber(home) ? String(home) : null;
 
     // ── schedule ────────────────────────────────────────────────────────
     let discovered = null;
@@ -192,7 +205,8 @@ async function runPull({ force = false, stores = null } = {}) {
     // the metrics have said who actually picked.
     let scheduledAssociates = [];
     try {
-      const sched = await pullSchedule({ store: preResolved[0] || null });
+      if (!scheduleStore) throw new Error("Choose a home store before syncing schedules.");
+      const sched = await pullSchedule({ store: scheduleStore });
       const written = [];
       for (const [date, doc] of Object.entries(sched.schedules)) {
         await schedules.put(sched.store, date, {
@@ -238,9 +252,13 @@ async function runPull({ force = false, stores = null } = {}) {
     if (scheduledAssociates.length) {
       try {
         const pickers = result.metrics.flatMap((m) => m.pickers || []);
-        const existing = await classifications.get();
+        // The scheduled associates came from the schedule pull, so they
+        // belong to the store that pull identified.
+        const clsStore = discovered || scheduleStore;
+        if (!clsStore) throw new Error("no store to classify for");
+        const existing = await classifications.get(clsStore);
         const derived = deriveClassifications(scheduledAssociates, { existing, pickers });
-        if (derived.changes.length) await classifications.put(derived.map);
+        if (derived.changes.length) await classifications.put(clsStore, derived.map);
         result.classified = {
           changed: derived.changes.length,
           fromJobTitles: derived.derivedFrom,
@@ -314,6 +332,7 @@ const withAliases = (fn) => async (msg, sender) => {
 };
 
 export const handlers = {
+  "get_classification_editor": withAliases((m) => classifications.editor(m.store)),
   "list_stores":       withAliases(()      => store.listStores()),
   "list_weeks":        withAliases((m)     => store.listWeeks(m.store)),
   "list_dates":        withAliases((m)     => store.listDates(m.store, m.collection)),
@@ -321,8 +340,8 @@ export const handlers = {
   "get_week":          withAliases((m)     => weeks.get(m.store, m.weekKey)),
   "put_week":          withAliases((m)     => weeks.put(m.store, m.weekKey, m.doc)),
 
-  "get_classifications": withAliases(()    => classifications.get()),
-  "put_classifications": withAliases((m)   => classifications.put(m.map)),
+  "get_classifications": withAliases((m)   => classifications.get(m.store)),
+  "put_classifications": withAliases((m)   => classifications.put(m.store, m.map)),
 
   "get_schedule":      withAliases((m)     => schedules.get(m.store, m.date)),
   "put_schedule":      withAliases((m)     => schedules.put(m.store, m.date, m.doc)),
@@ -461,10 +480,11 @@ export const handlers = {
 
   /** What the module would pull for if asked right now, and where it came from. */
   "get_default_store": async () => {
-    const known = await store.listStores().catch(() => []);
-    if (known.length) return { store: known[0], source: "stored", list: known };
+    const known = (await store.listStores().catch(() => [])).filter(isStoreNumber);
+    // Home store first — the shared list belongs to every install, so its
+    // first entry is whoever's store sorts lowest, not this analyst's.
     const home = await getUserHomeStore().catch(() => null);
-    if (home) return { store: String(home), source: "home", list: [] };
+    if (home && isStoreNumber(home)) return { store: String(home), source: "home", list: known };
     return { store: null, source: "none", list: [] };
   },
 

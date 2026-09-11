@@ -87,14 +87,8 @@ export async function hasWorkvivoTab() {
  * Open workvivo.walmart.com/chat in a background tab. Used by the manual
  * "Send heartbeat now" path when no Workvivo tab is already open.
  *
- * Background tab (active:false) so we don't yank focus away from whatever
- * the user was doing. The tab is left open after the heartbeat so future
- * periodic alarms can also read the token without re-opening — but it is
- * registered with the suite's idle reaper (shared/tabSessions.js), so "left
- * open" now means "until nothing has used it for a while" rather than "until
- * the user notices and closes it". The heartbeat is hourly and the reaper's
- * default grace is 15 minutes, so a heartbeat that opens its own tab gets it
- * swept before the next one — which is correct: each heartbeat can re-open.
+ * Open without changing focus. The heartbeat operation closes its own tab
+ * after extracting/posting the token; the idle registry covers interruptions.
  *
  * @returns {Promise<chrome.tabs.Tab>}
  */
