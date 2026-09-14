@@ -372,7 +372,10 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     const basket = x.storeUse?.kind === "pantry" ? ` The basket is the associate pantry (${x.storeUse.pantryLines} of ${x.storeUse.lines} lines are pantry items: ${x.storeUse.repeats.join(", ")}).` : x.storeUse ? ` The basket looks like a store purchase (${x.storeUse.repeats.join(", ")}${x.storeUse.repeats.length ? "; " : ""}${x.storeUse.lines} lines).` : "";
     if (x.cft) why.push({ kind: "cft_keyed", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who} and a CFT for ${fmtMoney(x.cft.amountCents)} was keyed ${x.cft.inputDate || "?"}${x.cft.inputTime ? ` ${x.cft.inputTime}` : ""} (${[x.cft.accountDesc, x.cft.recipient].filter(Boolean).join(" → ")}).${basket} If that purchase was paid from this drawer instead of with the recycler cash the CFT dispensed, the drawer is short the ticket — a CFT process error, not a loss. Confirm on the receipt and video.` });
     else if (verdict === "pantry_cft" && x === pantryMiss) why.splice(1, 0, { kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week. Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed. Cause found: CFT process error.` });
-    else why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week.${x.storeUse?.kind === "pantry" ? " Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed." : " A store purchase paid out of the drawer without a CFT leaves the register short exactly the ticket — if the video shows an associate paying from the till, the cause is a CFT that was never completed."}` });
+    else {
+      const part = !withinTolerance(x.tx.cashTendCents, abs, cfg) ? (x.tx.cashTendCents < abs ? ` That covers ${fmtMoney(x.tx.cashTendCents)} of the ${fmtMoney(abs)} shortage; ${fmtMoney(abs - x.tx.cashTendCents)} is still unexplained.` : ` The ticket (${fmtMoney(x.tx.cashTendCents)}) is larger than this ${fmtMoney(abs)} shortage — check whether the rest surfaced on another day.`) : "";
+      why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week.${x.storeUse?.kind === "pantry" ? " Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short the ticket — the CFT was never completed." : " A store purchase paid out of the drawer without a CFT leaves the register short the ticket — if the video shows an associate paying from the till, the cause is a CFT that was never completed."}${part}` });
+    }
   }
   if (!isOver) for (const r of cashOut.slice(0, 3)) why.push({ kind: "cashout", text: `Cash paid out ${fmtMoney(r.changeCents)} at ${r.time} on TR# ${r.transNum} (cashier ${r.cashier || "?"}) with nothing tendered — a refund or payout of the shortage amount. Check the receipt and watch the video: was there a customer, and did the cash leave the drawer?` });
   // CFT cash is dispensed by the recycler, not taken from a register, so a
@@ -470,13 +473,19 @@ export function noCheckinText(tills, reg, otherReg, date) {
 // look like a store purchase are reported when no CFT exists — an ordinary
 // customer sale with no CFT is just an ordinary sale.
 export function cftForTransactions(cft, ej, matches, date, cfg = DEFAULT_CFG) {
-  if (!matches?.length) return [];
   const byTr = new Map((ej?.transactions || []).map((t) => [String(t.transNum), t]));
   const t0 = new Date(date).getTime();
   const gap = (d) => (d ? Math.round((new Date(d).getTime() - t0) / 86_400_000) : null);
   const ok = (g) => g != null && g >= -1 && g <= 7;
   const out = [];
-  for (const m of matches) {
+  // Every completed cash ticket on the register-day, not only the ones near
+  // the shortage: a pantry run smaller than the shortage still explains
+  // that much of it, and one larger points at a different day's count.
+  const seen = new Set();
+  const pool = [...(matches || [])];
+  for (const t of ej?.transactions || []) if (completedCash(t) && !pool.some((m) => String(m.transNum) === String(t.transNum))) pool.push({ transNum: t.transNum, time: t.time, opNum: t.opNum, opName: t.opName || null, cashTendCents: t.cashTendCents, totalCents: t.totalCents });
+  for (const m of pool) {
+    if (seen.has(String(m.transNum))) continue; seen.add(String(m.transNum));
     const full = byTr.get(String(m.transNum)) || m;
     const storeUse = storeUseBasket(full, cfg.pantry);
     const hit = (cft || []).filter((c) => c.amountCents > 0 && !c.system && withinTolerance(c.amountCents, m.cashTendCents, cfg) && (ok(gap(c.businessDate)) || ok(gap(c.inputDate))))

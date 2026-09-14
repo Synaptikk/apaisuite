@@ -163,3 +163,14 @@ test("pantry: the associate-pantry ticket is recognised from its UPCs, including
   assert.equal(pantryMatch([{ desc: "TV 55IN", code: "012345678901" }, { desc: "HDMI", code: "1" }]), null);
   assert.ok(DEFAULT_PANTRY.length >= 9);
 });
+
+test("pantry: a pantry run smaller than the shortage is still reported, with the unexplained remainder", () => {
+  const line = (desc, cents) => ({ desc, cents, voided: false });
+  const basket = [line("NISSIN CUP", 50), line("NISSIN CUP", 50), line("NISSIN CUP", 50), line("GV SPAG RING", 108), line("GV SPAG RING", 108), line("BANANAS", 141)];
+  const tx = { transNum: "77", time: "10:00:00", opNum: "9", totalCents: 5070, cashTendCents: 5070, changeDueCents: 0, items: basket };
+  const item = { id: "p", register: "13", date: "2026-07-20", amountCents: -22100, amountAbsCents: 22100, sourceAppId: "overshort" };
+  const ev = buildEvidence({ item, ej: { transactions: [tx], events: [] }, cft: [] });
+  assert.notEqual(ev.verdict, "pantry_cft", "not the whole shortage → not a found cause");
+  const w = ev.why.find((x) => x.kind === "cft_missing");
+  assert.ok(w && /covers \$50\.70 of the \$221\.00 shortage; \$170\.30 is still unexplained/.test(w.text), w?.text);
+});

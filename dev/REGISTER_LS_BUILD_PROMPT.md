@@ -377,3 +377,16 @@ pairs each such cash ticket with a CFT of that amount within a week or flags
 it `cft_missing`. Only store-looking baskets are reported — customer sales
 next to unrelated CFTs were noise. ej_parse now reads SF/KF item lines (the
 pantry ticket had parsed as 4 lines, it is 83). ANALYSIS_SCHEMA 7.
+
+## Sixteenth pass: pantry runs as a found cause, checked on every ticket
+
+A cash ticket of pantry UPCs within tolerance of the shortage with no CFT
+keyed is verdict `pantry_cft` (ready to close as Process Error - CFT /
+Process Errors, disposition text names the ticket). The check now walks
+every completed cash ticket on the register-day, not just amount matches,
+so a smaller pantry run reports how much of the shortage it covers. Store
+1458 scan (53 items): one cause (reg 13 07-20 $222.04), four store-use
+notes without pantry UPCs (lunchables ×6, pecans ×4, crayons/pens, cup
+noodles + mango) left under "needs a look". Pantry runs without a CFT are
+also a store-level permanent record under the cashier panel (process, not
+a cashier error — user's call).
