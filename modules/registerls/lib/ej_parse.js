@@ -25,7 +25,7 @@ const STAMP_RE = /(\d{2})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/g;
 // `<DESC> <code>  <S|K|…>    150.00-H` — the sale-type flag is required so
 // informational trailer lines (e.g. a gift card's second "46.35" line) are
 // not counted as items.
-const ITEM_RE = /^(.+?)\s+(\d{6,14})\s+([A-Z])\s+(-?[\d,]+\.\d{2})\s*(-)?\s*[A-Z]*\s*$/;
+const ITEM_RE = /^(.+?)\s+(\d{6,14})\s+([A-Z]{1,2})\s+(-?[\d,]+\.\d{2})\s*(-)?\s*[A-Z]*\s*$/;
 const VOID_MARK_RE = /^\s*\*+\s*VOIDED ENTRY\s*\*+\s*$/;
 const TENDER_RE = /^\s*(.+?)\s+TEND\s+(-?[\d,]+\.\d\d-?)/;
 const SUBTOTAL_RE = /^\s*SUBTOTAL\s+(-?[\d,]+\.\d\d-?)/;

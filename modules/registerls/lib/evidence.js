@@ -15,7 +15,7 @@
 // them may be absent — the verdict degrades and `missing` says what was not
 // available.
 
-import { completedCash, investigate } from "./investigation.js";
+import { completedCash, investigate, storeUseBasket } from "./investigation.js";
 
 import { safeReasonFor } from "./reasons.js";
 import { linkVideo } from "./open_drawer.js";
@@ -219,6 +219,10 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   if (drawerRows) { linkVideo(matches, drawerRows); linkVideo(flags, drawerRows); }
   const cashOut = drawerRows ? drawerRows.filter((r) => r.nearKind === "out") : [];
   const cftNear = isOverAmount(item, discrepancy) ? [] : cftMatches(cft, item, abs, cfg);
+  // The register-attributable CFT case: a cash-tendered ticket on the short
+  // register that looks like a store purchase. With a CFT keyed for it the
+  // cash should have come from the recycler; with none, the drawer paid.
+  const cftTx = isOverAmount(item, discrepancy) ? [] : cftForTransactions(cft, ej, matches, date, cfg);
 
   let verdict, verdictLabel, severity, reason, dispositionText;
   const isOver = (item.amountCents ?? discrepancy?.amountCents ?? 0) > 0;
@@ -350,6 +354,12 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     for (const f of tills.flags || []) if (f.kind === "override" || f.kind === "unbalanced" || f.kind === "many_hands" || f.kind === "quick_recheck") why.push({ kind: "till_" + f.kind, text: f.text.charAt(0).toUpperCase() + f.text.slice(1) + "." });
     if (tills.people?.length && !isOver) why.push({ kind: "till_people", text: `Till handled by ${tills.people.map((p) => p.name || p.id).join(", ")} on ${date} (check-in/out log).` });
   }
+  for (const x of cftTx) {
+    const who = x.tx.opNum ? `, operator ${x.tx.opNum}${x.tx.opName ? ` ${x.tx.opName}` : ""}` : "";
+    const basket = x.storeUse?.kind === "pantry" ? ` The basket is the associate pantry (${x.storeUse.pantryLines} of ${x.storeUse.lines} lines are pantry items: ${x.storeUse.repeats.join(", ")}).` : x.storeUse ? ` The basket looks like a store purchase (${x.storeUse.repeats.join(", ")}${x.storeUse.repeats.length ? "; " : ""}${x.storeUse.lines} lines).` : "";
+    if (x.cft) why.push({ kind: "cft_keyed", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who} and a CFT for ${fmtMoney(x.cft.amountCents)} was keyed ${x.cft.inputDate || "?"}${x.cft.inputTime ? ` ${x.cft.inputTime}` : ""} (${[x.cft.accountDesc, x.cft.recipient].filter(Boolean).join(" → ")}).${basket} If that purchase was paid from this drawer instead of with the recycler cash the CFT dispensed, the drawer is short the ticket — a CFT process error, not a loss. Confirm on the receipt and video.` });
+    else why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week.${x.storeUse?.kind === "pantry" ? " Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed." : " A store purchase paid out of the drawer without a CFT leaves the register short exactly the ticket — if the video shows an associate paying from the till, the cause is a CFT that was never completed."}` });
+  }
   if (!isOver) for (const r of cashOut.slice(0, 3)) why.push({ kind: "cashout", text: `Cash paid out ${fmtMoney(r.changeCents)} at ${r.time} on TR# ${r.transNum} (cashier ${r.cashier || "?"}) with nothing tendered — a refund or payout of the shortage amount. Check the receipt and watch the video: was there a customer, and did the cash leave the drawer?` });
   // CFT cash is dispensed by the recycler, not taken from a register, so a
   // CFT near the amount is shown for reference (lookAt "cft") but is not a
@@ -368,6 +378,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
       `Register ${reg} ${amtText} on ${date}.`,
       ...why.filter((w) => w.kind !== "ops").map((w) => w.text),
     ];
+    if (cftTx.some((x) => !x.cft)) lines.push(`If TR# ${cftTx.find((x) => !x.cft).tx.transNum} was a store purchase paid from the drawer, disposition as the CFT process error and have the CFT keyed.`);
     if (videoCandidates.length) lines.push(`Review video of TR# ${videoCandidates[0].transNum} at ${videoCandidates[0].time} before closing.`);
     else if (cashOut.length) lines.push(`Review video of the ${fmtMoney(cashOut[0].changeCents)} cash-out on TR# ${cashOut[0].transNum} at ${cashOut[0].time} before closing.`);
     // Nothing gets dispositioned without a found cause. Notes only; the
@@ -396,7 +407,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     videoCandidates, cashMatches: matches, operators: ops,
     drawer: drawerRows ? { rows: drawerRows, count: drawerRows.length, explorerUrl: drawer.explorerUrl || null } : null,
     cashOut,
-    cftNear,
+    cftNear, cftTx,
     tills: tills ? { events: tills.events, advances: tills.advances, moves: tills.moves, flags: tills.flags, people: tills.people, flip: tills.flip } : null,
     ledgerRows: ledger || [], ledgerFlags: lflags, redFlags: flags,
     sections, missing,
@@ -437,4 +448,26 @@ export function noCheckinText(tills, reg, otherReg, date) {
   if (scoA && scoB) return `Reg ${reg} and reg ${otherReg} are self-checkouts: their cash lives in the recycler and no till is ever checked in or out, so this offset is a recycler count between two lanes, not a swapped till — nobody to charge.`;
   if (scoA || scoB) { const s = scoA ? reg : otherReg, o = scoA ? otherReg : reg; return `Reg ${s} is a self-checkout (cash in the recycler, no till check-in). Reg ${o} has no matching check-in logged on ${date}, so the log cannot say who is responsible.`; }
   return `No till check-ins are logged for reg ${reg} or reg ${otherReg} on ${date}, so the log cannot say who swapped them.`;
+}
+
+// Cash-tendered transactions near the shortage, each paired with the CFT
+// that matches the ticket (amount within tolerance, business or keyed date
+// from a day before to a week after) or marked missing. Only tickets that
+// look like a store purchase are reported when no CFT exists — an ordinary
+// customer sale with no CFT is just an ordinary sale.
+export function cftForTransactions(cft, ej, matches, date, cfg = DEFAULT_CFG) {
+  if (!matches?.length) return [];
+  const byTr = new Map((ej?.transactions || []).map((t) => [String(t.transNum), t]));
+  const t0 = new Date(date).getTime();
+  const gap = (d) => (d ? Math.round((new Date(d).getTime() - t0) / 86_400_000) : null);
+  const ok = (g) => g != null && g >= -1 && g <= 7;
+  const out = [];
+  for (const m of matches) {
+    const full = byTr.get(String(m.transNum)) || m;
+    const storeUse = storeUseBasket(full, cfg.pantry);
+    const hit = (cft || []).filter((c) => c.amountCents > 0 && !c.system && withinTolerance(c.amountCents, m.cashTendCents, cfg) && (ok(gap(c.businessDate)) || ok(gap(c.inputDate))))
+      .sort((a, b) => Math.abs(a.amountCents - m.cashTendCents) - Math.abs(b.amountCents - m.cashTendCents))[0] || null;
+    if (hit || storeUse) out.push({ tx: { transNum: m.transNum, time: m.time, opNum: m.opNum, opName: m.opName, cashTendCents: m.cashTendCents, totalCents: m.totalCents }, cft: hit, storeUse });
+  }
+  return out;
 }

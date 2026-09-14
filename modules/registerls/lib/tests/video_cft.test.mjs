@@ -7,7 +7,10 @@ import { dirname, join } from "node:path";
 
 import { decodeOpenDrawer, buildOpenDrawerBody, tradingDay, linkVideo, cctvUrl } from "../open_drawer.js";
 import { decodeCft, buildFilteredBody, normalizeRow, cftFor, dsrColumnOrder } from "../cft.js";
-import { buildEvidence, cftMatches } from "../evidence.js";
+import { buildEvidence, cftMatches, cftForTransactions } from "../evidence.js";
+import { storeUseBasket } from "../investigation.js";
+import { pantryMatch, normUpc, DEFAULT_PANTRY } from "../pantry.js";
+import { parseRecords } from "../ej_parse.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fx = (n) => JSON.parse(readFileSync(join(here, "fixtures", n), "utf8"));
@@ -101,4 +104,53 @@ test("evidence: a drawer open with nothing tendered and the shortage amount paid
   assert.ok(ev.why.some((w) => w.kind === "cashout" && /paid out \$295\.28/.test(w.text)));
   assert.match(ev.suggestion.text, /cash-out on TR# 336/);
   assert.equal(ev.drawer.rows.find((r) => r.transNum === "335").nearKind, null, "an $820 cash sale is not near a $295 shortage");
+});
+
+test("cft: a cash ticket that looks like a store purchase with no CFT keyed is flagged as a CFT never completed; with a CFT it is a process error to confirm", () => {
+  const line = (desc, cents) => ({ desc, cents, voided: false });
+  const basket = [line("BANANAS", 141), line("BANANAS", 120), line("BANANAS", 134), line("FOAM PLATES", 596), line("VARIETY PAC", 756), line("VARIETY PAC", 756), line("VARIETY PAC", 756), line("GV 20OZ BWL", 497), line("GV 20OZ BWL", 497), line("GV 20OZ BWL", 497)];
+  const tx = { transNum: "4273", time: "09:55:26", opNum: "353", totalCents: 22204, cashTendCents: 22204, changeDueCents: 0, items: basket };
+  assert.ok(storeUseBasket(tx), "repeated lines + plates/bowls = store-use basket");
+  assert.equal(storeUseBasket({ ...tx, items: [line("TV 55IN", 39800), line("HDMI CABLE", 1200)] }), null);
+  const item = { id: "13", register: "13", date: "2026-07-20", amountCents: -22100, amountAbsCents: 22100, sourceAppId: "mel" };
+  const ej = { transactions: [tx], events: [] };
+  const none = buildEvidence({ item, ej, cft: [] });
+  const miss = none.why.find((w) => w.kind === "cft_missing");
+  assert.ok(miss && /No CFT for that amount was keyed/.test(miss.text));
+  assert.match(none.suggestion.text, /CFT process error/);
+  assert.equal(none.suggestion.safe, false);
+  const keyed = [{ businessDate: "2026-07-20", inputDate: "2026-07-20", inputTime: "13:10:00", amountCents: 22204, accountDesc: "ASSOCIATE RELATIONS", recipient: "Associate Relations", reason: "snacks", system: false, keyedLate: false }];
+  const withCft = buildEvidence({ item, ej, cft: keyed });
+  assert.ok(withCft.why.some((w) => w.kind === "cft_keyed"));
+  assert.equal(cftForTransactions(keyed, ej, withCft.cashMatches, "2026-07-20")[0].cft.amountCents, 22204);
+  // an ordinary customer sale with no CFT is not flagged
+  const plain = buildEvidence({ item, ej: { transactions: [{ ...tx, items: [line("TV 55IN", 22204)] }], events: [] }, cft: [] });
+  assert.ok(!plain.why.some((w) => w.kind === "cft_missing" || w.kind === "cft_keyed"));
+});
+
+test("pantry: the associate-pantry ticket is recognised from its UPCs, including two-letter item flags and PLU bananas", () => {
+  const text = [
+    "ST# 1458 OP# 00000353 TE# 13 TR# 04273",
+    "BANANAS      064312604011  SF      1.41 B", " 2.94 LBS  AT 1 FOR   0.48      1.41 B",
+    "BANANAS      000000004011  KF      1.20 B", "  2.5 LBS  AT 1 FOR   0.48      1.20 B",
+    "FOAM PLATES  007874208830  S      5.96 AD",
+    "VARIETY PAC  007874200871  SF      7.56 BD", "VARIETY PAC  007874200871  SF      7.56 BD", "VARIETY PAC  007874200871  SF      7.56 BD",
+    "GV 20OZ BWL  007874234937  S      4.97 AD",
+    "NISSIN CUP   007066203003  SF      0.50 BD", "NISSIN CUP   007066203003  SF      0.50 BD",
+    "GV SPAG RING 060538818792  SF      1.08 BD",
+    "GV CHWY 48   007874202459  SF      7.48 BD",
+    "TV 55IN      012345678901  N    398.00 A",
+    "            SUBTOTAL   447.26", "              TOTAL   447.26", "     CASH  TEND    447.26", "  CHANGE DUE     0.00", "07/20/26  09:55:26",
+  ].join("\n");
+  const { transactions } = parseRecords([{ transTime: 95526, opNum: 353, transNum: 4273, record: text }]);
+  const tx = transactions[0];
+  assert.ok(tx, "receipt parsed");
+  assert.equal(tx.items.length, 12, "weight sub-lines are not items; SF/KF lines are");
+  assert.equal(normUpc("064312604011"), "64312604011");
+  const pm = pantryMatch(tx.items);
+  assert.equal(pm.lines, 11); assert.equal(pm.total, 12);
+  assert.ok(pm.products[0].startsWith("VARIETY PAC ×3") || pm.products.some((p) => /BANANAS ×2/.test(p)));
+  assert.equal(storeUseBasket(tx).kind, "pantry");
+  assert.equal(pantryMatch([{ desc: "TV 55IN", code: "012345678901" }, { desc: "HDMI", code: "1" }]), null);
+  assert.ok(DEFAULT_PANTRY.length >= 9);
 });
