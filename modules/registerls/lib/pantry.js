@@ -26,15 +26,18 @@ export const DEFAULT_PANTRY = [
 export const normUpc = (v) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
 
 // items: ej_parse item lines [{ desc, code, cents, voided }].
-// Returns null when fewer than `min` non-voided lines are pantry items.
-export function pantryMatch(items, pantry = DEFAULT_PANTRY, { min = 3 } = {}) {
+// A pantry run is a significant basket: at least `minLines` pantry lines
+// spread over at least `minProducts` different pantry items. One or two
+// pantry items on a ticket is a customer buying bananas and cup noodles.
+export function pantryMatch(items, pantry = DEFAULT_PANTRY, { minLines = 10, minProducts = 3 } = {}) {
   const byUpc = new Map(pantry.map((p) => [normUpc(p.upc), p.desc]));
   const byDesc = new Set(pantry.map((p) => p.desc.toUpperCase()));
   const live = (items || []).filter((i) => !i.voided);
   const hits = live.filter((i) => byUpc.has(normUpc(i.code)) || byDesc.has(String(i.desc || "").trim().toUpperCase()));
-  if (hits.length < min) return null;
+  if (hits.length < minLines) return null;
   const counts = new Map();
   for (const h of hits) { const k = (byUpc.get(normUpc(h.code)) || h.desc || "").trim().toUpperCase(); counts.set(k, (counts.get(k) || 0) + 1); }
+  if (counts.size < minProducts) return null;
   const cents = hits.reduce((n, i) => n + (Number.isFinite(i.cents) ? i.cents : 0), 0);
   return {
     lines: hits.length, total: live.length, share: live.length ? hits.length / live.length : 0, cents,

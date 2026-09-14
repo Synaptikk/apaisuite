@@ -57,12 +57,14 @@ export function storeUseBasket(t, pantry) {
   const items = (t?.items || []).filter((i) => !i.voided);
   const pm = pantryMatch(items, pantry);
   if (pm) return { kind: "pantry", repeats: pm.products.slice(0, 5), keyword: 0, lines: items.length, pantryLines: pm.lines, pantryCents: pm.cents, share: pm.share };
-  if (items.length < 4) return null;
+  // The generic store-purchase shape needs the same kind of bulk: a basket
+  // of 8+ lines with at least two products bought in threes.
+  if (items.length < 8) return null;
   const counts = new Map();
   for (const i of items) { const k = (i.desc || "").trim().toUpperCase(); counts.set(k, (counts.get(k) || 0) + 1); }
   const repeats = [...counts.entries()].filter(([, n]) => n >= 3);
   const keyword = items.filter((i) => STORE_USE_RE.test(i.desc || "")).length;
   const score = repeats.length * 2 + (keyword >= 3 ? 2 : keyword ? 1 : 0);
-  if (score < 3) return null;
+  if (repeats.length < 2 || score < 4) return null;
   return { kind: "store_use", repeats: repeats.map(([k, n]) => `${k} ×${n}`).slice(0, 4), keyword, lines: items.length };
 }

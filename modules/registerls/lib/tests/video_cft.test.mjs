@@ -166,11 +166,23 @@ test("pantry: the associate-pantry ticket is recognised from its UPCs, including
 
 test("pantry: a pantry run smaller than the shortage is still reported, with the unexplained remainder", () => {
   const line = (desc, cents) => ({ desc, cents, voided: false });
-  const basket = [line("NISSIN CUP", 50), line("NISSIN CUP", 50), line("NISSIN CUP", 50), line("GV SPAG RING", 108), line("GV SPAG RING", 108), line("BANANAS", 141)];
+  const basket = [...Array(6)].map(() => line("NISSIN CUP", 50)).concat([...Array(4)].map(() => line("GV SPAG RING", 108)), [line("BANANAS", 141), line("FOAM PLATES", 596)]);
   const tx = { transNum: "77", time: "10:00:00", opNum: "9", totalCents: 5070, cashTendCents: 5070, changeDueCents: 0, items: basket };
   const item = { id: "p", register: "13", date: "2026-07-20", amountCents: -22100, amountAbsCents: 22100, sourceAppId: "overshort" };
   const ev = buildEvidence({ item, ej: { transactions: [tx], events: [] }, cft: [] });
   assert.notEqual(ev.verdict, "pantry_cft", "not the whole shortage → not a found cause");
   const w = ev.why.find((x) => x.kind === "cft_missing");
   assert.ok(w && /covers \$50\.70 of the \$221\.00 shortage; \$170\.30 is still unexplained/.test(w.text), w?.text);
+});
+
+test("pantry: one or two pantry items, or a few lines, is a customer — not a pantry run", () => {
+  const line = (desc, code) => ({ desc, code, cents: 100, voided: false });
+  const bananasOnly = [...Array(12)].map(() => line("BANANAS", "4011"));
+  assert.equal(pantryMatch(bananasOnly), null, "12 lines of one product is not a run");
+  const twoProducts = [...Array(6)].map(() => line("NISSIN CUP", "7066203003")).concat([...Array(6)].map(() => line("GV SPAG RING", "60538818792")));
+  assert.equal(pantryMatch(twoProducts), null, "two products is not a run");
+  const few = [line("NISSIN CUP", "7066203003"), line("GV SPAG RING", "60538818792"), line("BANANAS", "4011"), line("FOAM PLATES", "7874208830")];
+  assert.equal(pantryMatch(few), null, "four lines is not a run");
+  const run = [...few, ...few, ...few];
+  assert.ok(pantryMatch(run), "12 lines over 4 products is");
 });
