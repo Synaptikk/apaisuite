@@ -7,13 +7,13 @@ import { dirname, join } from "node:path";
 
 import { normalizeWorkItems, normalizeWorkItem, toIsoDate, moneyToCents, buildListBody, nextStartIndex, PAGE_SIZE } from "../workview.js";
 import { decodeLedger, cellMoneyToCents, buildCashResearchBody } from "../cash_research.js";
-import { buildEvidence, cashMatches, withinTolerance, tolerance, normOp, operatorTimeline, ledgerFlags, unionDiscrepancies, findCounterpartFinding, findFindingFor } from "../evidence.js";
+import { noCheckinText, buildEvidence, cashMatches, withinTolerance, tolerance, normOp, operatorTimeline, ledgerFlags, unionDiscrepancies, findCounterpartFinding, findFindingFor } from "../evidence.js";
 import { MATCH_OPTS } from "../match_opts.js";
 import { tieredMatching } from "../matching.js";
 import { reasonsFor, safeReasonFor } from "../reasons.js";
 import { buildLedger, cashierCsv, safeFileName, eventKey, aggregateEvents } from "../cashiers.js";
 import { decodeCashRecycler, buildFilteredBody, timeToInt } from "../cash_recycler.js";
-import { wrongRegisterMoves, advanceExplanations, tillsFor, eventsFor, tillFlags, flipCheckins } from "../till_events.js";
+import { wrongRegisterMoves, advanceExplanations, tillsFor, eventsFor, tillFlags, flipCheckins, registerKind } from "../till_events.js";
 import { runMatching, swapDateWindow, widenRowWindow } from "../../../livedashboard/lib/sources/register.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -401,7 +401,7 @@ test("cashiers: an advance is not 'missing' when the shortage is already explain
   assert.equal(buildLedger({ items, verdicts: { 5: { verdict: "unmatched" } }, tillRows: rows, discrepancies: [] }).cashiers[0].byType.advance_missing.count, 1);
 });
 
-test("flip pairs: the person who checked in both swapped tills is named and charged; two people are named only", () => {
+test("flip pairs: one person checking in both tills is charged the pair; two closers are each charged their own check-in", () => {
   const ev = (register, date, time, action, dollars, associateId, associate) => ({ store: "1458", register, date, time, timeInt: Number(time.replace(/:/g, "")), registerDesc: "", associateId, associate, action, amountCents: Math.round(dollars * 100), cashLsCents: 0 });
   const rows = [ev("28", "2026-07-15", "200100", "TILLCHECKIN", 1390, "C1", "CSM ONE"), ev("29", "2026-07-15", "200300", "TILLCHECKIN", 1534, "C1", "CSM ONE")];
   const item = { id: "7", register: "28", date: "2026-07-15", amountCents: -7239, amountAbsCents: 7239, sourceAppId: "overshort" };
@@ -418,7 +418,14 @@ test("flip pairs: the person who checked in both swapped tills is named and char
   const two = [ev("28", "2026-07-15", "200100", "TILLCHECKIN", 1390, "C1", "CSM ONE"), ev("29", "2026-07-15", "200300", "TILLCHECKIN", 1534, "C2", "CSM TWO")];
   const ev2 = buildEvidence({ item, finding, tills: tillsFor(two, item, [], undefined, { register: "29", date: "2026-07-15" }) });
   assert.match(ev2.dispositionText, /CSM ONE and CSM TWO/);
-  assert.equal(buildLedger({ items: [item], verdicts: { 7: { verdict: "flip" } }, tillRows: two, discrepancies: [], counterparts: { 7: { register: "29", date: "2026-07-15" } } }).cashiers.length, 0);
+  assert.match(ev2.dispositionText, /each till was checked in to the other's register/);
+  const led2 = buildLedger({ items: [item], verdicts: { 7: { verdict: "flip" } }, tillRows: two, discrepancies: [], counterparts: { 7: { register: "29", date: "2026-07-15", amountCents: 7250 } } });
+  assert.deepEqual(led2.cashiers.map((c) => c.id).sort(), ["C1", "C2"], "two closers: each is charged their own wrong check-in");
+  assert.equal(led2.cashiers.find((c) => c.id === "C1").byType.flip_checkin.count, 1);
+  assert.match(led2.cashiers.find((c) => c.id === "C2").events[0].detail, /checked reg 29 in at 200300; the other till went to reg 28, checked in by CSM ONE/);
+  // one side has no check-in row at all (self-checkout or missing): nobody is charged
+  const one = [ev("28", "2026-07-15", "200100", "TILLCHECKIN", 1390, "C1", "CSM ONE")];
+  assert.equal(buildLedger({ items: [item], verdicts: { 7: { verdict: "flip" } }, tillRows: one, discrepancies: [], counterparts: { 7: { register: "29", date: "2026-07-15" } } }).cashiers.length, 0);
 });
 
 test("grid-only flip pairs charge the double check-in and nothing else on the register-day", () => {
@@ -437,9 +444,11 @@ test("grid-only flip pairs charge the double check-in and nothing else on the re
   // The same register-day as a real work item also charges the override.
   const real = buildLedger({ items: [{ ...item, id: "9", sourceAppId: "overshort", gridOnly: false }], verdicts: { 9: { verdict: "flip" } }, tillRows: rows, discrepancies: [], counterparts: { 9: { register: "92", date: "2026-09-02" } } });
   assert.deepEqual(Object.keys(real.cashiers[0].byType).sort(), ["flip_checkin", "override"]);
-  // Two different closers: nobody is charged, grid-only or not.
+  // Two different closers: each is charged their own wrong check-in, grid-only or not — and still nothing else.
   const two = rows.map((r) => (r.register === "92" && r.action === "TILLCHECKIN" ? { ...r, associateId: "C2", associate: "CSM TWO" } : r));
-  assert.equal(buildLedger({ items: [item], verdicts: {}, tillRows: two, discrepancies: [], counterparts: { [item.id]: { register: "92", date: "2026-09-02" } } }).cashiers.length, 0);
+  const led2 = buildLedger({ items: [item], verdicts: {}, tillRows: two, discrepancies: [], counterparts: { [item.id]: { register: "92", date: "2026-09-02" } } });
+  assert.deepEqual(led2.cashiers.map((c) => c.id).sort(), ["C1", "C2"]);
+  assert.ok(led2.cashiers.every((c) => Object.keys(c.byType).join() === "flip_checkin"));
 });
 
 test("near-miss pairs are candidates but not auto-filed: $331 short vs $350 over two registers apart", () => {
@@ -481,4 +490,18 @@ test("ledger: events have stable keys and aggregate back into cashiers after a d
   const inRange = aggregateEvents([e1, e2].filter((e) => e.date >= "2026-08-15"));
   assert.equal(inRange[0].count, 1);
   assert.equal(inRange[0].byType.quick_recheck.count, 1);
+});
+
+test("self-checkouts: a lane with recycler rows but no till check-ins is SCO, and a flip between two of them names nobody", () => {
+  const row = (register, registerDesc, action, date = "2026-09-02") => ({ date, time: "09:00:00 AM", timeInt: 90000, register, registerDesc, associateId: "A001", associate: "ASSOC 1", action, amountCents: 5000, cashLsCents: 0 });
+  const rows = [row("7", "SCO", "ADVANCECASH"), row("8", "", "VAULTFUNDADVANCECASH"), row("15", "FRONT END", "TILLCHECKIN"), row("15", "FRONT END", "TILLCHECKOUT")];
+  assert.equal(registerKind(rows, "7").sco, true);
+  assert.equal(registerKind(rows, "8").sco, true, "no description, rows but never a check-in → SCO");
+  assert.equal(registerKind(rows, "15").sco, false);
+  assert.equal(registerKind(rows, "99").sco, false, "unknown register is not assumed SCO");
+  const item = { id: "x", register: "7", date: "2026-09-02", amountCents: -7050, amountAbsCents: 7050, sourceAppId: "overshort" };
+  const tills = tillsFor(rows, item, [], undefined, { register: "8", date: "2026-09-02" });
+  assert.match(noCheckinText(tills, "7", "8", "2026-09-02"), /self-checkouts.*nobody to charge/);
+  assert.match(noCheckinText(tills, "7", "15", "2026-09-02"), /Reg 7 is a self-checkout/);
+  assert.match(noCheckinText(tills, "15", "17", "2026-08-01"), /starts 2026-09-02; 2026-08-01 is before it/);
 });

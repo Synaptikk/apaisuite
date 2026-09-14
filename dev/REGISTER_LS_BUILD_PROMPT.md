@@ -350,3 +350,17 @@ opens one background EJ tab for the run (`ej.js::openEjSession`), runs three
 items at a time, and the SW path is skipped for 15 min after an auth
 failure. Forced full run on store 1458: 56 items in 99 s (was ~6.5 min for
 49). A single "Analyze" on one item still uses the temp-tab path.
+
+## Fourteenth pass: who gets charged for a flip
+
+User: registers 1–8 and 27–34 (no till check-ins in the log) are
+self-checkouts; "should be a lot more cashiers listed for errors". A flip
+means each till landed on the other's register, so with two closers both
+check-ins were wrong: each is now charged their own side (`flipCheckins`
+`both`, `cashiers.js`), instead of nobody. One person doing both check-ins
+is still charged the pair. Self-checkout lanes are detected from the log
+(`registerKind`: desc "SCO", or rows but never a check-in) and the
+"who swapped them" line says so instead of guessing; a date older than the
+log says that. Grid-only flip pairs feed the ledger (agent pass). Store
+1458 ledger went from 3 cashiers / 3 events to 26 / 60. The till log keeps
+~60 days; completed items older than that cannot be attributed.

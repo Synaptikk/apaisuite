@@ -315,7 +315,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   const who = fc ? (fc.same ? (fc.associates[0].name || fc.associates[0].id) : fc.associates.map((a) => a.name || a.id).join(" and ")) : "";
   if (fc && (verdict === "flip") && !advFlip && who) {
     const detail = [...fc.mine, ...fc.theirs].map((c) => `reg ${c.registerNbr || c.register} ${c.time}`).join(", ");
-    dispositionText = dispositionText.replace(/\.$/, "") + (fc.same ? `. Tills checked in by ${who} (${detail}).` : `. Check-ins that day by ${who} (${detail}); which of the two swapped them is not determinable from the log.`);
+    dispositionText = dispositionText.replace(/\.$/, "") + (fc.same ? `. Tills checked in by ${who} (${detail}).` : `. Tills checked in by ${who} (${detail}); each till was checked in to the other's register.`);
   }
 
   // Structured "why" bullets, the disposition suggestion, and what to look at.
@@ -342,8 +342,8 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   for (const f of lflags) if (f.kind === "repeat" || f.kind === "no_checkin" || f.kind === "multi_till") why.push({ kind: f.kind, text: f.text + "." });
   if (tills) {
     const otherReg = isOver ? finding?.primaryRegister : m?.registerNbr;
-    if (!fc && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && otherReg) why.push({ kind: "flip_who_none", text: `No till check-ins are logged for reg ${reg} or reg ${otherReg} on ${date} — either the day is older than the pulled till log, or these are self-checkouts whose cash lives in the recycler — so the log cannot say who swapped them.` });
-    if (fc && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && who) why.push({ kind: fc.same ? "flip_who" : "flip_who_unsure", text: fc.same ? `${who} checked in both tills that day (${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} at ${c.time}`).join(", ")}) — the check-in error is theirs.` : `Check-ins that day by ${who}; the log cannot say which of them swapped the tills.` });
+    if ((!fc || !who) && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && otherReg) why.push({ kind: "flip_who_none", text: noCheckinText(tills, reg, otherReg, date) });
+    if (fc && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && who) why.push({ kind: fc.same ? "flip_who" : "flip_who_unsure", text: fc.same ? `${who} checked in both tills that day (${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} at ${c.time}`).join(", ")}) — the check-in error is theirs.` : `${who} each checked a till in that day (${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} at ${c.time}`).join(", ")}) and each till landed on the other's register — both check-ins are charged.` });
     if (advFlip) why.push({ kind: "advance_flip", text: `Cash advance ${fmtMoney(advFlip.advance.amountCents)} by ${advFlip.advance.associate || advFlip.advance.associateId} at ${advFlip.advance.time} — the same amount is over on reg ${advFlip.landedOn.registerNbr} (${advFlip.landedOn.date}). Taken to the wrong till.` });
     else if (advMissing && verdict !== "flip" && verdict !== "bounceback") why.push({ kind: "advance_missing", text: `Cash advance ${fmtMoney(advMissing.advance.amountCents)} to this register by ${advMissing.advance.associate || advMissing.advance.associateId} at ${advMissing.advance.time} never surfaced as an overage anywhere.` });
     for (const m of tills.moves || []) why.push({ kind: "move", text: `${m.associate || m.associateId} checked a till out of reg ${m.fromRegister} at ${m.outTime} and into reg ${m.toRegister} at ${m.inTime} on ${m.date}${m.override ? " (override)" : ""}.` });
@@ -423,4 +423,18 @@ export function cftMatches(rows, item, abs, cfg = DEFAULT_CFG) {
     out.push({ ...r, dayGap: gb ?? gi, gapCents: Math.abs(r.amountCents - abs) });
   }
   return out.sort((a, b) => a.gapCents - b.gapCents || Math.abs(a.dayGap) - Math.abs(b.dayGap));
+}
+
+// Why the till log cannot name who swapped a flip pair: the day predates the
+// log, the lanes are self-checkouts (no till exists to check in), or the log
+// simply has no check-in for that register that day.
+export function noCheckinText(tills, reg, otherReg, date) {
+  const k = tills?.kinds || {};
+  const a = k[String(reg)], b = k[String(otherReg)];
+  const min = tills?.logRange?.min;
+  if (min && date < min) return `The pulled till log starts ${min}; ${date} is before it, so the log cannot say who checked these tills in.`;
+  const scoA = !!a?.sco, scoB = !!b?.sco;
+  if (scoA && scoB) return `Reg ${reg} and reg ${otherReg} are self-checkouts: their cash lives in the recycler and no till is ever checked in or out, so this offset is a recycler count between two lanes, not a swapped till — nobody to charge.`;
+  if (scoA || scoB) { const s = scoA ? reg : otherReg, o = scoA ? otherReg : reg; return `Reg ${s} is a self-checkout (cash in the recycler, no till check-in). Reg ${o} has no matching check-in logged on ${date}, so the log cannot say who is responsible.`; }
+  return `No till check-ins are logged for reg ${reg} or reg ${otherReg} on ${date}, so the log cannot say who swapped them.`;
 }

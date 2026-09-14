@@ -125,15 +125,17 @@ export function tillFlags(events, item) {
 
 // For a flip pair (this register and its counterpart): who checked the two
 // tills in that day. One person doing both check-ins is the one who put the
-// tills on the wrong registers; two different people means we can name both
-// but not say which of them erred.
+// tills on the wrong registers; two different people each checked a till in
+// to the other's register, so both check-ins are wrong.
 export function flipCheckins(rows, item, counterpart) {
   if (!counterpart?.register || !counterpart?.date) return null;
   const pick = (register, date) => eventsFor(rows, register, date, 0).filter((e) => CHECKIN.has(e.action)).map((e) => ({ id: e.associateId, name: e.associate, register: String(register), date, time: e.time, amountCents: e.amountCents }));
   const mine = pick(item.register, item.date), theirs = pick(counterpart.register, counterpart.date);
   if (!mine.length && !theirs.length) return null;
   const ids = [...new Set([...mine, ...theirs].map((c) => c.id).filter(Boolean))];
-  return { mine, theirs, associates: ids.map((id) => ({ id, name: [...mine, ...theirs].find((c) => c.id === id)?.name || "" })), same: ids.length === 1 && mine.length > 0 && theirs.length > 0 };
+  // both: each side has a check-in. A flip means each till landed on the
+  // other's register, so with two closers both check-ins were wrong.
+  return { mine, theirs, associates: ids.map((id) => ({ id, name: [...mine, ...theirs].find((c) => c.id === id)?.name || "" })), same: ids.length === 1 && mine.length > 0 && theirs.length > 0, both: mine.length > 0 && theirs.length > 0 };
 }
 
 export function tillsFor(rows, item, discrepancies, cfg = TILL_CFG, counterpart = null) {
@@ -144,5 +146,20 @@ export function tillsFor(rows, item, discrepancies, cfg = TILL_CFG, counterpart 
   const people = [...new Set(day.map((e) => e.associateId).filter(Boolean))];
   const moves = wrongRegisterMoves(rows.filter((r) => Math.abs(daysApart(r.date, item.date)) <= 1), cfg)
     .filter((m) => m.fromRegister === String(item.register) || m.toRegister === String(item.register) || people.includes(m.associateId));
-  return { events, day, advances, moves, flags: tillFlags(events, item), people: people.map((id) => ({ id, name: day.find((e) => e.associateId === id)?.associate || "" })), flip: flipCheckins(rows, item, counterpart) };
+  const kinds = { [String(item.register)]: registerKind(rows, item.register) };
+  if (counterpart?.register) kinds[String(counterpart.register)] = registerKind(rows, counterpart.register);
+  const dates = rows.map((r) => r.date).filter(Boolean).sort();
+  return { events, day, advances, moves, flags: tillFlags(events, item), people: people.map((id) => ({ id, name: day.find((e) => e.associateId === id)?.associate || "" })), flip: flipCheckins(rows, item, counterpart), kinds, logRange: { min: dates[0] || null, max: dates.at(-1) || null } };
+}
+
+// What kind of lane a register is, from the till log itself. Self-checkouts
+// never check a till in or out — their cash lives in the recycler — so a
+// register with rows but no TILLCHECKIN/TILLCHECKOUT is treated as SCO even
+// when the report's description does not say so.
+export function registerKind(rows, register) {
+  const reg = String(register);
+  const mine = (rows || []).filter((r) => String(r.register) === reg);
+  const desc = mine.map((r) => r.registerDesc).filter(Boolean).sort((a, b) => mine.filter((r) => r.registerDesc === b).length - mine.filter((r) => r.registerDesc === a).length)[0] || "";
+  const hasCheckins = mine.some((r) => /^TILLCHECK(IN|OUT)/.test(r.action));
+  return { register: reg, desc, hasRows: mine.length > 0, hasCheckins, sco: desc.toUpperCase() === "SCO" || (mine.length > 0 && !hasCheckins) };
 }

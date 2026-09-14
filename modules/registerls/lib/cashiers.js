@@ -16,7 +16,8 @@
 //   advance_missing    advanced cash that never surfaced anywhere
 //   quick_recheck      checked a till out and back in minutes later with less cash
 //   override           used a till check-in override on a register-day with a discrepancy
-//   flip_checkin       checked in BOTH tills of a flipped pair (one person, so the swap is theirs)
+//   flip_checkin       checked a till of a flipped pair in to the wrong register (one person doing
+//                      both check-ins is charged the pair; two closers are each charged their own side)
 //
 // Every type names the one person the till log records doing the action.
 // Nothing is charged for merely having handled a till on a bad day — being
@@ -71,6 +72,13 @@ export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepa
     if (cp && (it.amountCents ?? 0) < 0) {   // charge the pair once, from its shortage side
       const fc = flipCheckins(tillRows, it, cp);
       if (fc?.same) add(fc.associates[0].id, fc.associates[0].name, { date: it.date, register: `${it.register}↔${cp.register}`, type: "flip_checkin", cents: it.amountCents, workItemId: it.id, detail: `checked in both tills: ${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} ${c.time}`).join(", ")}` });
+      else if (fc?.both) {
+        // Two closers: each checked a till in to the other's register. Each
+        // is charged their own check-in, at the amount their side carried.
+        const other = (side) => side.map((c) => `${c.name || c.id} (reg ${c.register} ${c.time})`).join(", ");
+        for (const c of fc.mine)   if (c.id) add(c.id, c.name, { date: it.date, register: `${it.register}↔${cp.register}`, type: "flip_checkin", cents: it.amountCents, workItemId: it.id, detail: `checked reg ${c.register} in at ${c.time}; the other till went to reg ${cp.register}, checked in by ${other(fc.theirs)}` });
+        for (const c of fc.theirs) if (c.id) add(c.id, c.name, { date: cp.date, register: `${cp.register}↔${it.register}`, type: "flip_checkin", cents: cp.amountCents ?? -it.amountCents, workItemId: it.id, detail: `checked reg ${c.register} in at ${c.time}; the other till went to reg ${it.register}, checked in by ${other(fc.mine)}` });
+      }
     }
     // A flip pair the Power BI grid shows but WorkView never raised (small
     // amounts, or not yet): the double check-in is still that person's error,
