@@ -85,7 +85,9 @@ export function advanceExplanations(rows, item, discrepancies, cfg = TILL_CFG) {
   const out = [];
   for (const a of eventsFor(rows, item.register, item.date, 0)) {
     if (!ADVANCE.has(a.action) || !near(a.amountCents, abs, cfg)) continue;
-    const over = (discrepancies || []).filter((d) => d.amountCents > 0 && String(d.registerNbr) !== String(item.register) && Math.abs(daysApart(d.date, item.date)) <= cfg.overageWindowDays && near(d.amountCents, a.amountCents, cfg))
+    // The overage the cash landed on can only be the same day or later —
+    // an overage the day before the advance was something else.
+    const over = (discrepancies || []).filter((d) => d.amountCents > 0 && String(d.registerNbr) !== String(item.register) && daysApart(d.date, item.date) >= 0 && daysApart(d.date, item.date) <= cfg.overageWindowDays && near(d.amountCents, a.amountCents, cfg))
       .sort((x, y) => Math.abs(daysApart(x.date, item.date)) - Math.abs(daysApart(y.date, item.date)));
     out.push({ kind: over.length ? "advance_flip" : "advance_missing", advance: a, landedOn: over[0] || null, candidates: over.length });
   }

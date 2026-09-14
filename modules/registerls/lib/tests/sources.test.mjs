@@ -505,3 +505,13 @@ test("self-checkouts: a lane with recycler rows but no till check-ins is SCO, an
   assert.match(noCheckinText(tills, "7", "15", "2026-09-02"), /Reg 7 is a self-checkout/);
   assert.match(noCheckinText(tills, "15", "17", "2026-08-01"), /starts 2026-09-02; 2026-08-01 is before it/);
 });
+
+test("advances: an overage the day BEFORE the advance is not where the cash landed", () => {
+  const ev = (register, date, time, action, dollars, associateId, associate) => ({ store: "1458", register, date, time, timeInt: Number(time.replace(/:/g, "")), registerDesc: "", associateId, associate, action, amountCents: Math.round(dollars * 100), cashLsCents: 0 });
+  const rows = [ev("10", "2026-09-02", "140904", "ADVANCECASH", 100, "A1", "ONE")];
+  const item = { id: "1", register: "10", date: "2026-09-02", amountCents: -10000, amountAbsCents: 10000, sourceAppId: "overshort" };
+  const before = advanceExplanations(rows, item, [{ registerNbr: "11", date: "2026-09-01", amountCents: 10000 }]);
+  assert.equal(before[0].kind, "advance_missing");
+  const after = advanceExplanations(rows, item, [{ registerNbr: "11", date: "2026-09-02", amountCents: 10000 }]);
+  assert.equal(after[0].kind, "advance_flip"); assert.equal(after[0].landedOn.registerNbr, "11");
+});
