@@ -48,7 +48,7 @@ const QUEUE_DAYS = 730;
 // queue reaches back 30, so 60 days covers every item with headroom; the
 // report's source keeps about that much anyway.
 const GRID_DAYS = 60;
-const TILL_DAYS = 60;
+const TILL_DAYS = 60;   // the Cash Recycler report retains ~60 days: asking for 90 still returned 07-16 → 09-13 on 2026-09-14
 const CFT_DAYS = 60;
 // Items analyzed in parallel by analyze_all (APPRISS searchlite + EJ calls are light; 3 keeps the servers polite).
 const ANALYZE_CONCURRENCY = 3;
@@ -415,12 +415,36 @@ export const handlers = {
     for (const i of items) verdicts[i.id] = preVerdict(i, match, tillRows);
     const flipWho = {};
     for (const i of items) { const { finding, counterpart } = lookups(match, i); if (finding && finding.matchType === "nearby-register-offset" && counterpart) flipWho[i.id] = counterpart; }
+    // Flip pairs the grid found whose shortage side is not a work item
+    // (below WorkView's threshold, or not raised yet): still a pair of
+    // check-ins somebody did, so the flip_checkin rule sees them too. The
+    // synthetic id is replaced by the real one once WorkView raises the item.
+    const itemKeys = new Set(items.map((i) => `${i.register}|${i.date}`));
+    for (const f of match.findings) {
+      if (f.matchType !== "nearby-register-offset" || !(f.primaryAmountCents < 0) || !f.matchedAgainst?.[0] || itemKeys.has(`${f.primaryRegister}|${f.primaryDate}`)) continue;
+      const id = `grid:${f.primaryRegister}|${f.primaryDate}`;
+      items.push({ id, store: store.storeNbr, register: String(f.primaryRegister), date: f.primaryDate, amountCents: f.primaryAmountCents, amountAbsCents: Math.abs(f.primaryAmountCents), type: "short", sourceAppId: "grid", gridOnly: true });
+      flipWho[id] = { register: String(f.matchedAgainst[0].registerNbr), date: f.matchedAgainst[0].date };
+    }
     const built = buildLedger({ items, verdicts, tillRows, discrepancies: match.discrepancies, counterparts: flipWho });
     const ledger = (await get(KEYS.ledger)) || { events: {} };
     let merged = 0;
+    const isGrid = (e) => String(e.workItemId || "").startsWith("grid:");
+    const bare = (e) => `${e.associateId}|${e.type}|${e.date}|${e.register}`;
+    const stored = new Map();   // bare identity → stored key, so a grid-derived event and its later work item never both count
+    for (const [k, e] of Object.entries(ledger.events)) if (e.storeNbr === store.storeNbr) stored.set(bare(e), k);
     for (const e of built.events) {
       const k = `${store.storeNbr}|${eventKey(e)}`;
-      if (!ledger.events[k]) { ledger.events[k] = { ...e, storeNbr: store.storeNbr, firstSeen: new Date().toISOString() }; merged++; }
+      if (ledger.events[k]) continue;
+      const prior = stored.get(bare(e));
+      if (prior) {
+        if (isGrid(e) || !isGrid(ledger.events[prior])) continue;   // already known under a real (or the same) id
+        const old = ledger.events[prior]; delete ledger.events[prior];   // grid-derived → promote to the work item
+        ledger.events[k] = { ...e, storeNbr: store.storeNbr, firstSeen: old.firstSeen };
+      } else {
+        ledger.events[k] = { ...e, storeNbr: store.storeNbr, firstSeen: new Date().toISOString() }; merged++;
+      }
+      stored.set(bare(e), k);
     }
     ledger.updatedAt = new Date().toISOString();
     await set(KEYS.ledger, ledger);

@@ -421,6 +421,27 @@ test("flip pairs: the person who checked in both swapped tills is named and char
   assert.equal(buildLedger({ items: [item], verdicts: { 7: { verdict: "flip" } }, tillRows: two, discrepancies: [], counterparts: { 7: { register: "29", date: "2026-07-15" } } }).cashiers.length, 0);
 });
 
+test("grid-only flip pairs charge the double check-in and nothing else on the register-day", () => {
+  const ev = (register, date, time, action, dollars, associateId, associate) => ({ store: "1458", register, date, time, timeInt: Number(time.replace(/:/g, "")), registerDesc: "", associateId, associate, action, amountCents: Math.round(dollars * 100), cashLsCents: 0 });
+  // Same CSM checks both tills in an hour apart; an override on the short register would be chargeable for a work item.
+  const rows = [
+    ev("93", "2026-09-02", "070000", "TILLCHECKOUT", 2578, "V1", "VAULT ONE"), ev("92", "2026-09-02", "070100", "TILLCHECKOUT", 1187, "V1", "VAULT ONE"),
+    ev("93", "2026-09-02", "221221", "TILLCHECKINOVERRIDE", 1450, "C1", "CSM ONE"), ev("92", "2026-09-02", "231231", "TILLCHECKIN", 2200, "C1", "CSM ONE"),
+  ];
+  const item = { id: "grid:93|2026-09-02", register: "93", date: "2026-09-02", amountCents: -5300, amountAbsCents: 5300, sourceAppId: "grid", gridOnly: true };
+  const led = buildLedger({ items: [item], verdicts: {}, tillRows: rows, discrepancies: [], counterparts: { [item.id]: { register: "92", date: "2026-09-02" } } });
+  assert.equal(led.cashiers.length, 1);
+  assert.equal(led.cashiers[0].id, "C1");
+  assert.deepEqual(Object.keys(led.cashiers[0].byType), ["flip_checkin"]);
+  assert.equal(led.events[0].workItemId, "grid:93|2026-09-02");
+  // The same register-day as a real work item also charges the override.
+  const real = buildLedger({ items: [{ ...item, id: "9", sourceAppId: "overshort", gridOnly: false }], verdicts: { 9: { verdict: "flip" } }, tillRows: rows, discrepancies: [], counterparts: { 9: { register: "92", date: "2026-09-02" } } });
+  assert.deepEqual(Object.keys(real.cashiers[0].byType).sort(), ["flip_checkin", "override"]);
+  // Two different closers: nobody is charged, grid-only or not.
+  const two = rows.map((r) => (r.register === "92" && r.action === "TILLCHECKIN" ? { ...r, associateId: "C2", associate: "CSM TWO" } : r));
+  assert.equal(buildLedger({ items: [item], verdicts: {}, tillRows: two, discrepancies: [], counterparts: { [item.id]: { register: "92", date: "2026-09-02" } } }).cashiers.length, 0);
+});
+
 test("near-miss pairs are candidates but not auto-filed: $331 short vs $350 over two registers apart", () => {
   const d = (registerNbr, date, amount) => ({ storeNbr: "1458", registerNbr, date, amountCents: amount, type: amount < 0 ? "short" : "over", amountAbsCents: Math.abs(amount), operators: [] });
   const findings = tieredMatching([d("17", "2026-07-13", -33100), d("15", "2026-07-13", 35000)]);

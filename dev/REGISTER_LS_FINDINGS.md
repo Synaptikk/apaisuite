@@ -356,3 +356,11 @@ ADVANCECASH, VAULTFUNDADVANCECASH, CASHPICKUP), and tying a CFT to a
 same-amount advance is noise (advances are round daily amounts). Open: how
 a late-keyed CFT surfaces as a shortage (recycler L/S? the register it was
 keyed on?) — rule to be rebuilt once that is known.
+
+**Till log retention (measured 2026-09-14):** requesting 90 days from the
+Cash Recycler report returned the same 2026-07-16 → 2026-09-13 range as 60,
+so the report itself keeps ~60 days. Flip pairs older than that cannot be
+attributed to a check-in. 2026-07-22 has no rows at all (report gap).
+Ledger: grid-only flip pairs (no WorkView item) now feed the cashier ledger
+for the double check-in rule only (`cashiers.js` gridOnly, `sync_ledger`
+synthesises `grid:<reg>|<date>` items, promoted to the real id later).

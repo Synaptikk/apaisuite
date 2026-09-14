@@ -21,6 +21,10 @@
 // Every type names the one person the till log records doing the action.
 // Nothing is charged for merely having handled a till on a bad day — being
 // on a short register is not an error. Amounts are integer cents.
+//
+// Items flagged `gridOnly` are flip pairs the grid found but WorkView never
+// raised (the service synthesises them from the findings): only the
+// flip_checkin rule runs for them.
 
 import { wrongRegisterMoves, tillsFor, flipCheckins } from "./till_events.js";
 
@@ -68,6 +72,10 @@ export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepa
       const fc = flipCheckins(tillRows, it, cp);
       if (fc?.same) add(fc.associates[0].id, fc.associates[0].name, { date: it.date, register: `${it.register}↔${cp.register}`, type: "flip_checkin", cents: it.amountCents, workItemId: it.id, detail: `checked in both tills: ${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} ${c.time}`).join(", ")}` });
     }
+    // A flip pair the Power BI grid shows but WorkView never raised (small
+    // amounts, or not yet): the double check-in is still that person's error,
+    // like a till move. Nothing else on the register-day is charged for it.
+    if (it.gridOnly) continue;
     for (const a of t.advances || []) {
       if (a.kind === "advance_missing" && explained) continue;
       if (a.kind === "advance_flip")    add(a.advance.associateId, a.advance.associate, { date: it.date, register: it.register, type: "advance_wrong_till", cents: a.advance.amountCents, workItemId: it.id, detail: `advanced ${money(a.advance.amountCents)} at ${a.advance.time}; landed on reg ${a.landedOn.registerNbr} (${a.landedOn.date})` });
