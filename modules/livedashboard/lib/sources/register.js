@@ -37,7 +37,11 @@ const MAX_REAUTH_ATTEMPTS = 2;
 
 // ── Public entry point ─────────────────────────────────────────────
 
-export async function fetchRegister(storeNbr) {
+// opts.days   — rebuild the report's per-day date filter to this many days
+//               (the capture only holds what the slicer held, e.g. 19).
+// opts.endIso  — last day of the window (default today).
+// Both optional; without them the behaviour is exactly as before.
+export async function fetchRegister(storeNbr, opts = {}) {
   const opened = await findOrOpenReportTab();
   if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI register report tab." };
   const { tab, didOpen } = opened;
@@ -54,14 +58,14 @@ export async function fetchRegister(storeNbr) {
   // These tabs are not registered with shared/tabSessions.js either, so the
   // idle reaper cannot see them — nothing else was going to clean them up.
   try {
-    return await runFetchRegister(tab, didOpen, storeNbr);
+    return await runFetchRegister(tab, didOpen, storeNbr, opts);
   } finally {
     // Only ours. A Power BI tab the user already had open stays open.
     if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
 
-async function runFetchRegister(tab, didOpen, storeNbr) {
+async function runFetchRegister(tab, didOpen, storeNbr, opts = {}) {
   await waitForTabLoad(tab.id, 25_000);
 
   // After an extension reload, an existing tab's document_start content
@@ -76,7 +80,7 @@ async function runFetchRegister(tab, didOpen, storeNbr) {
   // Run the capture → replay → decode pipeline. Wrap in an autonomous-
   // reauth loop: AUTH responses from a stale bearer trigger a tab reload
   // that re-runs Power BI's auth bootstrap silently.
-  let result = await runRegisterPipeline(tab.id, storeNbr, didOpen);
+  let result = await runRegisterPipeline(tab.id, storeNbr, didOpen, opts);
   let reauthAttempts = 0;
   while (result && !result.ok && result.errorClass === "AUTH" && reauthAttempts < MAX_REAUTH_ATTEMPTS) {
     reauthAttempts++;
@@ -93,7 +97,7 @@ async function runFetchRegister(tab, didOpen, storeNbr) {
       console.log(`[livedashboard register] reauth reload failed: ${reloaded.reason}`);
       break;
     }
-    result = await runRegisterPipeline(tab.id, storeNbr, false);
+    result = await runRegisterPipeline(tab.id, storeNbr, false, opts);
   }
 
   if (reauthAttempts > 0 && result && typeof result === "object") {
@@ -102,7 +106,7 @@ async function runFetchRegister(tab, didOpen, storeNbr) {
   return result;
 }
 
-async function runRegisterPipeline(tabId, storeNbr, didOpen) {
+async function runRegisterPipeline(tabId, storeNbr, didOpen, opts = {}) {
   // First wait for at least one capture to land.
   const grid     = await pollForCapture(tabId, CAPTURE_WAIT_MS, CAPTURE_POLL_MS, "findGrid");
   const operator = await pollForCapture(tabId, 2_000, 400, "findOperator");
@@ -122,7 +126,9 @@ async function runRegisterPipeline(tabId, storeNbr, didOpen) {
   // "EMPTY: Decoded zero cells" on every pull.
   let operatorResp = operator?.respBody ?? null;
   const capturedStore = extractStoreFilter(grid.reqBody);
-  const rewrite = (body) => swapDateWindow(swapStoreFilter(body, storeNbr));
+  // A wider date window needs a wider row window too: the operator query
+  // ships with Window.Count 500, which is about a week of shifts.
+  const rewrite = (body) => widenRowWindow(swapDateWindow(swapStoreFilter(body, storeNbr), opts.endIso || isoToday(), opts.days), opts.days ? 5000 : 0);
 
   const gridReplay = await replayInTab(tabId, grid.url, rewrite(grid.reqBody), grid.reqHeaders);
   if (!gridReplay.ok) {
@@ -342,8 +348,22 @@ function swapStoreFilter(body, newStoreNbr) {
 // and the captured ordering (the report emits newest-first, but don't assume).
 const DATE_LITERAL_RE = /datetime'\d{4}-\d{2}-\d{2}T00:00:00'/g;
 
-function swapDateWindow(body, endIso = isoToday()) {
+// With `days` given, the In-clause on `action_date` is REBUILT to hold that
+// many consecutive days ending at endIso (newest first), instead of just
+// shifting the captured literals. Both the grid and the operator query carry
+// the same clause, so the same rewrite applies to each. The source retains
+// roughly 60 days; asking for more just returns empty older days.
+const ACTION_DATE_IN_RE = /("Property":"action_date"\}\}\],"Values":\[)((?:\[\{"Literal":\{"Value":"datetime'[^"]*'"\}\}\],?)+)(\])/g;
+
+export function swapDateWindow(body, endIso = isoToday(), days) {
   if (typeof body !== "string") return body;
+  if (Number.isFinite(days) && days > 0 && ACTION_DATE_IN_RE.test(body)) {
+    ACTION_DATE_IN_RE.lastIndex = 0;
+    const end = new Date(endIso + "T00:00:00Z").getTime();
+    const list = Array.from({ length: Math.floor(days) }, (_, i) =>
+      `[{"Literal":{"Value":"datetime'${new Date(end - i * 86_400_000).toISOString().slice(0, 10)}T00:00:00'"}}]`).join(",");
+    return body.replace(ACTION_DATE_IN_RE, (_m, pre, _old, post) => `${pre}${list}${post}`);
+  }
   const lits = body.match(DATE_LITERAL_RE);
   if (!lits || lits.length < 2) return body;
   const iso = (s) => s.slice(9, 19);
@@ -356,6 +376,13 @@ function swapDateWindow(body, endIso = isoToday()) {
     const d = new Date(end - offset * 86_400_000);
     return `datetime'${d.toISOString().slice(0, 10)}T00:00:00'`;
   });
+}
+
+// Raise every DataReduction Primary Window.Count below `min` to `min`.
+// No-op when min is 0 (the default path leaves the captured body untouched).
+export function widenRowWindow(body, min) {
+  if (typeof body !== "string" || !min) return body;
+  return body.replace(/("Primary":\{"Window":\{"Count":)(\d+)(\})/g, (_m, pre, n, post) => `${pre}${Math.max(Number(n), min)}${post}`);
 }
 
 function isoToday() {

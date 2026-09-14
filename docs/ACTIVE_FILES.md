@@ -71,6 +71,7 @@ Every module folder has at minimum: `module.js`, `service.js`, `view.js`,
 | `scripts/templates/` | Templates rendered into QRCallBox during release. |
 | `dev/probe-*.mjs` | One-off endpoint probes (Hoops, Workvivo, directory). Read findings in `dev/*_FINDINGS.md`, not the scripts. |
 | `dev/edge-debug.mjs`, `dev/launch-edge-debug.{sh,ps1}` | Launch Edge with --remote-debugging-port for puppeteer probes. |
+| `dev/import-order-products.mjs` | Spark/OPD driver-theft helper: parses an `order_<n>.pdf` sheet and bulk-adds UPC/qty/price rows to the Auror event draft open in the debug Edge. Shares the DOM driver with `modules/aurorbuddy/lib/auror_products.js`. Skill: `.claude/skills/auror-order-import`. |
 
 ## Docs (this folder)
 

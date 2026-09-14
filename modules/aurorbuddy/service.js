@@ -24,6 +24,7 @@ import { searchPeople }  from "./lib/auror.js";
 import { apprissLookupAll, probeApprissApiAuth } from "./lib/appriss.js";
 import { findNearbyStores } from "./lib/stores.js";
 import { fillAurorEvent, fromTransaction as fromTransactionForEvent } from "./lib/auror_event.js";
+import { fillAurorProducts } from "./lib/auror_products.js";
 import { Timings } from "./lib/timings.js";
 import { suspectsFromRaws, suspectToWire } from "./lib/models.js";
 import { classifyAll } from "./lib/event_classifier.js";
@@ -806,6 +807,22 @@ export const handlers = {
   // "Mark Submitted" in the AurorBuddy module (FINAL_VALUE_CAPTURE_PLAN.md §2 Option A).
   // The handler ONLY writes confirmed values; if value is null/undefined,
   // we record "user skipped" with unknown confidence.
+  // Bulk-add products to an Auror event draft already open in a tab.
+  //   msg: { tabId?, items: [{upc, qty, price, desc?}], receiptNumber? }
+  // Without tabId the active app.us.auror.co/event/* tab is used.
+  async fill_event_products(msg = {}) {
+    let tabId = msg.tabId;
+    if (tabId == null) {
+      const tabs = await chrome.tabs.query({ url: "https://app.us.auror.co/event/*" });
+      const tab  = tabs.find(t => t.active) || tabs[0];
+      if (!tab) return { ok: false, error: "no open Auror event tab" };
+      tabId = tab.id;
+    }
+    const onLog  = (line) => broadcast("fill_progress", { line });
+    const result = await fillAurorProducts(tabId, msg.items, { onLog, receiptNumber: msg.receiptNumber });
+    return { ok: result.status === "filled", ...result };
+  },
+
   async mark_event_submitted(msg) {
     const { aurorEventId, workflowId, finalEventValue, skipped } = msg || {};
     if (!aurorEventId) return { ok: false, error: "aurorEventId required" };

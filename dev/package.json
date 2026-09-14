@@ -1,0 +1,10 @@
+{
+  "name": "apaisuite-dev",
+  "private": true,
+  "description": "Dev/probe scripts for the suite. Not shipped. Drives the debug Edge from dev/launch-edge-debug.sh.",
+  "type": "module",
+  "dependencies": {
+    "pdfjs-dist": "^6.3.289",
+    "puppeteer-core": "^23.11.1"
+  }
+}

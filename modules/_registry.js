@@ -15,6 +15,7 @@
 import closinglist       from "./closinglist/module.js";
 import stockingplan      from "./stockingplan/module.js";
 import aurorbuddy        from "./aurorbuddy/module.js";
+import registerls        from "./registerls/module.js";
 import sparkfraud        from "./sparkfraud/module.js";
 import sparkrisk         from "./sparkrisk/module.js";
 import sparkscango       from "./sparkscango/module.js";
@@ -43,6 +44,7 @@ export default [
   digitalrollup,     // Digital Market Rollup — live OPD fulfilment, same layout
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
   aurorbuddy,
+  registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,
   sparkrisk,         // Pre-checkout timing analysis

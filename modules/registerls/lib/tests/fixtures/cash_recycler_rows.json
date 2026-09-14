@@ -1,0 +1,279 @@
+{
+ "descriptorNames": [
+  "Cash_Recycler.Store_Infor",
+  "Cash_Recycler.Transaction_Date",
+  "Cash_Recycler.Transaction_Time",
+  "Sum(Cash_Recycler.Register)",
+  "Cash_Recycler.Register_Desc",
+  "Cash_Recycler.Associate_Name",
+  "Cash_Recycler.Action_Type",
+  "Sum(Cash_Recycler.Payment_Amt)",
+  "Sum(Cash_Recycler.Cash_Amt)"
+ ],
+ "rows": [
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "01:47:24 PM",
+   "Register": 13,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A001 ASSOC 1",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 319,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "02:00:50 PM",
+   "Register": 13,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A002 ASSOC 2",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 182,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "02:02:24 PM",
+   "Register": 62,
+   "Register_Desc": "UNKNOWN",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 8300,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "02:03:56 PM",
+   "Register": 62,
+   "Register_Desc": "UNKNOWN",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "VAULTFUNDADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 18,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "03:59:58 PM",
+   "Register": 62,
+   "Register_Desc": "UNKNOWN",
+   "Associate_Name": "A004 ASSOC 4",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 14496,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "04:16:28 PM",
+   "Register": 15,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A005 ASSOC 5",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 405,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "04:27:42 PM",
+   "Register": 15,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A006 ASSOC 6",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 182,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "05:00:24 PM",
+   "Register": 13,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A006 ASSOC 6",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 450,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "06:37:29 AM",
+   "Register": 13,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A001 ASSOC 1",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 182,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "08:07:39 AM",
+   "Register": 62,
+   "Register_Desc": "UNKNOWN",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 10230,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "09:16:32 AM",
+   "Register": 15,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A007 ASSOC 7",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 182,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "10:33:25 PM",
+   "Register": 15,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A008 ASSOC 8",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 1060,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1789084800000,
+   "Transaction_Time": "10:53:55 PM",
+   "Register": 13,
+   "Register_Desc": "FRONT END",
+   "Associate_Name": "A002 ASSOC 2",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 1615,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "07:06:30 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A009 ASSOC 9",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 800,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "08:00:27 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A005 ASSOC 5",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 1446,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "08:32:59 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A009 ASSOC 9",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 1462,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "08:34:30 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A009 ASSOC 9",
+   "Action_Type": "TILLCHECKIN",
+   "Sum(Cash_Recycler.Payment_Amt)": 1362,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "12:06:04 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A005 ASSOC 5",
+   "Action_Type": "TILLCHECKOUT",
+   "Sum(Cash_Recycler.Payment_Amt)": 1462,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787788800000,
+   "Transaction_Time": "12:36:54 PM",
+   "Register": 63,
+   "Register_Desc": "COSMETIC",
+   "Associate_Name": "A006 ASSOC 6",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 5300,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787616000000,
+   "Transaction_Time": "10:11:39 AM",
+   "Register": 6,
+   "Register_Desc": "SCO",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 66,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787616000000,
+   "Transaction_Time": "10:12:07 AM",
+   "Register": 6,
+   "Register_Desc": "SCO",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "VAULTFUNDADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 0.5,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787616000000,
+   "Transaction_Time": "10:12:08 AM",
+   "Register": 7,
+   "Register_Desc": "SCO",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 20,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787616000000,
+   "Transaction_Time": "10:12:23 AM",
+   "Register": 8,
+   "Register_Desc": "SCO",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "ADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 116,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  },
+  {
+   "Store_Infor": "1458 - STORE",
+   "Transaction_Date": 1787616000000,
+   "Transaction_Time": "10:12:46 AM",
+   "Register": 8,
+   "Register_Desc": "SCO",
+   "Associate_Name": "A003 ASSOC 3",
+   "Action_Type": "VAULTFUNDADVANCECASH",
+   "Sum(Cash_Recycler.Payment_Amt)": 10.5,
+   "Sum(Cash_Recycler.Cash_Amt)": 0
+  }
+ ]
+}

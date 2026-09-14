@@ -1,0 +1,558 @@
+{
+ "descriptor": {
+  "Select": [
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G0",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Store_Infor"
+      },
+      "Calc": "G0",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Store_Infor"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G1",
+    "Format": "MM/dd/yy",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Transaction_Date"
+      },
+      "Calc": "G1",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Transaction_Date"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G2",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Transaction_Time"
+      },
+      "Calc": "G2",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Transaction_Time"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G3",
+    "Format": "0",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Register"
+      },
+      "Calc": "G3",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Sum(Cash_Recycler.Register)"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G4",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Register_Desc"
+      },
+      "Calc": "G4",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Register_Desc"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G5",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Associate_Name"
+      },
+      "Calc": "G5",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Associate_Name"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G6",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "Cash_Recycler",
+       "Property": "Action_Type"
+      },
+      "Calc": "G6",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Cash_Recycler.Action_Type"
+   },
+   {
+    "Kind": 2,
+    "Value": "M0",
+    "Format": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
+    "Subtotal": [
+     "A0"
+    ],
+    "Name": "Sum(Cash_Recycler.Payment_Amt)"
+   },
+   {
+    "Kind": 2,
+    "Value": "M1",
+    "Format": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
+    "Subtotal": [
+     "A1"
+    ],
+    "Name": "Sum(Cash_Recycler.Cash_Amt)"
+   }
+  ],
+  "Expressions": {
+   "Primary": {
+    "Groupings": [
+     {
+      "Keys": [
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Store_Infor"
+        },
+        "Select": 0
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Transaction_Date"
+        },
+        "Select": 1
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Transaction_Time"
+        },
+        "Select": 2
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Register"
+        },
+        "Select": 3
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Register_Desc"
+        },
+        "Select": 4
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Associate_Name"
+        },
+        "Select": 5
+       },
+       {
+        "Source": {
+         "Entity": "Cash_Recycler",
+         "Property": "Action_Type"
+        },
+        "Select": 6
+       }
+      ],
+      "Member": "DM1",
+      "SubtotalMember": "DM0"
+     }
+    ]
+   }
+  },
+  "Version": 2
+ },
+ "dsr": {
+  "DS": [
+   {
+    "N": "DS0",
+    "PH": [
+     {
+      "DM0": [
+       {
+        "S": [
+         {
+          "N": "A0",
+          "T": 3
+         },
+         {
+          "N": "A1",
+          "T": 3
+         }
+        ],
+        "C": [
+         5314728.49,
+         0
+        ]
+       }
+      ]
+     },
+     {
+      "DM1": [
+       {
+        "S": [
+         {
+          "N": "G0",
+          "T": 1,
+          "DN": "D0"
+         },
+         {
+          "N": "G1",
+          "T": 7
+         },
+         {
+          "N": "G2",
+          "T": 1,
+          "DN": "D1"
+         },
+         {
+          "N": "G3",
+          "T": 4
+         },
+         {
+          "N": "G4",
+          "T": 1,
+          "DN": "D2"
+         },
+         {
+          "N": "G5",
+          "T": 1,
+          "DN": "D3"
+         },
+         {
+          "N": "G6",
+          "T": 1,
+          "DN": "D4"
+         },
+         {
+          "N": "M0",
+          "T": 3
+         },
+         {
+          "N": "M1",
+          "T": 3
+         }
+        ],
+        "C": [
+         0,
+         1789084800000,
+         0,
+         63,
+         0,
+         0,
+         0,
+         1462,
+         0
+        ]
+       },
+       {
+        "C": [
+         1,
+         13,
+         1,
+         1,
+         1,
+         319
+        ],
+        "R": 259
+       },
+       {
+        "C": [
+         2,
+         2,
+         0,
+         182
+        ],
+        "R": 283
+       },
+       {
+        "C": [
+         3,
+         74,
+         2,
+         3,
+         2,
+         6
+        ],
+        "R": 259
+       },
+       {
+        "C": [
+         4,
+         62,
+         3,
+         3,
+         8300
+        ],
+        "R": 291
+       },
+       {
+        "C": [
+         5,
+         2,
+         18
+        ],
+        "R": 315
+       }
+      ]
+     }
+    ],
+    "ValueDicts": {
+     "D0": [
+      "1458 - STORE"
+     ],
+     "D1": [
+      "01:05:13 PM",
+      "01:47:24 PM",
+      "02:00:50 PM",
+      "02:02:01 PM",
+      "02:02:24 PM",
+      "02:03:56 PM",
+      "02:36:01 PM",
+      "02:43:50 PM",
+      "03:03:39 PM",
+      "03:05:05 PM",
+      "03:05:36 PM",
+      "03:53:46 PM",
+      "03:54:50 PM",
+      "03:59:58 PM",
+      "04:01:14 PM",
+      "04:16:28 PM",
+      "04:27:42 PM",
+      "04:38:29 PM",
+      "04:46:29 PM",
+      "04:46:50 PM",
+      "04:58:34 PM",
+      "05:00:24 PM",
+      "05:05:23 PM",
+      "05:06:19 PM",
+      "06:13:22 PM",
+      "06:14:32 PM",
+      "06:37:29 AM",
+      "06:58:49 PM",
+      "07:00:20 PM",
+      "07:00:49 PM",
+      "07:05:41 PM",
+      "07:06:47 PM",
+      "07:08:07 PM",
+      "07:08:33 AM",
+      "07:09:27 AM",
+      "07:11:50 AM",
+      "07:12:18 AM",
+      "07:16:35 AM",
+      "07:17:12 AM",
+      "07:29:21 PM",
+      "07:30:57 PM",
+      "07:31:57 PM",
+      "07:55:12 AM",
+      "08:00:00 AM",
+      "08:00:44 PM",
+      "08:01:06 AM",
+      "08:04:11 PM",
+      "08:07:39 AM",
+      "08:10:34 AM",
+      "08:35:46 AM",
+      "08:36:58 AM",
+      "08:37:31 AM",
+      "08:38:06 AM",
+      "08:40:34 AM",
+      "08:41:14 AM",
+      "08:43:36 AM",
+      "08:45:06 AM",
+      "09:12:39 AM",
+      "09:13:59 AM",
+      "09:15:46 AM",
+      "09:16:32 AM",
+      "09:17:07 AM",
+      "09:35:42 PM",
+      "09:39:29 AM",
+      "09:39:52 AM",
+      "09:40:14 AM",
+      "09:40:16 AM",
+      "09:40:23 AM",
+      "09:40:26 AM",
+      "09:40:32 AM",
+      "09:40:53 AM",
+      "09:41:12 AM",
+      "09:41:44 AM",
+      "09:42:01 AM",
+      "09:43:32 AM",
+      "09:43:48 AM",
+      "09:43:57 AM",
+      "09:44:16 AM",
+      "09:44:17 AM",
+      "09:44:38 AM",
+      "09:51:15 PM",
+      "09:55:51 PM",
+      "09:59:34 PM",
+      "10:06:03 AM",
+      "10:07:30 AM",
+      "10:07:50 AM",
+      "10:07:51 AM",
+      "10:08:12 AM",
+      "10:08:14 AM",
+      "10:08:31 AM",
+      "10:08:33 AM",
+      "10:09:02 AM",
+      "10:13:04 PM",
+      "10:19:25 PM",
+      "10:25:43 AM",
+      "10:25:52 PM",
+      "10:26:06 AM",
+      "10:26:14 AM",
+      "10:26:33 AM",
+      "10:26:37 AM"
+     ],
+     "D2": [
+      "COSMETIC",
+      "FRONT END",
+      "GARDEN CENTER",
+      "UNKNOWN",
+      "VISION",
+      "PHARMACY",
+      "CUSTOMER SERVICE",
+      "LUBE EXPRESS",
+      "ELECTRONICS",
+      "SPORTING GOODS",
+      "JEWELRY",
+      "SCO"
+     ],
+     "D3": [
+      "A010 ASSOC 10",
+      "A001 ASSOC 1",
+      "A002 ASSOC 2",
+      "A003 ASSOC 3",
+      "A006 ASSOC 6",
+      "A011 ASSOC 11",
+      "A012 ASSOC 12",
+      "A013 ASSOC 13",
+      "A014 ASSOC 14",
+      "A015 ASSOC 15",
+      "A004 ASSOC 4",
+      "A016 ASSOC 16",
+      "A005 ASSOC 5",
+      "A017 ASSOC 17",
+      "A018 ASSOC 18",
+      "A019 ASSOC 19",
+      "A020 ASSOC 20",
+      "A021 ASSOC 21",
+      "A071 ASSOC 71",
+      "A022 ASSOC 22",
+      "A023 ASSOC 23",
+      "A024 ASSOC 24",
+      "A025 ASSOC 25",
+      "A026 ASSOC 26",
+      "A008 ASSOC 8",
+      "A027 ASSOC 27",
+      "A028 ASSOC 28",
+      "A029 ASSOC 29",
+      "A030 ASSOC 30",
+      "A031 ASSOC 31",
+      "A032 ASSOC 32",
+      "A007 ASSOC 7",
+      "A033 ASSOC 33",
+      "A034 ASSOC 34",
+      "A072 ASSOC 72",
+      "A035 ASSOC 35",
+      "A036 ASSOC 36",
+      "A037 ASSOC 37",
+      "A038 ASSOC 38",
+      "A039 ASSOC 39",
+      "A040 ASSOC 40",
+      "A041 ASSOC 41",
+      "A042 ASSOC 42",
+      "A043 ASSOC 43",
+      "A073 ASSOC 73",
+      "A044 ASSOC 44",
+      "A045 ASSOC 45",
+      "A046 ASSOC 46",
+      "A047 ASSOC 47",
+      "A074 ASSOC 74",
+      "A048 ASSOC 48",
+      "A049 ASSOC 49",
+      "A050 ASSOC 50",
+      "A051 ASSOC 51",
+      "A052 ASSOC 52",
+      "A053 ASSOC 53",
+      "A054 ASSOC 54",
+      "A055 ASSOC 55",
+      "A056 ASSOC 56",
+      "A057 ASSOC 57",
+      "A058 ASSOC 58",
+      "A059 ASSOC 59",
+      "A060 ASSOC 60",
+      "A061 ASSOC 61",
+      "A062 ASSOC 62",
+      "A063 ASSOC 63",
+      "A064 ASSOC 64",
+      "A065 ASSOC 65",
+      "A066 ASSOC 66",
+      "A067 ASSOC 67",
+      "A068 ASSOC 68",
+      "A009 ASSOC 9",
+      "A069 ASSOC 69",
+      "A070 ASSOC 70"
+     ],
+     "D4": [
+      "TILLCHECKOUT",
+      "TILLCHECKIN",
+      "VAULTFUNDADVANCECASH",
+      "ADVANCECASH",
+      "CASHPICKUP",
+      "TILLCHECKINOVERRIDE"
+     ]
+    },
+    "RT": [
+     [
+      false
+     ],
+     [
+      "datetime'2026-07-31T00:00:00'",
+      "1458L",
+      "'1458 - STORE'",
+      "'10:59:30 AM'",
+      "28L",
+      "'SCO'",
+      "'A090 ASSOC 90'",
+      "'VAULTFUNDADVANCECASH'"
+     ]
+    ]
+   }
+  ]
+ }
+}

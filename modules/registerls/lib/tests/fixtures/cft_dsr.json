@@ -1,0 +1,626 @@
+{
+ "descriptor": {
+  "Select": [
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G0",
+    "Format": "MM/dd/yyyy",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "BUSINESS_DATE"
+      },
+      "Calc": "G0",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.BUSINESS_DATE"
+   },
+   {
+    "Kind": 2,
+    "Value": "M0",
+    "Format": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
+    "Name": "Sum(CFT_Data.CFT_AMOUNT)"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G1",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "RECIPIENT_NAME"
+      },
+      "Calc": "G1",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.RECIPIENT_NAME"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G2",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "CFT_REASON"
+      },
+      "Calc": "G2",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.CFT_REASON"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G3",
+    "Format": "0",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "CFT_ID"
+      },
+      "Calc": "G3",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CountNonNull(CFT_Data.CFT_ID)"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G4",
+    "Format": "MM/dd/yyyy",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "INPUT_DATE"
+      },
+      "Calc": "G4",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.INPUT_DATE"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G5",
+    "Format": "T",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "INPUT_TIME"
+      },
+      "Calc": "G5",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.INPUT_TIME"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G6",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "ACCOUNT_DESC"
+      },
+      "Calc": "G6",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "CFT_Data.ACCOUNT_DESC"
+   },
+   {
+    "Kind": 2,
+    "Value": "M1",
+    "Format": "0",
+    "Name": "Sum(CFT_Data.ACCOUNT_NBR)"
+   },
+   {
+    "Kind": 1,
+    "Depth": 0,
+    "Value": "G7",
+    "Format": "0",
+    "GroupKeys": [
+     {
+      "Source": {
+       "Entity": "CFT_Data",
+       "Property": "STORE"
+      },
+      "Calc": "G7",
+      "IsSameAsSelect": true
+     }
+    ],
+    "Name": "Sum(CFT_Data.STORE)"
+   }
+  ],
+  "Expressions": {
+   "Primary": {
+    "Groupings": [
+     {
+      "Keys": [
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "BUSINESS_DATE"
+        },
+        "Select": 0
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "RECIPIENT_NAME"
+        },
+        "Select": 2
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "CFT_REASON"
+        },
+        "Select": 3
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "CFT_ID"
+        },
+        "Select": 4
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "INPUT_DATE"
+        },
+        "Select": 5
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "INPUT_TIME"
+        },
+        "Select": 6
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "ACCOUNT_DESC"
+        },
+        "Select": 7
+       },
+       {
+        "Source": {
+         "Entity": "CFT_Data",
+         "Property": "STORE"
+        },
+        "Select": 9
+       }
+      ],
+      "Member": "DM0"
+     }
+    ]
+   }
+  },
+  "Version": 2
+ },
+ "dsr": {
+  "DS": [
+   {
+    "N": "DS0",
+    "PH": [
+     {
+      "DM0": [
+       {
+        "S": [
+         {
+          "N": "G0",
+          "T": 7
+         },
+         {
+          "N": "G1",
+          "T": 1,
+          "DN": "D0"
+         },
+         {
+          "N": "G2",
+          "T": 1,
+          "DN": "D1"
+         },
+         {
+          "N": "G3",
+          "T": 4
+         },
+         {
+          "N": "G4",
+          "T": 7
+         },
+         {
+          "N": "G5",
+          "T": 7
+         },
+         {
+          "N": "G6",
+          "T": 1,
+          "DN": "D2"
+         },
+         {
+          "N": "G7",
+          "T": 4
+         },
+         {
+          "N": "M0",
+          "T": 3
+         },
+         {
+          "N": "M1",
+          "T": 4
+         }
+        ],
+        "C": [
+         1789257600000,
+         0,
+         333334,
+         1789344000000,
+         "1899-12-30T03:30:15",
+         0,
+         1458,
+         -245.4,
+         2046
+        ],
+        "\u00d8": 4
+       },
+       {
+        "C": [
+         1789171200000,
+         1,
+         0,
+         333335,
+         1789171200000,
+         "1899-12-30T11:51:43",
+         1,
+         213.17,
+         972
+        ],
+        "R": 128
+       },
+       {
+        "C": [
+         2,
+         1,
+         333334,
+         "1899-12-30T16:42:39",
+         2,
+         50,
+         1061
+        ],
+        "R": 145
+       },
+       {
+        "C": [
+         0,
+         333336,
+         1789257600000,
+         "1899-12-30T03:30:12",
+         0,
+         -214.93,
+         2046
+        ],
+        "R": 129,
+        "\u00d8": 4
+       },
+       {
+        "C": [
+         1789084800000,
+         3,
+         2,
+         333334,
+         1789084800000,
+         "1899-12-30T19:10:05",
+         3,
+         25.66,
+         922
+        ],
+        "R": 128
+       },
+       {
+        "C": [
+         0,
+         333335,
+         1789171200000,
+         "1899-12-30T03:30:11",
+         0,
+         -212.35,
+         2046
+        ],
+        "R": 129,
+        "\u00d8": 4
+       },
+       {
+        "C": [
+         1788998400000,
+         4,
+         3,
+         333334,
+         1788912000000,
+         "1899-12-30T14:40:49",
+         1,
+         60.31,
+         972
+        ],
+        "R": 128
+       },
+       {
+        "C": [
+         0,
+         333336,
+         1789084800000,
+         "1899-12-30T03:30:13",
+         0,
+         -181.5,
+         2046
+        ],
+        "R": 129,
+        "\u00d8": 4
+       },
+       {
+        "C": [
+         333337,
+         1788998400000,
+         "1899-12-30T03:30:18",
+         -215.11
+        ],
+        "R": 711
+       },
+       {
+        "C": [
+         4,
+         333335,
+         "1899-12-30T03:30:17",
+         4,
+         -1,
+         926
+        ],
+        "R": 147
+       }
+      ]
+     }
+    ],
+    "IC": false,
+    "ValueDicts": {
+     "D0": [
+      "System Generated",
+      "Recipient 1",
+      "Recipient 2",
+      "Recipient 3",
+      "Recipient 4",
+      "Recipient 5",
+      "Recipient 6",
+      "Recipient 7",
+      "Recipient 8",
+      "Recipient 9",
+      "Recipient 10",
+      "Recipient 11",
+      "Recipient 12",
+      "Recipient 13",
+      "Recipient 14",
+      "Recipient 15",
+      "Recipient 16",
+      "Recipient 17",
+      "Recipient 18",
+      "Recipient 19",
+      "Recipient 20",
+      "Recipient 21",
+      "Recipient 22",
+      "Recipient 23",
+      "Recipient 24",
+      "Recipient 25",
+      "Recipient 26",
+      "Recipient 27",
+      "Recipient 28",
+      "Recipient 29",
+      "Recipient 30",
+      "Recipient 31",
+      "Recipient 32",
+      "Recipient 33",
+      "Recipient 34",
+      "Recipient 35",
+      "Recipient 36",
+      "Recipient 37",
+      "Recipient 38",
+      "Recipient 39",
+      "Recipient 40",
+      "Recipient 41",
+      "Recipient 42",
+      "Recipient 43",
+      "Recipient 44",
+      "Recipient 45",
+      "Recipient 46",
+      "Recipient 47",
+      "Recipient 48",
+      "Recipient 49",
+      "Recipient 50",
+      "Recipient 51",
+      "Recipient 52",
+      "Recipient 53",
+      "Recipient 54",
+      "Recipient 55",
+      "Recipient 56",
+      "Recipient 57",
+      "Recipient 58",
+      "Recipient 59",
+      "Recipient 60",
+      "Recipient 61",
+      "Recipient 62",
+      "Recipient 63",
+      "Recipient 64",
+      "Recipient 65",
+      "Recipient 66",
+      "Recipient 67",
+      "Recipient 68",
+      "Recipient 69",
+      "Recipient 70",
+      "Recipient 71",
+      "Recipient 72",
+      "Recipient 73",
+      "Recipient 74",
+      "Recipient 75",
+      "Recipient 76",
+      "Recipient 77",
+      "Recipient 78",
+      "Recipient 79",
+      "Recipient 80",
+      "Recipient 81",
+      "Recipient 82",
+      "Recipient 83",
+      "Recipient 84",
+      "Recipient 85",
+      "Recipient 86",
+      "Recipient 87",
+      "Recipient 88",
+      "Recipient 89",
+      "Recipient 90",
+      "Recipient 91",
+      "Recipient 92",
+      "Recipient 93",
+      "Recipient 94",
+      "Recipient 95",
+      "Recipient 96",
+      "Recipient 97",
+      "Recipient 98",
+      "Recipient 99"
+     ],
+     "D1": [
+      "Reason 0",
+      "Reason 1",
+      "Reason 2",
+      "Reason 3",
+      "Recycler Long/Short",
+      "Reason 5",
+      "Reason 6",
+      "Reason 7",
+      "Reason 8",
+      "Reason 9",
+      "Reason 10",
+      "Reason 11",
+      "Reason 12",
+      "Reason 13",
+      "Reason 14",
+      "Reason 15",
+      "Reason 16",
+      "Reason 17",
+      "Reason 18",
+      "Reason 19",
+      "Reason 20",
+      "Reason 21",
+      "Reason 22",
+      "Reason 23",
+      "Reason 24",
+      "Reason 25",
+      "Reason 26",
+      "Reason 27",
+      "Reason 28",
+      "Reason 29",
+      "Reason 30",
+      "Reason 31",
+      "Reason 32",
+      "Reason 33",
+      "Reason 34",
+      "Reason 35",
+      "Reason 36",
+      "Reason 37",
+      "Reason 38",
+      "Reason 39",
+      "Reason 40",
+      "Reason 41",
+      "Reason 42",
+      "Reason 43",
+      "Reason 44",
+      "Reason 45",
+      "Reason 46",
+      "Reason 47",
+      "Reason 48",
+      "Reason 49",
+      "Reason 50",
+      "Reason 51",
+      "Reason 52",
+      "Reason 53",
+      "Reason 54",
+      "Reason 55",
+      "Reason 56",
+      "Reason 57",
+      "Reason 58",
+      "Reason 59",
+      "Reason 60",
+      "Reason 61",
+      "Reason 62",
+      "Reason 63",
+      "Reason 64",
+      "Reason 65",
+      "Reason 66",
+      "Reason 67",
+      "Reason 68",
+      "Reason 69",
+      "Reason 70",
+      "Reason 71",
+      "Reason 72",
+      "Reason 73",
+      "Reason 74",
+      "Reason 75",
+      "Reason 76",
+      "Reason 77",
+      "Reason 78",
+      "Reason 79",
+      "Reason 80",
+      "Reason 81",
+      "Reason 82",
+      "Reason 83",
+      "Reason 84",
+      "Reason 85",
+      "Reason 86",
+      "Reason 87",
+      "Reason 88",
+      "Reason 89",
+      "Reason 90",
+      "Reason 91",
+      "Reason 92",
+      "Reason 93",
+      "Reason 94",
+      "Reason 95",
+      "Reason 96",
+      "Reason 97",
+      "Reason 98",
+      "Reason 99"
+     ],
+     "D2": [
+      "System Generated",
+      "ASSOCIATE RELATIONS",
+      "CUSTOMER SATISFACTION",
+      "PURCHASED SUPPLIES (CLAIMS UP TO $500 MUST BE RECORDED TO\u00a0 ACCT 952)",
+      "RECYCLER SHORT & LONG",
+      "CMN (CHILDREN'S MIRACLE NETWORK) / UNITED WAY",
+      "ASSOCIATE TRAVEL EXPENSE",
+      "DONATIONS (LOCAL 501-C3 QUALIFIED)",
+      "MISCELLANEOUS (STORE MGR USE ONLY)",
+      "LICENSE REMOVAL (FEES & PENALTY)",
+      "TRUCK DAMAGES (CLAIMS THAT EXCEED $500 MUST BE ENTERED INTO INCIDENT REPORTING SYSTEM)",
+      "CASH SUSPENSE",
+      "LOCAL FUNDRAISING (DONATIONS)"
+     ]
+    }
+   }
+  ]
+ }
+}

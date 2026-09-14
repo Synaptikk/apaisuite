@@ -1,0 +1,85 @@
+<section class="rls">
+  <header class="rls-header">
+    <div class="rls-title">
+      <h1>Register L/S Triage</h1>
+      <p class="rls-sub">Every open WorkView item for the store. Register shortages are checked against the Power BI grid, the register's cash ledger and the electronic journal, then sorted into <strong>ready to close</strong> and <strong>needs a look</strong>.</p>
+    </div>
+    <div class="rls-toolbar">
+      <label class="rls-store">
+        <span>Store</span>
+        <input class="input rls-store-input" id="rls-store" inputmode="numeric" maxlength="5" placeholder="1458">
+        <span class="rls-store-src" data-store-src></span>
+      </label>
+      <button class="btn btn-secondary" data-action="refresh-queue" title="Pull the open WorkView items for the last 30 days">
+        <span class="btn-label">Refresh WorkView</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <button class="btn btn-secondary" data-action="refresh-grid" title="Re-capture the Power BI long/short grid for this store (opens the report in the background, about a minute)">
+        <span class="btn-label">Refresh Power BI</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <button class="btn btn-secondary" data-action="refresh-tills" title="Pull the Cash Recycler till log (check-ins, check-outs, advances, pickups, who did them) for the last 60 days">
+        <span class="btn-label">Refresh tills</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <button class="btn btn-secondary" data-action="refresh-cft" title="Pull the Cash Fund Transfers report (who took cash out of a register, why, and when it was keyed) for the last 60 days">
+        <span class="btn-label">Refresh CFTs</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <button class="btn btn-primary" data-action="analyze-all" title="Pull Cash Research and EJ for every register item that has not been analyzed in the last 6 hours">
+        <span class="btn-label">Analyze all</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+      <span class="rls-progress" data-progress></span>
+    </div>
+  </header>
+
+  <div class="rls-pills" data-pills>
+    <span class="pill pill-checking" data-pill="queue">WorkView: not pulled</span>
+    <span class="pill pill-checking" data-pill="grid">Power BI: not pulled</span>
+    <span class="pill pill-checking" data-pill="tills">Till log: not pulled</span>
+    <span class="pill pill-checking" data-pill="cft">Cash fund transfers: not pulled</span>
+  </div>
+
+  <div class="rls-summary" data-summary></div>
+
+  <details class="rls-cashiers card" data-cashiers hidden>
+    <summary><span class="card-title">Cashiers — errors by associate</span> <span class="rls-muted" data-cashiers-meta></span>
+      <span class="rls-cashiers-actions">
+        <label class="rls-range"><span class="rls-muted">From</span> <input class="input" type="date" data-range-from></label>
+        <label class="rls-range"><span class="rls-muted">To</span> <input class="input" type="date" data-range-to></label>
+        <button class="btn btn-sm btn-ghost" data-action="cashiers-range-clear" title="Show everything ever recorded">All time</button>
+        <button class="btn btn-sm btn-secondary" data-action="cashiers-export-all" title="Write one CSV per associate (for the selected range) to Downloads\APAISuite\cashiers\&lt;store&gt;\">Export all to files</button>
+      </span>
+    </summary>
+    <div class="rls-cashiers-body" data-cashiers-body></div>
+  </details>
+
+  <details class="rls-moves card" data-moves hidden>
+    <summary><span class="card-title">Till handling — tills moved between registers</span> <span class="rls-muted" data-moves-meta></span></summary>
+    <div class="rls-moves-body" data-moves-body></div>
+  </details>
+
+  <dialog class="modal rls-verify" data-verify>
+    <div class="modal-head"><strong>Complete this work item in APPRISS?</strong></div>
+    <div class="modal-body">
+      <div class="rls-verify-item" data-verify-item></div>
+      <div class="rls-verify-row"><span class="rls-muted">Reason</span> <strong data-verify-reason></strong></div>
+      <label class="rls-verify-row"><span class="rls-muted">More Information (what APPRISS will store)</span>
+        <textarea class="rls-sug-text" data-verify-text rows="5"></textarea></label>
+      <label class="rls-verify-check"><input type="checkbox" data-verify-ack> I have reviewed the evidence; file it and close the work item.</label>
+      <div class="rls-muted">Runs in a background tab that closes itself. Nothing is brought to the front.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" type="button" data-action="verify-cancel">Cancel</button>
+      <button class="btn btn-primary" type="button" data-action="verify-complete" disabled><span class="btn-label">Complete in APPRISS</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>
+    </div>
+  </dialog>
+
+  <div class="rls-body">
+    <aside class="rls-queue card" data-queue>
+      <div class="rls-queue-list" data-queue-list>
+        <div class="rls-empty">No WorkView data yet — click <strong>Refresh WorkView</strong>.</div>
+      </div>
+    </aside>
+
+    <main class="rls-detail card" data-detail>
+      <div class="rls-empty">Select a work item.</div>
+    </main>
+  </div>
+</section>

@@ -69,6 +69,7 @@
     "https://datastudio.google.com/*",
     "https://lookerstudio.google.com/*",
     "https://apscpi.wal-mart.com/*",
+    "https://ej.walmart.com/*",
     "https://app.powerbi.com/*",
     "https://*.pbidedicated.windows.net/*",
     "https://*.analysis.windows.net/*",
@@ -214,6 +215,28 @@
       ],
       "js": [
         "modules/livedashboard/content/powerbi_register_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "modules/registerls/content/powerbi_cash_recycler_capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://app.powerbi.com/*"
+      ],
+      "js": [
+        "modules/registerls/content/powerbi_cft_capture.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

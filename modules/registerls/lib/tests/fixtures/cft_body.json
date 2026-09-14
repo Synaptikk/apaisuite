@@ -1,0 +1,238 @@
+{
+ "version": "1.0.0",
+ "queries": [
+  {
+   "Query": {
+    "Commands": [
+     {
+      "SemanticQueryDataShapeCommand": {
+       "Query": {
+        "Version": 2,
+        "From": [
+         {
+          "Name": "c",
+          "Entity": "CFT_Data",
+          "Type": 0
+         }
+        ],
+        "Select": [
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "BUSINESS_DATE"
+          },
+          "Name": "CFT_Data.BUSINESS_DATE"
+         },
+         {
+          "Aggregation": {
+           "Expression": {
+            "Column": {
+             "Expression": {
+              "SourceRef": {
+               "Source": "c"
+              }
+             },
+             "Property": "CFT_AMOUNT"
+            }
+           },
+           "Function": 0
+          },
+          "Name": "Sum(CFT_Data.CFT_AMOUNT)"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "RECIPIENT_NAME"
+          },
+          "Name": "CFT_Data.RECIPIENT_NAME"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "CFT_REASON"
+          },
+          "Name": "CFT_Data.CFT_REASON"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "CFT_ID"
+          },
+          "Name": "CountNonNull(CFT_Data.CFT_ID)"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "INPUT_DATE"
+          },
+          "Name": "CFT_Data.INPUT_DATE"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "INPUT_TIME"
+          },
+          "Name": "CFT_Data.INPUT_TIME"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "ACCOUNT_DESC"
+          },
+          "Name": "CFT_Data.ACCOUNT_DESC",
+          "NativeReferenceName": "Account Desc"
+         },
+         {
+          "Aggregation": {
+           "Expression": {
+            "Column": {
+             "Expression": {
+              "SourceRef": {
+               "Source": "c"
+              }
+             },
+             "Property": "ACCOUNT_NBR"
+            }
+           },
+           "Function": 0
+          },
+          "Name": "Sum(CFT_Data.ACCOUNT_NBR)",
+          "NativeReferenceName": "Account #"
+         },
+         {
+          "Column": {
+           "Expression": {
+            "SourceRef": {
+             "Source": "c"
+            }
+           },
+           "Property": "STORE"
+          },
+          "Name": "Sum(CFT_Data.STORE)",
+          "NativeReferenceName": "Store"
+         }
+        ],
+        "Where": [
+         {
+          "Condition": {
+           "In": {
+            "Expressions": [
+             {
+              "Column": {
+               "Expression": {
+                "SourceRef": {
+                 "Source": "c"
+                }
+               },
+               "Property": "Reset Filter"
+              }
+             }
+            ],
+            "Values": [
+             [
+              {
+               "Literal": {
+                "Value": "'Exclude Resets'"
+               }
+              }
+             ]
+            ]
+           }
+          }
+         }
+        ],
+        "OrderBy": [
+         {
+          "Direction": 2,
+          "Expression": {
+           "Column": {
+            "Expression": {
+             "SourceRef": {
+              "Source": "c"
+             }
+            },
+            "Property": "BUSINESS_DATE"
+           }
+          }
+         }
+        ]
+       },
+       "Binding": {
+        "Primary": {
+         "Groupings": [
+          {
+           "Projections": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+           ]
+          }
+         ]
+        },
+        "DataReduction": {
+         "DataVolume": 3,
+         "Primary": {
+          "Window": {
+           "Count": 500
+          }
+         }
+        },
+        "Version": 1
+       },
+       "ExecutionMetricsKind": 1
+      }
+     }
+    ]
+   },
+   "QueryId": "",
+   "ApplicationContext": {
+    "DatasetId": "0cfe4ad8-1b11-4fc7-a816-3b841f5cfda2",
+    "Sources": [
+     {
+      "ReportId": "22a4bd64-8f29-4be0-bf3a-15834366dee9",
+      "VisualId": "addac25d1826b04808eb"
+     }
+    ]
+   }
+  }
+ ],
+ "cancelQueries": [],
+ "modelId": 1678606,
+ "userPreferredLocale": "en-US",
+ "allowLongRunningQueries": true
+}

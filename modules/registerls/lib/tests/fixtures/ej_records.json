@@ -1,0 +1,247 @@
+{
+  "records": [
+    {
+      "transTime": 21144,
+      "record": "            TERMINAL # 63             \n**** REFRESH TERM CONFIGURATION ****\n*  C-APPLICATI Jul 10 2026 13:13:47  *\n*  METROLOGICAL CHECKSUM = 27E5      *\n \n        08/16/26     02:11:44        \n",
+      "index": 0,
+      "termNum": 63
+    },
+    {
+      "transTime": 80850,
+      "record": "            TERMINAL # 63             \n**** REFRESH TERM CONFIGURATION ****\n*  C-APPLICATI Jul 10 2026 13:13:47  *\n*  METROLOGICAL CHECKSUM = 27E5      *\n \n        08/16/26     08:08:50        \n",
+      "index": 1,
+      "termNum": 63
+    },
+    {
+      "transTime": 111622,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:16:22          \n",
+      "index": 2,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 111753,
+      "opNum": 1234,
+      "record": "            TERMINAL # 63             \n***===*** END OF DAY SALES ***===***\nPREVIOUS TRANSACTION NOT INCLUDED\n***===** START OF DAY SALES **===***\nPREVIOUS TRANSACTION INCLUDED\n \n        08/16/26     11:17:53        \n",
+      "index": 3,
+      "isEOD": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 111810,
+      "opNum": 1234,
+      "record": "            TERMINAL # 63             \n*** TERMINAL IDLE ***\n \n        08/16/26     11:18:10        \n",
+      "index": 4,
+      "termNum": 63
+    },
+    {
+      "transTime": 112211,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:22:11          \n",
+      "index": 5,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 112423,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:24:23          \n",
+      "index": 6,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 112707,
+      "opNum": 1234,
+      "transNum": 9973,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09973\n                                      \nRIA RCV AMT  060538812238  S    150.00-H\u0000\u0000\u0000\nREF ID# RIFS\nITEM REF #00000000-0000-0000-0000-000000000000\n               SUBTOTAL    150.00-\n                     TOTAL    150.00-\n                 CASH TEND       0.00\n                CHANGE DUE     150.00\n\n\n\n\n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     11:27:07        \n",
+      "tcNum": "012345678901234567890",
+      "index": 7,
+      "termNum": 63
+    },
+    {
+      "transTime": 113155,
+      "opNum": 1234,
+      "transNum": 9974,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09974\n                                      \nVNLLADPAYAMT 060538804569  S    200.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\nVNLLADPAYFEE 060538804570  S      0.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\n                     TOTAL    200.00 \n                 CASH TEND     200.00\n                CHANGE DUE       0.00\nUPC 0605388045700\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     11:31:55        \n",
+      "tcNum": "012345678901234567890",
+      "index": 8,
+      "termNum": 63
+    },
+    {
+      "transTime": 113607,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:36:07          \n",
+      "index": 9,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 113615,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:36:15          \n",
+      "index": 10,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 114020,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:40:20          \n",
+      "index": 11,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 114055,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   11:40:55          \n",
+      "index": 12,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 114450,
+      "opNum": 1234,
+      "transNum": 9975,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09975\n                                      \nWU MONEY ORD 068113144910  S    765.00 H\u0000\u0000\u0000\nREF ID# WUMO\nUS1458012345678901\n**************************************\nITEM REF #00000000-0000-0000-0000-000000000000\n     SERIAL # 012345678901\nWU MO FEE    068113144911  S      1.00 H\u0000\u0000\u0000\nREF ID# WUMO\nUS1458012345678901\n**************************************\nITEM REF #00000000-0000-0000-0000-000000000000\n     SERIAL # 012345678901\nPRODUCT SERIAL #    012345678901\nPRODUCT SERIAL #    012345678901\n                     TOTAL    766.00 \n                 CASH TEND     710.00\n                 CASH TEND      60.00\n                CHANGE DUE       4.00\nUPC 0681131449110\n\n\n\n\n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     11:44:50        \n",
+      "tcNum": "012345678901234567890",
+      "index": 13,
+      "termNum": 63
+    },
+    {
+      "transTime": 114603,
+      "opNum": 1234,
+      "transNum": 9976,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09976\n                                      \nAPPLE GC 50  019594936596  S     50.00 H\u0000\u0000\u0000\nACCOUNT  ***************0000\nAPPR. CODE = 0123456789\nAPPLE GC 50  007874222873       46.35\nPHONE CARD ACTIVATED\n0123456789012345678\n0123456789012345678\n                     TOTAL     50.00 \n                 CASH TEND      50.00\n                CHANGE DUE       0.00\n               SUBTOTAL     50.00\nPHONE CARD ACTIVATED#\nUPC 0195949365960\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789      \n        08/16/26     11:46:03        \n",
+      "tcNum": "01234567890123456789",
+      "index": 14,
+      "termNum": 63
+    },
+    {
+      "transTime": 115611,
+      "opNum": 1234,
+      "transNum": 9977,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09977\n                                      \nVNLLADPAYAMT 060538804569  S     30.00 H\u0000\u0000\u0000\n**  VOIDED ENTRY  **\nVNLLADPAYAMT 060538804569  S    30.00 -H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\nVNLLADPAYFEE 060538804570  S      0.00 H\u0000\u0000\u0000\n**  VOIDED ENTRY  **\nVNLLADPAYFEE 060538804570  S     0.00 -H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\n                     TOTAL      0.00 \n                 CASH TEND      30.00\n                 CASH TEND       0.00\n                CHANGE DUE      30.00\nUPC 0605388045700\nUPC 0605388045700\n\n\n\n\n    TC# 0123 4567 8901 2345 6789      \n        08/16/26     11:56:11        \n",
+      "tcNum": "01234567890123456789",
+      "index": 15,
+      "termNum": 63
+    },
+    {
+      "transTime": 115727,
+      "opNum": 1234,
+      "transNum": 9978,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09978\n                                      \nVNLLADPAYAMT 060538804569  S     30.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\nVNLLADPAYFEE 060538804570  S      0.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\n                     TOTAL     30.00 \n                 CASH TEND      30.00\n                CHANGE DUE       0.00\nUPC 0605388045700\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789      \n        08/16/26     11:57:27        \n",
+      "tcNum": "01234567890123456789",
+      "index": 16,
+      "termNum": 63
+    },
+    {
+      "transTime": 120037,
+      "opNum": 1234,
+      "transNum": 9979,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09979\n                                      \nONE SECURED  019674214679  K      0.00 H\u0000\u0000\u0000\nDEBIT LOAD   060538802945  K    265.00 H\u0000\u0000\u0000\nTOKEN: 00000000000000000000000000000000000000000000\nPHONE CARD ACTIVATED    \n                     TOTAL    265.00 \n                 CASH TEND     265.00\n                CHANGE DUE       0.00\nEFT DEBIT       PAY FROM PRIMARY\n0.53  BEGINNING BALANCE\n265.00  DEBIT LOAD\n265.53  END BALANCE\nACCOUNT #        **** **** **** 0000 S\u0000\n012345******6789\nEXPIRATION DATE 3106\nREF # 012345678901\nNETWORK ID. 0057 APPR CODE 012345\nTERMINAL # 50447785\n08/16/26    12:00:32\nUPC 0196742146790\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     12:00:37        \n",
+      "tcNum": "012345678901234567890",
+      "index": 17,
+      "termNum": 63
+    },
+    {
+      "transTime": 120530,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:05:30          \n",
+      "index": 18,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 121553,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:15:53          \n",
+      "index": 19,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 122044,
+      "opNum": 1234,
+      "transNum": 9980,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09980\n                                      \nVNLLADPAYAMT 060538804569  S    999.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\nVNLLADPAYFEE 060538804570  S      0.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\n                     TOTAL    999.00 \n                 CASH TEND     999.00\n                CHANGE DUE       0.00\nUPC 0605388045700\n\n\n\n\n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     12:20:44        \n",
+      "tcNum": "012345678901234567890",
+      "index": 20,
+      "termNum": 63
+    },
+    {
+      "transTime": 122527,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:25:27          \n",
+      "index": 21,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 123124,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:31:24          \n",
+      "index": 22,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 123504,
+      "opNum": 1234,
+      "transNum": 9981,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09981\n                                      \nVNLLADPAYAMT 060538804569  S    200.00 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\nVNLLADPAYFEE 060538804570  S      3.74 H\u0000\u0000\u0000\nREF ID# DISB\nITEM REF #00000000-0000-0000-0000-000000000000\n                     TOTAL    203.74 \n                 CASH TEND     250.00\n                CHANGE DUE      46.26\nUPC 0605388045700\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789 0    \n        08/16/26     12:35:04        \n",
+      "tcNum": "012345678901234567890",
+      "index": 23,
+      "termNum": 63
+    },
+    {
+      "transTime": 123929,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    AUTOMATIC SIGNOFF     ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:39:29          \n",
+      "index": 24,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 123936,
+      "opNum": 1234,
+      "record": "             TERMINAL # 63            \n**************************************\n******    SIGN ON CLOCKED IN    ******\n****** 1234    JANE DOE    ******\n**************************************\n         08/16/26   12:39:36          \n",
+      "index": 25,
+      "is16": true,
+      "termNum": 63
+    },
+    {
+      "transTime": 123945,
+      "opNum": 1234,
+      "record": "            TERMINAL # 63             \n*** TERMINAL IDLE ***\n \n        08/16/26     12:39:45        \n",
+      "index": 26,
+      "termNum": 63
+    },
+    {
+      "transTime": 124506,
+      "opNum": 1234,
+      "record": "            TERMINAL # 63             \n*** TERMINAL ACTIVE ***\n \n        08/16/26     12:45:06        \n",
+      "index": 27,
+      "termNum": 63
+    },
+    {
+      "transTime": 125120,
+      "opNum": 1234,
+      "transNum": 9982,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09982\n                                      \nCFPRENTBILPT 019434605886  S    216.00 H\u0000\u0000\u0000\nREF ID# MULT\nITEM REF #00000000-0000-0000-0000-000000000000\nCFPRENBILFEE 019434605896  S      4.00 H\u0000\u0000\u0000\nREF ID# MULT\nITEM REF #00000000-0000-0000-0000-000000000000\nST# 01458 OP# 001234 TE# 63 TR# 09982\n               SUBTOTAL    220.00\n# VOIDS=  0 ** AMT VOIDS= 0.00\nCSM 01234567 JOHN ROE           2\n===== CSM ABORT TRANSACTION ====\n===== CSM APPROVED ABORT =====\n******* TRANSACTION CANCELED *******\n        08/16/26     12:51:20        \n",
+      "index": 28,
+      "termNum": 63
+    },
+    {
+      "transTime": 125613,
+      "opNum": 1234,
+      "transNum": 9983,
+      "record": "ST# 1458 OP# 00001234 TE# 63 TR# 09983\n                                      \nWMMC RELOAD  083032400641  K      3.00 H\u0000\u0000\u0000\nAMOUNT       060538819035  K     50.00 H\u0000\u0000\u0000\nTOKEN: 00000000000000000000000000000000000000000000\nPRODUCT SERIAL #    \n                     TOTAL     53.00 \n                 CASH TEND      53.00\n                CHANGE DUE       0.00\nEFT DEBIT       PAY FROM PRIMARY\n1.82  BEGINNING BALANCE\n50.00  DEBIT LOAD\n51.82  END BALANCE\nACCOUNT #        **** **** **** 0000 S\u0000\n012345******6789\nEXPIRATION DATE 3003\nREF # 012345678901\nNETWORK ID. 0049 APPR CODE 012345\nTERMINAL # 50447785\n08/16/26    12:56:08\nUPC 0830324006410\n\n\n\n\n         ***SURVEY OFFERED***         \n    TC# 0123 4567 8901 2345 6789      \n        08/16/26     12:56:13        \n",
+      "tcNum": "01234567890123456789",
+      "index": 29,
+      "termNum": 63
+    }
+  ]
+}

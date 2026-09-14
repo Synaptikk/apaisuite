@@ -39,13 +39,33 @@ spec.
 - **Accident Evidence (C):** probe inconclusive. See
   [`../dev/ACCIDENT_EVIDENCE_FINDINGS.md`](../dev/ACCIDENT_EVIDENCE_FINDINGS.md).
   Needs probe v2 with iframe detection + longer wait window.
-- **Register Long/Short (E):** no probe yet. V1 path (XLSX import) can
-  start without one; V1.5 (capture-and-replay) needs the register report
-  open + query signature identification.
+- **Register Long/Short (E):** DONE — `lib/sources/register.js` captures
+  `qryLongShortSignOn` from the report, replays per store, decodes the grid
+  + operator shifts and runs the matching engine. Also consumed by the
+  `registerls` module since 2026-09-12.
 
 **Next concrete step:** wire compliance via capture-and-replay (cheapest
 of the three since the probe already proved the endpoint). Then accident
-probe v2. Then register V1 XLSX import.
+probe v2.
+
+### 2b. Register L/S Triage (`registerls`) — follow-ups
+
+**Why:** Shipped 2026-09-12 as recommend-only (see `dev/REGISTER_LS_BUILD_PROMPT.md`).
+First live run on store 1458 joined all four sources and produced verdicts.
+
+**Open:**
+- **Complete without the form.** "Fill in APPRISS" now drives the real form
+  (Start Work → Disposition → reason → More Information) and stops at
+  Complete; the Complete request itself is still unrecorded. Record one
+  submission with the request logger, then `lib/workview.js::dispositionWorkItem`
+  can post directly and a batch "close all flips" becomes possible.
+- ~~Transaction video + CFTs~~ — done 2026-09-14: Open Drawer search gives the
+  APPRISS transaction id → ▶ Video / Receipt on every candidate; Cash Fund
+  Transfers report pulled and matched by amount + date (no register column).
+- ~~Load everything on open~~ — done 2026-09-12: `view.js::bootstrap()` pulls
+  WorkView / Power BI / till log when missing or stale, then analyzes.
+- ~~Power BI grid window~~ — done 2026-09-12: `fetchRegister(store, { days })`
+  rebuilds the per-day `action_date` filter; `registerls` pulls 60 days.
 
 ### 3. Hoops Sell-Through → ClaimsDisposition
 
