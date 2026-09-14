@@ -24,6 +24,7 @@ export function reasonsFor(sourceAppId) {
 // The reason the module files for each nothing-found verdict.
 export function safeReasonFor(sourceAppId, verdict, { advance = false } = {}) {
   const src = String(sourceAppId || "").toLowerCase();
+  if (verdict === "pantry_cft") return src === "overshort" ? "Process Error - CFT" : "Process Errors";
   if (src === "overshort") {
     if (advance) return "Process Error - Cash Advances";
     if (verdict === "bounceback") return "Process Error - Content Out of Balance";

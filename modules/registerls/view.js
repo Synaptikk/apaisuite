@@ -7,7 +7,7 @@
 // items we can't safely classify, the details most likely to matter.
 // Nothing here talks to a source directly; every pull is a SW handler.
 
-const NOISE = new Set(["flip", "bounceback"]);
+const NOISE = new Set(["flip", "bounceback", "pantry_cft"]);   // cause found from the sources alone → ready to close
 import { reasonsFor } from "./lib/reasons.js";
 const SEV_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 
@@ -88,7 +88,7 @@ export async function mount(host, container) {
     const v = a?.verdict || i.pre.verdict;
     const sev = a?.severity || i.pre.severity || "none";
     if (v === "pending") return { bucket: "pending", verdict: v, severity: sev, label: "Power BI not pulled", why: "", analyzed: !!a };
-    if (NOISE.has(v)) return { bucket: "ready", verdict: v, severity: sev, label: v === "flip" ? "Till flip" : "Bounceback", why: preWhy(i), analyzed: !!a };
+    if (NOISE.has(v)) return { bucket: "ready", verdict: v, severity: sev, label: v === "flip" ? "Till flip" : v === "pantry_cft" ? "Pantry run, no CFT" : "Bounceback", why: a?.whyShort || preWhy(i), analyzed: !!a };
     return { bucket: "review", verdict: v, severity: sev, label: v === "unmatched" ? "Unmatched shortage" : v === "unmatched_over" ? "Unmatched overage" : v === "suspect_flip" ? "Weak offset" : "No data", why: a?.whyShort || preWhy(i), video: !!a?.hasVideo, analyzed: !!a };
   }
 
@@ -245,7 +245,7 @@ export async function mount(host, container) {
     const tone = c.bucket === "ready" ? "ok" : c.bucket === "review" ? (c.severity === "high" ? "high" : "warn") : "muted";
 
     const think = c.bucket === "ready"
-      ? `Nothing found — ${c.verdict === "flip" ? "the tills were checked in as each other" : "the drawer count was corrected on a following day"}.`
+      ? (c.verdict === "pantry_cft" ? "Cause found — the associate pantry run was cashed out and the CFT was never keyed. Process error, no loss." : `Nothing found — ${c.verdict === "flip" ? "the tills were checked in as each other" : "the drawer count was corrected on a following day"}.`)
       : c.bucket === "review"
         ? (c.verdict === "no_grid" ? "Can't classify: no long/short data for that day."
           : c.verdict === "unmatched_over" ? "Unmatched overage — no shortage nearby explains it."

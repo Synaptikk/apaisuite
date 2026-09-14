@@ -281,6 +281,18 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     dispositionText = "";
   }
 
+  // A pantry run cashed out without a CFT is the cause, found: the register
+  // is short the ticket. Filed as the CFT process error (still verified by
+  // the analyst in the dialog before anything is completed).
+  const pantryMiss = !isOver && ["unmatched", "no_grid", "suspect_flip"].includes(verdict)
+    ? cftTx.find((x) => !x.cft && x.storeUse?.kind === "pantry" && withinTolerance(x.tx.cashTendCents, abs, cfg)) || null : null;
+  if (pantryMiss) {
+    const t = pantryMiss.tx, su = pantryMiss.storeUse;
+    verdict = "pantry_cft"; verdictLabel = "Pantry run without a CFT — process error"; severity = "low";
+    reason = `TR# ${t.transNum} at ${t.time} took ${fmtMoney(t.cashTendCents)} cash for the associate pantry (${su.pantryLines} pantry lines) and no CFT was keyed for it, so reg ${reg} is short the ticket.`;
+    dispositionText = `Process error — CFT not completed. Register ${reg} ${amtText} on ${date}: TR# ${t.transNum} at ${t.time} for ${fmtMoney(t.cashTendCents)} cash was the associate pantry run (${su.pantryLines} pantry lines: ${su.repeats.slice(0, 4).join(", ")}), cashed out with no CFT keyed to the register. Shortage equals the ticket; no loss. CFT to be keyed.`;
+  }
+
   if (!isOver && advMissing && verdict !== "flip" && verdict !== "bounceback") {
     const a = advMissing.advance;
     severity = "high";
@@ -338,7 +350,8 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     why.push({ kind: "nogrid", text: `No long/short data to match this register-day against.` });
   }
   if (ej && !isOver) {
-    if (matches.length === 1) why.push({ kind: "video", text: `Exactly one transaction recorded cash near the amount: TR# ${matches[0].transNum} at ${matches[0].time} (${matches[0].why.join(", ")})${matches[0].opNum ? `, operator ${matches[0].opNum}${matches[0].opName ? ` ${matches[0].opName}` : ""}` : ""}. Video must establish actual cash movement before this can explain the shortage.` });
+    if (verdict === "pantry_cft") { /* the cft_missing bullet below carries the cause */ }
+    else if (matches.length === 1) why.push({ kind: "video", text: `Exactly one transaction recorded cash near the amount: TR# ${matches[0].transNum} at ${matches[0].time} (${matches[0].why.join(", ")})${matches[0].opNum ? `, operator ${matches[0].opNum}${matches[0].opName ? ` ${matches[0].opName}` : ""}` : ""}. Video must establish actual cash movement before this can explain the shortage.` });
     else if (matches.length === 0) why.push({ kind: "nocash", text: `No transaction recorded a cash tender within ${fmtMoney(tolerance(abs || 0, cfg))} of the amount, partial cash loss, excess change or several related transactions remain possible.` });
     else why.push({ kind: "manycash", text: `${matches.length} transactions recorded cash near the amount — none stands out on its own.` });
     if (ops.length) why.push({ kind: "ops", text: `${ops.length === 1 ? "One operator" : `${ops.length} operators`} on the register that day: ${ops.map((o) => `${o.opNum}${o.name ? ` ${o.name}` : ""}`).join(", ")}.` });
@@ -358,6 +371,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     const who = x.tx.opNum ? `, operator ${x.tx.opNum}${x.tx.opName ? ` ${x.tx.opName}` : ""}` : "";
     const basket = x.storeUse?.kind === "pantry" ? ` The basket is the associate pantry (${x.storeUse.pantryLines} of ${x.storeUse.lines} lines are pantry items: ${x.storeUse.repeats.join(", ")}).` : x.storeUse ? ` The basket looks like a store purchase (${x.storeUse.repeats.join(", ")}${x.storeUse.repeats.length ? "; " : ""}${x.storeUse.lines} lines).` : "";
     if (x.cft) why.push({ kind: "cft_keyed", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who} and a CFT for ${fmtMoney(x.cft.amountCents)} was keyed ${x.cft.inputDate || "?"}${x.cft.inputTime ? ` ${x.cft.inputTime}` : ""} (${[x.cft.accountDesc, x.cft.recipient].filter(Boolean).join(" → ")}).${basket} If that purchase was paid from this drawer instead of with the recycler cash the CFT dispensed, the drawer is short the ticket — a CFT process error, not a loss. Confirm on the receipt and video.` });
+    else if (verdict === "pantry_cft" && x === pantryMiss) why.splice(1, 0, { kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week. Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed. Cause found: CFT process error.` });
     else why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week.${x.storeUse?.kind === "pantry" ? " Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed." : " A store purchase paid out of the drawer without a CFT leaves the register short exactly the ticket — if the video shows an associate paying from the till, the cause is a CFT that was never completed."}` });
   }
   if (!isOver) for (const r of cashOut.slice(0, 3)) why.push({ kind: "cashout", text: `Cash paid out ${fmtMoney(r.changeCents)} at ${r.time} on TR# ${r.transNum} (cashier ${r.cashier || "?"}) with nothing tendered — a refund or payout of the shortage amount. Check the receipt and watch the video: was there a customer, and did the cash leave the drawer?` });
@@ -370,7 +384,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   // Counterfeit Bills, Internal Theft, Multiple Reasons, Not Identified,
   // Phone Scam, Process Errors, Quick Change, Robbery.
   let suggestion;
-  if (verdict === "flip" || verdict === "bounceback") {
+  if (verdict === "flip" || verdict === "bounceback" || verdict === "pantry_cft") {
     const reasonLabel = safeReasonFor(item.sourceAppId, verdict, { advance: !!advFlip });
     suggestion = { reasonLabel, text: dispositionText, safe: true, action: `Fill in APPRISS as ${reasonLabel}` };
   } else {

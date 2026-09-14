@@ -117,8 +117,17 @@ test("cft: a cash ticket that looks like a store purchase with no CFT keyed is f
   const none = buildEvidence({ item, ej, cft: [] });
   const miss = none.why.find((w) => w.kind === "cft_missing");
   assert.ok(miss && /No CFT for that amount was keyed/.test(miss.text));
-  assert.match(none.suggestion.text, /CFT process error/);
-  assert.equal(none.suggestion.safe, false);
+  // the pantry basket + no CFT IS the cause: verdict, reason and a ready disposition
+  assert.equal(none.verdict, "pantry_cft");
+  assert.equal(none.why[1].kind, "cft_missing", "the cause sits right after the offset check");
+  assert.ok(!none.why.some((w) => w.kind === "video"), "no 'watch the video' bullet when the cause is the CFT");
+  assert.equal(none.suggestion.safe, true);
+  assert.equal(none.suggestion.reasonLabel, "Process Errors");
+  assert.match(none.suggestion.text, /Process error — CFT not completed\. Register 13 .* TR# 4273 .* \$222\.04 cash was the associate pantry run/);
+  assert.equal(buildEvidence({ item: { ...item, sourceAppId: "overshort" }, ej, cft: [] }).suggestion.reasonLabel, "Process Error - CFT");
+  // a store-use basket that is not on the pantry list does NOT become a verdict
+  const crayons = buildEvidence({ item, ej: { transactions: [{ ...tx, items: [line("CRAYON", 100), line("CRAYON", 100), line("CRAYON", 100), line("CLRPEN", 200), line("CLRPEN", 200), line("CLRPEN", 200), line("PLATES", 500)] }], events: [] }, cft: [] });
+  assert.notEqual(crayons.verdict, "pantry_cft"); assert.equal(crayons.suggestion.safe, false);
   const keyed = [{ businessDate: "2026-07-20", inputDate: "2026-07-20", inputTime: "13:10:00", amountCents: 22204, accountDesc: "ASSOCIATE RELATIONS", recipient: "Associate Relations", reason: "snacks", system: false, keyedLate: false }];
   const withCft = buildEvidence({ item, ej, cft: keyed });
   assert.ok(withCft.why.some((w) => w.kind === "cft_keyed"));

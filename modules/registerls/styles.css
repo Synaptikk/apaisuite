@@ -145,3 +145,5 @@
 
 .module-registerls .rls-pantry { margin-top: var(--sp-4); display: grid; gap: var(--sp-2); }
 .module-registerls .rls-pantry h3 { margin: 0; font-size: var(--fs-md); }
+
+.module-registerls .badge.v-pantry_cft, .module-registerls .badge.v-bounceback { background: var(--apai-success-bg); color: var(--apai-success); }

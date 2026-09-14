@@ -62,7 +62,7 @@ export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepa
     add(m.associateId, m.associate, { date: m.date, register: `${m.fromRegister}→${m.toRegister}`, type: "till_moved", cents: m.outCents, workItemId: null, detail: `checked in to reg ${m.toRegister} at ${m.inTime} a till checked out of reg ${m.fromRegister} at ${m.outTime}${m.checkoutBy && m.checkoutBy !== m.associateId ? ` by ${m.checkoutByName || m.checkoutBy}` : ""}${m.override ? " (override)" : ""}` });
   }
 
-  const SAFE = new Set(["flip", "bounceback"]);
+  const SAFE = new Set(["flip", "bounceback", "pantry_cft"]);
   for (const it of items) {
     if (!it.register || !it.date) continue;
     const t = tillRows.length ? tillsFor(tillRows, it, discrepancies) : null;
