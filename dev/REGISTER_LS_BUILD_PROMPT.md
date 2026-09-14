@@ -364,3 +364,16 @@ is still charged the pair. Self-checkout lanes are detected from the log
 log says that. Grid-only flip pairs feed the ledger (agent pass). Store
 1458 ledger went from 3 cashiers / 3 events to 26 / 60. The till log keeps
 ~60 days; completed items older than that cannot be attributed.
+
+## Fifteenth pass: the associate pantry and CFTs that never got keyed
+
+User: reg 13 07-20 $221 short "should have been a CFT". TR# 4273 was $222.04
+cash for 83 lines of pantry items (cup noodles, spaghetti rings, bananas,
+snack packs); the pantry process is ring up → cash out → CFT to the
+register, and no CFT near $222 exists. `lib/pantry.js` holds the pantry
+UPCs the user listed; `investigation.js::storeUseBasket` matches them
+(fallback: repeated lines + supply keywords); `evidence.js::cftForTransactions`
+pairs each such cash ticket with a CFT of that amount within a week or flags
+it `cft_missing`. Only store-looking baskets are reported — customer sales
+next to unrelated CFTs were noise. ej_parse now reads SF/KF item lines (the
+pantry ticket had parsed as 4 lines, it is 83). ANALYSIS_SCHEMA 7.

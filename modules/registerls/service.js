@@ -53,7 +53,7 @@ const CFT_DAYS = 60;
 // Items analyzed in parallel by analyze_all (APPRISS searchlite + EJ calls are light; 3 keeps the servers polite).
 const ANALYZE_CONCURRENCY = 3;
 // Bump when the evidence shape changes so cached analyses are re-run.
-const ANALYSIS_SCHEMA = 6;   // 6: Open Drawer video links + CFTs
+const ANALYSIS_SCHEMA = 7;   // 7: pantry / store-use CFT checks on cash tickets
 const POWERBI_REPORT_URL = "https://app.powerbi.com/groups/me/reports/65c97d6a-7ad8-498d-b752-69028d408993/ReportSection?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
 
 function broadcast(type, payload) {

@@ -467,7 +467,9 @@ export function cftForTransactions(cft, ej, matches, date, cfg = DEFAULT_CFG) {
     const storeUse = storeUseBasket(full, cfg.pantry);
     const hit = (cft || []).filter((c) => c.amountCents > 0 && !c.system && withinTolerance(c.amountCents, m.cashTendCents, cfg) && (ok(gap(c.businessDate)) || ok(gap(c.inputDate))))
       .sort((a, b) => Math.abs(a.amountCents - m.cashTendCents) - Math.abs(b.amountCents - m.cashTendCents))[0] || null;
-    if (hit || storeUse) out.push({ tx: { transNum: m.transNum, time: m.time, opNum: m.opNum, opName: m.opName, cashTendCents: m.cashTendCents, totalCents: m.totalCents }, cft: hit, storeUse });
+    // A customer sale next to an unrelated CFT of similar size is noise;
+    // only baskets that look like the store buying from itself are reported.
+    if (storeUse) out.push({ tx: { transNum: m.transNum, time: m.time, opNum: m.opNum, opName: m.opName, cashTendCents: m.cashTendCents, totalCents: m.totalCents }, cft: hit, storeUse });
   }
   return out;
 }
