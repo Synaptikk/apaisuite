@@ -142,3 +142,6 @@
 .module-registerls .rls-links { display: inline-flex; gap: var(--sp-1); align-items: center; margin-left: var(--sp-2); vertical-align: middle; }
 .module-registerls .rls-links .btn { padding: 2px 8px; font-size: var(--fs-sm); line-height: 1.4; }
 .module-registerls .rls-table tr.hit td { background: color-mix(in srgb, var(--warn, #b7791f) 12%, transparent); }
+
+.module-registerls .rls-pantry { margin-top: var(--sp-4); display: grid; gap: var(--sp-2); }
+.module-registerls .rls-pantry h3 { margin: 0; font-size: var(--fs-md); }

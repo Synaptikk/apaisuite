@@ -147,3 +147,23 @@ export function cashierCsv(c, notes = []) {
 export function safeFileName(c) {
   return `${(c.id || "unknown").replace(/[^A-Za-z0-9]/g, "")}_${(c.name || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "")}.csv`;
 }
+
+// Shortages caused by the pantry process being skipped: a cash ticket of
+// pantry items on the short register with no CFT keyed for it. This is a
+// PROCESS record, not a cashier error — the operator who rang it is kept
+// for reference only and nothing is charged to anyone. Derived from stored
+// analyses (journal + CFT report), so it lives beside buildLedger.
+export function pantryEvents(analyses) {
+  const out = [];
+  for (const a of analyses || []) {
+    const it = a?.item, ev = a?.evidence;
+    if (!it || !ev?.cftTx?.length) continue;
+    for (const x of ev.cftTx) {
+      if (x.cft || x.storeUse?.kind !== "pantry") continue;
+      out.push({ date: it.date, register: String(it.register), transNum: String(x.tx.transNum), time: x.tx.time || "", cents: x.tx.cashTendCents, shortCents: it.amountCents, opNum: String(x.tx.opNum || ""), opName: x.tx.opName || "", workItemId: it.id,
+        lines: x.storeUse.pantryLines, products: x.storeUse.repeats.slice(0, 4), detail: `TR# ${x.tx.transNum} at ${x.tx.time}: ${money(x.tx.cashTendCents)} cash for ${x.storeUse.pantryLines} pantry lines (${x.storeUse.repeats.slice(0, 3).join(", ")}); no CFT keyed — register ${money(it.amountCents)}` });
+    }
+  }
+  return out;
+}
+export const pantryKey = (e) => `${e.date}|${e.register}|${e.transNum}`;

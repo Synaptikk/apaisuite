@@ -11,7 +11,7 @@ import { noCheckinText, buildEvidence, cashMatches, withinTolerance, tolerance, 
 import { MATCH_OPTS } from "../match_opts.js";
 import { tieredMatching } from "../matching.js";
 import { reasonsFor, safeReasonFor } from "../reasons.js";
-import { buildLedger, cashierCsv, safeFileName, eventKey, aggregateEvents } from "../cashiers.js";
+import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents } from "../cashiers.js";
 import { decodeCashRecycler, buildFilteredBody, timeToInt } from "../cash_recycler.js";
 import { wrongRegisterMoves, advanceExplanations, tillsFor, eventsFor, tillFlags, flipCheckins, registerKind } from "../till_events.js";
 import { runMatching, swapDateWindow, widenRowWindow } from "../../../livedashboard/lib/sources/register.js";
@@ -514,4 +514,20 @@ test("advances: an overage the day BEFORE the advance is not where the cash land
   assert.equal(before[0].kind, "advance_missing");
   const after = advanceExplanations(rows, item, [{ registerNbr: "11", date: "2026-09-02", amountCents: 10000 }]);
   assert.equal(after[0].kind, "advance_flip"); assert.equal(after[0].landedOn.registerNbr, "11");
+});
+
+test("pantry record: a pantry run cashed out without a CFT is recorded against the process, not a cashier; one with a CFT, or a plain store-use basket, is not", () => {
+  const mk = (id, cftTx) => ({ schema: 7, item: { id, register: "13", date: "2026-07-20", amountCents: -22100 }, evidence: { cftTx } });
+  const tx = { transNum: "4273", time: "09:55:26", opNum: "353", opName: "Cindy christian", cashTendCents: 22204 };
+  const pantry = { kind: "pantry", pantryLines: 83, lines: 83, repeats: ["NISSIN CUP ×24", "GV SPAG RING ×24", "BANANAS ×12"] };
+  const evs = pantryEvents([
+    mk("1", [{ tx, cft: null, storeUse: pantry }]),
+    mk("2", [{ tx: { ...tx, transNum: "5" }, cft: { amountCents: 22204 }, storeUse: pantry }]),
+    mk("3", [{ tx: { ...tx, transNum: "6" }, cft: null, storeUse: { kind: "store_use", repeats: ["CRAYON ×3"], lines: 6 } }]),
+  ]);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].associateId, undefined, "nobody is charged");
+  assert.equal(evs[0].opNum, "353"); assert.equal(evs[0].cents, 22204); assert.equal(evs[0].shortCents, -22100); assert.equal(evs[0].workItemId, "1");
+  assert.match(evs[0].detail, /83 pantry lines .*no CFT keyed/);
+  assert.equal(pantryKey(evs[0]), "2026-07-20|13|4273");
 });

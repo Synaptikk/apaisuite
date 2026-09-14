@@ -28,7 +28,7 @@ import { fetchCashRecycler } from "./lib/cash_recycler.js";
 import { fetchOpenDrawer } from "./lib/open_drawer.js";
 import { fetchCft, cftFor } from "./lib/cft.js";
 import { tillsFor, wrongRegisterMoves } from "./lib/till_events.js";
-import { buildLedger, cashierCsv, safeFileName, eventKey, aggregateEvents, ERROR_TYPES } from "./lib/cashiers.js";
+import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents, ERROR_TYPES } from "./lib/cashiers.js";
 
 const TAG = "[registerls]";
 const KEYS = {
@@ -446,9 +446,17 @@ export const handlers = {
       }
       stored.set(bare(e), k);
     }
+    // Pantry runs cashed out without a CFT: a store-level process record
+    // (nobody is charged), permanent like the events, keyed on the ticket.
+    ledger.pantry = ledger.pantry || {};
+    const got = await chrome.storage.local.get(items.map((i) => KEYS.analysis(i.id)));
+    for (const e of pantryEvents(Object.values(got).filter((a) => a && a.schema === ANALYSIS_SCHEMA))) {
+      const k = `${store.storeNbr}|${pantryKey(e)}`;
+      if (!ledger.pantry[k]) { ledger.pantry[k] = { ...e, storeNbr: store.storeNbr, firstSeen: new Date().toISOString() }; merged++; }
+    }
     ledger.updatedAt = new Date().toISOString();
     await set(KEYS.ledger, ledger);
-    return { merged, stored: Object.keys(ledger.events).length };
+    return { merged, stored: Object.keys(ledger.events).length, pantry: Object.keys(ledger.pantry).length };
   },
 
   // Per-associate error ledger from the PERMANENT store, optionally limited
@@ -466,7 +474,8 @@ export const handlers = {
     const notes = {};
     for (const c of cashiers) notes[c.id] = got[KEYS.coaching(c.id)] || [];
     const tillsCache = await get(KEYS.tills);
-    return { storeNbr: store.storeNbr, cashiers, types: ERROR_TYPES, notes, hasTills: !!(tillsCache && tillsCache.storeNbr === store.storeNbr) || all.length > 0, range: { from, to }, stored: { events: all.length, dateMin: all[0] || null, dateMax: all.at(-1) || null }, synced: sync };
+    const pantry = Object.values(ledger.pantry || {}).filter((e) => e.storeNbr === store.storeNbr && (!from || e.date >= from) && (!to || e.date <= to)).sort((a, b) => b.date.localeCompare(a.date));
+    return { storeNbr: store.storeNbr, cashiers, pantry, types: ERROR_TYPES, notes, hasTills: !!(tillsCache && tillsCache.storeNbr === store.storeNbr) || all.length > 0, range: { from, to }, stored: { events: all.length, dateMin: all[0] || null, dateMax: all.at(-1) || null }, synced: sync };
   },
 
   async add_coaching_note(msg = {}) {
