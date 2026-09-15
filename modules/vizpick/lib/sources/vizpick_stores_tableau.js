@@ -21,6 +21,21 @@ import { createCaptureTab } from "../background_tab.js";
 import { parseVizpickStoresCsv, parseGrandTotal, parseLastUpdate } from "../parse_vizpick_stores_csv.js";
 import { watchSourceSchema } from "../../../../shared/schema_watch_report.js";
 
+// Every executeScript goes through this. A FROZEN tab (Edge efficiency mode,
+// overnight) never settles an executeScript at all, so the deadline loops
+// around these calls never got to re-check their deadlines: the crawl hung
+// until the worker was killed and its tabs leaked (2026-09-15, 46 tabs). A
+// timeout turns that hang into an ordinary failed attempt the existing
+// retry/deadline logic already handles.
+const EXEC_TIMEOUT_MS = 20_000;
+function execScriptWithTimeout(opts, ms = EXEC_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    chrome.scripting.executeScript(opts),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`executeScript timed out after ${Math.round(ms / 1000)}s (tab frozen or hung)`)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 const REPORT_URL  = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=1&:linktarget=_self";
 // Tableau is a hash-router: the view name lives entirely in the URL FRAGMENT
 // ("…/#/site/OnlineGrocery/views/VizPick/VizPick"). chrome.tabs.query match
@@ -286,7 +301,7 @@ async function keepAwake(tabId) {
   } catch {}
 
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId },
       world:  "MAIN",
       func: () => {
@@ -341,7 +356,7 @@ async function waitForTabLoad(tabId, timeoutMs) {
 
 async function isCaptureInstalled(tabId) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => !!window.__APAISUITE_VIZPICK_TABLEAU_CAP,
@@ -368,7 +383,7 @@ async function waitForVizReady(tabId, timeoutMs) {
 // starts by hand.
 async function setSuppressDownloads(tabId, on) {
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       args:   [!!on],
@@ -379,7 +394,7 @@ async function setSuppressDownloads(tabId, on) {
 
 async function clearRing(tabId) {
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => { window.__APAISUITE_VIZPICK_TABLEAU_CAP?.clear?.(); },
@@ -391,12 +406,12 @@ async function clearRing(tabId) {
 // MAIN world with realistic pointer events (Tableau ignores synthetic
 // .click() on its toolbar). Returns {ok, reason?}.
 async function triggerCrosstabExport(tabId, sheet) {
-  const results = await chrome.scripting.executeScript({
+  const results = await execScriptWithTimeout({
     target: { tabId, allFrames: true },
     world:  "MAIN",
     args:   [sheet.match, sheet.fallbackIndex],
     func:   exportDriverFn,
-  });
+  }, 120_000);
   for (const r of (results || [])) {
     if (r?.result && r.result.ran) return r.result;
   }
@@ -415,7 +430,7 @@ async function pollForCsv(tabId, timeoutMs, pollMs, needle = STORE_CSV_NEEDLE) {
 
 async function findCsvInRing(tabId, needle = STORE_CSV_NEEDLE) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       args:   [needle],
@@ -434,7 +449,7 @@ async function diagnoseUnrenderedTab(tabId) {
 
   let page = null;
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => {
@@ -489,7 +504,7 @@ async function diagnoseUnrenderedTab(tabId) {
 
 async function dumpRingSummary(tabId) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => {
@@ -505,7 +520,7 @@ async function dumpRingSummary(tabId) {
 
 async function evalInVizFrame(tabId, fn, ...args) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true }, world: "MAIN", args, func: fn,
     });
     for (const r of (results || [])) if (r?.result === true) return true;

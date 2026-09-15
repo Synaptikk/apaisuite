@@ -754,6 +754,7 @@
 .vizpick-assoc-toggle:hover .vizpick-assoc-name { color: var(--apai-link); }
 .vizpick-assoc-caret { color: var(--apai-muted); width: 10px; }
 .vizpick-assoc-name { font-weight: var(--fw-semi); }
+.vizpick-assoc-digital { font-weight: var(--fw-bold); color: var(--module-accent, var(--apai-blue)); margin-right: 2px; }
 .vizpick-assoc-title { color: var(--apai-muted); }
 /* The count is the ranking signal, so it holds the right edge where the eye
    lands when scanning a sorted list. */
@@ -764,6 +765,42 @@
   white-space: nowrap;
 }
 .vizpick-assoc-bin td { padding-left: var(--sp-3); }
+
+/* Home store pick progression (view.js §7b) */
+.module-vizpick .vizpick-hist-dialog {
+  width: min(1100px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 16px 20px;
+  border: 1px solid var(--apai-border-soft);
+  border-radius: 10px;
+  background: var(--apai-surface, Canvas);
+  color: inherit;
+}
+.module-vizpick .vizpick-hist-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.module-vizpick .vizpick-hist .vizpick-panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+.module-vizpick .vizpick-hist .vizpick-panel-head h2 { margin: 0; font-size: 16px; }
+.module-vizpick .vizpick-hist-close { margin-left: auto; }
+.module-vizpick .vizpick-hist-empty { margin: 12px 0; }
+.module-vizpick .vizpick-hist-flag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--apai-yellow, #ffc220) 35%, transparent); }
+.module-vizpick .vizpick-hist-flag.is-off { background: color-mix(in srgb, #d9534f 30%, transparent); }
+@media (max-width: 600px) {
+  .module-vizpick .vizpick-hist-dialog { width: calc(100vw - 16px); padding: 12px; }
+}
+.module-vizpick .vizpick-hist-ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.module-vizpick .vizpick-hist-summary { margin: 8px 0; line-height: 1.5; }
+.module-vizpick .vizpick-hist-scroll { overflow-x: auto; max-width: 100%; }
+.module-vizpick .vizpick-hist-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.module-vizpick .vizpick-hist-table th { text-align: left; font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--apai-border-soft); white-space: nowrap; }
+.module-vizpick .vizpick-hist-table td { padding: 3px 8px; white-space: nowrap; }
+.module-vizpick .vizpick-hist-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.module-vizpick .vizpick-hist-row { cursor: pointer; }
+.module-vizpick .vizpick-hist-row:hover { background: var(--apai-border-soft); }
+.module-vizpick .vizpick-hist-after .vizpick-hist-row { background: color-mix(in srgb, var(--apai-yellow, #ffc220) 12%, transparent); }
+.module-vizpick .vizpick-hist-bins table { width: 100%; margin: 4px 0 8px; }
+.module-vizpick .vizpick-hist-muted { opacity: 0.65; }
+.module-vizpick .vizpick-hist-late { font-weight: 600; }
+.module-vizpick .vizpick-hist-sub { margin: 16px 0 4px; font-size: 13px; }
+.module-vizpick .vizpick-hist-note { margin: 6px 0 0; font-size: 11px; opacity: 0.75; }
 /* Scan time is context for judging an attribution, not a headline — a late
    scan is the case where "who last scanned it" stops meaning "who skipped it". */
 .vizpick-assoc-when { color: var(--apai-muted); }

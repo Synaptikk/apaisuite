@@ -701,6 +701,11 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   const iSug  = headers.findIndex((h) => /^suggested picks seen$/i.test(h));
   const iWin  = headers.findIndex((h) => /user_id/i.test(h));
   const iTs   = headers.findIndex((h) => /last_seen_timestamp/i.test(h));
+  // Per-bin case counts, optional. The home-store history watches bins whose
+  // cases had not been seen yet today (lib/home_history.js::unseenBins).
+  // "Cases Seen %" has a space, so it is not matched by cases_seen.
+  const iCasesExp  = headers.findIndex((h) => /cases_expected/i.test(h));
+  const iCasesSeen = headers.findIndex((h) => /cases_seen/i.test(h));
 
   if (iLoc < 0) {
     return { ok: false, reason: `no column holds "<group>/<bin>" location codes; got: ${headers.join(", ")}` };
@@ -723,6 +728,7 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   const byLocGroup = {};
   const gaps = [];
   const scans = [];
+  const bins = [];
   const num = (v) => {
     const n = Number(String(v ?? "").replace(/[^0-9.\-]/g, ""));
     return Number.isFinite(n) ? n : 0;
@@ -760,6 +766,19 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
     // the snapshot has been sitting.
     if (allScans && ts) scans.push({ location: loc, lastSeenAt: ts });
 
+    // Every bin with its pick counts, also home-store only. lib/home_history.js
+    // keeps one of these per Tableau update so the day's progression — picks
+    // appearing after the 9am baseline, who scanned what and when — can be
+    // replayed. `gaps` cannot do that: a bin leaves it the moment it completes.
+    if (allScans) bins.push({
+      location: loc, seen: sug, done,
+      win: iWin >= 0 ? String(c[iWin] ?? "").trim() || null : null,
+      lastSeenAt: ts,
+      seenToday: iSeen >= 0 ? /^yes$/i.test(String(c[iSeen] ?? "").trim()) : null,
+      casesExpected: iCasesExp >= 0 ? num(c[iCasesExp]) : null,
+      casesSeen: iCasesSeen >= 0 ? num(c[iCasesSeen]) : null,
+    });
+
     // Only outstanding work is retained per-bin. Keeping every location would
     // put thousands of rows per market into the snapshot for no benefit — the
     // per-bin-group rollup above already covers Location %.
@@ -777,7 +796,7 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   }
 
   if (!Object.keys(byLocGroup).length) return { ok: false, reason: "no parseable location rows" };
-  return { ok: true, byLocGroup, gaps, scans: allScans ? scans : null, locationCount: rows.length };
+  return { ok: true, byLocGroup, gaps, scans: allScans ? scans : null, bins: allScans ? bins : null, locationCount: rows.length };
 }
 
 /**

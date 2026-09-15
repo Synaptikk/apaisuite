@@ -5,6 +5,8 @@
     </div>
     <div class="vizpick-toolbar">
       <span class="vizpick-freshness" data-freshness="stores">no capture yet</span>
+      <!-- Home-store intraday history (view.js §7b) opens in a dialog. -->
+      <button class="btn" data-action="open-history">Pick progression</button>
       <button class="btn btn-primary" data-action="refresh">
         <span class="btn-label">Refresh</span>
         <span class="btn-spinner" hidden aria-hidden="true"></span>
@@ -55,6 +57,13 @@
       <p class="vizpick-empty">Click Refresh, then pick a market above to see its gauges.</p>
     </div>
   </section>
+
+  <!-- Home store, intraday: one row per Tableau update, kept locally by
+       lib/home_history.js. Opened from the "Pick progression" header button;
+       a native <dialog> so backdrop, Esc and focus need no overlay of ours. -->
+  <dialog class="vizpick-hist-dialog" data-hist-dialog aria-label="Home store pick progression">
+    <section class="vizpick-hist" data-home-history></section>
+  </dialog>
 
   <!-- Per-store cards for the selected market. Graphs only by default — the
        store number and its overall score lead, then the four goal rings, with

@@ -1,5 +1,5 @@
 import { createCaptureTab } from "../background_tab.js";
-import { TODAY_DATA_REVISION, isTodayRowComplete } from "../today_coverage.js";
+import { TODAY_DATA_REVISION, isTodayRowComplete, locationSignature } from "../today_coverage.js";
 // modules/vizpick/lib/sources/vizpick_today_tableau.js
 //
 // Current-day ("Today") capture from the VizPickDetails view.
@@ -45,6 +45,21 @@ import {
   base64ToBytes, base64ToText, directSummaryExport,
 } from "./tableau_export_replay.js";
 
+// Every executeScript goes through this. A FROZEN tab (Edge efficiency mode,
+// overnight) never settles an executeScript at all, so the deadline loops
+// around these calls never got to re-check their deadlines: the crawl hung
+// until the worker was killed and its tabs leaked (2026-09-15, 46 tabs). A
+// timeout turns that hang into an ordinary failed attempt the existing
+// retry/deadline logic already handles.
+const EXEC_TIMEOUT_MS = 20_000;
+function execScriptWithTimeout(opts, ms = EXEC_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    chrome.scripting.executeScript(opts),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`executeScript timed out after ${Math.round(ms / 1000)}s (tab frozen or hung)`)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 const DETAILS_URL = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
 // See the note in vizpick_stores_tableau.js: Tableau's view name lives in the
 // URL fragment, which chrome.tabs.query match patterns cannot see.
@@ -60,6 +75,11 @@ const REUSED_TAB_READY_MS = 30_000;
 const EXPORT_WAIT_MS    = 45_000;
 const UPDATE_WAIT_MS    = 20_000;
 const REQUERY_WAIT_MS   = 25_000;  // how long to wait for the viz to re-query after a store change
+// The Store parameter's own round trip (tabdoc/set-parameter-value) answers in
+// ~3s (dev/VIZPICK_DIRECT_DATA_FINDINGS.md). A synthetic Enter that Tableau
+// dropped never posts it at all, so past this the Enter is re-sent.
+const PARAM_COMMIT_WAIT_MS = 8_000;
+const PARAM_COMMIT_RETRIES = 2;
 const PARAM_READY_WAIT_MS = 30_000; // the Store parameter box renders after the toolbar does
 const SETTLE_MS         = 700;     // extra beat after the last vizql response lands
 const DIALOG_SETTLE_MS  = 20_000;  // wait for the viz toolbar to reappear after a dialog closes
@@ -82,7 +102,9 @@ const OVERALL_BUDGET_MS = 25 * 60_000;
 // bound the damage: past this age the crawl runs whether or not the stamp
 // moved. Worst case we re-crawl a market that had not changed — minutes of
 // background work — against a failure mode where the tab shows hours-old
-// numbers and says it is current.
+// numbers and says it is current. A re-crawl at an unchanged stamp is NOT a
+// new update: lib/home_history.js folds it into the existing one by stamp
+// (Tableau's Metric Definitions; analyst's rule, 2026-09-14).
 //
 // Set below the ~2-3h cadence the current-day data actually republishes at, so
 // a genuine update is never more than this late.
@@ -417,6 +439,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     };
 
     const runLane = async (rec) => {
+      // Wrong-store guard 3: location detail identical to the store this lane
+      // captured just before it can only mean the parameter did not move.
+      let prevLocSig = "";
       for (;;) {
         if (opts.isCancelled?.()) { cancelled = true; return; }
         if (Date.now() > deadline) { exhausted = true; return; }
@@ -449,6 +474,12 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         const row = await captureStore(rec.tab.id, store, failures, replay, sameStore(store, homeStore));
         done++;
         if (!row) continue;
+        const locSig = locationSignature(row);
+        if (locSig && locSig === prevLocSig) {
+          failures.push({ store, reason: "location detail identical to the previous store in this lane — the Store parameter did not apply; row discarded" });
+          continue;
+        }
+        if (locSig) prevLocSig = locSig;
         rows.push(row);
 
         // Publish this store straight away. Persisting per store also means a
@@ -587,9 +618,57 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
     // first store of every crawl, whenever the view's default Store matched
     // it. Nothing changed means nothing to wait for.
     if (String(set.before ?? "").trim() !== String(store).trim()) {
-      const requeried = await waitForRequery(tabId, REQUERY_WAIT_MS);
-      if (!requeried) { failures.push({ store, reason: "viz did not re-query after store change" }); return null; }
-      await sleep(SETTLE_MS);
+      // Wrong-store guard 0: wait for the Store parameter's OWN round trip,
+      // not for "some vizql response". Any response used to count — and a
+      // freshly loaded or still-settling session keeps producing late
+      // responses for the store it was already on. That let the export run
+      // against a session whose server-side Store had never moved, while the
+      // box (whose value this code had just written) said it had. Guard 1
+      // below cannot see that, because it reads the same box. The result was
+      // one store's numbers, associates and bins filed under another store
+      // (1089 and 1458 identical on 2026-09-14; the home history for 1458 held
+      // three other stores' bin lists that afternoon).
+      //
+      // Tableau posts tabdoc/set-parameter-value only when the Enter actually
+      // committed, and its 200 means the session has the new value. A
+      // synthetic Enter that Tableau ignored posts nothing, so the Enter is
+      // re-sent a couple of times before the store is written off.
+      //
+      // Guard 1 (the box re-read) stays as the last word: Tableau re-renders
+      // the box from the session after the command, so a box that has gone
+      // back to the previous store means the server refused the value. Seen
+      // live 2026-09-15 (669 → box showed 5151); one more attempt from the
+      // top recovers it instead of dropping the store from the market.
+      let reason = null;
+      for (let attempt = 0; attempt <= PARAM_COMMIT_RETRIES; attempt++) {
+        reason = null;
+        if (attempt > 0) {
+          await clearRing(tabId);
+          set = await setStoreParameter(tabId, store);
+          if (!set.ok) { reason = `parameter: ${set.reason}`; break; }
+        }
+        const committed = await waitForParameterCommit(tabId, store, PARAM_COMMIT_WAIT_MS);
+        if (!committed.ok) { reason = `Store parameter never committed (${committed.reason})`; continue; }
+        const requeried = await waitForRequery(tabId, REQUERY_WAIT_MS);
+        if (!requeried) { reason = "viz did not re-query after store change"; continue; }
+        await sleep(SETTLE_MS);
+        const shown = await readStoreParameter(tabId);
+        if (shown !== null && shown !== String(store).trim()) { reason = `Store parameter did not take: the box shows "${shown}"`; continue; }
+        break;
+      }
+      if (reason) {
+        failures.push({ store, reason: `${reason} — nothing exported for this store` });
+        return null;
+      }
+    }
+    // Wrong-store guard 1 (also the last step of every attempt above): the
+    // box must show this store before any export.
+    {
+      const shown = await readStoreParameter(tabId);
+      if (shown !== null && shown !== String(store).trim()) {
+        failures.push({ store, reason: `Store parameter did not take: the box shows "${shown}" — nothing exported for this store` });
+        return null;
+      }
     }
 
     const dept = await exportSheetText(tabId, DEPT_SHEET, DEPT_CSV_NEEDLE, replay);
@@ -712,11 +791,22 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
         // sheet to get it is the duplicate pull this replaces.
         const L = parseLocationDetails(loc.text, { allScans: isHomeStore });
         watchSourceSchema("vizpick.locationDetails", loc.text, L.ok);
-        if (L.ok) locations = { byLocGroup: L.byLocGroup, gaps: L.gaps, scans: L.scans, locationCount: L.locationCount };
+        if (L.ok) locations = { byLocGroup: L.byLocGroup, gaps: L.gaps, scans: L.scans, bins: L.bins, locationCount: L.locationCount };
         else failures.push({ store, reason: `locations parse: ${L.reason}`, soft: true });
       }
     } catch (e) {
       failures.push({ store, reason: `locations: ${String(e?.message ?? e)}`, soft: true });
+    }
+
+    // Wrong-store guard 2: the box must still show this store after the
+    // exports. If it changed underneath us, some of what was exported belongs
+    // to another store and none of it can be trusted.
+    {
+      const shown = await readStoreParameter(tabId);
+      if (shown !== null && shown !== String(store).trim()) {
+        failures.push({ store, reason: `Store parameter changed during capture (box shows "${shown}") — row discarded` });
+        return null;
+      }
     }
 
     return {
@@ -799,11 +889,36 @@ async function prepareTab(tabId, opts = {}) {
  * Wait for the Store parameter textbox itself, in any frame. Matches exactly
  * what setStoreParameter() looks for, so a pass here means that call can work.
  */
+/**
+ * What the Store box shows RIGHT NOW, trimmed; null when there is no box.
+ * setStoreParameter() reports the value it wrote, which proves nothing —
+ * Tableau re-renders the parameter panel and can drop the edit — so the box
+ * is read back after the re-query and again after the exports, and a row
+ * whose box does not show its own store is discarded (wrong-store guard).
+ */
+async function readStoreParameter(tabId) {
+  try {
+    const results = await execScriptWithTimeout({
+      target: { tabId, allFrames: true },
+      world:  "MAIN",
+      func:   () => {
+        const el =
+          document.querySelector('textarea[aria-label="Store"], input[aria-label="Store"]') ||
+          [...document.querySelectorAll("textarea,input")].find(
+            (n) => (n.getAttribute("aria-label") || "").trim().toLowerCase() === "store"
+          );
+        return el ? String(el.value ?? "").trim() : null;
+      },
+    });
+    return (results || []).map((r) => r?.result).find((v) => v != null) ?? null;
+  } catch { return null; }
+}
+
 async function waitForStoreParam(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         func:   () => !!(
@@ -839,7 +954,7 @@ async function waitForStoreParam(tabId, timeoutMs) {
  */
 async function readSourceStampFromDom(tabId) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       func: () => {
         const RE = /(\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(?::\d{2})?|\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?)/i;
@@ -910,7 +1025,7 @@ async function readSourceStamp(tabId) {
 // framework never sees the change.
 async function setStoreParameter(tabId, store) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       args:   [store],
@@ -950,13 +1065,58 @@ async function setStoreParameter(tabId, store) {
   }
 }
 
+// The Store parameter's own command, as recorded by the capture ring: a POST to
+// .../commands/tabdoc/set-parameter-value whose multipart body carries
+// `valueString` = the store. Only its response proves the SERVER session moved
+// to this store; the textarea value is whatever this code last wrote into it.
+//
+// Resolves {ok:true} once that request has a 200; {ok:false, reason} when the
+// request was seen but failed, or was never posted within timeoutMs (the
+// synthetic Enter was dropped — the caller re-sends it).
+async function waitForParameterCommit(tabId, store, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let seen = null;
+  while (Date.now() < deadline) {
+    try {
+      const results = await execScriptWithTimeout({
+        target: { tabId, allFrames: true },
+        world:  "MAIN",
+        args:   [String(store).trim()],
+        func:   (value) => {
+          const all = window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || [];
+          // The whole `valueString` field must be the store: the ring
+          // serialises FormData as multipart (name="valueString"\r\n\r\n<value>\r\n),
+          // and Tableau's own string bodies take the same shape. A looser
+          // "value somewhere after valueString" matched digits inside the
+          // telemetry id of the PREVIOUS store's command.
+          const esc = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp('name="valueString"\\s*' + esc + '\\s*(?:\\r|\\n|--|$)');
+          const hits = all.filter((e) => /set-parameter-value/i.test(String(e.url || "")) && re.test(String(e.reqBody || "")));
+          if (!hits.length) return null;
+          const last = hits[hits.length - 1];
+          return { status: last.status, hasBody: !!(last.respBody && String(last.respBody).length) };
+        },
+      });
+      for (const r of results || []) {
+        if (!r?.result) continue;
+        seen = r.result;
+        if (seen.status === 200 && seen.hasBody) return { ok: true };
+      }
+    } catch {}
+    await sleep(POLL_MS);
+  }
+  return seen
+    ? { ok: false, reason: `set-parameter-value answered HTTP ${seen.status}` }
+    : { ok: false, reason: `no set-parameter-value request within ${Math.round(timeoutMs / 1000)}s — Tableau dropped the Enter` };
+}
+
 // A non-blob ring entry means a vizql/dataserver response landed, i.e. the
 // viz re-queried for the newly selected store.
 async function waitForRequery(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         func:   () => (window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || []).some((e) => e.via !== "blob"),
@@ -1043,7 +1203,7 @@ async function keepAwake(tabId) {
   } catch {}
 
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId },
       world:  "MAIN",
       func: () => {
@@ -1089,7 +1249,7 @@ async function diagnoseUnrenderedTab(tabId, stageReason) {
 
   let page = null;
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => {
@@ -1186,7 +1346,7 @@ async function waitForCaptureInstalled(tabId, graceMs) {
   const deadline = Date.now() + graceMs;
   do {
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         func:   () => !!window.__APAISUITE_VIZPICK_TABLEAU_CAP,
@@ -1219,7 +1379,7 @@ async function waitForVizReadyOrSuppressed(tabId, timeoutMs, graceMs = TOOLBAR_G
   while (Date.now() < deadline) {
     let frames = [];
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         func:   () => ({
@@ -1244,7 +1404,7 @@ async function waitForVizReady(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         func:   () => !!document.querySelector('[data-tb-test-id="viz-viewer-toolbar-button-download"]'),
@@ -1258,7 +1418,7 @@ async function waitForVizReady(tabId, timeoutMs) {
 
 async function setSuppressDownloads(tabId, on) {
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       args:   [!!on],
@@ -1269,7 +1429,7 @@ async function setSuppressDownloads(tabId, on) {
 
 async function clearRing(tabId) {
   try {
-    await chrome.scripting.executeScript({
+    await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world:  "MAIN",
       func:   () => { window.__APAISUITE_VIZPICK_TABLEAU_CAP?.clear?.(); },
@@ -1281,7 +1441,7 @@ async function pollForCsv(tabId, timeoutMs, needle) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const results = await chrome.scripting.executeScript({
+      const results = await execScriptWithTimeout({
         target: { tabId, allFrames: true },
         world:  "MAIN",
         args:   [needle],
@@ -1373,7 +1533,7 @@ function cellText(header, value) {
  */
 async function describeExportAttempt(tabId, needle) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world: "MAIN",
       func: () => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || [],
@@ -1392,7 +1552,7 @@ async function describeExportAttempt(tabId, needle) {
 /** Learn any sheetdocIds the page has revealed since the last look. */
 async function learnFromRing(tabId, replay) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await execScriptWithTimeout({
       target: { tabId, allFrames: true },
       world: "MAIN",
       func: () => window.__APAISUITE_VIZPICK_TABLEAU_CAP?.all?.() || [],
@@ -1527,12 +1687,12 @@ async function triggerCrosstabExport(tabId, sheet) {
   // executeScript awaits a promise returned by the injected function, which is
   // what lets the driver report whether it actually clicked Export rather than
   // just whether it found a toolbar.
-  const results = await chrome.scripting.executeScript({
+  const results = await execScriptWithTimeout({
     target: { tabId, allFrames: true },
     world:  "MAIN",
     args:   [sheet.match, sheet.fallbackIndex],
     func:   exportDriverFn,
-  });
+  }, 120_000);
   for (const r of (results || [])) {
     const res = r?.result;
     if (!res?.ran) continue;

@@ -16,10 +16,12 @@
 
 import { ensureAlarm } from "../../shared/alarms.js";
 import { keepAwake } from "../../shared/sw_keepalive.js";
+import { withTableauLock } from "../../shared/tableau_lock.js";
 import { createLogging } from "../../shared/logging.js";
-import { getUserHomeMarket } from "../../shared/userStore.js";
+import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import * as freshness from "./lib/freshness.js";
 import * as snapshots from "./lib/snapshots.js";
+import * as homeHistory from "./lib/home_history.js";
 import { fetchVizpickStoresTableau } from "./lib/sources/vizpick_stores_tableau.js";
 import { fetchVizpickTodayTableau } from "./lib/sources/vizpick_today_tableau.js";
 
@@ -34,8 +36,25 @@ const K = {
 // tiny "Last update" sheet and returns unchanged:true without touching the
 // stored snapshot — so polling costs seconds, and the expensive export only
 // happens on a run where the stamp actually moved.
-export const ALARM_NAMES = { autocheck: "vizpick.autocheck" };
+export const ALARM_NAMES = { autocheck: "vizpick.autocheck", homeHistory: "vizpick.homeHistory" };
 const AUTO_PERIOD_MIN = 30;
+// Home-store history poll (lib/home_history.js). Tableau's current-day view
+// republishes every 2-3 h; 30 min catches each update within half an hour and,
+// like the autocheck, costs one stamp read when nothing changed. Not shorter:
+// a reused Details tab is reloaded before every stamp read.
+const HOME_POLL_MIN = 30;
+
+// When BACKGROUND current-day work may run: the Today autocheck and the
+// home-store poll. Local hours, `to` exclusive. Up to midnight because Tableau
+// can still finalize the current day's data until then (analyst, 2026-09-15);
+// after midnight until 5 AM the stamp does not move, and running anyway is what
+// left 46 frozen capture tabs open on 2026-09-15 (CURRENT_TASKS §6c). A person
+// pressing Refresh or "Check now" is never gated.
+export const REFRESH_HOURS = { from: 5, to: 24 };
+export function withinRefreshHours(at = new Date()) {
+  const h = at.getHours();
+  return h >= REFRESH_HOURS.from && h < REFRESH_HOURS.to;
+}
 
 // Don't re-check on every service-worker wake. MV3 boots the SW for all sorts
 // of reasons; without this a busy browser would drive Tableau constantly.
@@ -164,7 +183,18 @@ async function getState() {
   };
 }
 
-async function pullStores(msg) {
+// Both captures take the suite-wide Tableau lock (shared/tableau_lock.js):
+// Digital Metrics drives the same host from its own hidden tab, and two
+// modules racing for Edge's background-tab budget are slower than the two in
+// turn. The lock is per capture, so the Today crawl's three lanes still run
+// in parallel inside its own turn.
+function pullStores(msg) {
+  return withTableauLock("VizPick stores capture", () => _pullStores(msg), {
+    onWait: ({ heldBy }) => broadcast("capture_phase", { sourceId: "stores", phase: `Waiting for ${heldBy} to finish with Tableau` }),
+  });
+}
+
+async function _pullStores(msg) {
   await freshness.startAttempt("stores");
   // Hold the worker up for the duration. Without this the capture dies ~30s
   // after the suite tab is closed or navigated away — see shared/sw_keepalive.js.
@@ -245,6 +275,12 @@ async function pullToday(msg) {
   }
 
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
+  return withTableauLock("VizPick Today crawl", () => _pullTodayLocked(msg, stores, market), {
+    onWait: ({ heldBy }) => broadcast("capture_phase", { sourceId: "today", phase: `Waiting for ${heldBy} to finish with Tableau` }),
+  });
+}
+
+async function _pullTodayLocked(msg, stores, market) {
   // The Today crawl runs for minutes. It happens to survive today only because
   // it polls chrome.tabs/chrome.scripting constantly, which resets the idle
   // timer by accident — this makes it deliberate rather than lucky.
@@ -435,7 +471,13 @@ async function _autoCheck(reason) {
     log.emit("autocheck-skip", { which: "stores", reason: "toggle off" });
   }
 
-  if (auto.today) {
+  if (auto.today && reason !== "manual" && !withinRefreshHours()) {
+    // Overnight: nothing to fetch, and a crawl into tabs Edge has frozen is how
+    // capture tabs leaked. The Yesterday capture above is NOT gated — Tableau
+    // publishes the prior day overnight.
+    log.emit("autocheck-skip", { which: "today", reason: "outside store hours", hours: `${REFRESH_HOURS.from}-${REFRESH_HOURS.to}` });
+    out.today = { ok: true, skipped: "outside store hours" };
+  } else if (auto.today) {
     const store = await snapshots.read();
     const homeMarket = await getUserHomeMarket();
     const plan = resolveAutoTodayMarket(store, homeMarket);
@@ -562,7 +604,89 @@ export async function openCheck() {
 }
 
 /** Registered from module.js at top level — MV3 requires that for SW wake. */
+// ── Home-store history poll ───────────────────────────────────────────────
+// The market crawl only records history when the user's home store happens to
+// be in the market being crawled — and it often is not (a market-role user
+// browsing another market, or no home market set at all). This captures the
+// home store on its own, one store, one lane, and writes ONLY the history: the
+// market Today snapshot is left untouched, so it can never be replaced by a
+// one-store row or have a store from another market mixed into it.
+let homePollRun = null;
+
+function pollHomeStore(reason, { force = false, repair = false } = {}) {
+  if (homePollRun) return homePollRun;
+  homePollRun = _pollHomeStore(reason, { force, repair }).finally(() => { homePollRun = null; });
+  return homePollRun;
+}
+
+async function _pollHomeStore(reason, { force, repair = false }) {
+  const home = await getUserHomeStore().catch(() => null);
+  if (!home) {
+    log.emit("home-history-skip", { reason, why: "no home store" });
+    return { ok: true, skipped: "no home store" };
+  }
+  if (!force && reason !== "manual" && !withinRefreshHours()) {
+    return { ok: true, skipped: "outside store hours" };
+  }
+
+  // Compare against the newest entry already kept for this store, so an
+  // unchanged Tableau stamp costs one read. MAX_TODAY_AGE_MS in the source
+  // still forces a re-read of a stamp that has not moved in 90 min; the
+  // history folds that re-read into the existing update by stamp, so it can
+  // never become a second data point (Tableau's Metric Definitions).
+  const h = await homeHistory.read();
+  const latest = Object.keys(h.days).sort().reverse()
+    .map((d) => [...h.days[d]].reverse().find((e) => e.store === String(home)))
+    .find(Boolean) || null;
+
+  const res = await withTableauLock("VizPick home-store history", () =>
+    fetchVizpickTodayTableau([home], {
+      knownSourceKey: force ? null : latest?.sourceKey ?? null,
+      knownCapturedAt: latest?.lastConfirmedAt ?? latest?.capturedAt ?? null,
+      coveredStores: latest ? [String(home)] : [],
+      force,
+      auto: true,
+      concurrency: 1,
+    }));
+
+  if (!res?.ok) {
+    log.emit("home-history-poll", { reason, ok: false, error: res?.error ?? null });
+    return { ok: false, error: res?.error ?? "capture failed" };
+  }
+  if (res.unchanged) {
+    log.emit("home-history-poll", { reason, ok: true, unchanged: true, stamp: res.stampRead ?? null });
+    return { ok: true, unchanged: true, stamp: res.stampRead ?? null };
+  }
+  const meta = { sourceUpdate: res.sourceUpdate, capturedAt: res.capturedAt || new Date().toISOString() };
+  let rec = await homeHistory.recordFromRows(res.rows, meta);
+
+  // One-time repair of history recorded before the wrong-store guards
+  // (2026-09-15): this capture was made under them, so anything stored for
+  // the home store that does not share its bins is another store's export
+  // and is dropped. If the guard had refused THIS capture because only bad
+  // entries were left to compare with, it is recorded again afterwards.
+  const ref = (res.rows || []).map((r) => homeHistory.entryFromRow(r, meta)).find((e) => e && e.store === String(home));
+  let repaired = null;
+  if (ref) {
+    const rep = await homeHistory.repairOnce({ store: ref.store, bins: ref.bins }, { force: repair });
+    if (rep.ran) {
+      repaired = rep.removed;
+      log.emit("home-history-repair", { reason, removed: rep.removed.length, entries: rep.removed.slice(0, 12) });
+      if (rep.removed.length || rec.rejected) rec = await homeHistory.recordFromRows(res.rows, meta);
+      if (rep.removed.length) broadcast("home_history", { store: String(home) });
+    }
+  }
+  log.emit("home-history-poll", { reason, ok: true, added: rec.added, stamp: res.sourceUpdate?.raw ?? null, error: rec.error ?? null, rejected: rec.rejected ?? null });
+  if (rec.added) broadcast("home_history", { store: String(home) });
+  return { ok: true, added: rec.added, stamp: res.sourceUpdate?.raw ?? null, rows: res.rows?.length ?? 0, error: rec.error ?? null, rejected: rec.rejected ?? null, repaired };
+}
+
 export async function onAlarm(alarm) {
+  if (alarm?.name === ALARM_NAMES.homeHistory) {
+    try { await pollHomeStore("alarm"); }
+    catch (e) { console.warn("[vizpick] home-store poll failed:", e?.message ?? e); }
+    return;
+  }
   if (alarm?.name !== ALARM_NAMES.autocheck) return;
   // Proves the alarm actually fires. Its absence from the feed is itself the
   // diagnosis — that was the 2026-08-20 bug, and nothing recorded it then.
@@ -585,6 +709,11 @@ export async function installAlarms() {
     delayInMinutes: 1,
   });
   log.emit("alarm-ensured", { created: r.created, reason: r.reason, periodMin: AUTO_PERIOD_MIN });
+  const hr = await ensureAlarm(ALARM_NAMES.homeHistory, {
+    periodInMinutes: HOME_POLL_MIN,
+    delayInMinutes: 2,     // after the autocheck's first fire, not racing it
+  });
+  log.emit("alarm-ensured", { name: ALARM_NAMES.homeHistory, created: hr.created, reason: hr.reason, periodMin: HOME_POLL_MIN });
 }
 
 /**
@@ -712,6 +841,20 @@ export const handlers = {
     await chrome.storage.local.remove(msg?.sourceId === "today" ? K.debugToday : K.debug);
     return { ok: true };
   },
+  // Intraday home-store history (lib/home_history.js). Day keys only unless a
+  // day is named, so opening the panel doesn't ship MBs over messaging.
+  async "home_history"(msg) {
+    const h = await homeHistory.read();
+    const days = Object.keys(h.days).sort().reverse();
+    const day = msg?.day && h.days[msg.day] ? msg.day : days[0] ?? null;
+    return { ok: true, days, day, entries: day ? h.days[day] : [] };
+  },
+  // Capture the home store now instead of waiting for the alarm. `force`
+  // re-reads even when Tableau's stamp has not moved.
+  async "home_history_poll_now"(msg) { return await pollHomeStore("manual", { force: !!msg?.force }); },
+  // Fresh guarded capture, then drop every stored home-store entry whose bins
+  // are not this store's (see _pollHomeStore). Re-runs the one-time repair.
+  async "home_history_repair_now"(_msg) { return await pollHomeStore("repair", { force: true, repair: true }); },
   async "pull_stores"(msg)   { return await pullStores(msg); },
   async "pull_today"(msg)    { return await pullToday(msg); },
   async "cancel_today"(_msg) { return cancelToday(); },

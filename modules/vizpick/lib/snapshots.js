@@ -1,4 +1,5 @@
 import { isTodayRowComplete, mergeTodayRow } from "./today_coverage.js";
+import * as homeHistory from "./home_history.js";
 
 let writeQueue = Promise.resolve();
 function serializeWrite(operation) {
@@ -200,6 +201,9 @@ export async function recordToday(...args) {
 }
 
 async function recordTodayImpl({ rows, sourceUpdate, capturedAt, partial, market }) {
+  // Every Today write path feeds the home-store history. Only home-store rows
+  // carry bins, and identical data is deduplicated there. Never throws.
+  await homeHistory.recordFromRows(rows, { sourceUpdate, capturedAt });
   const store = await read();
   const old = store.today;
   const sameSource = !!sourceUpdate?.raw && old?.sourceKey === sourceUpdate.raw
@@ -255,6 +259,7 @@ export async function mergeToday(...args) {
 }
 
 async function mergeTodayImpl({ rows, sourceUpdate, capturedAt, partial, market }) {
+  await homeHistory.recordFromRows(rows, { sourceUpdate, capturedAt });
   const store = await read();
   const sameSource = !!sourceUpdate?.raw && store.today?.sourceKey === sourceUpdate.raw
     && String(store.today?.market) === String(market);
@@ -305,6 +310,8 @@ export async function upsertTodayRow(...args) {
 
 async function upsertTodayRowImpl({ row, capturedAt, sourceUpdate, market = null }) {
   if (!row?.store) throw new Error("upsertTodayRow: row.store is required");
+  // metricshot's 10/14/20 schedule lands here — an update the crawl may miss.
+  await homeHistory.recordFromRows([{ ...row, capturedAt }], { sourceUpdate, capturedAt });
   const store = await read();
   const existing = store.today;
   const stamped = { ...row, capturedAt };

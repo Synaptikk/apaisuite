@@ -107,3 +107,16 @@ test("openCheck is exported for the handler to call", async () => {
   const svc = await import("../../service.js");
   assert.equal(typeof svc.openCheck, "function");
 });
+
+test("background current-day work runs 5 AM up to midnight, not overnight", async () => {
+  // Tableau can finalize the day until midnight; after that the overnight
+  // crawls only churned frozen tabs (46 leaked on 2026-09-15).
+  const { withinRefreshHours } = await import("../../service.js");
+  const at = (h, m) => new Date(2026, 8, 15, h, m);
+  assert.equal(withinRefreshHours(at(4, 59)), false);
+  assert.equal(withinRefreshHours(at(5, 0)), true);
+  assert.equal(withinRefreshHours(at(14, 3)), true);
+  assert.equal(withinRefreshHours(at(23, 59)), true);
+  assert.equal(withinRefreshHours(at(0, 0)), false);
+  assert.equal(withinRefreshHours(at(0, 30)), false);
+});

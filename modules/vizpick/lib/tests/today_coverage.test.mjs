@@ -20,3 +20,22 @@ test('retry merges independently successful sections and replaces corrupt older 
   assert.equal(mergeTodayRow({ ...complete, dataRevision: undefined }, next).hasHealth, false);
   assert.deepEqual(mergeTodayRow(complete, { store: '1' }), complete);
 });
+
+import { locationSignature, withholdDuplicateLocations } from '../today_coverage.js';
+test('identical location detail on two stores is withheld from both, and named', () => {
+  const gaps = [{ location: '001/002', win: 'A0B0C1D', skipped: 2 }, { location: '003/004', win: 'e0f0g2h', skipped: 1 }];
+  const a = { store: '1458', locations: { gaps } };
+  const b = { store: '5173', locations: { gaps: [...gaps].reverse().map((g) => ({ ...g, win: g.win.toLowerCase() })) } };
+  const c = { store: '658', locations: { gaps: [{ location: '001/002', win: 'zzz999z', skipped: 4 }] } };
+  const d = { store: '669', locations: { gaps: [] } };
+  const e = { store: '756', locations: { gaps: [] } };
+  assert.equal(locationSignature(a), locationSignature(b), 'order and case do not matter');
+  assert.equal(locationSignature(d), '', 'no gaps, no signature');
+  const out = withholdDuplicateLocations([a, b, c, d, e]);
+  assert.equal(out[0].locations, null); assert.deepEqual(out[0].locationsWithheld, { store: '5173' });
+  assert.equal(out[1].locations, null); assert.deepEqual(out[1].locationsWithheld, { store: '1458' });
+  assert.equal(out[2].locations.gaps.length, 1, 'a distinct store keeps its detail');
+  assert.equal(out[3].locations.gaps.length, 0, 'two empty stores are not duplicates of each other');
+  assert.equal(out[3].locationsWithheld, undefined);
+  assert.equal(a.locations.gaps.length, 2, 'input rows are not mutated');
+});
