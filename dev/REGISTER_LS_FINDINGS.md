@@ -357,10 +357,63 @@ same-amount advance is noise (advances are round daily amounts). Open: how
 a late-keyed CFT surfaces as a shortage (recycler L/S? the register it was
 keyed on?) — rule to be rebuilt once that is known.
 
+**WorkView amount ≠ Power BI finalized amount (seen 2026-09-15).** Reg 11 on
+2026-07-22 is a -$13,023.00 WorkView item but a -$1,735.00 Power BI cell;
+`unionDiscrepancies` lets the grid cell win for matching, so the queue's
+figure and the matched figure differ. `evidence.js` now leads the Why with
+an `amount_differs` bullet and the row says "Power BI finalized $…". Also
+the 07-21/07-22 → 07-23 store-wide shape: every register's own two short
+days add up to its 07-23 overage (reg 23 -$2,167 -$1,096 +$3,261), so
+`comboOffsets` ranks same-register parts first and marks `sameRegister`.
+
+**"This was the cause" (2026-09-15).** Every transaction the detail pane
+shows (ranked candidates, the video pick, cash matches, Open Drawer rows)
+carries a button; the pick is stored in `registerls.cause.<id>` (survives
+re-analysis and clear_cache; `set_cause` / `clear_cause`), leads the More
+Information text (`lib/cause.js::causeText`: "Cause: TR# … at … — $30.00
+cash tendered …, operator 193 NAME. Register 13 $30.00 short on …: the cash
+recorded on that transaction did not reach the drawer. Video reviewed.") and
+charges the operator in the cashier ledger as `cause_tx` at once. The
+ledger is keyed by WIN; the journal only has operator number + name, so
+`resolveAssociate` matches the name against the till log and falls back to
+`op<number>`. The reason (Internal Theft, Quick Change, …) is still the
+analyst's pick. Completed items keep the cause in the completed log.
+
+**Source windows are anchored to today, not the item (found 2026-09-15).**
+Every pulled report is "the last ~60 days": Power BI grid (60), till log
+(~60, report-side), CFTs (60), and Cash Research — probed with
+`dev/appriss-ledger-probe.mjs` (store 1458, 80/90 days): reg 7 earliest
+2026-07-18, reg 21 2026-07-24, reg 13 2026-07-20, so APPRISS keeps ~60 days
+too and the 60-day cap on `ledgerDays` is real, not artificial. An item
+older than that (the 2026-07-10 cluster, 67 days back) can only be matched
+against other OPEN WorkView items; a closed or never-opened offset is
+invisible. So: (1) `refresh_grid` / `refresh_cft` now merge like the till
+log (`mergeDatedRows`; `clear_cache` keeps all three), (2) items before the
+grid's first day get verdict `outside_window` ("Outside the reports'
+window — review", `evidence.js`, coverage passed from `matchingFor`) instead
+of "unmatched"; the journal/video signal still runs. `ANALYSIS_SCHEMA` 9.
+
+**Multi-entry offsets (2026-09-15).** Store 1458 had reg 18 +$38,812.00
+(07-23), reg 18 -$26,016.82 (07-21) and reg 11 -$13,023.00 (07-22) all
+"unmatched": the two shortages sum to $39,039.82, $227.82 from the overage,
+but the tiers pair one entry against one and only within 3 registers.
+`matching.js::comboOffsets` now runs after the tiers over what is left: for
+every entry of $1,000 or more it looks store-wide within ±3 days for two or
+three opposite-sign unmatched entries (each at least 10% of it) whose sum is
+within the strict tolerance; best = fewest parts, then smallest residual.
+Both the primary and each part get verdict `suspect_combo` ("Possible
+multi-entry offset — review"), never auto-filed; `ANALYSIS_SCHEMA` 8.
+
 **Till log retention (measured 2026-09-14):** requesting 90 days from the
 Cash Recycler report returned the same 2026-07-16 → 2026-09-13 range as 60,
-so the report itself keeps ~60 days. Flip pairs older than that cannot be
-attributed to a check-in. 2026-07-22 has no rows at all (report gap).
+so the report itself keeps ~60 days. 2026-07-22 has no rows at all (report gap).
+Since 2026-09-15 `refresh_tills` merges each pull into the stored log
+(`till_events.js::mergeTillRows`: the pull replaces its own date range,
+older rows are kept; `clear_cache` keeps `registerls.tills`), so a flip pair
+stays attributable once its day was ever pulled. Pairs older than the first
+pull ever made (before 2026-07-16 for store 1458) can never be named from
+the till log; the flip text then says so ("Check-in associates not
+identified: …") instead of silently omitting the names.
 Ledger: grid-only flip pairs (no WorkView item) now feed the cashier ledger
 for the double check-in rule only (`cashiers.js` gridOnly, `sync_ledger`
 synthesises `grid:<reg>|<date>` items, promoted to the real id later).

@@ -41,3 +41,18 @@ after a browser/worker crash is not guaranteed. Registry serialization and
 operation counts apply within a JavaScript context, not a distributed lock
 across multiple browser processes. Site-driven redirects/popups outside these
 explicit acquisition paths still require live verification.
+
+## Suite-wide Tableau lock (2026-09-14)
+
+Captures that drive `stores.tableau.wal-mart.com` from hidden tabs take
+`shared/tableau_lock.js::withTableauLock` and run one at a time, in arrival
+order. VizPick (stores export, Today crawl) and Digital Metrics (per-store
+view) both fire on their own alarm and on suite open, so they used to start
+within seconds of each other and share Edge's background-tab budget; the
+Digital Metrics 120 s viz wait was the one that lost. A waiter is told who
+holds the lock and shows it in its own progress UI ("waiting for VizPick
+stores capture to finish with Tableau"). Whole captures serialise; VizPick's
+three lanes stay parallel inside its own turn. In memory only: every capture
+runs in the one worker, so a dead worker leaves nothing stale. A hold past
+30 min is evicted; a waiter gives up after 10 min and runs anyway.
+Test: `shared/tests/tableau_lock.test.mjs`.

@@ -4,7 +4,7 @@ Active work only. Nothing finished, nothing speculative. When work lands,
 remove the entry — don't leave it as a "shipped" trophy. Long-form release
 notes live in `QRCallBox/public/extension/releases.json`.
 
-**Last reviewed:** 2026-06-02.
+**Last reviewed:** 2026-09-14.
 
 ---
 
@@ -59,6 +59,20 @@ First live run on store 1458 joined all four sources and produced verdicts.
   Complete; the Complete request itself is still unrecorded. Record one
   submission with the request logger, then `lib/workview.js::dispositionWorkItem`
   can post directly and a batch "close all flips" becomes possible.
+- **Check-in names for flips older than the till log.** The Cash Recycler
+  report keeps ~60 days; since 2026-09-15 pulls are merged and kept, but a
+  pair before the first pull (e.g. reg 6/8 on 2026-07-09) is filed as
+  "Check-in associates not identified". Probe whether the Cash Research
+  Search's Till Checkins count is drillable (`disableDrill: false`) to the
+  check-in rows with the associate; if so, add it as a fallback source.
+- **Backfill older months.** Every source keeps ~60 days and pulls now
+  accumulate (grid, till log, CFTs merge), but nothing before the first
+  pull (≈2026-07-17) will ever be recoverable; those items show "Outside
+  reports' window". Pull all three at least monthly so no gap forms.
+- **Multi-entry offsets: tune after real use.** `suspect_combo` (added
+  2026-09-15) flags large unmatched entries that two or three others add up
+  to. Thresholds ($1,000, ±3 days, 10% part share) are first guesses; check
+  the store 1458 reg 18/11 July group and any false positives it produces.
 - ~~Transaction video + CFTs~~ — done 2026-09-14: Open Drawer search gives the
   APPRISS transaction id → ▶ Video / Receipt on every candidate; Cash Fund
   Transfers report pulled and matched by amount + date (no register column).
@@ -66,6 +80,27 @@ First live run on store 1458 joined all four sources and produced verdicts.
   WorkView / Power BI / till log when missing or stale, then analyzes.
 - ~~Power BI grid window~~ — done 2026-09-12: `fetchRegister(store, { days })`
   rebuilds the per-day `action_date` filter; `registerls` pulls 60 days.
+
+### 2c. BoB and Lisa (`boblisa`) — follow-ups
+
+**Why:** Shipped 2026-09-14 (alpha) from the analyst's missed-item idea; first
+live run on store 1458 (9/7–9/13) found 51 manned pairs and 3 unpaid
+training receipts. Findings in `dev/BOBLISA_FINDINGS.md`.
+
+**Open:**
+- **Time-window CCTV for registerls.** `boblisa/lib/video.js` links video
+  by store + register + time with no transaction id (the viewer's
+  `storeNo/posNo/startTime/endTime` mode). registerls still needs an Open
+  Drawer id per candidate; the same helper would cover card sales there.
+- **Register ranges per store.** `lib/registers.js` holds store 1458's map
+  (manned 9–25, Vision Center 98, Automotive 95, SCO 1–8/27–34, Money Center 62–63 and 92–94, OPD 82).
+  Other stores will differ; make it a per-store setting in the toolbar.
+- **registerls frozen-tab hazard.** `registerls/lib/ej.js::openEjSession`
+  reuses an existing ej.walmart.com tab; Edge freezes idle background tabs
+  and `executeScript` into a frozen tab never resolves. Port
+  `boblisa/lib/ej_day.js::ensureAwake` (reload if `tab.frozen`).
+- **Cashier ledger.** Confirmed misses should feed registerls' per-associate
+  ledger / coaching notes rather than a separate list.
 
 ### 3. Hoops Sell-Through → ClaimsDisposition
 
@@ -196,6 +231,24 @@ both lines in `modules/_registry.js`.
 ---
 
 ### 6. VizPick Market Rollup — remaining UI + caching work
+
+**Wrong-store associate names — reproduced and fixed 2026-09-15, verify in
+the normal Edge.** The user's exported home history for 1458 (2026-09-14) held
+three other stores' bin lists (1089's twice, 756's once) under 1458, and the
+Today cards showed 1089 and 1458 identical. Cause: `captureStore` waited for
+"any vizql response" after the synthetic Enter on the Store box and then read
+the box back — which shows the value the code itself wrote. A dropped Enter
+posts nothing, and the session's previous store answered the wait. Fix: guard
+0 in `lib/sources/vizpick_today_tableau.js` waits for Tableau's own
+`tabdoc/set-parameter-value` round trip (valueString = store, HTTP 200), with
+the Enter re-sent up to 2×; `lib/home_history.js::addEntry` rejects an entry
+whose bins overlap <50% with the store's three newest entries (`rejected` in
+the `home-history-poll` telemetry). Verified in the debug Edge: 10/10 stores,
+no duplicate location sets. Stored history repairs itself: the first successful home poll after
+the update (`home_history.repairOnce`, flag `vizpick.homeHistory.repaired.v1`)
+drops every home-store entry whose bins do not match that guarded capture;
+`home_history_repair_now` re-runs it. Remaining: reload the extension in the
+normal Edge and confirm the 2026-09-14 day shows one entry for 1458.
 
 **2026-09-11 capture repair:** Live Playwright + installed-extension verification
 found literal `"Null"` summary cells being parsed as zero-valued health arcs,
@@ -585,6 +638,129 @@ from the user's normal window. A one-off `SESSION` render timeout resolved on
 retry; don't add speculative focus-management complexity unless it repeats.
 
 ---
+
+### 6b. VizPick home-store pick history — landed 2026-09-14
+
+**Why:** Store 1458's Associates view blames digital-job-coded associates for
+incomplete picks. The tool's attribution is last-scanner (picks are assigned
+to LOCATIONS, `user_id` is whoever scanned the bin last), so a digital
+associate scanning a backroom bin after the stocking team (Stocking 1, gone by
+2-3pm) inherits whatever was left. Tableau's Metric Definitions changed
+recently and suggested picks now keep appearing after the old 9am baseline.
+Location Details is current-state only, so neither claim could be shown from
+anything stored.
+
+**What landed:**
+- `lib/home_history.js` keeps every distinct update for the home store: all
+  bins with seen/done/last scanner/last scan time, 14 days, deduplicated on the
+  data (not the stamp). `diffEntries` gives picks added / completed / removed
+  per bin between updates; `toCsv` is long-format for pivoting.
+- Fed from all three Today write paths in `snapshots.js`, AND from a
+  dedicated `vizpick.homeHistory` alarm (30 min, 05:00-23:00) that captures the
+  home store alone and writes ONLY history — the market crawl never includes
+  the home store when the viewed market is not the home market (the debug
+  profile's market 1 does not contain 1458).
+- View: header button "Pick progression" opens a native `<dialog>` (not
+  inline — the analyst's call). Loads nothing until opened. Shows open picks
+  by JOB of the last scanner (Digital / Stocking 1 / other / not on schedule)
+  split at a stocking-leaves cutoff (default 15:00); every open bin with
+  location, full name + WIN, job title and scheduled shift, flagged "after
+  cutoff" / "off shift"; per-update timeline with changed bins; Export CSV with
+  name/job/shift columns. Updates are placed by Tableau's data time, not
+  capture time — the source ran 1h42m behind on the first live capture.
+- Names: `shared/associateDirectory.js` → `lookupNames` for misses. Job +
+  shift: digitalmetrics `get_schedule` (store, date) matched by name through
+  digitalmetrics' `canonical()` (`home_history.js::indexSchedule/matchPerson`;
+  ambiguous first+last matches are refused, not guessed). The stored schedule
+  carries resolved TITLES, not numeric job codes.
+- Handlers: `home_history` (read), `home_history_poll_now` (`force` optional).
+
+**Verified live 2026-09-14** (debug Edge, dev mirror): forced poll 20 s, first
+entry 149 bins / 762 seen / 644 done / 118 open, stamp 14:03:59; panel renders;
+alarm installed.
+
+First read with names/jobs (Tableau data 14:03, 118 open in 47 bins; all 47
+resolved to a name and job): last scanner Stocking 1 = 46 open / 22 bins / 9
+people, Digital = 27 / 11 / 2, Deli/Bakery 22, Stocking 2 10, F&C TL 8, other 5.
+
+**Second hypothesis (analyst, same day): picks appear when a bin is first
+SEEN.** Suggested picks may only count once a bin is scanned that day, so the
+first associate to hit a bin nobody scanned earlier "adds" its picks and owns
+them. Watch built: bins now keep `seenToday` + `casesExpected`/`casesSeen`,
+entries keep the department breakout; `unseenBins`, `firstSeenEvents`,
+`diffDepts` in `home_history.js`; dialog sections "First scans today", "Not
+scanned yet today", "Departments through the day"; CSV columns
+`scanned_today, cases_expected, cases_seen, first_scan_today`.
+Evidence so far (14:03 data): 139 scanned bins hold all 762 picks; the 9-10
+unscanned bins hold 0 picks despite expecting cases (028/002 51, 024/001 29,
+024/002 20, 027/001 15). Proof is one of those scanned later with picks
+appearing on that update. A first-scan needs both updates on the same basis
+(flag vs scan date) — the 999/999 placeholder was a false positive otherwise.
+
+**Next:** let it run a full day, then read the evening timeline: picks
+`added` after the cutoff answers the "list keeps growing" claim; open picks in
+bins last scanned after the cutoff by Digital answers the attribution claim;
+first scans with picks appearing answers the seen-first claim.
+
+**Open: "D" digital badge for ALL stores** (user ask; user chose cached
+Workday title lookups). Landed: `view.js::refreshTitles()` (detached, batches
+of 4, per-mount `titleAttempted` guard against repaint loops) and the badge
+falls back to `isDigitalJob(who.title)`; `shared/associateLookup.js` now
+parses Workday text outside the tab via exported `parseWorkdayPageText`
+(search layout AND worker-profile layout), with tests.
+**Still produces no titles — Workday's URL search is dead (verified live
+2026-09-14):** `…/d/search.htmld?q=<WIN>` renders only the global nav/home
+chrome (516 chars, no results, no profile), so every lookup times out and
+writes a 1 h miss. This has silently broken titles suite-wide (digitallocks
+too); the directory holds 343 records and 0 titles. A WIN typed into
+Workday's search box DOES land on the worker profile
+(`…/inst/autocompletesearch/247$….htmld`), which the new parser reads
+correctly ("Stocking 1 TA"). Fix options: drive the search box, or take titles
+from another source (other stores' WFM schedules).
+**Decision 2026-09-14: home store only for now.** `FETCH_WORKDAY_TITLES =
+false` in `view.js` stops the lookup pass (it was minutes of failing
+background navigation per market). The D badge keeps both sources: Digital
+Metrics roster (works for 1458) and any directory title that already exists.
+Re-enable the flag only after `associateLookup` can reach a profile.
+
+**Concurrent editor:** another session (apaisuite-be, 2026-09-14) is adding
+digital-associate marking to the vizpick store cards (`refreshDigital`,
+`digitalByStore`) in the same `view.js`. §7b is spliced between the `// 7b.`
+and `// 8. Cleanup` markers; keep them.
+
+### 6c. VizPick leaked capture tabs overnight — fixed 2026-09-15
+
+**Symptom:** 47 VizPick Tableau tabs open by morning in the debug Edge (46
+VizPickDetails, all `autoDiscardable:false`, so all capture tabs).
+
+**Evidence:** `shell.telemetry` showed every autocheck from 00:24 to 07:11
+logging `autocheck-today-plan` but never `autocheck-today`. The SW rebooted
+~36 min after each start. Tab `lastAccessed` put 3 tabs per failed run, 6 per
+hour. One tab was `frozen` when checked.
+
+**Cause:** Edge froze the hidden tabs overnight. `chrome.scripting.executeScript`
+into a frozen tab never settles, so the deadline loops never re-checked their
+deadlines. The crawl hung until `sw_keepalive` released at 35 min, Chrome killed
+the worker, and `fetchVizpickTodayTableau`'s `finally` (the only thing closing
+lanes) never ran. Made worse by `findOrOpenReportTab` now always opening a
+fresh tab.
+
+**Fix:**
+- `lib/background_tab.js::createCaptureTab` registers every capture tab with
+  `shared/tabSessions.js` (`moduleId "vizpick"`, `CAPTURE_TAB_IDLE_MS` 40 min,
+  above keep-alive 35 and lock hold 30). The SW's `_suite_tabreap` alarm (5 min)
+  closes tabs a dead worker leaves behind.
+- Both capture sources route every executeScript through
+  `execScriptWithTimeout` (20 s; 120 s for the staged export driver), so a
+  frozen tab becomes a failed attempt instead of a hang.
+- The 46 orphans were closed by hand.
+
+**Store hours (user's call 2026-09-15: "it could finalize up until
+midnight"):** `service.js::REFRESH_HOURS` 05:00-24:00 local /
+`withinRefreshHours()` gates the background Today autocheck and the home-store
+poll; midnight-5 AM they log `autocheck-skip {which:"today", reason:"outside
+store hours"}`. The Yesterday stores capture is not gated (the prior day
+publishes overnight), and manual Refresh / "Check now" run at any hour.
 
 ### 7. Periodic alarms — suite-wide fix, landed 2026-08-20
 
