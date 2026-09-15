@@ -492,71 +492,105 @@ async function ensureWorkdayTab() {
   return tab;
 }
 
+/**
+ * Read a Workday page's text into { name, title, tenureDays? }.
+ *
+ * Pure, and run in the extension rather than serialized into the tab, so both
+ * layouts can be tested. Workday serves TWO shapes for the same search URL:
+ *
+ *   · Search results — "Result link and actions", the name, an "Associate"
+ *     role label, a blank line, the title, and "Length of Service". The only
+ *     shape this scraper knew until 2026-09-14.
+ *   · The worker's own profile — a search for an exact WIN now redirects
+ *     straight to it (…/inst/autocompletesearch/247$…). Header lines are
+ *     name, title, then the "Actions" button, followed by the profile tabs
+ *     (Summary, Job, Personal, Career). No Length of Service anywhere, so the
+ *     old code polled for it until its 12 s deadline on EVERY lookup and no
+ *     title was ever stored — found when the VizPick "D" badge (which reads
+ *     these titles) marked nobody in a whole market.
+ *
+ * @returns {{noResults:true}|{notReady:true}|{noMatch:true, losSnippet:string}
+ *           |{name:string|null, title:string|null, tenureDays?:number, lengthOfSvc?:string, layout:string}}
+ */
+export function parseWorkdayPageText(body) {
+  const text = String(body ?? "");
+
+  if (/length of service/i.test(text)) {
+    // Match any leading time unit: "2 years 3 months", "7 months", "14 days", etc.
+    const losMatch = text.match(/Length of Service\s+([\d]+\s+(?:year|month|day)[^\n]*)/i);
+    if (!losMatch) {
+      const i = text.search(/length of service/i);
+      return { noMatch: true, losSnippet: text.slice(i, i + 200) };
+    }
+    const lengthOfSvc = losMatch[1].trim();
+    const y = Number(lengthOfSvc.match(/(\d+)\s*year/i)?.[1] ?? 0);
+    const m = Number(lengthOfSvc.match(/(\d+)\s*month/i)?.[1] ?? 0);
+    const d = Number(lengthOfSvc.match(/(\d+)\s*day/i)?.[1] ?? 0);
+    const tenureDays = Math.round(y * 365.25 + m * 30.44 + d);
+    // Name — line immediately after "Result link and actions".
+    const name = text.match(/Result link and actions\n([^\n]+)/)?.[1]?.trim() || null;
+    // Title — a blank line separates the "Associate" role label from the title.
+    const title = text.match(/\bAssociate\n\n([^\n]+)/)?.[1]?.trim() || null;
+    return { name, title, lengthOfSvc, tenureDays, layout: "search" };
+  }
+
+  if (/People\s*\n\s*0\b/.test(text)) return { noResults: true };
+
+  // Profile layout. Required tabs make this a positive identification rather
+  // than "a page with an Actions button on it".
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const iActions = lines.indexOf("Actions");
+  const isProfile = iActions >= 2 && ["Summary", "Job", "Career"].every((t) => lines.includes(t));
+  if (!isProfile) return { notReady: true };
+
+  const title = lines[iActions - 1];
+  const name = lines[iActions - 2];
+  // Sanity: a title is short text, and a name is two or more letter-only
+  // words. Anything else means the header shifted — store nothing rather than
+  // a menu label as someone's job.
+  const titleOk = title.length <= 80 && /[A-Za-z]/.test(title) && !/^(menu|actions|summary)$/i.test(title);
+  const nameOk = /^[\p{L}'.-]+(?:\s+[\p{L}'.-]+)+$/u.test(name);
+  if (!titleOk) return { notReady: true };
+  return { name: nameOk ? name : null, title, layout: "profile" };
+}
+
 async function scrapeDirectoryForUser(tabId, userId) {
   try {
     const searchUrl = `${WORKDAY_SEARCH}${encodeURIComponent(userId)}`;
     await chrome.tabs.update(tabId, { url: searchUrl });
 
-    // Poll until the SPA renders search results or timeout (12 s).
+    // Poll until the SPA renders either layout, or timeout (12 s).
     const deadline = Date.now() + 12_000;
+    let loggedWait = false;
     while (Date.now() < deadline) {
       await sleep(1200);
-      let result = null;
+      let body = null;
       try {
         const exec = await chrome.scripting.executeScript({
           target: { tabId },
-          func: () => {
-            const body = document.body?.innerText ?? "";
-            if (!body.match(/length of service/i)) {
-              if (body.match(/People\s*\n\s*0\b/)) return { noResults: true };
-              return { notReady: true, bodySnippet: body.slice(0, 300) };
-            }
-
-            const losIdx = body.search(/length of service/i);
-            const losSnippet = body.slice(losIdx, losIdx + 200);
-
-            // Match any leading time unit: "2 years 3 months", "7 months", "14 days", etc.
-            const losMatch = body.match(/Length of Service\s+([\d]+\s+(?:year|month|day)[^\n]*)/i);
-            if (!losMatch) return { noMatch: true, losSnippet };
-            const lengthOfSvc = losMatch[1].trim();
-
-            const y = Number(lengthOfSvc.match(/(\d+)\s*year/i)?.[1] ?? 0);
-            const m = Number(lengthOfSvc.match(/(\d+)\s*month/i)?.[1] ?? 0);
-            const d = Number(lengthOfSvc.match(/(\d+)\s*day/i)?.[1] ?? 0);
-            const tenureDays = Math.round(y * 365.25 + m * 30.44 + d);
-
-            // Name — line immediately after "Result link and actions" in Workday
-            const nameMatch = body.match(/Result link and actions\n([^\n]+)/);
-            const name = nameMatch ? nameMatch[1].trim() : null;
-
-            // Title — Workday puts a blank line between "Associate" role label and the title
-            const titleMatch = body.match(/\bAssociate\n\n([^\n]+)/);
-            const title = titleMatch ? titleMatch[1].trim() : null;
-
-            return { name, title, lengthOfSvc, tenureDays };
-          },
+          func: () => document.body?.innerText ?? "",
         });
-        result = exec?.[0]?.result ?? null;
+        body = exec?.[0]?.result ?? null;
       } catch {
         // Tab still loading — keep polling
         continue;
       }
-      if (!result) return null;
+      if (body == null) return null;
+      const result = parseWorkdayPageText(body);
       if (result.noResults) return null;
       if (result.noMatch) {
-        console.warn("[digitallocks] LOS text found but regex failed. Snippet:", result.losSnippet);
+        console.warn("[associateLookup] Length of Service found but its value did not parse. Snippet:", result.losSnippet);
         return null;
       }
       if (!result.notReady) return result;
-      // Log notReady body snippet only on first poll (avoids spam)
-      if (Date.now() < deadline - 10_800) {
-        console.warn("[digitallocks] waiting for LOS — page so far:", result.bodySnippet);
-      }
+      // Once per lookup, and without page text — this runs against people's
+      // profiles, and the old snippet log put their details in the console.
+      if (!loggedWait) { loggedWait = true; console.warn("[associateLookup] waiting for Workday to render a result for a lookup"); }
     }
-    console.warn("[digitallocks] scrapeDirectoryForUser timed out for", userId);
+    console.warn("[associateLookup] Workday lookup timed out");
     return null;
   } catch (e) {
-    console.warn("[digitallocks] scrapeDirectoryForUser failed:", e?.message);
+    console.warn("[associateLookup] Workday lookup failed:", e?.message);
     return null;
   }
 }

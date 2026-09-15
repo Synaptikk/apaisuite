@@ -11,8 +11,63 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 globalThis.chrome = { storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } } };
-const { needsWorkdayLookup, lookupDiagnostics, diffLookupDiagnostics } =
+const { needsWorkdayLookup, lookupDiagnostics, diffLookupDiagnostics, parseWorkdayPageText } =
   await import("../associateLookup.js");
+
+// ── Workday page parsing ──────────────────────────────────────────────────
+//
+// Workday answers a WIN search with either a results list or, since at least
+// 2026-09-14, the worker's profile directly. The scraper knew only the first,
+// so every lookup timed out and no title was stored anywhere in the suite.
+// Fixtures are invented; the line structure is copied from the live pages.
+
+const PROFILE_PAGE = [
+  "Use ALT + 4 to navigate to the action bar.", "Skip to main content", "MENU", "80", "19",
+  "Pat Example", "Stocking 1 TA", "Actions", "Phone", "Email", "Team",
+  "Summary", "Job", "Personal", "Career", "Summary", "Manager", "Location", "Education",
+].join("\n");
+
+const SEARCH_PAGE = [
+  "People", "1", "Result link and actions", "Pat Example", "Associate", "", "Digital Personal Shopper",
+  "Length of Service 3 years 2 months 5 days", "Location", "Store 1458",
+].join("\n");
+
+test("reads the title and name off the worker PROFILE layout", () => {
+  const r = parseWorkdayPageText(PROFILE_PAGE);
+  assert.equal(r.layout, "profile");
+  assert.equal(r.title, "Stocking 1 TA");
+  assert.equal(r.name, "Pat Example");
+  assert.equal(r.tenureDays, undefined);
+});
+
+test("still reads the search-results layout, tenure included", () => {
+  const r = parseWorkdayPageText(SEARCH_PAGE);
+  assert.equal(r.layout, "search");
+  assert.equal(r.title, "Digital Personal Shopper");
+  assert.equal(r.name, "Pat Example");
+  assert.equal(r.tenureDays, Math.round(3 * 365.25 + 2 * 30.44 + 5));
+});
+
+test("a page still rendering is not-ready, not a miss", () => {
+  assert.deepEqual(parseWorkdayPageText("Skip to main content\nMENU\nLoading"), { notReady: true });
+  assert.deepEqual(parseWorkdayPageText(""), { notReady: true });
+  // Actions present but no profile tabs yet: not identified as a profile.
+  assert.deepEqual(parseWorkdayPageText("Pat Example\nStocking 1 TA\nActions"), { notReady: true });
+});
+
+test("no results is reported as such", () => {
+  assert.deepEqual(parseWorkdayPageText("People\n0\nNo results"), { noResults: true });
+});
+
+test("a header that shifted stores nothing rather than a menu label as a title", () => {
+  const shifted = ["MENU", "Summary", "Actions", "Summary", "Job", "Career"].join("\n");
+  assert.deepEqual(parseWorkdayPageText(shifted), { notReady: true });
+});
+
+test("Length of Service with an unparseable value is a noMatch", () => {
+  const r = parseWorkdayPageText("Length of Service unknown");
+  assert.equal(r.noMatch, true);
+});
 
 test("an unknown WIN is looked up", () => {
   assert.equal(needsWorkdayLookup(null), true);

@@ -40,9 +40,16 @@ export const APPRISS_TAB_PATTERN = `${APPRISS_ORIGIN}/*`;
 // silently and lands on the portal. Verified live 2026-08-23 — 302s to
 // pfedprod `/idp/SSO.saml2` exactly as the old host did.
 //
-// RelayState is TENANT-RELATIVE (`/platform/portal`, not
-// `/walmart-usa/platform/portal`) — the server re-prefixes it itself.
-export const APPRISS_HOME = `${APPRISS_BASE}/secure/sso/saml2?RelayState=/platform/portal`;
+// NO RelayState. Until 2026-09 the server re-prefixed a tenant-relative
+// RelayState (`/platform/portal`) itself. Verified 2026-09-15 that it no
+// longer does: the ACS now redirects to `origin + "/" + RelayState`, so
+// `/platform/portal` lands on `apps.apprissretail.com//platform/portal`
+// (Cloudflare "Sorry, you have been blocked") and `/walmart-usa/platform/portal`
+// lands on `//walmart-usa/...`, which bounces to the logon page. With the
+// parameter omitted the chain finishes at `/walmart-usa/secure` → `/secure/portal`
+// → `/walmart-usa/platform/portal` and the Portal renders. Don't put a
+// RelayState back without re-running the redirect probe.
+export const APPRISS_HOME = `${APPRISS_BASE}/secure/sso/saml2`;
 
 // Sign-in-page detection. The new host renamed the page: `/secure/cpf/auth/logon`
 // 302s to `/walmart-usa/signin`. Callers that only tested for `logon`/`login`

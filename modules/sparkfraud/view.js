@@ -67,6 +67,37 @@ export async function mount(host, container) {
   let lastSearchResult = null;
   let eventTimestampMs = null;
   let lookupMode = false;
+  // Items the analyst has checked off, keyed "<orderId>:<itemId>" → ms
+  // checked. A checked row is greyed and sunk to the bottom of its order
+  // table. Persisted (namespaced) so re-renders, re-searches and a shell
+  // reload don't undo the analyst's progress through a long order.
+  let checkedItems = {};
+  const CHECKED_ITEMS_KEY = "checkedItems";
+  const CHECKED_ITEMS_MAX = 2000;
+  try {
+    const stored = await host.storage.local.get(CHECKED_ITEMS_KEY);
+    if (stored && typeof stored === "object") checkedItems = stored;
+  } catch (_) { /* start empty */ }
+  const itemCheckKey = (orderId, itemId) => `${orderId || "?"}:${itemId || "?"}`;
+  function persistCheckedItems() {
+    const keys = Object.keys(checkedItems);
+    if (keys.length > CHECKED_ITEMS_MAX) {
+      keys.sort((a, b) => checkedItems[a] - checkedItems[b]);
+      for (const k of keys.slice(0, keys.length - CHECKED_ITEMS_MAX)) delete checkedItems[k];
+    }
+    host.storage.local.set(CHECKED_ITEMS_KEY, checkedItems).catch(() => {});
+  }
+  // Checked rows go to the bottom of their tbody; unchecked rows keep the
+  // order OMS returned them in (data-orig-index).
+  function sinkCheckedRows(tbody) {
+    const rows = [...tbody.querySelectorAll("tr")];
+    rows.sort((a, b) => {
+      const ca = a.classList.contains("checked-off") ? 1 : 0;
+      const cb = b.classList.contains("checked-off") ? 1 : 0;
+      return ca - cb || (Number(a.dataset.origIndex) - Number(b.dataset.origIndex));
+    });
+    for (const r of rows) tbody.appendChild(r);
+  }
 
   // Store timezone — defaults to America/New_York. Multi-store users can update
   // sparkfraud/registries/store_config.json; populated at runtime from gscope.
@@ -1399,17 +1430,22 @@ ${itemsHtml}
       const orderTotal = items.reduce((s, it) => s + (Number(it.unitPriceUsd) || 0) * (Number(it.quantity) || 1), 0);
       const summary = `Order ${orderId} · ${customerName} · ${items.length} item${items.length === 1 ? "" : "s"} · ${fmtMoney(orderTotal)}`;
 
-      const tableRows = items.map(item => `
-        <tr class="${item.isCancelled ? "cancelled" : ""}" data-item-name="${(item.name || "").toLowerCase()}" data-upc="${item.upc || ""}" data-item-id="${item.id || ""}">
+      const tableRows = items.map((item, idx) => {
+        const checkKey = itemCheckKey(orderId, item.id);
+        const isChecked = !!checkedItems[checkKey];
+        return `
+        <tr class="${item.isCancelled ? "cancelled" : ""}${isChecked ? " checked-off" : ""}" data-item-name="${(item.name || "").toLowerCase()}" data-upc="${item.upc || ""}" data-item-id="${item.id || ""}" data-check-key="${escapeHtml(checkKey)}" data-orig-index="${idx}">
+          <td class="item-check"><input type="checkbox" class="sf-item-done" title="Check off this item (greys it and moves it to the bottom)"${isChecked ? " checked" : ""}></td>
           <td><div class="thumb placeholder" data-item-id="${item.id || ""}">${(item.id || "?").slice(0, 6)}</div></td>
           <td>${item.name || "—"} <a class="item-link" href="https://www.walmart.com/ip/${encodeURIComponent(item.id || "")}" target="_blank" rel="noopener" title="Open on walmart.com">${item.id || ""}</a></td>
           <td>${item.quantity != null ? item.quantity : "1"}</td>
           <td class="price">${fmtMoney(item.unitPriceUsd)}</td>
           <td>${item.lineStatus || "—"}</td>
-        </tr>`).join("");
+        </tr>`;
+      }).join("");
 
       const tableHtml = `<table>
-        <thead><tr><th></th><th>Item</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+        <thead><tr><th></th><th></th><th>Item</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>`;
 
@@ -1426,6 +1462,7 @@ ${itemsHtml}
       }
     }
     itemsContainer.innerHTML = html;
+    for (const tbody of itemsContainer.querySelectorAll("tbody")) sinkCheckedRows(tbody);
     tripEl.dataset.itemsReady = "1";
 
     delete tripEl.dataset.thumbsLoaded;
@@ -1778,6 +1815,21 @@ ${itemsHtml}
   // Old sf-lookup-go / sf-lookup-order wiring removed — replaced by the
   // unified sf-quick-lookup row (see runQuickLookup below).
   $("sf-item-filter").addEventListener("input", e => applyItemFilter(e.target.value));
+  // Item check-off. Delegated on #sf-results because renderTrips wipes its
+  // children on every search; the checkbox lives inside .items, not
+  // .trip-head, so ticking it never toggles the card.
+  $("sf-results").addEventListener("change", e => {
+    const cb = e.target;
+    if (!cb.classList?.contains("sf-item-done")) return;
+    const tr = cb.closest("tr");
+    const key = tr?.dataset.checkKey;
+    if (!tr || !key) return;
+    if (cb.checked) checkedItems[key] = Date.now();
+    else delete checkedItems[key];
+    tr.classList.toggle("checked-off", cb.checked);
+    sinkCheckedRows(tr.parentElement);
+    persistCheckedItems();
+  });
   $("sf-viable-only").addEventListener("change", () => {
     renderTrips();
     renderAllItems();

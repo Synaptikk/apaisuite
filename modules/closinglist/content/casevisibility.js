@@ -32,15 +32,18 @@
       method: "POST",
       credentials: "include",
       headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(30_000),
     });
     if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`Main.ashx ${resp.status}: ${body.slice(0, 200)}`);
+      const error = new Error(`Main.ashx HTTP ${resp.status}`);
+      error.errorClass = [401, 403].includes(resp.status) ? "AUTH" : "HTTP";
+      throw error;
     }
     const ct = resp.headers.get("content-type") || "";
     if (!ct.toLowerCase().includes("json")) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`Unexpected content-type ${ct}: ${body.slice(0, 200)}`);
+      const error = new Error(`Unexpected content-type ${ct || "missing"} from CaseVisibility`);
+      error.errorClass = ct.toLowerCase().includes("html") ? "AUTH" : "FORMAT";
+      throw error;
     }
     return resp.json();
   }
@@ -50,7 +53,7 @@
     if (msg.type === "collect-schedule") {
       fetchInit(msg.storeNbr, msg.businessDate)
         .then((json) => sendResponse({ ok: true, data: json }))
-        .catch((err) => sendResponse({ ok: false, error: String(err?.message ?? err) }));
+        .catch((err) => sendResponse({ ok: false, error: String(err?.message ?? err), errorClass: err.errorClass || (err.name === "TimeoutError" ? "TIMEOUT" : "NETWORK") }));
       return true;
     }
     if (msg.type === "ping") {

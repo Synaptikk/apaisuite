@@ -427,6 +427,13 @@
   text-decoration: line-through;
 }
 .module-sparkfraud .items td.price { text-align: right; font-variant-numeric: tabular-nums; }
+/* Check-off: the analyst has dealt with this item. Greyed and sunk to the
+   bottom of its order table (see sinkCheckedRows in view.js). */
+.module-sparkfraud .items td.item-check { width: 22px; padding-right: 0; }
+.module-sparkfraud .items td.item-check input { cursor: pointer; margin: 0; }
+.module-sparkfraud .items tr.checked-off td { color: #999; }
+.module-sparkfraud .items tr.checked-off td:not(.item-check) { opacity: 0.45; }
+.module-sparkfraud .items tr.checked-off img.thumb { filter: grayscale(1); }
 
 /* Per-order collapsible block — rendered when a trip has 2+ orders so each
    customer's items can be expanded independently. First order is open by

@@ -18,6 +18,7 @@
 //   - Element IDs prefixed with cl- to match view.html
 
 import * as Parse from "./lib/parse.js";
+import { collectSchedule, failureKind } from "./lib/collection.js";
 import { uploadAssociatesToFirestore } from "./lib/firebaseUpload.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
 
@@ -104,11 +105,11 @@ export async function mount(host, container) {
   //    User never has to leave APAISuite as long as their SSO is cached.
   //    Shared SSO_SELECTORS list lives in shared/auth.js so adding a new
   //    Walmart-corp-SSO button variant is a single edit.
-  async function findOrOpenCaseVisibilityTab(onCreated) {
+  async function findOrOpenCaseVisibilityTab(onCreated, forceFresh = false) {
     const existing = await host.tabs.query({
       url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
     });
-    if (existing.length) return existing[0];
+    if (!forceFresh && existing.length) return existing[0];
 
     setStatus("Opening CaseVisibility (background)…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
@@ -133,6 +134,7 @@ export async function mount(host, container) {
       if (!finalTab) throw new Error("CaseVisibility tab was closed mid sign-in.");
       if (HOST_MATCH.test(finalTab.url || "")) return finalTab;
     }
+    onCreated(null); // Leave the sign-in tab available for manual MFA.
     throw new Error(
       "Couldn't auto-sign in to CaseVisibility. The tab is open in the " +
       "background — finish the sign-in there (incl. MFA if prompted), then click Collect again."
@@ -148,6 +150,10 @@ export async function mount(host, container) {
     $collect.disabled = true;
     setStatus("Finding CaseVisibility tab…");
     let ownedTabId = null;
+    const startedAt = Date.now();
+    let stage = "schedule";
+    const emit = (event, payload) => host.logging.emit(event, payload);
+    emit("collect_started", {});
     try {
       await saveDefaults();
       const storeNbr         = $("cl-storeNbr").value.trim() || DEFAULTS.storeNbr;
@@ -159,9 +165,17 @@ export async function mount(host, container) {
       const includeIvr       = $("cl-includeIvr").checked;
       const showJobTitles    = $("cl-showJobTitles").checked;
 
-      const tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; });
+      let tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; });
       setStatus("Calling CaseVisibility…");
-      const resp = await host.messaging.sendToTab(
+      const resp = await collectSchedule({
+        emit,
+        recover: async () => {
+          setStatus("Refreshing CaseVisibility sign-in...");
+          if (ownedTabId != null) await host.tabs.remove(ownedTabId).catch(() => {});
+          ownedTabId = null;
+          tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; }, true);
+        },
+        collect: () => host.messaging.sendToTab(
         tab.id,
         "collect-schedule",
         { storeNbr, businessDate },
@@ -170,8 +184,9 @@ export async function mount(host, container) {
             { file: `modules/${host.id}/content/casevisibility.js` },
           ],
         }
-      );
-      if (!resp || !resp.ok) throw new Error(resp?.error || "Unknown response");
+      )
+      });
+      emit("schedule_succeeded", { durationMs: Date.now() - startedAt });
       if (ownedTabId != null) {
         await host.tabs.remove(ownedTabId).catch(() => {});
         ownedTabId = null;
@@ -180,18 +195,22 @@ export async function mount(host, container) {
       let ivrRows = [];
       let ivrStatus = "";
       if (includeIvr) {
+        stage = "ivr";
         setStatus("Collecting IVR call-offs (this opens an IVR tab, ~5-15s)…");
         // host.messaging.send rejects on { ok: false }, so the catch is the
         // only failure path here. ivrResp on the happy path always has ok:true.
         try {
           const ivrResp = await host.messaging.send("collect-ivr-absences");
           ivrRows   = ivrResp.rows || [];
+          emit("ivr_succeeded", { rowCount: ivrRows.length });
           ivrStatus = `, ${ivrRows.length} IVR rows`;
         } catch (e) {
+          emit("ivr_failed", { kind: failureKind(e) });
           ivrStatus = `, IVR failed: ${e?.message ?? e}`;
         }
       }
 
+      stage = "render";
       const model = Parse.build(resp.data, {
         cutoff: { startHour, endHour },
         excludeOvernight,
@@ -217,6 +236,7 @@ export async function mount(host, container) {
         cloudStatus = `, cloud: ${e?.message ?? e}`;
       }
 
+      emit("collect_finished", { durationMs: Date.now() - startedAt, schedule: "ok", ivr: includeIvr ? (ivrStatus.includes("IVR failed") ? "failed" : "ok") : "skipped", rowCount: model.includedCount });
       setStatus(
         `Done. ${model.includedCount} of ${model.totalScheduled} ` +
           `(skipped: cutoff=${model.skipped.skippedNotAfternoon}, overnight=${model.skipped.skippedOvernight}, ` +
@@ -225,6 +245,7 @@ export async function mount(host, container) {
         "ok"
       );
     } catch (e) {
+      emit("collect_failed", { stage, kind: failureKind(e), durationMs: Date.now() - startedAt });
       setStatus(String(e?.message ?? e), "error");
     } finally {
       // Use the captured reference — $("cl-collect") would return null if the
@@ -279,6 +300,17 @@ export async function mount(host, container) {
   $("cl-copy").addEventListener("click", onCopy);
   $("cl-openOutlook").addEventListener("click", onOpenOutlook);
   $("cl-resetExcludeJobs").addEventListener("click", onResetExcludeJobs);
+
+  // Persist preferences as soon as they change. Previously they were only
+  // saved when Collect ran, so an edited recipient followed by Copy / Open
+  // Outlook / navigating away silently reverted to the last saved value on
+  // the next mount.
+  const PREF_IDS = [
+    "cl-storeNbr", "cl-recipient", "cl-startHour", "cl-endHour",
+    "cl-excludeOvernight", "cl-excludeJobs", "cl-includeIvr", "cl-showJobTitles",
+  ];
+  const onPrefChange = () => { saveDefaults().catch(() => {}); };
+  for (const id of PREF_IDS) $(id)?.addEventListener("change", onPrefChange);
 
   // 9. Cleanup function — invoked (awaited) by the shell on route change.
   // Async so future teardown (unsubscribing from host.messaging.on listeners,
