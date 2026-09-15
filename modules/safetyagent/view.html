@@ -1,0 +1,85 @@
+<div class="sa">
+  <header class="sa-header">
+    <div class="sa-title">
+      <div class="sa-eyebrow">SafeIQ · Safety Agent · computer-vision hazard alerts</div>
+      <h1>Safety Agent Dashboard</h1>
+      <p class="sa-sub">Every alert a store's cameras raised, and what the associate who answered it said was there. Sort cameras by how often they fire on nothing (closed as no hazard found, no spill or no object), see who closes what and how fast, and open any row for those individual events.</p>
+    </div>
+    <div class="sa-toolbar">
+      <label class="sa-field">Store <input id="sa-store" class="input sa-store-input" inputmode="numeric" placeholder="1458"></label>
+      <span id="sa-store-src" class="sa-muted"></span>
+      <label class="sa-field">From <input id="sa-from" class="input" type="date"></label>
+      <label class="sa-field">To <input id="sa-to" class="input" type="date"></label>
+      <button id="sa-pull" class="btn btn-primary">Pull alerts</button>
+      <button id="sa-open" class="btn btn-secondary btn-sm" title="Open the SafeIQ dashboard in a tab (sign in there if the pull cannot)">Open SafeIQ</button>
+      <span id="sa-progress" class="sa-muted"></span>
+    </div>
+  </header>
+
+  <div id="sa-status" class="status-strip" hidden></div>
+
+  <div id="sa-empty" class="state-empty" hidden>No alerts loaded yet. Enter a store and pull.</div>
+
+  <div id="sa-body" hidden>
+    <div id="sa-meta" class="sa-meta"></div>
+
+    <div class="sa-tiles" id="sa-tiles"></div>
+
+    <section class="sa-section">
+      <h2>What associates said they found</h2>
+      <p class="sa-sub">Each alert closes with one of 12 fixed quick-select tags. Grouped into three families: nothing was there when the associate arrived, it was already cleaned up, or a hazard was confirmed and handled.</p>
+      <div class="sa-fam" id="sa-fam"></div>
+      <div class="sa-reasons" id="sa-reasons"></div>
+    </section>
+
+    <section class="sa-section">
+      <h2>Cameras</h2>
+      <p class="sa-sub">One row per camera. Sort any column. The shaded column is the share of that camera's alerts closed as a non-issue: <b>no_hazard_found</b>, <b>no_spill</b> or <b>no_object</b>. Click a row to list those events with the associate and response time.</p>
+      <div class="sa-ctl">
+        <label class="sa-field">Find <input type="search" id="sa-q" class="input" placeholder="camera or department"></label>
+        <label class="sa-field">Department <select id="sa-dept" class="input"><option value="">All</option></select></label>
+        <label class="sa-field">Min alerts <input type="number" id="sa-min" class="input sa-num-input" value="5" min="1"></label>
+        <span class="btn-group" role="group" aria-label="Columns">
+          <button id="sa-col-fam" class="btn btn-sm btn-group-item" aria-pressed="true">Families</button>
+          <button id="sa-col-all" class="btn btn-sm btn-group-item" aria-pressed="false">All 12 tags</button>
+        </span>
+        <span class="sa-count" id="sa-cam-count"></span>
+      </div>
+      <div class="sa-tablewrap"><table id="sa-cams" class="data-table data-table-compact sa-table"><thead></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="sa-section">
+      <h2>Associates</h2>
+      <p class="sa-sub">Who closed the alerts, how often they reported nothing there, and their median minutes from detection to acknowledgement. Click a row for that associate's non-issue events.</p>
+      <div class="sa-ctl">
+        <label class="sa-field">Min alerts <input type="number" id="sa-amin" class="input sa-num-input" value="5" min="1"></label>
+        <span class="sa-count" id="sa-ass-count"></span>
+      </div>
+      <div class="sa-tablewrap"><table id="sa-ass" class="data-table data-table-compact sa-table"><thead></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="sa-section">
+      <h2>By hour of day</h2>
+      <p class="sa-sub">Alert volume per store-local hour. The accent portion is non-issue closures.</p>
+      <div class="sa-hours" id="sa-hours"></div>
+    </section>
+
+    <p class="sa-note" id="sa-foot"></p>
+  </div>
+  <div class="sa-tip" id="sa-tip" hidden></div>
+  <div class="sa-lb" id="sa-lb" hidden role="dialog" aria-modal="true" aria-label="Alert image">
+    <div class="sa-lb-box">
+      <div class="sa-lb-head">
+        <div class="sa-lb-meta" id="sa-lb-meta"></div>
+        <span class="btn-group" role="group" aria-label="Frame">
+          <button id="sa-lb-alert" class="btn btn-sm btn-group-item" aria-pressed="true" title="Detection frame with the bounding box">Alert</button>
+          <button id="sa-lb-assoc" class="btn btn-sm btn-group-item" aria-pressed="false" title="Frame the associate saw before verifying">Associate view</button>
+        </span>
+        <button id="sa-lb-prev" class="btn btn-sm btn-secondary" title="Previous (←)">‹</button>
+        <button id="sa-lb-next" class="btn btn-sm btn-secondary" title="Next (→)">›</button>
+        <button id="sa-lb-close" class="btn btn-sm btn-secondary" title="Close (Esc)">Close</button>
+      </div>
+      <div class="sa-lb-stage" id="sa-lb-stage"></div>
+    </div>
+  </div>
+</div>

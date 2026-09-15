@@ -16,6 +16,8 @@ import closinglist       from "./closinglist/module.js";
 import stockingplan      from "./stockingplan/module.js";
 import aurorbuddy        from "./aurorbuddy/module.js";
 import registerls        from "./registerls/module.js";
+import boblisa           from "./boblisa/module.js";
+import safetyagent       from "./safetyagent/module.js";
 import sparkfraud        from "./sparkfraud/module.js";
 import sparkrisk         from "./sparkrisk/module.js";
 import sparkscango       from "./sparkscango/module.js";
@@ -45,6 +47,8 @@ export default [
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
   aurorbuddy,
   registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ
+  boblisa,           // BoB and Lisa — missed-item finder (same card, second sale minutes later)
+  safetyagent,       // Safety Agent Dashboard — SafeIQ CV hazard alerts by camera / tag / associate
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,
   sparkrisk,         // Pre-checkout timing analysis

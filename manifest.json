@@ -75,6 +75,10 @@
     "https://*.analysis.windows.net/*",
     "https://stores.tableau.wal-mart.com/*",
     "https://go.enviance.com/*",
+    "https://safeiq.stage.walmart.net/*",
+    "https://safeiq.walmart.net/*",
+    "https://safeiqcv.stage.walmart.net/*",
+    "https://safeiqcv.walmart.net/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
@@ -317,6 +321,15 @@
       "matches": [
         "https://app.us.auror.co/*",
         "https://*.auror.co/*"
+      ]
+    },
+    {
+      "resources": [
+        "modules/boblisa/lib/*.js",
+        "modules/registerls/lib/ej_parse.js"
+      ],
+      "matches": [
+        "https://ej.walmart.com/*"
       ]
     }
   ]

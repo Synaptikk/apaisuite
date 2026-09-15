@@ -1,0 +1,58 @@
+<div class="bl">
+  <header class="bl-header">
+    <div class="bl-title">
+      <h1>BoB and Lisa</h1>
+      <p class="bl-sub">Finds customers who pay, then come back minutes later to buy one or two more items. That pattern usually means a large item slipped past the register and was caught at the door. Also flags when a door host prints a training receipt to recover it.</p>
+    </div>
+    <div class="bl-toolbar">
+      <label class="bl-field">Store <input id="boblisa-store" class="input bl-store-input" inputmode="numeric" placeholder="1458"></label>
+      <span id="boblisa-store-src" class="bl-muted"></span>
+      <label class="bl-field">From <input id="boblisa-from" class="input" type="date"></label>
+      <label class="bl-field">To <input id="boblisa-to" class="input" type="date"></label>
+      <button id="boblisa-pull" class="btn btn-primary">Pull journal</button>
+      <button id="boblisa-repull" class="btn btn-secondary btn-sm" title="Pull every day in the range again">Re-pull all</button>
+      <span id="boblisa-progress" class="bl-muted"></span>
+    </div>
+  </header>
+
+  <div id="boblisa-status" class="bl-status" hidden></div>
+
+  <section class="bl-summary" id="boblisa-summary"></section>
+
+  <section id="boblisa-trainings" class="bl-trainings"></section>
+
+  <div class="bl-tabs" role="tablist">
+    <button class="bl-tab" role="tab" data-tab="manned" aria-selected="true">Manned lanes 9–25 <small id="boblisa-cnt-manned"></small></button>
+    <button class="bl-tab" role="tab" data-tab="unmanned" aria-selected="false">Unmanned registers <small id="boblisa-cnt-unmanned"></small></button>
+    <button class="bl-tab" role="tab" data-tab="unpaid" aria-selected="false">Unpaid training receipts <small id="boblisa-cnt-unpaid"></small></button>
+    <button class="bl-tab" role="tab" data-tab="documented" aria-selected="false">Documented misses <small id="boblisa-cnt-documented"></small></button>
+  </div>
+
+  <section class="bl-panel" data-panel="documented" hidden>
+    <div class="bl-dochead">
+      <div class="status-strip status-strip-info bl-note">Every miss you documented for this store, kept across pulls and cache clears. Open any row in the other tabs and click <b>Document this miss</b> to add one.</div>
+      <button id="boblisa-doc-export" class="btn btn-secondary btn-sm" title="One CSV into Downloads\APAISuite\boblisa\&lt;store&gt;">Export CSV</button>
+    </div>
+    <div id="boblisa-doc-rollup" class="bl-rollup"></div>
+    <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="documented"></table></div>
+  </section>
+
+  <section class="bl-panel" data-panel="unpaid" hidden>
+    <div class="status-strip status-strip-info bl-note">Training receipts where there was not a purchase of the item(s).</div>
+    <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="unpaid"></table></div>
+  </section>
+
+  <section class="bl-panel" data-panel="manned">
+    <div class="status-strip status-strip-info bl-note">Back-to-back sales on the same register under 2 minutes apart are one customer paying twice and are left out. Money Center and Automotive second sales are hidden by default for the same reason.</div>
+    <div class="bl-controls" data-controls="manned"></div>
+    <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="manned"></table></div>
+  </section>
+
+  <section class="bl-panel" data-panel="unmanned" hidden>
+    <div class="status-strip status-strip-warn bl-note">A first transaction on a self-checkout or other unmanned register has no cashier to miss the item. Money Center pairs (62–63, 92–94: bill pay, debit loads, money orders) and Automotive (95: tires and service) are hidden by default because they are separate purchases, not merchandise a register missed.</div>
+    <div class="bl-controls" data-controls="unmanned"></div>
+    <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="unmanned"></table></div>
+  </section>
+
+  <footer class="bl-foot">Cash customers have no token and only appear through a training receipt that names their item. Click a row for both item lists and APPRISS video links. Days are cached per store; "Re-pull all" refreshes them.</footer>
+</div>
