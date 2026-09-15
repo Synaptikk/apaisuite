@@ -7,9 +7,9 @@ import { dirname, join } from "node:path";
 
 import { decodeOpenDrawer, buildOpenDrawerBody, tradingDay, linkVideo, cctvUrl } from "../open_drawer.js";
 import { decodeCft, buildFilteredBody, normalizeRow, cftFor, dsrColumnOrder } from "../cft.js";
-import { buildEvidence, cftMatches, cftForTransactions } from "../evidence.js";
+import { buildEvidence, cftMatches, cftForTransactions, DEFAULT_CFG as DEFAULT_CFG_FOR_TEST } from "../evidence.js";
 import { storeUseBasket } from "../investigation.js";
-import { pantryMatch, normUpc, DEFAULT_PANTRY } from "../pantry.js";
+import { pantryMatch, normUpc, DEFAULT_PANTRY, parsePantryText, mergePantry, receiptUpcs, receiptPantryText } from "../pantry.js";
 import { parseRecords } from "../ej_parse.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -110,8 +110,20 @@ test("cft: a cash ticket that looks like a store purchase with no CFT keyed is f
   const line = (desc, cents) => ({ desc, cents, voided: false });
   const basket = [line("BANANAS", 141), line("BANANAS", 120), line("BANANAS", 134), line("FOAM PLATES", 596), line("VARIETY PAC", 756), line("VARIETY PAC", 756), line("VARIETY PAC", 756), line("GV 20OZ BWL", 497), line("GV 20OZ BWL", 497), line("GV 20OZ BWL", 497)];
   const tx = { transNum: "4273", time: "09:55:26", opNum: "353", totalCents: 22204, cashTendCents: 22204, changeDueCents: 0, items: basket };
-  assert.ok(storeUseBasket(tx), "repeated lines + plates/bowls = store-use basket");
+  assert.equal(storeUseBasket(tx)?.kind, "pantry", "bananas + plates + bowls are on the pantry list");
   assert.equal(storeUseBasket({ ...tx, items: [line("TV 55IN", 39800), line("HDMI CABLE", 1200)] }), null);
+  // Repeated lines alone are a customer, not a store purchase (user rule):
+  // $11 of candy in threes and fours, $300 of site merch and crayons.
+  const candy = [line("MILK DUDS TB", 100), line("MILK DUDS TB", 100), line("MILK DUDS TB", 100), line("HOT TAMALES", 100), line("HOT TAMALES", 100), line("HOT TAMALES", 100), line("HOT TAMALES", 100), line("GUM", 100), line("GUM", 100), line("SODA", 200)];
+  assert.equal(storeUseBasket({ ...tx, items: candy }), null);
+  const merch = [...Array(4)].flatMap(() => [line("SITE MERCH", 3000), line("CR 24 CRAYON", 300), line("PLATES", 500), line("CUPS", 400)]);
+  assert.equal(storeUseBasket({ ...tx, items: merch }), null);
+  const candyEv = buildEvidence({ item: { id: "c", register: "13", date: "2026-07-20", amountCents: -1100, amountAbsCents: 1100, sourceAppId: "mel" }, ej: { transactions: [{ ...tx, transNum: "4407", totalCents: 1100, cashTendCents: 1100, items: candy }], events: [] }, cft: [{ businessDate: "2026-07-21", inputDate: "2026-07-21", inputTime: "11:36:20", amountCents: 1131, accountDesc: "ASSOCIATE RELATIONS", recipient: "shaina", system: false }] });
+  assert.ok(!candyEv.why.some((w) => w.kind === "cft_keyed" || w.kind === "cft_missing"), "an $11 candy ticket is not paired with an $11.31 CFT");
+  assert.equal(candyEv.cftTx.length, 0);
+  // Even a pantry-list basket under $100 is not a CFT candidate.
+  const small = buildEvidence({ item: { id: "s", register: "13", date: "2026-07-20", amountCents: -2000, amountAbsCents: 2000, sourceAppId: "mel" }, ej: { transactions: [{ ...tx, totalCents: 2000, cashTendCents: 2000, items: basket.slice(0, 3) }], events: [] }, cft: [] });
+  assert.ok(!small.why.some((w) => w.kind === "cft_missing"));
   const item = { id: "13", register: "13", date: "2026-07-20", amountCents: -22100, amountAbsCents: 22100, sourceAppId: "mel" };
   const ej = { transactions: [tx], events: [] };
   const none = buildEvidence({ item, ej, cft: [] });
@@ -167,12 +179,43 @@ test("pantry: the associate-pantry ticket is recognised from its UPCs, including
 test("pantry: a pantry run smaller than the shortage is still reported, with the unexplained remainder", () => {
   const line = (desc, cents) => ({ desc, cents, voided: false });
   const basket = [...Array(6)].map(() => line("NISSIN CUP", 50)).concat([...Array(4)].map(() => line("GV SPAG RING", 108)), [line("BANANAS", 141), line("FOAM PLATES", 596)]);
-  const tx = { transNum: "77", time: "10:00:00", opNum: "9", totalCents: 5070, cashTendCents: 5070, changeDueCents: 0, items: basket };
+  const tx = { transNum: "77", time: "10:00:00", opNum: "9", totalCents: 15070, cashTendCents: 15070, changeDueCents: 0, items: basket };
   const item = { id: "p", register: "13", date: "2026-07-20", amountCents: -22100, amountAbsCents: 22100, sourceAppId: "overshort" };
   const ev = buildEvidence({ item, ej: { transactions: [tx], events: [] }, cft: [] });
   assert.notEqual(ev.verdict, "pantry_cft", "not the whole shortage → not a found cause");
   const w = ev.why.find((x) => x.kind === "cft_missing");
-  assert.ok(w && /covers \$50\.70 of the \$221\.00 shortage; \$170\.30 is still unexplained/.test(w.text), w?.text);
+  assert.ok(w && /covers \$150\.70 of the \$221\.00 shortage; \$70\.30 is still unexplained/.test(w.text), w?.text);
+  // Under $100 the same basket is a customer, whatever it contains (user rule: a pantry run is never small).
+  const smallRun = buildEvidence({ item, ej: { transactions: [{ ...tx, totalCents: 5070, cashTendCents: 5070 }], events: [] }, cft: [] });
+  assert.ok(!smallRun.why.some((x) => x.kind === "cft_missing"));
+});
+
+test("pantry list: the analyst's own UPCs are parsed leniently, merged over the built-in list, and matched by the analysis", () => {
+  const { items, rejected } = parsePantryText("007874208830 FOAM PLATES\n7066203003, NISSIN CUP\n4011\tBANANAS\n# comment\n\n12345678\nnot a upc\n");
+  assert.deepEqual(items, [{ upc: "7874208830", desc: "FOAM PLATES" }, { upc: "7066203003", desc: "NISSIN CUP" }, { upc: "4011", desc: "BANANAS" }, { upc: "12345678", desc: "UPC 12345678" }]);
+  assert.deepEqual(rejected, ["not a upc"]);
+  const merged = mergePantry([{ upc: "7874208830", desc: "Foam plates 50ct" }, { upc: "9990001", desc: "STORE COFFEE" }]);
+  assert.equal(merged.length, DEFAULT_PANTRY.length + 1, "a clash replaces the built-in row, a new UPC adds one");
+  assert.equal(merged.find((p) => p.upc === "7874208830").desc, "FOAM PLATES 50CT");
+  assert.equal(merged.find((p) => p.upc === "7874208830").source, "custom");
+  assert.equal(merged.find((p) => p.upc === "4011").source, "default");
+  // A basket of the added item, under the added UPC, is a pantry run for the analysis.
+  const line = (desc, code) => ({ desc, code, cents: 500, voided: false });
+  const basket = [...Array(4)].flatMap(() => [line("COFFEE", "0009990001"), line("PLATES", "007874208830"), line("BANANAS", "4011")]);
+  assert.equal(pantryMatch(basket), null, "the coffee UPC is not on the built-in list, and two products is not a run");
+  assert.ok(pantryMatch(basket, merged), "on the merged list it is");
+  const tx = { transNum: "8", time: "10:00:00", opNum: "9", totalCents: 12000, cashTendCents: 12000, changeDueCents: 0, items: basket };
+  const item = { id: "m", register: "13", date: "2026-07-20", amountCents: -12000, amountAbsCents: 12000, sourceAppId: "overshort" };
+  assert.equal(buildEvidence({ item, ej: { transactions: [tx], events: [] }, cft: [], cfg: { ...DEFAULT_CFG_FOR_TEST, pantry: merged } }).verdict, "pantry_cft");
+  assert.notEqual(buildEvidence({ item, ej: { transactions: [tx], events: [] }, cft: [] }).verdict, "pantry_cft");
+});
+
+test("pantry list: a raw EJ receipt yields one UPC line per distinct product, ready for the add form", () => {
+  const raw = "ST# 1458 OP# 00000353 TE# 13 TR# 04273\n                                      \nBANANAS      064312604011  SF      1.41 B\n 2.94 LBS  AT 1 FOR   0.48      1.41 B\nBANANAS      000000004011  KF      1.20 B\nFOAM PLATES  007874208830  S      5.96 AD\nNISSIN CUP   007066203003  SF      0.50 BD\nNISSIN CUP   007066203003  SF      0.50 BD\n        SALES TAX  1            1.46 \n                     TOTAL    222.04 \nUPC 0078742088300\n    TC# 3514 3360 3391 4897 0513 9    \n";
+  assert.deepEqual(receiptUpcs(raw), [{ upc: "64312604011", desc: "BANANAS" }, { upc: "4011", desc: "BANANAS" }, { upc: "7874208830", desc: "FOAM PLATES" }, { upc: "7066203003", desc: "NISSIN CUP" }]);
+  const { items } = parsePantryText(receiptPantryText(raw));
+  assert.equal(items.length, 4);
+  assert.equal(receiptUpcs("").length, 0);
 });
 
 test("pantry: one or two pantry items, or a few lines, is a customer — not a pantry run", () => {

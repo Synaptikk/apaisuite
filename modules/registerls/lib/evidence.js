@@ -26,6 +26,7 @@ export const DEFAULT_CFG = {
   tolerancePct:         0.05,   // ±5% above $100
   trustFlipAt:          0.70,   // engine's high-confidence band
   repeatLsCents:        1000,   // another |L/S| ≥ $10 in the ledger window = repeat pattern
+  cftMinCents:          10000,  // a pantry run is $100+ (user rule 2026-09-15); a smaller cash ticket is never a CFT candidate
 };
 
 export function tolerance(absCents, cfg = DEFAULT_CFG) {
@@ -185,7 +186,7 @@ export function ledgerFlags(ledger, item, cfg = DEFAULT_CFG) {
 
 // ── Verdict ────────────────────────────────────────────────────────
 
-export function buildEvidence({ item, finding = null, discrepancy = null, ledger = null, ej = null, tills = null, drawer = null, cft = null, cfg = DEFAULT_CFG }) {
+export function buildEvidence({ item, finding = null, discrepancy = null, ledger = null, ej = null, tills = null, drawer = null, cft = null, combo = null, coverage = null, cfg = DEFAULT_CFG }) {
   const missing = [];
   if (!finding && !discrepancy) missing.push("powerbi");
   if (!ledger) missing.push("cash_research");
@@ -299,12 +300,61 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     reason += ` ${a.associate || a.associateId} advanced ${fmtMoney(a.amountCents)} to this register at ${a.time} and no register shows it as an overage — the advance may never have reached the till.`;
   }
 
+  // Two or three unmatched entries store-wide add up to this one, or this
+  // one is a part of such a set: a cash-office event spread over several
+  // register-days (reg 18 +$38,812 = reg 18 -$26,016.82 + reg 11 -$13,023,
+  // $227.82 apart). The tiers cannot see it — they pair one against one on
+  // neighbouring registers. Review only: confirm in Cash Research first.
+  let comboShort = null;
+  if (combo?.combo && ["unmatched", "unmatched_over", "no_grid"].includes(verdict)) {
+    const c = combo.combo;
+    const ent = (r, d, a) => `reg ${r} ${fmtShortOver(a)} on ${d}`;
+    const primary = ent(c.primaryRegister, c.primaryDate, c.primaryAmountCents);
+    const others = c.parts.filter((x) => !(x.registerNbr === String(reg) && x.date === date)).map((x) => ent(x.registerNbr, x.date, x.amountCents)).join(" + ");
+    const all = c.parts.map((x) => ent(x.registerNbr, x.date, x.amountCents)).join(" + ");
+    // The search ran on the Power BI finalized figure for this register-day.
+    // When WorkView raised the item at a different amount (reg 11 07-22:
+    // WorkView -$13,023, Power BI -$1,735, parts +$1,505 +$247) the parts add
+    // up to the Power BI figure — say so, or "$17 from this $13,023" is false.
+    const mine = combo.role === "primary" ? c.primaryAmountCents : (c.parts.find((x) => x.registerNbr === String(reg) && x.date === date)?.amountCents ?? item.amountCents);
+    const differs = item.amountCents != null && mine != null && Math.abs(Math.abs(mine) - Math.abs(item.amountCents)) > tolerance(Math.max(Math.abs(mine), Math.abs(item.amountCents)), cfg);
+    const thisAmt = differs ? `the ${fmtShortOver(mine)} Power BI finalized for this register-day (WorkView raised it at ${amtText})` : `this ${amtText}`;
+    const fromThis = differs ? "from the Power BI figure" : "from this amount";
+    const tail = ` Amounts this size across several register-days look like a cash-office correction (a pickup or deposit keyed late or against the wrong register), not a drawer loss. Confirm in Cash Research before filing.`;
+    verdict = "suspect_combo"; verdictLabel = "Possible multi-entry offset — review"; severity = "medium";
+    reason = combo.role === "primary"
+      ? `No single entry offsets ${thisAmt}, but ${all} add up to ${fmtShortOver(c.sumCents)} — ${fmtMoney(c.residualCents)} ${fromThis}.${tail}`
+      : `No single entry offsets ${thisAmt}, but together with ${others} it adds up to ${fmtShortOver(c.sumCents)}, ${fmtMoney(c.residualCents)} from ${primary}.${tail}`;
+    const basis = differs ? `Power BI ${fmtShortOver(mine)}: ` : "";
+    comboShort = combo.role === "primary" ? `${basis}${all} add up to this (${fmtMoney(c.residualCents)} off)` : `${basis}with ${others} adds up to ${primary} (${fmtMoney(c.residualCents)} off)`;
+    dispositionText = "";
+  }
+
+  // Every report is "the last ~60 days from today". An item older than the
+  // pulled grid can only have been matched against other OPEN WorkView
+  // items; a closed or never-opened overage is invisible. Saying "unmatched"
+  // there is a claim the data cannot support. The journal still answers,
+  // so the video signal below still runs.
+  const gridMin = coverage?.gridMin || null;
+  // `coverage` absent = caller did not say what was pulled (tests, ad-hoc calls): no claim either way.
+  const beforeSources = !!coverage && (!gridMin || date < gridMin);
+  if (beforeSources && ["unmatched", "unmatched_over", "no_grid"].includes(verdict)) {
+    const reach = [];
+    reach.push(gridMin ? `the Power BI grid starts ${gridMin}` : "the Power BI grid has not been pulled");
+    if (tills?.logRange?.min) reach.push(`the till log starts ${tills.logRange.min}`); else if (!tills) reach.push("the till log has not been pulled");
+    const ledgerMin = ledger?.length ? ledger.map((r) => r.date).sort()[0] : null;
+    if (ledgerMin && ledgerMin > date) reach.push(`Cash Research reaches back to ${ledgerMin}`);
+    verdict = "outside_window"; verdictLabel = "Outside the reports' window — review";
+    reason = `No report reaches ${date}: ${reach.join(", ")}. Only other open WorkView items could be matched against this ${amtText}, so a closed or never-opened offset would not show — no offset claim can be made either way.`;
+    dispositionText = "";
+  }
+
   // Video signal: exactly one cash transaction explains the amount (shortages only —
   // an overage is cash the register did not record, and no receipt shows that).
   const videoCandidates = !isOver && !["flip", "bounceback"].includes(verdict) ? matches : [];
   const investigation = !isOver && !["flip", "bounceback"].includes(verdict) ? investigate(ej, abs, tolerance(abs || 0, cfg)) : null;
   if (investigation && drawerRows) linkVideo(investigation.candidates, drawerRows);
-  if (!isOver && (verdict === "unmatched" || verdict === "suspect_flip" || verdict === "no_grid")) {
+  if (!isOver && (verdict === "unmatched" || verdict === "suspect_flip" || verdict === "no_grid" || verdict === "suspect_combo" || verdict === "outside_window")) {
     if (videoCandidates.length === 1) {
       const v = videoCandidates[0];
       reason += ` One transaction recorded cash near the amount: TR# ${v.transNum} at ${v.time} (${v.why.join(", ")})${v.opNum ? `, operator ${v.opNum}${v.opName ? ` ${v.opName}` : ""}` : ""} — pull that video and confirm the cash went in.`;
@@ -329,9 +379,18 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   // Who checked the two tills in (flip pairs only).
   const fc = tills?.flip || null;
   const who = fc ? (fc.same ? (fc.associates[0].name || fc.associates[0].id) : fc.associates.map((a) => a.name || a.id).join(" and ")) : "";
+  const otherReg = isOver ? finding?.primaryRegister : m?.registerNbr;
   if (fc && (verdict === "flip") && !advFlip && who) {
     const detail = [...fc.mine, ...fc.theirs].map((c) => `reg ${c.registerNbr || c.register} ${c.time}`).join(", ");
-    dispositionText = dispositionText.replace(/\.$/, "") + (fc.same ? `. Tills checked in by ${who} (${detail}).` : `. Tills checked in by ${who} (${detail}); each till was checked in to the other's register.`);
+    const line = fc.same ? `Tills checked in by ${who} (${detail}).` : `Tills checked in by ${who} (${detail}); each till was checked in to the other's register.`;
+    dispositionText = dispositionText.replace(/\.$/, "") + ". " + line;
+    reason = reason.replace(/\.$/, "") + ". " + line;
+  } else if (verdict === "flip" && !advFlip && otherReg) {
+    // The check-in people are the cause of a flip; when the log cannot name
+    // them the filed text says so instead of silently leaving them out.
+    const none = noCheckinText(tills, reg, otherReg, date);
+    dispositionText = dispositionText.replace(/\.$/, "") + ". Check-in associates not identified: " + none;
+    reason = reason.replace(/\.$/, "") + ". " + none;
   }
 
   // Structured "why" bullets, the disposition suggestion, and what to look at.
@@ -349,6 +408,15 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   } else {
     why.push({ kind: "nogrid", text: `No long/short data to match this register-day against.` });
   }
+  if (verdict === "suspect_combo") why.push({ kind: "combo", text: reason.split(" Amounts this size")[0] + (combo?.combo?.sameRegister ? " Same register on consecutive days — a count corrected on the later day." : ".") });
+  // WorkView carries the amount the item was raised at; Power BI carries the
+  // finalized long/short. When they differ, matching used Power BI and the
+  // analyst must know the queue's figure is not the reconciled one.
+  const gridAmt = discrepancy && discrepancy._source?.sourceMethod !== "workview-item" ? discrepancy.amountCents : null;
+  if (gridAmt != null && item.amountCents != null && Math.abs(gridAmt - item.amountCents) > tolerance(Math.max(Math.abs(gridAmt), Math.abs(item.amountCents)), cfg)) {
+    why.unshift({ kind: "amount_differs", text: `WorkView carries this item at ${fmtShortOver(item.amountCents)}, but Power BI's finalized long/short for reg ${reg} on ${date} is ${fmtShortOver(gridAmt)}. Offsets were matched on the Power BI figure; the WorkView amount is what the item was raised at.` });
+  }
+  if (verdict === "outside_window") why.splice(0, 1, { kind: "outside", text: reason.split(" Only other open")[0] + " Only open WorkView items could be matched against it; a closed or never-opened offset would not show." });
   if (ej && !isOver) {
     if (verdict === "pantry_cft") { /* the cft_missing bullet below carries the cause */ }
     else if (matches.length === 1) why.push({ kind: "video", text: `Exactly one transaction recorded cash near the amount: TR# ${matches[0].transNum} at ${matches[0].time} (${matches[0].why.join(", ")})${matches[0].opNum ? `, operator ${matches[0].opNum}${matches[0].opName ? ` ${matches[0].opName}` : ""}` : ""}. Video must establish actual cash movement before this can explain the shortage.` });
@@ -357,9 +425,8 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     if (ops.length) why.push({ kind: "ops", text: `${ops.length === 1 ? "One operator" : `${ops.length} operators`} on the register that day: ${ops.map((o) => `${o.opNum}${o.name ? ` ${o.name}` : ""}`).join(", ")}.` });
   }
   for (const f of lflags) if (f.kind === "repeat" || f.kind === "no_checkin" || f.kind === "multi_till") why.push({ kind: f.kind, text: f.text + "." });
+  if ((!fc || !who) && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && otherReg) why.push({ kind: "flip_who_none", text: noCheckinText(tills, reg, otherReg, date) });
   if (tills) {
-    const otherReg = isOver ? finding?.primaryRegister : m?.registerNbr;
-    if ((!fc || !who) && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && otherReg) why.push({ kind: "flip_who_none", text: noCheckinText(tills, reg, otherReg, date) });
     if (fc && (verdict === "flip" || verdict === "suspect_flip") && !advFlip && who) why.push({ kind: fc.same ? "flip_who" : "flip_who_unsure", text: fc.same ? `${who} checked in both tills that day (${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} at ${c.time}`).join(", ")}) — the check-in error is theirs.` : `${who} each checked a till in that day (${[...fc.mine, ...fc.theirs].map((c) => `reg ${c.register} at ${c.time}`).join(", ")}) and each till landed on the other's register — both check-ins are charged.` });
     if (advFlip) why.push({ kind: "advance_flip", text: `Cash advance ${fmtMoney(advFlip.advance.amountCents)} by ${advFlip.advance.associate || advFlip.advance.associateId} at ${advFlip.advance.time} — the same amount is over on reg ${advFlip.landedOn.registerNbr} (${advFlip.landedOn.date}). Taken to the wrong till.` });
     else if (advMissing && verdict !== "flip" && verdict !== "bounceback") why.push({ kind: "advance_missing", text: `Cash advance ${fmtMoney(advMissing.advance.amountCents)} to this register by ${advMissing.advance.associate || advMissing.advance.associateId} at ${advMissing.advance.time} never surfaced as an overage anywhere.` });
@@ -369,12 +436,12 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   }
   for (const x of cftTx) {
     const who = x.tx.opNum ? `, operator ${x.tx.opNum}${x.tx.opName ? ` ${x.tx.opName}` : ""}` : "";
-    const basket = x.storeUse?.kind === "pantry" ? ` The basket is the associate pantry (${x.storeUse.pantryLines} of ${x.storeUse.lines} lines are pantry items: ${x.storeUse.repeats.join(", ")}).` : x.storeUse ? ` The basket looks like a store purchase (${x.storeUse.repeats.join(", ")}${x.storeUse.repeats.length ? "; " : ""}${x.storeUse.lines} lines).` : "";
+    const basket = x.storeUse?.kind === "pantry" ? ` The basket is the associate pantry (${x.storeUse.pantryLines} of ${x.storeUse.lines} lines are pantry items: ${x.storeUse.repeats.join(", ")}).` : "";
     if (x.cft) why.push({ kind: "cft_keyed", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who} and a CFT for ${fmtMoney(x.cft.amountCents)} was keyed ${x.cft.inputDate || "?"}${x.cft.inputTime ? ` ${x.cft.inputTime}` : ""} (${[x.cft.accountDesc, x.cft.recipient].filter(Boolean).join(" → ")}).${basket} If that purchase was paid from this drawer instead of with the recycler cash the CFT dispensed, the drawer is short the ticket — a CFT process error, not a loss. Confirm on the receipt and video.` });
     else if (verdict === "pantry_cft" && x === pantryMiss) why.splice(1, 0, { kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week. Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short exactly the ticket — the CFT was never completed. Cause found: CFT process error.` });
     else {
       const part = !withinTolerance(x.tx.cashTendCents, abs, cfg) ? (x.tx.cashTendCents < abs ? ` That covers ${fmtMoney(x.tx.cashTendCents)} of the ${fmtMoney(abs)} shortage; ${fmtMoney(abs - x.tx.cashTendCents)} is still unexplained.` : ` The ticket (${fmtMoney(x.tx.cashTendCents)}) is larger than this ${fmtMoney(abs)} shortage — check whether the rest surfaced on another day.`) : "";
-      why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week.${x.storeUse?.kind === "pantry" ? " Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short the ticket — the CFT was never completed." : " A store purchase paid out of the drawer without a CFT leaves the register short the ticket — if the video shows an associate paying from the till, the cause is a CFT that was never completed."}${part}` });
+      why.push({ kind: "cft_missing", text: `TR# ${x.tx.transNum} at ${x.tx.time} took ${fmtMoney(x.tx.cashTendCents)} cash${who}.${basket} No CFT for that amount was keyed within a week. Pantry runs are rung up, cashed out and closed with a CFT to the register; without the CFT the register is short the ticket — the CFT was never completed.${part}` });
     }
   }
   if (!isOver) for (const r of cashOut.slice(0, 3)) why.push({ kind: "cashout", text: `Cash paid out ${fmtMoney(r.changeCents)} at ${r.time} on TR# ${r.transNum} (cashier ${r.cashier || "?"}) with nothing tendered — a refund or payout of the shortage amount. Check the receipt and watch the video: was there a customer, and did the cash leave the drawer?` });
@@ -395,12 +462,12 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
       `Register ${reg} ${amtText} on ${date}.`,
       ...why.filter((w) => w.kind !== "ops").map((w) => w.text),
     ];
-    if (cftTx.some((x) => !x.cft)) lines.push(`If TR# ${cftTx.find((x) => !x.cft).tx.transNum} was a store purchase paid from the drawer, disposition as the CFT process error and have the CFT keyed.`);
+    if (cftTx.some((x) => !x.cft)) lines.push(`If TR# ${cftTx.find((x) => !x.cft).tx.transNum} was the pantry run paid from the drawer, disposition as the CFT process error and have the CFT keyed.`);
     if (videoCandidates.length) lines.push(`Review video of TR# ${videoCandidates[0].transNum} at ${videoCandidates[0].time} before closing.`);
     else if (cashOut.length) lines.push(`Review video of the ${fmtMoney(cashOut[0].changeCents)} cash-out on TR# ${cashOut[0].transNum} at ${cashOut[0].time} before closing.`);
     // Nothing gets dispositioned without a found cause. Notes only; the
     // analyst picks the reason (Internal Theft, Process Errors, …) after review.
-    suggestion = { reasonLabel: null, text: lines.join(" "), safe: false, action: videoCandidates.length ? "Watch the video; disposition only once the cause is known" : "Review; disposition only once the cause is known" };
+    suggestion = { reasonLabel: null, text: lines.join(" "), safe: false, action: verdict === "outside_window" ? "Reports do not reach this date — go on the journal and video; disposition only once the cause is known" : verdict === "suspect_combo" ? "Confirm the multi-entry offset in Cash Research; disposition only once the cause is known" : videoCandidates.length ? "Watch the video; disposition only once the cause is known" : "Review; disposition only once the cause is known" };
   }
 
   const lookAt = investigation ? ["investigation"] : [];
@@ -421,7 +488,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     flipConfidence: finding?.flipConfidence ?? null,
     matchType: finding?.matchType ?? null,
     matchedAgainst: finding?.matchedAgainst ?? [],
-    videoCandidates, cashMatches: matches, operators: ops,
+    videoCandidates, cashMatches: matches, operators: ops, combo: combo?.combo || null, comboShort, gridAmountCents: gridAmt,
     drawer: drawerRows ? { rows: drawerRows, count: drawerRows.length, explorerUrl: drawer.explorerUrl || null } : null,
     cashOut,
     cftNear, cftTx,
@@ -457,10 +524,11 @@ export function cftMatches(rows, item, abs, cfg = DEFAULT_CFG) {
 // log, the lanes are self-checkouts (no till exists to check in), or the log
 // simply has no check-in for that register that day.
 export function noCheckinText(tills, reg, otherReg, date) {
+  if (!tills) return `The Cash Recycler till log has not been pulled for this store, so nobody can be named for the check-ins — pull the till log and re-analyze.`;
   const k = tills?.kinds || {};
   const a = k[String(reg)], b = k[String(otherReg)];
   const min = tills?.logRange?.min;
-  if (min && date < min) return `The pulled till log starts ${min}; ${date} is before it, so the log cannot say who checked these tills in.`;
+  if (min && date < min) return `The pulled till log starts ${min} (the Cash Recycler report keeps about 60 days); ${date} is before it, so the log cannot say who checked these tills in.`;
   const scoA = !!a?.sco, scoB = !!b?.sco;
   if (scoA && scoB) return `Reg ${reg} and reg ${otherReg} are self-checkouts: their cash lives in the recycler and no till is ever checked in or out, so this offset is a recycler count between two lanes, not a swapped till — nobody to charge.`;
   if (scoA || scoB) { const s = scoA ? reg : otherReg, o = scoA ? otherReg : reg; return `Reg ${s} is a self-checkout (cash in the recycler, no till check-in). Reg ${o} has no matching check-in logged on ${date}, so the log cannot say who is responsible.`; }
@@ -469,9 +537,9 @@ export function noCheckinText(tills, reg, otherReg, date) {
 
 // Cash-tendered transactions near the shortage, each paired with the CFT
 // that matches the ticket (amount within tolerance, business or keyed date
-// from a day before to a week after) or marked missing. Only tickets that
-// look like a store purchase are reported when no CFT exists — an ordinary
-// customer sale with no CFT is just an ordinary sale.
+// from a day before to a week after) or marked missing. Only pantry-list
+// baskets of $100 or more are reported — an ordinary customer sale with no
+// CFT is just an ordinary sale, and a pantry run is never small.
 export function cftForTransactions(cft, ej, matches, date, cfg = DEFAULT_CFG) {
   const byTr = new Map((ej?.transactions || []).map((t) => [String(t.transNum), t]));
   const t0 = new Date(date).getTime();
@@ -486,6 +554,7 @@ export function cftForTransactions(cft, ej, matches, date, cfg = DEFAULT_CFG) {
   for (const t of ej?.transactions || []) if (completedCash(t) && !pool.some((m) => String(m.transNum) === String(t.transNum))) pool.push({ transNum: t.transNum, time: t.time, opNum: t.opNum, opName: t.opName || null, cashTendCents: t.cashTendCents, totalCents: t.totalCents });
   for (const m of pool) {
     if (seen.has(String(m.transNum))) continue; seen.add(String(m.transNum));
+    if (!(m.cashTendCents >= (cfg.cftMinCents ?? 0))) continue;
     const full = byTr.get(String(m.transNum)) || m;
     const storeUse = storeUseBasket(full, cfg.pantry);
     const hit = (cft || []).filter((c) => c.amountCents > 0 && !c.system && withinTolerance(c.amountCents, m.cashTendCents, cfg) && (ok(gap(c.businessDate)) || ok(gap(c.inputDate))))

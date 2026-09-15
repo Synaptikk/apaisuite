@@ -20,14 +20,16 @@ import { fetchWorkItems, LIST_PAGE_URL } from "./lib/workview.js";
 import { fetchCashLedger } from "./lib/cash_research.js";
 import { fetchReceipts, openEjSession, EJ_HOME } from "./lib/ej.js";
 import { parseRecords } from "./lib/ej_parse.js";
-import { buildEvidence, findFindingFor, findDiscrepancyFor, findCounterpartFinding, unionDiscrepancies } from "./lib/evidence.js";
+import { buildEvidence, DEFAULT_CFG, findFindingFor, findDiscrepancyFor, findCounterpartFinding, unionDiscrepancies } from "./lib/evidence.js";
 import { MATCH_OPTS } from "./lib/match_opts.js";
-import { tieredMatching } from "./lib/matching.js";
+import { tieredMatching, comboOffsets, findComboFor } from "./lib/matching.js";
 import { prefillDisposition, completeDisposition } from "./lib/dispo.js";
+import { normalizeCause } from "./lib/cause.js";
 import { fetchCashRecycler } from "./lib/cash_recycler.js";
 import { fetchOpenDrawer } from "./lib/open_drawer.js";
 import { fetchCft, cftFor } from "./lib/cft.js";
-import { tillsFor, wrongRegisterMoves } from "./lib/till_events.js";
+import { parsePantryText, mergePantry } from "./lib/pantry.js";
+import { tillsFor, wrongRegisterMoves, mergeDatedRows } from "./lib/till_events.js";
 import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents, ERROR_TYPES } from "./lib/cashiers.js";
 
 const TAG = "[registerls]";
@@ -41,6 +43,8 @@ const KEYS = {
   completed: "registerls.completed",
   ledger: "registerls.ledger",   // permanent: every attributed cashier event ever seen
   analysis: (id) => `registerls.analysis.${id}`,
+  cause: (id) => `registerls.cause.${id}`,   // the analyst's "this transaction was the cause" (record, survives re-analysis and clears)
+  pantry: (storeNbr) => `registerls.pantry.${storeNbr}`,   // the analyst's own pantry UPCs for the store (record)
 };
 // WorkView keeps open items for months; two years is "everything open".
 const QUEUE_DAYS = 730;
@@ -53,7 +57,7 @@ const CFT_DAYS = 60;
 // Items analyzed in parallel by analyze_all (APPRISS searchlite + EJ calls are light; 3 keeps the servers polite).
 const ANALYZE_CONCURRENCY = 3;
 // Bump when the evidence shape changes so cached analyses are re-run.
-const ANALYSIS_SCHEMA = 7;   // 7: pantry / store-use CFT checks on cash tickets
+const ANALYSIS_SCHEMA = 9;   // 9: "outside the reports' window" verdict for items older than the pulled sources
 const POWERBI_REPORT_URL = "https://app.powerbi.com/groups/me/reports/65c97d6a-7ad8-498d-b752-69028d408993/ReportSection?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
 
 function broadcast(type, payload) {
@@ -79,32 +83,38 @@ function matchingFor(grid, queue, storeNbr) {
   const gridDisc = grid && grid.storeNbr === String(storeNbr) ? grid.discrepancies : [];
   const discrepancies = unionDiscrepancies(gridDisc, queue?.items || [], storeNbr);
   const findings = discrepancies.length ? tieredMatching(discrepancies) : [];   // exact pairs first, near-misses only for what is left
-  return { discrepancies, findings, gridCapturedAt: grid?.capturedAt || null };
+  const combos = findings.length ? comboOffsets(discrepancies, findings) : [];   // large leftovers explained by 2–3 entries store-wide (review only)
+  // What the Power BI grid actually covers: an item older than gridMin can
+  // only be matched against other OPEN WorkView items, never against a
+  // closed or never-opened overage — so no "unmatched" claim is honest there.
+  const coverage = gridDisc.length ? { gridMin: grid.dateMin || null, gridMax: grid.dateMax || null } : { gridMin: null, gridMax: null };
+  return { discrepancies, findings, combos, coverage, gridCapturedAt: grid?.capturedAt || null };
 }
 
 function lookups(match, item) {
   const isOver = (item.amountCents ?? 0) > 0;
   const finding = findFindingFor(match.findings, item) || (isOver ? findCounterpartFinding(match.findings, item) : null);
   const discrepancy = findDiscrepancyFor(match.discrepancies, item);
+  const combo = findComboFor(match.combos, item);
   // The other register-day of the pair, for "who checked the tills in".
   let counterpart = null;
   if (finding && finding.matchType !== "none") {
     counterpart = isOver ? { register: String(finding.primaryRegister), date: finding.primaryDate } : (finding.matchedAgainst?.[0] ? { register: String(finding.matchedAgainst[0].registerNbr), date: finding.matchedAgainst[0].date } : null);
   }
-  return { finding, discrepancy, counterpart };
+  return { finding, discrepancy, counterpart, combo };
 }
 
 // Offset-only verdict for the queue list (no network). Same function the
 // full analysis uses, so a row's pill never disagrees with its detail.
 function preVerdict(item, match, tillRows = null) {
   if (!match.discrepancies.length) return { verdict: "pending", verdictLabel: "no data yet", severity: "none" };
-  const { finding, discrepancy, counterpart } = lookups(match, item);
+  const { finding, discrepancy, counterpart, combo } = lookups(match, item);
   const tills = tillRows ? tillsFor(tillRows, item, match.discrepancies, undefined, counterpart) : null;
-  const ev = buildEvidence({ item, finding, discrepancy, tills });
+  const ev = buildEvidence({ item, finding, discrepancy, tills, combo, coverage: match.coverage });
   return {
     verdict: ev.verdict, verdictLabel: ev.verdictLabel, severity: ev.severity, flipConfidence: ev.flipConfidence, matchedAgainst: ev.matchedAgainst,
     counterpart: finding && (item.amountCents ?? 0) > 0 ? { registerNbr: finding.primaryRegister, date: finding.primaryDate, amountCents: finding.primaryAmountCents } : null,
-    why: ev.why,
+    why: ev.why, combo: ev.comboShort || null, gridAmountCents: ev.gridAmountCents ?? null,
     // A clean pair needs no journal pull to be filed — carry the suggestion.
     suggestion: ev.suggestion && ev.suggestion.safe ? ev.suggestion : null,
   };
@@ -121,7 +131,10 @@ export const handlers = {
     const match = matchingFor(grid, queue, store.storeNbr);
     const tillRows = tillsCache && tillsCache.storeNbr === store.storeNbr ? tillsCache.rows : null;
     const analyses = {};
+    const causes = {};
     if (items.length) {
+      const gotCause = await chrome.storage.local.get(items.map((i) => KEYS.cause(i.id)));
+      for (const i of items) if (gotCause[KEYS.cause(i.id)]) causes[i.id] = gotCause[KEYS.cause(i.id)];
       const got = await chrome.storage.local.get(items.map((i) => KEYS.analysis(i.id)));
       for (const i of items) {
         const a = got[KEYS.analysis(i.id)];
@@ -133,6 +146,7 @@ export const handlers = {
       queue: queue ? { fetchedAt: queue.fetchedAt, storeNbr: queue.storeNbr, otherCount: queue.otherCount, total: queue.total, totals: queue.totals || null, window: queue.window, items: items.map((i) => ({ ...i, pre: preVerdict(i, match, tillRows) })), others: queue.others || [] } : null,
       grid: gridForStore ? { capturedAt: gridForStore.capturedAt, storeNbr: gridForStore.storeNbr, cellCount: gridForStore.discrepancies?.length || 0, rollup: gridForStore.rollup, dateMin: gridForStore.dateMin || null, dateMax: gridForStore.dateMax || null } : (grid ? { staleStore: grid.storeNbr } : null),
       analyses,
+      causes,
       tills: tillRows ? { fetchedAt: tillsCache.fetchedAt, rows: tillRows.length, dateMin: tillsCache.dateMin, dateMax: tillsCache.dateMax, reportUrl: tillsCache.reportUrl, moves: wrongRegisterMoves(tillRows).slice(0, 60) } : null,
       cft: cftCache && cftCache.storeNbr === store.storeNbr ? { fetchedAt: cftCache.fetchedAt, rows: cftCache.rows.length, dateMin: cftCache.dateMin, dateMax: cftCache.dateMax, reportUrl: cftCache.reportUrl } : null,
       links: {
@@ -151,9 +165,11 @@ export const handlers = {
 
   async clear_cache() {
     const all = await chrome.storage.local.get(null);
-    // Pulled data and analyses only. The cashier ledger, coaching notes and
-    // the completed log are records, not cache, and survive a clear.
-    const keep = (k) => k === KEYS.store || k === KEYS.ledger || k === KEYS.completed || k.startsWith("registerls.coaching.");
+    // Analyses and the WorkView queue only. The cashier ledger, coaching
+    // notes, the completed log and the three pulled reports (grid, till log,
+    // CFTs — their older days cannot be re-pulled) are records, not cache,
+    // and survive a clear; a fresh pull overwrites its own window anyway.
+    const keep = (k) => k === KEYS.store || k === KEYS.ledger || k === KEYS.completed || k === KEYS.tills || k === KEYS.grid || k === KEYS.cft || k.startsWith("registerls.coaching.") || k.startsWith("registerls.cause.") || k.startsWith("registerls.pantry.");
     const keys = Object.keys(all).filter((k) => k.startsWith("registerls.") && !keep(k));
     if (keys.length) await chrome.storage.local.remove(keys);
     return { removed: keys.length };
@@ -180,9 +196,14 @@ export const handlers = {
       const res = await fetchCashRecycler(store.storeNbr, { days: TILL_DAYS, onProgress: (p) => broadcast("progress", { step: "tills", text: `Cash Recycler page ${p.page}: ${p.rows} events…` }) });
       broadcast("progress", { step: "tills", text: "" });
       if (!res.ok) return res;
-      await set(KEYS.tills, { storeNbr: store.storeNbr, rows: res.rows, fetchedAt: res.fetchedAt, dateMin: res.dateMin, dateMax: res.dateMax, reportUrl: res.reportUrl, days: TILL_DAYS });
-      console.log(TAG, "tills", { store: store.storeNbr, rows: res.rows.length, range: [res.dateMin, res.dateMax] });
-      return { ok: true, rows: res.rows.length, dateMin: res.dateMin, dateMax: res.dateMax };
+      // The report forgets days older than ~60; the check-in names behind a
+      // flip live only here, so rows from earlier pulls are kept (permanent,
+      // like the cashier ledger). The fresh pull wins inside its own range.
+      const prev = await get(KEYS.tills);
+      const merged = mergeDatedRows(prev && prev.storeNbr === store.storeNbr ? prev.rows : [], res.rows, { dateMin: res.dateMin, dateMax: res.dateMax });
+      await set(KEYS.tills, { storeNbr: store.storeNbr, rows: merged.rows, fetchedAt: res.fetchedAt, dateMin: merged.dateMin, dateMax: merged.dateMax, pulledMin: res.dateMin, pulledMax: res.dateMax, reportUrl: res.reportUrl, days: TILL_DAYS });
+      console.log(TAG, "tills", { store: store.storeNbr, rows: res.rows.length, kept: merged.kept, range: [merged.dateMin, merged.dateMax] });
+      return { ok: true, rows: merged.rows.length, pulled: res.rows.length, kept: merged.kept, dateMin: merged.dateMin, dateMax: merged.dateMax };
     } finally {
       release();
     }
@@ -199,9 +220,11 @@ export const handlers = {
       const res = await fetchCft(store.storeNbr, { days: CFT_DAYS, onProgress: (p) => broadcast("progress", { step: "cft", text: `Cash Fund Transfers page ${p.page}: ${p.rows} transfers…` }) });
       broadcast("progress", { step: "cft", text: "" });
       if (!res.ok) return res;
-      await set(KEYS.cft, { storeNbr: store.storeNbr, rows: res.rows, fetchedAt: res.fetchedAt, dateMin: res.dateMin, dateMax: res.dateMax, reportUrl: res.reportUrl, days: CFT_DAYS });
-      console.log(TAG, "cft", { store: store.storeNbr, rows: res.rows.length, range: [res.dateMin, res.dateMax] });
-      return { ok: true, rows: res.rows.length, dateMin: res.dateMin, dateMax: res.dateMax };
+      const prev = await get(KEYS.cft);   // kept across pulls — the report forgets days older than ~60
+      const merged = mergeDatedRows(prev && prev.storeNbr === store.storeNbr ? prev.rows : [], res.rows, { dateMin: res.dateMin, dateMax: res.dateMax });
+      await set(KEYS.cft, { storeNbr: store.storeNbr, rows: merged.rows, fetchedAt: res.fetchedAt, dateMin: merged.dateMin, dateMax: merged.dateMax, pulledMin: res.dateMin, pulledMax: res.dateMax, reportUrl: res.reportUrl, days: CFT_DAYS });
+      console.log(TAG, "cft", { store: store.storeNbr, rows: res.rows.length, kept: merged.kept, range: [merged.dateMin, merged.dateMax] });
+      return { ok: true, rows: merged.rows.length, pulled: res.rows.length, kept: merged.kept, dateMin: merged.dateMin, dateMax: merged.dateMax };
     } finally {
       release();
     }
@@ -219,12 +242,17 @@ export const handlers = {
         const authy = res.errorClass === "AUTH";
         return { ok: false, errorClass: res.errorClass, error: res.error || "Power BI capture failed", loginUrl: authy ? POWERBI_REPORT_URL : undefined };
       }
-      const findings = tieredMatching(res.discrepancies);   // exact pairs first — see lib/matching.js
-      const dates = [...new Set(res.discrepancies.map((d) => d.date))].sort();
-      const grid = { storeNbr: store.storeNbr, discrepancies: res.discrepancies, findings, rollup: rollup(findings), capturedAt: res.capturedAt || new Date().toISOString(), cellCount: res.cellCount, days: GRID_DAYS, dateMin: dates[0] || null, dateMax: dates.at(-1) || null };
+      // The report keeps ~60 days; cells from earlier pulls are kept so an
+      // item never loses its offset candidates once its window was pulled.
+      // The fresh capture is authoritative for the days it returned.
+      const pulled = [...new Set(res.discrepancies.map((d) => d.date))].sort();
+      const prev = await get(KEYS.grid);
+      const merged = mergeDatedRows(prev && prev.storeNbr === store.storeNbr ? prev.discrepancies : [], res.discrepancies, { dateMin: pulled[0] || null, dateMax: pulled.at(-1) || null });
+      const findings = tieredMatching(merged.rows);   // exact pairs first — see lib/matching.js
+      const grid = { storeNbr: store.storeNbr, discrepancies: merged.rows, findings, rollup: rollup(findings), capturedAt: res.capturedAt || new Date().toISOString(), cellCount: res.cellCount, days: GRID_DAYS, dateMin: merged.dateMin, dateMax: merged.dateMax, pulledMin: pulled[0] || null, pulledMax: pulled.at(-1) || null };
       await set(KEYS.grid, grid);
-      console.log(TAG, "grid", { store: store.storeNbr, cells: res.discrepancies.length, findings: findings.length });
-      return { ok: true, cellCount: res.discrepancies.length, findings: findings.length, rollup: grid.rollup, capturedAt: grid.capturedAt };
+      console.log(TAG, "grid", { store: store.storeNbr, cells: res.discrepancies.length, kept: merged.kept, findings: findings.length, range: [grid.dateMin, grid.dateMax] });
+      return { ok: true, cellCount: merged.rows.length, pulled: res.discrepancies.length, kept: merged.kept, findings: findings.length, rollup: grid.rollup, capturedAt: grid.capturedAt };
     } finally {
       release();
     }
@@ -251,13 +279,14 @@ export const handlers = {
       const grid = await get(KEYS.grid);
       const gridOk = grid && grid.storeNbr === String(store);
       const match = matchingFor(grid, queue, store);
-      const { finding, discrepancy, counterpart } = lookups(match, item);
+      const { finding, discrepancy, counterpart, combo } = lookups(match, item);
       const ej = ejRes.ok ? parseRecords(ejRes.records) : null;
       const tillsCache = await get(KEYS.tills);
       const tills = tillsCache && tillsCache.storeNbr === String(store) ? tillsFor(tillsCache.rows, item, match.discrepancies, undefined, counterpart) : null;
       const cftCache = await get(KEYS.cft);
       const cft = cftCache && cftCache.storeNbr === String(store) ? cftFor(cftCache.rows, item) : null;
-      const evidence = buildEvidence({ item, finding, discrepancy, ledger: ledgerRes.ok ? ledgerRes.rows : null, ej, tills, drawer: drawerRes.ok ? drawerRes : null, cft });
+      const cfg = { ...DEFAULT_CFG, pantry: mergePantry((await get(KEYS.pantry(String(store))))?.items) };
+      const evidence = buildEvidence({ item, finding, discrepancy, ledger: ledgerRes.ok ? ledgerRes.rows : null, ej, tills, drawer: drawerRes.ok ? drawerRes : null, cft, combo, coverage: match.coverage, cfg });
       const analysis = {
         schema: ANALYSIS_SCHEMA,
         at: new Date().toISOString(),
@@ -363,7 +392,7 @@ export const handlers = {
           queue.others = (queue.others || []).filter((i) => i.id !== id);
           await set(KEYS.queue, queue);
           const done = (await get(KEYS.completed)) || [];
-          done.unshift({ id, at: new Date().toISOString(), reasonLabel, text, register: item?.register || null, date: item?.date || null, amountCents: item?.amountCents ?? null, category: item?.category || null, sourceAppId: item?.sourceAppId || null });
+          done.unshift({ id, at: new Date().toISOString(), reasonLabel, text, register: item?.register || null, date: item?.date || null, amountCents: item?.amountCents ?? null, category: item?.category || null, sourceAppId: item?.sourceAppId || null, cause: (await get(KEYS.cause(id))) || null });
           await set(KEYS.completed, done.slice(0, 500));
         }
         await chrome.storage.local.remove(KEYS.analysis(id)).catch(() => {});
@@ -403,7 +432,6 @@ export const handlers = {
     const store = await resolveStore(msg);
     const [queue, grid, tillsCache] = await Promise.all([get(KEYS.queue), get(KEYS.grid), get(KEYS.tills)]);
     const tillRows = tillsCache && tillsCache.storeNbr === store.storeNbr ? tillsCache.rows : [];
-    if (!tillRows.length) return { merged: 0, stored: Object.keys((await get(KEYS.ledger))?.events || {}).length };
     // Items that were completed from the module stay in the analysis so their
     // cashier events keep being derived while the till log still covers them.
     const done = ((await get(KEYS.completed)) || []).filter((c) => c.register && c.date && c.amountCents != null);
@@ -426,7 +454,13 @@ export const handlers = {
       items.push({ id, store: store.storeNbr, register: String(f.primaryRegister), date: f.primaryDate, amountCents: f.primaryAmountCents, amountAbsCents: Math.abs(f.primaryAmountCents), type: "short", sourceAppId: "grid", gridOnly: true });
       flipWho[id] = { register: String(f.matchedAgainst[0].registerNbr), date: f.matchedAgainst[0].date };
     }
-    const built = buildLedger({ items, verdicts, tillRows, discrepancies: match.discrepancies, counterparts: flipWho });
+    // Analyst-named causes: live items from their cause key, completed ones
+    // from the completed log (the key is kept too, but the log is the record).
+    const causes = {};
+    const gotCause = await chrome.storage.local.get(items.map((i) => KEYS.cause(i.id)));
+    for (const i of items) if (gotCause[KEYS.cause(i.id)]) causes[i.id] = gotCause[KEYS.cause(i.id)];
+    for (const c of done) if (c.cause && !causes[c.id]) causes[c.id] = c.cause;
+    const built = buildLedger({ items, verdicts, tillRows, discrepancies: match.discrepancies, counterparts: flipWho, causes });
     const ledger = (await get(KEYS.ledger)) || { events: {} };
     let merged = 0;
     const isGrid = (e) => String(e.workItemId || "").startsWith("grid:");
@@ -519,6 +553,60 @@ export const handlers = {
     return { ok: true, files };
   },
 
+  // "This transaction was the cause." Stored per work item, independent of
+  // the analysis (re-analyzing must not lose the analyst's call). The ledger
+  // is synced at once so the operator is charged without waiting for a
+  // completion.
+  async set_cause(msg = {}) {
+    const id = String(msg.id || "").trim();
+    const cause = normalizeCause(msg.cause || {});
+    if (!id || !cause) return { ok: false, error: "work item id and a transaction number are required" };
+    await set(KEYS.cause(id), cause);
+    try { await handlers.sync_ledger(msg); } catch {}
+    return { ok: true, cause };
+  },
+
+  async clear_cause(msg = {}) {
+    const id = String(msg.id || "").trim();
+    if (!id) return { ok: false, error: "no work item id" };
+    await chrome.storage.local.remove(KEYS.cause(id));
+    // The ledger is permanent by design; the analyst's own retraction is the
+    // one case where an event should go — remove this item's cause events.
+    const ledger = (await get(KEYS.ledger)) || { events: {} };
+    let removed = 0;
+    for (const [k, e] of Object.entries(ledger.events || {})) if (e.type === "cause_tx" && e.workItemId === id) { delete ledger.events[k]; removed++; }
+    if (removed) await set(KEYS.ledger, ledger);
+    return { ok: true, removed };
+  },
+
+  // The pantry list the analysis matches tickets against: the built-in
+  // items plus whatever the analyst has added for this store. Additions
+  // are a record (kept by clear_cache); re-analyze to apply them.
+  async get_pantry(msg = {}) {
+    const store = await resolveStore(msg);
+    const custom = (await get(KEYS.pantry(store.storeNbr)))?.items || [];
+    return { storeNbr: store.storeNbr, items: mergePantry(custom), customCount: custom.length };
+  },
+  async add_pantry_items(msg = {}) {
+    const store = await resolveStore(msg);
+    const { items, rejected } = parsePantryText(msg.text);
+    if (!items.length) return { ok: false, error: rejected.length ? `No UPC found on: ${rejected.slice(0, 3).join(" · ")}` : "Nothing to add — one item per line, UPC first." };
+    const key = KEYS.pantry(store.storeNbr);
+    const cur = (await get(key))?.items || [];
+    const byUpc = new Map(cur.map((p) => [p.upc.replace(/^0+/, ""), p]));
+    let added = 0, updated = 0;
+    for (const p of items) { const k = p.upc.replace(/^0+/, ""); if (byUpc.has(k)) updated++; else added++; byUpc.set(k, { upc: k, desc: p.desc, addedAt: new Date().toISOString() }); }
+    await set(key, { storeNbr: store.storeNbr, items: [...byUpc.values()] });
+    return { ...(await handlers.get_pantry(msg)), added, updated, rejected };
+  },
+  async remove_pantry_item(msg = {}) {
+    const store = await resolveStore(msg);
+    const key = KEYS.pantry(store.storeNbr);
+    const want = String(msg.upc || "").replace(/\D/g, "").replace(/^0+/, "");
+    const cur = (await get(key))?.items || [];
+    await set(key, { storeNbr: store.storeNbr, items: cur.filter((p) => p.upc.replace(/^0+/, "") !== want) });
+    return handlers.get_pantry(msg);
+  },
   async get_analysis(msg = {}) {
     const a = await get(KEYS.analysis(String(msg.id)));
     return { analysis: a && a.schema === ANALYSIS_SCHEMA ? a : null };   // auto-wrapped; "not yet" is not an error

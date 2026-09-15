@@ -142,7 +142,7 @@ export function parseReceipt(text) {
       if (HEADER_RE.test(line)) continue;
       const amount = centsFromMoney(m[4]);
       const cents = m[5] && amount > 0 ? -amount : amount;
-      items.push({ desc: m[1].trim(), code: m[2], cents, voided: pendingVoid });
+      items.push({ desc: m[1].trim(), code: m[2], flag: m[3], cents, voided: pendingVoid });
       pendingVoid = false;
     }
   }

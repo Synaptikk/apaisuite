@@ -140,6 +140,20 @@ export function flipCheckins(rows, item, counterpart) {
   return { mine, theirs, associates: ids.map((id) => ({ id, name: [...mine, ...theirs].find((c) => c.id === id)?.name || "" })), same: ids.length === 1 && mine.length > 0 && theirs.length > 0, both: mine.length > 0 && theirs.length > 0 };
 }
 
+// Every report we pull keeps ~60 days (Cash Recycler, Power BI long/short,
+// Cash Fund Transfers), so anything older than that loses its evidence for
+// good unless the rows were kept. Each pull is authoritative for the range
+// it returned: stored rows inside that range are replaced, rows outside it
+// (older pulls) are kept. Works for any rows carrying `date` (ISO).
+export function mergeDatedRows(stored, fresh, { dateMin = null, dateMax = null } = {}) {
+  const inRange = (d) => (!dateMin || d >= dateMin) && (!dateMax || d <= dateMax);
+  const kept = (stored || []).filter((r) => r?.date && !inRange(r.date));
+  const rows = [...kept, ...(fresh || [])].sort((a, b) => a.date.localeCompare(b.date) || (a.timeInt ?? 0) - (b.timeInt ?? 0));
+  const dates = rows.map((r) => r.date).filter(Boolean).sort();
+  return { rows, dateMin: dates[0] || null, dateMax: dates.at(-1) || null, kept: kept.length };
+}
+export const mergeTillRows = mergeDatedRows;
+
 export function tillsFor(rows, item, discrepancies, cfg = TILL_CFG, counterpart = null) {
   if (!rows?.length || !item?.register || !item?.date) return null;
   const events = eventsFor(rows, item.register, item.date, 1);

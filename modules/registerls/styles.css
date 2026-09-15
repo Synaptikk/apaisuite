@@ -143,7 +143,18 @@
 .module-registerls .rls-links .btn { padding: 2px 8px; font-size: var(--fs-sm); line-height: 1.4; }
 .module-registerls .rls-table tr.hit td { background: color-mix(in srgb, var(--warn, #b7791f) 12%, transparent); }
 
+.module-registerls .rls-pantrylist { padding: var(--sp-3) var(--sp-4); }
+.module-registerls .rls-pantrylist summary { cursor: pointer; display: flex; gap: var(--sp-2); align-items: baseline; flex-wrap: wrap; }
+.module-registerls .rls-pantrylist-body { padding-top: var(--sp-3); display: grid; gap: var(--sp-3); }
+.module-registerls .rls-pantry-table td, .module-registerls .rls-pantry-table th { text-align: left; }
+.module-registerls .rls-pantry-form { display: grid; gap: var(--sp-2); }
+.module-registerls .rls-pantry-text { font-family: var(--font-mono, monospace); min-height: 5em; }
+.module-registerls .rls-pantry-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .module-registerls .rls-pantry { margin-top: var(--sp-4); display: grid; gap: var(--sp-2); }
 .module-registerls .rls-pantry h3 { margin: 0; font-size: var(--fs-md); }
 
 .module-registerls .badge.v-pantry_cft, .module-registerls .badge.v-bounceback { background: var(--apai-success-bg); color: var(--apai-success); }
+
+/* "This was the cause" — the analyst's pick, shown beside the reason picker */
+.module-registerls .rls-cause-chip { display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--warn, #b7791f) 14%, transparent); font-size: var(--fs-sm); }
+.module-registerls [data-action="cause-tx"] { margin-left: var(--sp-2); }

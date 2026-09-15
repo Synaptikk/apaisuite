@@ -48,23 +48,15 @@ export function investigate(ej, shortageCents, toleranceCents) {
   return { candidates, gaps, status: "Cause unconfirmed", method: "Priority combines amount proximity, item context and nearby journal activity; it is not fraud confidence." };
 }
 
-// A basket that looks like the store buying from itself — breakroom and
-// associate-relations runs (plates, bowls, cups, waters, snack multipacks,
-// many identical lines). Those are paid with CFT cash from the recycler; paid
-// out of the drawer with no CFT keyed, the register is short the whole ticket.
-const STORE_USE_RE = /\b(PLATES?|BWL|BOWLS?|CUPS?|NAPKIN|FORKS?|SPOONS?|TOWEL|WATER|ICE\b|GATORADE|VARIETY\s*PAC|SNACK|CHIPS?|COOKIE|TRASH|BAG|TISSUE|COFFEE|CREAMER|SUGAR|DONUT|BAKERY|PIZZA|SODA|DR\s*PEPPER|COKE|PEPSI)/i;
+// The store buying from itself is the associate pantry run: the UPC list in
+// pantry.js, paid with CFT cash from the recycler. Paid out of the drawer
+// with no CFT keyed, the register is short the whole ticket. Nothing else
+// counts — a customer buying candy or crayons in threes is a customer
+// (user rule 2026-09-15: the earlier "repeated lines + plates/cups" guess
+// flagged $11 candy and $300 site-merch tickets as store purchases).
 export function storeUseBasket(t, pantry) {
   const items = (t?.items || []).filter((i) => !i.voided);
   const pm = pantryMatch(items, pantry);
-  if (pm) return { kind: "pantry", repeats: pm.products.slice(0, 5), keyword: 0, lines: items.length, pantryLines: pm.lines, pantryCents: pm.cents, share: pm.share };
-  // The generic store-purchase shape needs the same kind of bulk: a basket
-  // of 8+ lines with at least two products bought in threes.
-  if (items.length < 8) return null;
-  const counts = new Map();
-  for (const i of items) { const k = (i.desc || "").trim().toUpperCase(); counts.set(k, (counts.get(k) || 0) + 1); }
-  const repeats = [...counts.entries()].filter(([, n]) => n >= 3);
-  const keyword = items.filter((i) => STORE_USE_RE.test(i.desc || "")).length;
-  const score = repeats.length * 2 + (keyword >= 3 ? 2 : keyword ? 1 : 0);
-  if (repeats.length < 2 || score < 4) return null;
-  return { kind: "store_use", repeats: repeats.map(([k, n]) => `${k} ×${n}`).slice(0, 4), keyword, lines: items.length };
+  if (!pm) return null;
+  return { kind: "pantry", repeats: pm.products.slice(0, 5), keyword: 0, lines: items.length, pantryLines: pm.lines, pantryCents: pm.cents, share: pm.share };
 }

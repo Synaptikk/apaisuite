@@ -28,6 +28,7 @@
 // flip_checkin rule runs for them.
 
 import { wrongRegisterMoves, tillsFor, flipCheckins } from "./till_events.js";
+import { causeDetail, resolveAssociate } from "./cause.js";
 
 export const ERROR_TYPES = {
   till_moved:         "Till moved between registers",
@@ -36,9 +37,10 @@ export const ERROR_TYPES = {
   quick_recheck:      "Till re-checked in with less cash",
   override:           "Check-in override on a discrepancy day",
   flip_checkin:       "Checked tills in to the wrong registers",
+  cause_tx:           "Shortage traced to their transaction",
 };
 
-export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepancies = [], counterparts = {} } = {}) {
+export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepancies = [], counterparts = {}, causes = {} } = {}) {
   const cashiers = new Map();
   const seen = new Set();
   const add = (id, name, ev) => {
@@ -65,6 +67,13 @@ export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepa
   const SAFE = new Set(["flip", "bounceback", "pantry_cft"]);
   for (const it of items) {
     if (!it.register || !it.date) continue;
+    // The analyst named the ticket (lib/cause.js): direct responsibility,
+    // charged to the operator on it — needs no till log at all.
+    const cz = causes[it.id];
+    if (cz?.transNum) {
+      const who = resolveAssociate(tillRows, cz);
+      if (who.id) add(who.id, who.name, { date: it.date, register: it.register, type: "cause_tx", cents: it.amountCents, workItemId: it.id, detail: causeDetail(it, cz), transNum: cz.transNum });
+    }
     const t = tillRows.length ? tillsFor(tillRows, it, discrepancies) : null;
     if (!t) continue;
     const explained = SAFE.has(verdicts[it.id]?.verdict);   // the shortage already has its other half

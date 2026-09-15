@@ -9,11 +9,12 @@ import { normalizeWorkItems, normalizeWorkItem, toIsoDate, moneyToCents, buildLi
 import { decodeLedger, cellMoneyToCents, buildCashResearchBody } from "../cash_research.js";
 import { noCheckinText, buildEvidence, cashMatches, withinTolerance, tolerance, normOp, operatorTimeline, ledgerFlags, unionDiscrepancies, findCounterpartFinding, findFindingFor } from "../evidence.js";
 import { MATCH_OPTS } from "../match_opts.js";
-import { tieredMatching } from "../matching.js";
+import { tieredMatching, comboOffsets, findComboFor } from "../matching.js";
 import { reasonsFor, safeReasonFor } from "../reasons.js";
+import { causeText, causeDetail, normalizeCause, resolveAssociate } from "../cause.js";
 import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents } from "../cashiers.js";
 import { decodeCashRecycler, buildFilteredBody, timeToInt } from "../cash_recycler.js";
-import { wrongRegisterMoves, advanceExplanations, tillsFor, eventsFor, tillFlags, flipCheckins, registerKind } from "../till_events.js";
+import { wrongRegisterMoves, advanceExplanations, tillsFor, eventsFor, tillFlags, flipCheckins, registerKind, mergeTillRows, mergeDatedRows } from "../till_events.js";
 import { runMatching, swapDateWindow, widenRowWindow } from "../../../livedashboard/lib/sources/register.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -503,7 +504,7 @@ test("self-checkouts: a lane with recycler rows but no till check-ins is SCO, an
   const tills = tillsFor(rows, item, [], undefined, { register: "8", date: "2026-09-02" });
   assert.match(noCheckinText(tills, "7", "8", "2026-09-02"), /self-checkouts.*nobody to charge/);
   assert.match(noCheckinText(tills, "7", "15", "2026-09-02"), /Reg 7 is a self-checkout/);
-  assert.match(noCheckinText(tills, "15", "17", "2026-08-01"), /starts 2026-09-02; 2026-08-01 is before it/);
+  assert.match(noCheckinText(tills, "15", "17", "2026-08-01"), /starts 2026-09-02 .*2026-08-01 is before it/);
 });
 
 test("advances: an overage the day BEFORE the advance is not where the cash landed", () => {
@@ -530,4 +531,163 @@ test("pantry record: a pantry run cashed out without a CFT is recorded against t
   assert.equal(evs[0].opNum, "353"); assert.equal(evs[0].cents, 22204); assert.equal(evs[0].shortCents, -22100); assert.equal(evs[0].workItemId, "1");
   assert.match(evs[0].detail, /83 pantry lines .*no CFT keyed/);
   assert.equal(pantryKey(evs[0]), "2026-07-20|13|4273");
+});
+
+test("flip pairs: with no check-in rows for the day the filed text says the associates are not identified and why", () => {
+  const ev = (register, date, time, action, dollars, associateId, associate) => ({ store: "1458", register, date, time, timeInt: Number(time.replace(/:/g, "")), registerDesc: "", associateId, associate, action, amountCents: Math.round(dollars * 100), cashLsCents: 0 });
+  const rows = [ev("28", "2026-07-16", "200100", "TILLCHECKIN", 1390, "C1", "CSM ONE")];
+  const item = { id: "9", register: "6", date: "2026-07-09", amountCents: 395300, amountAbsCents: 395300, sourceAppId: "overshort" };
+  const finding = { primaryRegister: "8", primaryDate: "2026-07-09", primaryAmountCents: -395300, matchType: "nearby-register-offset", flipConfidence: 1, matchedAgainst: [{ registerNbr: "6", date: "2026-07-09", amountCents: 395300 }] };
+  // Till log pulled, but the day predates it.
+  const ev1 = buildEvidence({ item, finding, tills: tillsFor(rows, item, [], undefined, { register: "8", date: "2026-07-09" }) });
+  assert.equal(ev1.verdict, "flip");
+  assert.match(ev1.dispositionText, /Check-in associates not identified: The pulled till log starts 2026-07-16 .*2026-07-09 is before it/);
+  assert.match(ev1.reason, /till log starts 2026-07-16/);
+  assert.ok(ev1.why.some((w) => w.kind === "flip_who_none"));
+  // Till log never pulled.
+  const ev2 = buildEvidence({ item, finding, tills: null });
+  assert.equal(ev2.verdict, "flip");
+  assert.match(ev2.dispositionText, /Check-in associates not identified: The Cash Recycler till log has not been pulled/);
+  assert.ok(ev2.why.some((w) => w.kind === "flip_who_none"));
+  assert.match(noCheckinText(null, "6", "8", "2026-07-09"), /not been pulled/);
+});
+
+test("mergeTillRows: a fresh pull replaces its own date range and keeps older rows from earlier pulls", () => {
+  const ev = (register, date, time, action, dollars, associateId, associate) => ({ store: "1458", register, date, time, timeInt: Number(time.replace(/:/g, "")), registerDesc: "", associateId, associate, action, amountCents: Math.round(dollars * 100), cashLsCents: 0 });
+  const stored = [ev("6", "2026-07-09", "200100", "TILLCHECKIN", 1000, "A1", "OLD ONE"), ev("6", "2026-07-20", "200100", "TILLCHECKIN", 1000, "A2", "STALE")];
+  const fresh  = [ev("6", "2026-07-20", "200100", "TILLCHECKIN", 1000, "A3", "FRESH"), ev("6", "2026-09-13", "200100", "TILLCHECKIN", 1000, "A4", "NEW")];
+  const m = mergeTillRows(stored, fresh, { dateMin: "2026-07-16", dateMax: "2026-09-13" });
+  assert.deepEqual(m.rows.map((r) => r.associate), ["OLD ONE", "FRESH", "NEW"]);
+  assert.equal(m.kept, 1);
+  assert.equal(m.dateMin, "2026-07-09");
+  assert.equal(m.dateMax, "2026-09-13");
+  // First pull ever: nothing stored.
+  assert.equal(mergeTillRows(null, fresh, { dateMin: "2026-07-16", dateMax: "2026-09-13" }).rows.length, 2);
+  // The named check-in survives a later pull that no longer reaches its day.
+  const item = { id: "9", register: "6", date: "2026-07-09", amountCents: 395300, amountAbsCents: 395300, sourceAppId: "overshort" };
+  const t = tillsFor(m.rows, item, [], undefined, { register: "8", date: "2026-07-09" });
+  assert.equal(t.flip.associates[0].name, "OLD ONE");
+});
+
+test("multi-entry offsets: a large overage explained by two shortages store-wide within days is flagged for review, never auto-filed", () => {
+  const d = (registerNbr, date, dollars) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: [] });
+  const disc = [d("18", "2026-07-23", 38812), d("18", "2026-07-21", -26016.82), d("11", "2026-07-22", -13023), d("12", "2026-07-22", -12.5), d("30", "2026-07-22", -5000)];
+  const findings = tieredMatching(disc);
+  assert.ok(findings.every((f) => f.matchType === "none"), "tiers see nothing (7 registers apart, no 1:1 amount)");
+  const combos = comboOffsets(disc, findings);
+  assert.equal(combos.length, 1);
+  const c = combos[0];
+  assert.equal(c.primaryRegister, "18"); assert.equal(c.primaryDate, "2026-07-23");
+  assert.deepEqual(c.parts.map((p) => `${p.registerNbr}|${p.date}`).sort(), ["11|2026-07-22", "18|2026-07-21"]);
+  assert.equal(c.residualCents, 22782);
+  // Primary side (the overage).
+  const over = { id: "o", register: "18", date: "2026-07-23", amountCents: 3881200, amountAbsCents: 3881200, sourceAppId: "overshort" };
+  const evO = buildEvidence({ item: over, discrepancy: disc[0], combo: findComboFor(combos, over) });
+  assert.equal(evO.verdict, "suspect_combo");
+  assert.match(evO.reason, /reg 18 \$26016\.82 short on 2026-07-21 \+ reg 11 \$13023\.00 short on 2026-07-22 add up to \$39039\.82 short — \$227\.82 from this amount/);
+  assert.equal(evO.suggestion.safe, false);
+  assert.ok(evO.why.some((w) => w.kind === "combo"));
+  assert.match(evO.comboShort, /add up to this \(\$227\.82 off\)/);
+  // Part side (one of the shortages).
+  const short = { id: "s", register: "11", date: "2026-07-22", amountCents: -1302300, amountAbsCents: 1302300, sourceAppId: "overshort" };
+  const evS = buildEvidence({ item: short, finding: findings.find((f) => f.primaryRegister === "11"), discrepancy: disc[2], combo: findComboFor(combos, short) });
+  assert.equal(evS.verdict, "suspect_combo");
+  assert.match(evS.reason, /together with reg 18 \$26016\.82 short on 2026-07-21 it adds up to \$39039\.82 short, \$227\.82 from reg 18 \$38812\.00 over on 2026-07-23/);
+  // WorkView raised reg 11 at a different amount than Power BI finalized:
+  // the text must name the figure the parts were matched against.
+  const raised = { id: "r", register: "11", date: "2026-07-22", amountCents: -4000000, amountAbsCents: 4000000, sourceAppId: "overshort" };
+  const evR = buildEvidence({ item: raised, finding: findings.find((f) => f.primaryRegister === "11"), discrepancy: disc[2], combo: findComboFor(combos, raised) });
+  assert.equal(evR.verdict, "suspect_combo");
+  assert.match(evR.reason, /^No single entry offsets the \$13023\.00 short Power BI finalized for this register-day \(WorkView raised it at \$40000\.00 short\), but together with/);
+  assert.match(evR.comboShort, /^Power BI \$13023\.00 short: with/);
+  // An entry in no combination keeps its verdict.
+  const lone = { id: "l", register: "30", date: "2026-07-22", amountCents: -500000, amountAbsCents: 500000, sourceAppId: "overshort" };
+  assert.equal(findComboFor(combos, lone), null);
+  assert.equal(buildEvidence({ item: lone, finding: findings.find((f) => f.primaryRegister === "30"), discrepancy: disc[4], combo: null }).verdict, "unmatched");
+  // Entries already claimed by a clean pair are never used as parts.
+  const paired = [d("18", "2026-07-23", 38812), d("18", "2026-07-21", -26016.82), d("11", "2026-07-22", -13023), d("12", "2026-07-22", 13023)];
+  const f2 = tieredMatching(paired);
+  assert.equal(comboOffsets(paired, f2).length, 0);
+  // Small entries get no combination search.
+  assert.equal(comboOffsets([d("5", "2026-07-23", 300), d("6", "2026-07-22", -200), d("7", "2026-07-22", -100)], []).length, 0);
+});
+
+test("outside the reports' window: an item older than the pulled grid is not called unmatched — the sources do not reach it", () => {
+  const item = { id: "w", register: "7", date: "2026-07-10", amountCents: -142643, amountAbsCents: 142643, sourceAppId: "overshort" };
+  const finding = { primaryRegister: "7", primaryDate: "2026-07-10", primaryAmountCents: -142643, matchType: "none", flipConfidence: 0, matchedAgainst: [], severity: "high", tier: null };
+  const discrepancy = { registerNbr: "7", date: "2026-07-10", amountCents: -142643, amountAbsCents: 142643, type: "short", operators: [] };
+  const ev = buildEvidence({ item, finding, discrepancy, coverage: { gridMin: "2026-07-17", gridMax: "2026-09-13" } });
+  assert.equal(ev.verdict, "outside_window");
+  assert.match(ev.reason, /No report reaches 2026-07-10: the Power BI grid starts 2026-07-17/);
+  assert.equal(ev.dispositionText, "");
+  assert.equal(ev.suggestion.safe, false);
+  assert.equal(ev.why[0].kind, "outside");
+  // Grid never pulled at all: same verdict, says so.
+  assert.match(buildEvidence({ item, finding, discrepancy, coverage: { gridMin: null, gridMax: null } }).reason, /grid has not been pulled/);
+  // Inside the window → the ordinary unmatched verdict.
+  assert.equal(buildEvidence({ item: { ...item, date: "2026-07-20" }, finding: { ...finding, primaryDate: "2026-07-20" }, discrepancy: { ...discrepancy, date: "2026-07-20" }, coverage: { gridMin: "2026-07-17", gridMax: "2026-09-13" } }).verdict, "unmatched");
+  // No coverage given (ad-hoc call) → no claim, ordinary verdict.
+  assert.equal(buildEvidence({ item, finding, discrepancy }).verdict, "unmatched");
+  // A real pair among open WorkView items is still a pair, even before the grid.
+  const paired = { primaryRegister: "7", primaryDate: "2026-07-10", primaryAmountCents: -142643, matchType: "nearby-register-offset", flipConfidence: 0.9, matchedAgainst: [{ registerNbr: "8", date: "2026-07-10", amountCents: 142643 }], tier: 1 };
+  assert.equal(buildEvidence({ item, finding: paired, discrepancy, coverage: { gridMin: "2026-07-17", gridMax: "2026-09-13" } }).verdict, "flip");
+});
+
+test("mergeDatedRows keeps grid cells and CFTs from earlier pulls outside the fresh window", () => {
+  const cell = (registerNbr, date, amountCents) => ({ storeNbr: "1458", registerNbr, date, amountCents, amountAbsCents: Math.abs(amountCents), type: amountCents < 0 ? "short" : "over", operators: [] });
+  const stored = [cell("7", "2026-07-10", -142643), cell("9", "2026-07-20", -100)];
+  const fresh  = [cell("9", "2026-07-20", -200), cell("9", "2026-09-13", 300)];
+  const m = mergeDatedRows(stored, fresh, { dateMin: "2026-07-17", dateMax: "2026-09-13" });
+  assert.deepEqual(m.rows.map((r) => `${r.registerNbr}|${r.date}|${r.amountCents}`), ["7|2026-07-10|-142643", "9|2026-07-20|-200", "9|2026-09-13|300"]);
+  assert.equal(m.dateMin, "2026-07-10");
+  assert.equal(mergeTillRows, mergeDatedRows);
+});
+
+test("cause: the analyst names the transaction — text leads with it and the operator is charged in the ledger", () => {
+  const item = { id: "c1", register: "13", date: "2026-07-05", amountCents: -3000, amountAbsCents: 3000, sourceAppId: "overshort" };
+  const cause = normalizeCause({ transNum: "4821", time: "14:05:12", opNum: "193", opName: "BRANDON PHIL", cashTendCents: "3000", totalCents: "2987", tcNum: "1234567890" });
+  assert.equal(cause.cashTendCents, 3000);
+  assert.match(causeText(item, cause), /^Cause: TR# 4821 at 14:05:12 — \$30\.00 cash tendered on a \$29\.87 ticket \(TC# 1234567890\), operator 193 BRANDON PHIL\. Register 13 \$30\.00 short on 2026-07-05: the cash recorded on that transaction did not reach the drawer\. Video reviewed\.$/);
+  assert.match(causeText({ ...item, amountCents: 3000 }, cause), /was not recorded/);
+  assert.equal(normalizeCause({ time: "x" }), null);
+  // Name → WIN through the till log; unknown name → operator-number id.
+  const rows = [{ store: "1458", register: "13", date: "2026-07-05", time: "08:00:00", timeInt: 80000, registerDesc: "", associateId: "CDH00BJ", associate: "Brandon Phil", action: "TILLCHECKOUT", amountCents: 140000, cashLsCents: 0 }];
+  assert.deepEqual(resolveAssociate(rows, cause), { id: "CDH00BJ", name: "Brandon Phil" });
+  assert.deepEqual(resolveAssociate([], cause), { id: "op193", name: "BRANDON PHIL" });
+  // Ledger: charged even with no till log; detail names the ticket.
+  const led = buildLedger({ items: [item], verdicts: { c1: { verdict: "unmatched" } }, tillRows: [], discrepancies: [], causes: { c1: cause } });
+  assert.equal(led.cashiers.length, 1);
+  assert.equal(led.cashiers[0].id, "op193");
+  assert.equal(led.cashiers[0].byType.cause_tx.cents, 3000);
+  assert.match(led.events[0].detail, /TR# 4821 at 14:05:12: \$30\.00 cash recorded, register \$30\.00 short/);
+  assert.equal(causeDetail(item, cause), led.events[0].detail);
+  // With the till log the WIN is used and other rules still run.
+  const led2 = buildLedger({ items: [item], verdicts: { c1: { verdict: "unmatched" } }, tillRows: rows, discrepancies: [], causes: { c1: cause } });
+  assert.equal(led2.cashiers[0].id, "CDH00BJ");
+  // A flip (explained) with no cause: nothing charged from the cause rule.
+  assert.equal(buildLedger({ items: [item], verdicts: { c1: { verdict: "flip" } }, tillRows: [], discrepancies: [], causes: {} }).cashiers.length, 0);
+});
+
+test("multi-entry offsets prefer the same register; a part looks up its own register's correction first; WorkView vs Power BI amounts are flagged", () => {
+  const d = (registerNbr, date, dollars) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: [] });
+  // Store-wide two-day lag corrected on 07-23: each register's own days add up, but cross-register sums also fit.
+  const disc = [d("23", "2026-07-21", -2167), d("23", "2026-07-22", -1096), d("23", "2026-07-23", 3261), d("9", "2026-07-21", -912), d("9", "2026-07-22", -2306), d("9", "2026-07-23", 3217)];
+  const combos = comboOffsets(disc, tieredMatching(disc));
+  const c23 = combos.find((c) => c.primaryRegister === "23" && c.primaryDate === "2026-07-23");
+  assert.ok(c23?.sameRegister, "reg 23 overage explained by reg 23's own two days");
+  assert.deepEqual(c23.parts.map((p) => p.date).sort(), ["2026-07-21", "2026-07-22"]);
+  const part = findComboFor(combos, { register: "9", date: "2026-07-21" });
+  assert.equal(part.role, "part"); assert.equal(part.combo.primaryRegister, "9");
+  const ev = buildEvidence({ item: { id: "p", register: "9", date: "2026-07-21", amountCents: -91200, amountAbsCents: 91200, sourceAppId: "overshort" }, discrepancy: disc[3], combo: part });
+  assert.equal(ev.verdict, "suspect_combo");
+  assert.match(ev.why.find((w) => w.kind === "combo").text, /Same register on consecutive days/);
+  // WorkView says -$13,023 but the grid cell (finalized) says -$1,735.
+  const gridCell = { ...d("11", "2026-07-22", -1735), _source: { module: "livedashboard", sourceMethod: "powerbi" } };
+  const ev2 = buildEvidence({ item: { id: "q", register: "11", date: "2026-07-22", amountCents: -1302300, amountAbsCents: 1302300, sourceAppId: "overshort" }, discrepancy: gridCell });
+  assert.equal(ev2.why[0].kind, "amount_differs");
+  assert.match(ev2.why[0].text, /WorkView carries this item at \$13023\.00 short, but Power BI's finalized long\/short for reg 11 on 2026-07-22 is \$1735\.00 short/);
+  assert.equal(ev2.gridAmountCents, -173500);
+  // A WorkView-only discrepancy (no grid cell) never flags itself.
+  const wv = { ...d("11", "2026-07-22", -13023), _source: { module: "registerls", sourceMethod: "workview-item" } };
+  assert.ok(!buildEvidence({ item: { id: "q", register: "11", date: "2026-07-22", amountCents: -1302300, amountAbsCents: 1302300, sourceAppId: "overshort" }, discrepancy: wv }).why.some((w) => w.kind === "amount_differs"));
 });

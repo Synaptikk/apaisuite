@@ -9,6 +9,8 @@
 
 const NOISE = new Set(["flip", "bounceback", "pantry_cft"]);   // cause found from the sources alone → ready to close
 import { reasonsFor } from "./lib/reasons.js";
+import { causeText, whoText } from "./lib/cause.js";
+import { receiptUpcs, receiptPantryText } from "./lib/pantry.js";
 const SEV_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 
 const BUCKET = {
@@ -35,6 +37,7 @@ export async function mount(host, container) {
   let analysis = null;
   let storeDraft = "";
   let cashiers = null;      // get_cashiers payload
+  let pantryList = null;    // get_pantry payload
   let openCashier = null;   // expanded row
   let cashierRange = { from: "", to: "" };   // permanent ledger, date-filtered
   const inFlight = new Map();   // work items completing in the background: id → { reasonLabel, startedAt }
@@ -47,8 +50,12 @@ export async function mount(host, container) {
     catch (e) { host.ui.toast(e?.message || "state failed", { kind: "error" }); return; }
     state = res.data;
     storeDraft = state.store.storeNbr || "";
-    await loadCashiers();
+    await Promise.all([loadCashiers(), loadPantry()]);
     paintAll();
+  }
+
+  async function loadPantry() {
+    try { const p = await host.messaging.send("get_pantry", {}); pantryList = p.data; } catch { pantryList = null; }
   }
 
   async function loadCashiers() {
@@ -89,14 +96,22 @@ export async function mount(host, container) {
     const sev = a?.severity || i.pre.severity || "none";
     if (v === "pending") return { bucket: "pending", verdict: v, severity: sev, label: "Power BI not pulled", why: "", analyzed: !!a };
     if (NOISE.has(v)) return { bucket: "ready", verdict: v, severity: sev, label: v === "flip" ? "Till flip" : v === "pantry_cft" ? "Pantry run, no CFT" : "Bounceback", why: a?.whyShort || preWhy(i), analyzed: !!a };
-    return { bucket: "review", verdict: v, severity: sev, label: v === "unmatched" ? "Unmatched shortage" : v === "unmatched_over" ? "Unmatched overage" : v === "suspect_flip" ? "Weak offset" : "No data", why: a?.whyShort || preWhy(i), video: !!a?.hasVideo, analyzed: !!a };
+    return { bucket: "review", verdict: v, severity: sev, label: v === "unmatched" ? "Unmatched shortage" : v === "unmatched_over" ? "Unmatched overage" : v === "suspect_flip" ? "Weak offset" : v === "suspect_combo" ? "Possible multi-entry offset" : v === "outside_window" ? "Outside reports' window" : "No data", why: a?.whyShort || preWhy(i), video: !!a?.hasVideo, analyzed: !!a };
   }
 
   function preWhy(i) {
+    const g = i.pre.gridAmountCents;
+    const differs = g != null && i.amountCents != null && Math.abs(g - i.amountCents) > Math.max(500, Math.abs(i.amountCents) * 0.05);
+    const pre = differs ? `Power BI finalized ${money(g)} · ` : "";
+    return pre + preWhyBody(i);
+  }
+  function preWhyBody(i) {
     const cp = i.pre.counterpart;
     if (cp) return `other half of reg ${cp.registerNbr} ${money(Math.abs(cp.amountCents))} ${cp.amountCents < 0 ? "short" : "over"} on ${cp.date}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
     const m = i.pre.matchedAgainst?.[0];
     if (m) return `${m.registerNbr === i.register ? "same register" : `reg ${m.registerNbr}`} ${money(Math.abs(m.amountCents))} ${m.amountCents < 0 ? "short" : "over"} on ${m.date}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
+    if (i.pre.verdict === "suspect_combo" && i.pre.combo) return i.pre.combo;
+    if (i.pre.verdict === "outside_window") return "no report reaches this date — only open WorkView items could be matched";
     if (i.pre.verdict === "no_grid") return "no long/short data for this day";
     if (i.pre.verdict === "unmatched") return "no offsetting entry on a neighbouring register";
     if (i.pre.verdict === "unmatched_over") return "no shortage nearby offsets this overage";
@@ -104,7 +119,18 @@ export async function mount(host, container) {
   }
 
   // ── paint ───────────────────────────────────────────────────────
-  function paintAll() { paintHeader(); paintSummary(); paintCashiers(); paintQueue(); paintDetail(); }
+  function paintAll() { paintHeader(); paintSummary(); paintCashiers(); paintPantry(); paintQueue(); paintDetail(); }
+
+  function paintPantry() {
+    const box = $("[data-pantrylist]");
+    if (!pantryList) { box.hidden = true; return; }
+    box.hidden = false;
+    const items = pantryList.items || [];
+    $("[data-pantrylist-meta]").textContent = `${items.length} items · ${pantryList.customCount || 0} added for store ${pantryList.storeNbr || "?"}`;
+    $("[data-pantrylist-table]").innerHTML = items.length
+      ? `<table class="rls-table rls-pantry-table"><thead><tr><th>UPC</th><th>Description</th><th>Source</th><th></th></tr></thead><tbody>${items.map((p) => `<tr><td>${esc(p.upc)}</td><td>${esc(p.desc)}</td><td class="rls-muted">${p.source === "custom" ? "added here" : "built in"}</td><td>${p.source === "custom" ? `<button class="btn btn-sm btn-ghost" type="button" data-action="pantry-remove" data-upc="${esc(p.upc)}" title="Remove from this store's list">Remove</button>` : ""}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="rls-muted">No pantry items on the list.</div>`;
+  }
 
   const ACTIONS = ["Retrained", "Coached", "Verbal warning", "Written warning", "Cleared", "Note"];
 
@@ -212,7 +238,7 @@ export async function mount(host, container) {
           <span class="rls-row-reg">Reg ${esc(i.register || "?")}</span>
           <span class="rls-row-amt ${i.type}">${esc(money(i.amountCents))}</span>
           <span class="rls-row-date">${esc(i.date || "?")}</span>
-          ${busy ? `<span class="badge badge-info">completing…</span>` : `<span class="badge v-${esc(c.verdict)}">${esc(c.label)}${c.video ? " · 🎥" : ""}</span>`}
+          ${busy ? `<span class="badge badge-info">completing…</span>` : `<span class="badge v-${esc(c.verdict)}">${esc(c.label)}${c.video ? " · 🎥" : ""}</span>${state.causes?.[i.id] ? ` <span class="badge badge-warn" title="Cause picked: TR# ${esc(state.causes[i.id].transNum)}">cause picked</span>` : ""}`}
         </div>
         ${c.why ? `<div class="rls-row-why">${esc(c.why)}</div>` : ""}
         <div class="rls-row-sla ${i.isOverDue ? "overdue" : ""}">${esc(i.sourceAppId === "mel" ? "Long/Short item" : i.category)}${i.view === "assigned" ? " · assigned" : ""}${sla ? ` · ${esc(sla)}` : ""}${c.analyzed ? " · analyzed" : " · grid only"}</div>
@@ -241,6 +267,8 @@ export async function mount(host, container) {
     const ev = analysis?.evidence || null;
     const why = ev?.why || item.pre.why || (c.why ? [{ kind: "grid", text: c.why.charAt(0).toUpperCase() + c.why.slice(1) + "." }] : []);
     const sug = ev?.suggestion || item.pre.suggestion || null;
+    const cause = state.causes?.[item.id] || null;
+    const sugText = sug ? (cause && !sug.safe ? `${causeText(item, cause)}\n\n${sug.text}` : sug.text) : "";
     const src = analysis?.sources;
     const tone = c.bucket === "ready" ? "ok" : c.bucket === "review" ? (c.severity === "high" ? "high" : "warn") : "muted";
 
@@ -250,13 +278,15 @@ export async function mount(host, container) {
         ? (c.verdict === "no_grid" ? "Can't classify: no long/short data for that day."
           : c.verdict === "unmatched_over" ? "Unmatched overage — no shortage nearby explains it."
           : c.verdict === "suspect_flip" ? "Probably not a clean flip — the candidate offset is weak."
+          : c.verdict === "outside_window" ? "Outside the reports' window — no Power BI, till log or Cash Research data reaches this date, so no offset claim can be made. Go on the journal and video."
+          : c.verdict === "suspect_combo" ? "Possible multi-entry offset — two or three entries within a few days add up to this amount. Confirm in Cash Research before filing."
           : (ev?.videoCandidates?.length ? "Shortage worth pursuing — transactions recorded cash near the amount." : ev ? "Unmatched shortage — review transaction and till evidence to establish the cause." : "Unmatched shortage in the grid — analyze to pull the journal."))
         : "Not analyzed yet — pull Power BI or analyze this item.";
 
     const actions = [];
     if (inFlight.has(item.id)) actions.push(`<span class="badge badge-info">Completing in APPRISS… you can move on to the next item</span>`);
     else if (sug?.safe) actions.push(`<button class="btn btn-primary" data-action="prefill" title="Verify, then completes the work item in a background tab as ${esc(sug.reasonLabel)}"><span class="btn-label">Complete in APPRISS as ${esc(sug.reasonLabel)}…</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
-    else if (sug && !inFlight.has(item.id)) actions.push(`<label class="rls-cause"><span class="rls-muted">Cause found:</span> <select class="input" data-cause><option value="">choose after review…</option>${reasonsFor(item.sourceAppId).map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select></label><button class="btn btn-secondary" data-action="prefill" disabled title="Pick the cause you found first, verify, and the work item is completed in a background tab."><span class="btn-label">Complete in APPRISS…</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
+    else if (sug && !inFlight.has(item.id)) actions.push(`${cause ? `<span class="rls-cause-chip" title="Recorded ${esc(cause.at || "")}">Cause: TR# ${esc(cause.transNum)}${cause.time ? ` at ${esc(cause.time)}` : ""} · ${esc(whoText(cause))} <button class="btn btn-sm btn-ghost" data-action="cause-clear" title="Retract: removes the cause text and the ledger charge">undo</button></span>` : ""}<label class="rls-cause"><span class="rls-muted">Cause found:</span> <select class="input" data-cause><option value="">choose after review…</option>${reasonsFor(item.sourceAppId).map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select></label><button class="btn btn-secondary" data-action="prefill" disabled title="Pick the cause you found first, verify, and the work item is completed in a background tab."><span class="btn-label">Complete in APPRISS…</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
     actions.push(`<button class="btn ${analysis ? "btn-ghost" : "btn-secondary"}" data-action="analyze"><span class="btn-label">${analysis ? "Re-analyze" : "Analyze (Cash Research + EJ)"}</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
     const links = [
       `<a href="${esc(item.detailUrl)}" target="_blank" rel="noopener">Work item ${esc(item.id)}</a>`,
@@ -270,8 +300,8 @@ export async function mount(host, container) {
     const suggestion = sug ? `<div class="rls-block">
         <h3>${sug.safe ? "Disposition to file" : "Investigation notes (become the More Information text once a cause is picked)"}</h3>
         ${sug.safe ? `<div class="rls-sug-reason"><span class="rls-muted">Reason</span> <strong>${esc(sug.reasonLabel)}</strong> <span class="rls-muted">· More Information:</span></div>` : ""}
-        <textarea class="rls-sug-text" data-sug-text rows="4">${esc(sug.text)}</textarea>
-        <div class="rls-muted">${sug.safe ? "Complete in APPRISS asks you to verify, then starts work, picks the reason, pastes this text and clicks Complete in a background tab." : "This item is not dispositioned until the cause is found. When it is, pick the cause above and Complete in APPRISS; edit the notes first if needed."}</div>
+        <textarea class="rls-sug-text" data-sug-text rows="${cause ? 7 : 4}">${esc(sugText)}</textarea>
+        <div class="rls-muted">${sug.safe ? "Complete in APPRISS asks you to verify, then starts work, picks the reason, pastes this text and clicks Complete in a background tab." : "This item is not dispositioned until the cause is found. Click <em>This was the cause</em> on the transaction that explains it (the text and the cashier ledger update), pick the reason above and Complete in APPRISS; edit the notes first if needed."}</div>
       </div>` : "";
 
     box.innerHTML = `
@@ -283,20 +313,34 @@ export async function mount(host, container) {
       <div class="rls-actions">${actions.join("")}<span class="rls-links">${links}</span></div>
       ${sources}
       ${suggestion}
-      ${ev ? renderLookAt(ev, item) : ""}
+      ${ev ? renderLookAt(ev, item, src) : ""}
     `;
   }
 
-  function renderLookAt(ev, item) {
+  function renderLookAt(ev, item, src = null) {
     const parts = [];
     const sec = (title, body, cls = "") => `<div class="rls-block ${cls}"><h3>${esc(title)}</h3>${body}</div>`;
     // ▶ Video / Receipt open APPRISS's own viewers on the transaction id the
     // Open Drawer search gave us for this TR#.
-    const vlinks = (v) => v ? `<span class="rls-links"><a class="btn btn-primary" href="${esc(v.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV viewer for this transaction">▶ Video</a><a class="btn btn-secondary" href="${esc(v.receiptUrl)}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a>${v.byTime ? `<span class="rls-muted">matched by time</span>` : ""}</span>` : `<span class="rls-muted rls-links">no video id (not in Open Drawer)</span>`;
+    // APPRISS's Open Drawer search keeps about 60 days (store 1458, 2026-09-14:
+    // rows from 07-16, nothing for 07-15 or earlier). When the search ran and
+    // found no transactions for the day, no video id exists for ANY ticket on
+    // it — say that, not "not in Open Drawer".
+    const noDrawerDay = !!(src?.drawer?.ok && !ev?.drawer?.rows?.length);
+    const noVideo = noDrawerDay ? `<span class="rls-muted rls-links" title="APPRISS's Open Drawer search returned no transactions for this day; it keeps about 60 days">video unavailable for this date (outside APPRISS's 60-day window)</span>` : `<span class="rls-muted rls-links">no video id (not in Open Drawer)</span>`;
+    // "This was the cause": the analyst names the ticket. Any transaction
+    // shown here can be picked; the pick is stored per work item.
+    const cur = state.causes?.[item.id] || null;
+    const causeBtn = (t) => {
+      if (!t?.transNum) return "";
+      if (cur && String(cur.transNum) === String(t.transNum)) return `<span class="badge badge-warn">cause ✓</span>`;
+      return `<button class="btn btn-sm btn-secondary" data-action="cause-tx" data-tr="${esc(t.transNum)}" data-time="${esc(t.time || "")}" data-op="${esc(t.opNum || "")}" data-opname="${esc(t.opName || "")}" data-cash="${t.cashTendCents ?? ""}" data-total="${t.totalCents ?? ""}" data-tc="${esc(t.tcNum || "")}" title="Record this transaction as the cause: it leads the More Information text and charges the operator in the cashier ledger">This was the cause</button>`;
+    };
+    const vlinks = (v) => v ? `<span class="rls-links"><a class="btn btn-primary" href="${esc(v.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV viewer for this transaction">▶ Video</a><a class="btn btn-secondary" href="${esc(v.receiptUrl)}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a>${v.byTime ? `<span class="rls-muted">matched by time</span>` : ""}</span>` : noVideo;
     for (const k of ev.lookAt || []) {
       if (k === "investigation") {
         const inv = ev.investigation;
-        const cards = inv.candidates.slice(0, 5).map((c, i) => `<div class="rls-block"><h4>${i + 1}. ${esc(c.time || "Time unknown")} · TR# ${esc(c.transNum)} · operator ${esc(c.opNum || "?")} ${vlinks(c.video)}</h4>${(() => { const x = (ev.cftTx || []).find((y) => String(y.tx.transNum) === String(c.transNum)); return x ? `<p class="${x.cft ? "" : "rls-hot"}"><strong>${x.cft ? "CFT keyed for this ticket" : x.storeUse?.kind === "pantry" ? "Associate pantry run — no CFT keyed" : "Looks like a store purchase — no CFT keyed"}</strong>${x.storeUse ? ` · ${esc(x.storeUse.repeats.join(", "))}` : ""}${x.cft ? ` · ${esc(x.cft.inputDate || "")} ${esc(x.cft.inputTime || "")} ${esc(x.cft.accountDesc || "")} → ${esc(x.cft.recipient || "")}` : ""}</p>` : ""; })()}<p>${esc(c.hypothesis)}</p><ul class="rls-list">${c.supporting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>Potential cash discrepancy ${esc(money(c.possibleLossCents))}; remaining shortage under that hypothesis ${esc(money(c.residualCents))}${c.residualCents < 0 ? " (candidate exceeds shortage)" : ""}. Confirmed explained: $0.00.</p><p>${esc(c.check)}</p><details><summary>Receipt and conflicting evidence</summary><ul class="rls-list">${c.conflicting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>TC# ${esc(c.tcNum || "?")} · total ${esc(money(c.totalCents))} · cash ${esc(money(c.cashTendCents))} · change ${esc(money(c.changeDueCents || 0))}</p><pre>${esc(c.raw || "Raw receipt unavailable")}</pre></details></div>`).join("");
+        const cards = inv.candidates.slice(0, 5).map((c, i) => `<div class="rls-block"><h4>${i + 1}. ${esc(c.time || "Time unknown")} · TR# ${esc(c.transNum)} · operator ${esc(c.opNum || "?")}${c.opName ? " " + esc(c.opName) : ""} ${vlinks(c.video)} ${causeBtn(c)} ${c.raw && receiptUpcs(c.raw).length ? `<button class="btn btn-sm btn-ghost" type="button" data-action="pantry-from-tx" data-tr="${esc(c.transNum)}" title="Put every item on this receipt on the store's pantry list">+ Pantry list</button>` : ""}</h4>${(() => { const x = (ev.cftTx || []).find((y) => String(y.tx.transNum) === String(c.transNum)); return x ? `<p class="${x.cft ? "" : "rls-hot"}"><strong>${x.cft ? "CFT keyed for this ticket" : "Associate pantry run — no CFT keyed"}</strong>${x.storeUse ? ` · ${esc(x.storeUse.repeats.join(", "))}` : ""}${x.cft ? ` · ${esc(x.cft.inputDate || "")} ${esc(x.cft.inputTime || "")} ${esc(x.cft.accountDesc || "")} → ${esc(x.cft.recipient || "")}` : ""}</p>` : ""; })()}<p>${esc(c.hypothesis)}</p><ul class="rls-list">${c.supporting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>Potential cash discrepancy ${esc(money(c.possibleLossCents))}; remaining shortage under that hypothesis ${esc(money(c.residualCents))}${c.residualCents < 0 ? " (candidate exceeds shortage)" : ""}. Confirmed explained: $0.00.</p><p>${esc(c.check)}</p><details><summary>Receipt and conflicting evidence</summary><ul class="rls-list">${c.conflicting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>TC# ${esc(c.tcNum || "?")} · total ${esc(money(c.totalCents))} · cash ${esc(money(c.cashTendCents))} · change ${esc(money(c.changeDueCents || 0))}</p><pre>${esc(c.raw || "Raw receipt unavailable")}</pre></details></div>`).join("");
         parts.push(sec("Investigate the shortage — cause unconfirmed", `<p>${esc(inv.method)}</p><p>${inv.gaps.map(esc).join(" ")}</p><p>${inv.candidates.length} completed cash transactions ranked; showing up to five. Review the till timeline alongside these transactions.</p>${cards || "<p>No eligible completed cash transactions. Check source coverage and till handling.</p>"}`));
       } else if (k === "tills") {
         const t = ev.tills; if (!t) continue;
@@ -307,16 +351,16 @@ export async function mount(host, container) {
         parts.push(sec("Till log — who handled this register", `${qf ? `<div><strong>Till re-checked in with less cash</strong><ul class="rls-list">${qf}</ul></div>` : ""}${adv ? `<div><strong>Cash advances near the amount</strong><ul class="rls-list">${adv}</ul></div>` : ""}${mv ? `<div><strong>Tills moved between registers</strong><ul class="rls-list">${mv}</ul></div>` : ""}<table class="rls-table"><thead><tr><th>When</th><th>Action</th><th>Amount</th><th>Associate</th></tr></thead><tbody>${tl || `<tr><td colspan="4" class="rls-muted">no till events for this register on ${esc(item.date)} ±1 day</td></tr>`}</tbody></table>`, ((t.advances || []).some((a) => a.kind === "advance_missing") || qf) ? "hot" : ""));
       } else if (k === "video") {
         const v = ev.videoCandidates[0];
-        parts.push(sec("Watch this transaction — did the cash go in the drawer?", `<div class="rls-video"><div class="rls-video-big">${esc(v.time)} · TR# ${esc(v.transNum)} ${vlinks(v.video)}</div><div>${esc(v.why.join(", "))}${v.opNum ? ` · operator ${esc(v.opNum)}${v.opName ? " " + esc(v.opName) : ""}` : ""}</div><div class="rls-muted">TC# ${esc(v.tcNum || "?")} · total ${esc(money(v.totalCents))} · cash tendered ${esc(money(v.cashTendCents))}${v.changeDueCents ? ` · change ${esc(money(v.changeDueCents))}` : ""}${v.tenders?.length ? ` · tenders: ${esc(v.tenders.map((t) => `${t.label} ${money(t.cents)}`).join(", "))}` : ""}</div></div>`, "hot"));
+        parts.push(sec("Watch this transaction — did the cash go in the drawer?", `<div class="rls-video"><div class="rls-video-big">${esc(v.time)} · TR# ${esc(v.transNum)} ${vlinks(v.video)} ${causeBtn(v)}</div><div>${esc(v.why.join(", "))}${v.opNum ? ` · operator ${esc(v.opNum)}${v.opName ? " " + esc(v.opName) : ""}` : ""}</div><div class="rls-muted">TC# ${esc(v.tcNum || "?")} · total ${esc(money(v.totalCents))} · cash tendered ${esc(money(v.cashTendCents))}${v.changeDueCents ? ` · change ${esc(money(v.changeDueCents))}` : ""}${v.tenders?.length ? ` · tenders: ${esc(v.tenders.map((t) => `${t.label} ${money(t.cents)}`).join(", "))}` : ""}</div></div>`, "hot"));
       } else if (k === "cash") {
-        parts.push(sec(`${ev.cashMatches.length} transactions recorded cash near the amount`, `<ul class="rls-list">${ev.cashMatches.slice(0, 8).map((x) => `<li>${esc(x.time)} · TR# ${esc(x.transNum)} · op ${esc(x.opNum || "?")}${x.opName ? " " + esc(x.opName) : ""} · ${esc(x.why.join(", "))} ${vlinks(x.video)}</li>`).join("")}</ul>`));
+        parts.push(sec(`${ev.cashMatches.length} transactions recorded cash near the amount`, `<ul class="rls-list">${ev.cashMatches.slice(0, 8).map((x) => `<li>${esc(x.time)} · TR# ${esc(x.transNum)} · op ${esc(x.opNum || "?")}${x.opName ? " " + esc(x.opName) : ""} · ${esc(x.why.join(", "))} ${vlinks(x.video)} ${causeBtn(x)}</li>`).join("")}</ul>`));
       } else if (k === "cft") {
         const rows = ev.cftNear || [];
         parts.push(sec("Cash fund transfers near the amount (reference)", `<p class="rls-muted">CFT cash is dispensed by the recycler, not taken from a register, so a CFT does not by itself explain a register shortage. Listed so the amount and the person are in front of you if the journal or video points at a payout.</p><table class="rls-table"><thead><tr><th>Business date</th><th>Keyed</th><th>Amount</th><th>Recipient</th><th>Account</th><th>Reason</th></tr></thead><tbody>${rows.map((c) => `<tr class="${c.keyedLate ? "hit" : ""}"><td>${esc(c.businessDate)}${c.businessDate === item.date ? " ◀" : ""}</td><td>${esc(c.inputDate || "?")} ${esc(c.inputTime || "")}${c.keyedLate ? ' <span class="badge badge-warn">late</span>' : ""}</td><td>${esc(money(c.amountCents))}</td><td>${esc(c.recipient || "?")}</td><td>${esc(c.accountDesc || "")} <span class="rls-muted">${esc(c.accountNbr || "")}</span></td><td>${esc(c.reason || "")}</td></tr>`).join("")}</tbody></table>`));
       } else if (k === "drawer") {
         const d = ev.drawer; if (!d?.rows?.length) continue;
         const rows = [...d.rows].sort((a, b) => (b.near ? 1 : 0) - (a.near ? 1 : 0) || String(a.time).localeCompare(String(b.time)));
-        parts.push(sec(`Every drawer open on reg ${esc(item.register)} that day — ${d.count} transactions, each with video`, `<table class="rls-table"><thead><tr><th>Time</th><th>TR#</th><th>Cashier</th><th>Visit</th><th>Cash</th><th>Change</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr class="${r.near ? "hit" : ""}"><td>${esc(r.time || "?")}</td><td>${esc(r.transNum)}${r.nearKind === "in" ? ' <span class="badge badge-warn">cash in ≈ amount</span>' : r.nearKind === "out" ? ' <span class="badge badge-warn">cash OUT ≈ amount</span>' : ""}</td><td>${esc(r.cashier || "?")}</td><td>${esc(money(r.amountCents))}</td><td>${esc(money(r.cashTendCents))}</td><td>${esc(money(r.changeCents))}</td><td>${vlinks({ cctvUrl: r.cctvUrl, receiptUrl: r.receiptUrl })}</td></tr>`).join("")}</tbody></table>${d.explorerUrl ? `<div class="rls-muted"><a href="${esc(d.explorerUrl)}" target="_blank" rel="noopener">Open Drawer search in APPRISS</a></div>` : ""}`));
+        parts.push(sec(`Every drawer open on reg ${esc(item.register)} that day — ${d.count} transactions, each with video`, `<table class="rls-table"><thead><tr><th>Time</th><th>TR#</th><th>Cashier</th><th>Visit</th><th>Cash</th><th>Change</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr class="${r.near ? "hit" : ""}"><td>${esc(r.time || "?")}</td><td>${esc(r.transNum)}${r.nearKind === "in" ? ' <span class="badge badge-warn">cash in ≈ amount</span>' : r.nearKind === "out" ? ' <span class="badge badge-warn">cash OUT ≈ amount</span>' : ""}</td><td>${esc(r.cashier || "?")}</td><td>${esc(money(r.amountCents))}</td><td>${esc(money(r.cashTendCents))}</td><td>${esc(money(r.changeCents))}</td><td>${vlinks({ cctvUrl: r.cctvUrl, receiptUrl: r.receiptUrl })} ${causeBtn({ transNum: r.transNum, time: r.time, opName: r.cashier, cashTendCents: r.cashTendCents, totalCents: r.amountCents })}</td></tr>`).join("")}</tbody></table>${d.explorerUrl ? `<div class="rls-muted"><a href="${esc(d.explorerUrl)}" target="_blank" rel="noopener">Open Drawer search in APPRISS</a></div>` : ""}`));
       } else if (k === "operators") {
         parts.push(sec("Who was on the register", `<table class="rls-table"><thead><tr><th>Operator</th><th>First seen</th><th>Last seen</th><th>Transactions</th><th>Seen in</th></tr></thead><tbody>${ev.operators.map((o) => `<tr><td>${esc(o.opNum)}${o.name ? " " + esc(o.name) : ""}</td><td>${esc(o.firstSeen || "?")}</td><td>${esc(o.lastSeen || "?")}</td><td>${o.transactionCount}</td><td>${esc(o.sources.join(" + "))}</td></tr>`).join("")}</tbody></table>`));
       } else if (k === "redFlags") {
@@ -394,6 +438,33 @@ export async function mount(host, container) {
     const d = await run("export_cashier_files", { from: cashierRange.from, to: cashierRange.to }, ev.target.closest("button"));
     if (d) host.ui.toast(`Saved ${d.files.length} cashier files to Downloads\\${d.files[0].split("/").slice(0, -1).join("\\")}`);
   });
+  host.ui.delegate(container, "submit", "[data-pantry-form]", async (ev) => {
+    ev.preventDefault();
+    const ta = $("#rls-pantry-text");
+    const d = await run("add_pantry_items", { text: ta.value }, ev.target.querySelector("button[type='submit']"));
+    if (!d) return;
+    pantryList = d; ta.value = ""; paintPantry();
+    const rej = d.rejected?.length ? ` ${d.rejected.length} line${d.rejected.length > 1 ? "s" : ""} had no UPC and were skipped.` : "";
+    host.ui.toast(`Pantry list: ${d.added} added, ${d.updated} updated.${rej} Re-analyze to apply.`, { kind: d.rejected?.length ? "warn" : "success" });
+  });
+  host.ui.delegate(container, "click", "[data-action='pantry-from-tx']", async (ev) => {
+    const tr = ev.target.dataset.tr;
+    const c = (analysis?.evidence?.investigation?.candidates || []).find((x) => String(x.transNum) === String(tr));
+    const text = receiptPantryText(c?.raw);
+    if (!text) { host.ui.toast("No item lines with UPCs on that receipt.", { kind: "error" }); return; }
+    const d = await run("add_pantry_items", { text }, ev.target);
+    if (!d) return;
+    pantryList = d; paintPantry();
+    host.ui.toast(`TR# ${tr}: ${d.added} added, ${d.updated} already listed. Re-analyze to apply.`, { kind: "success" });
+  });
+  host.ui.delegate(container, "click", "[data-action='pantry-remove']", async (ev) => {
+    const d = await run("remove_pantry_item", { upc: ev.target.dataset.upc }, ev.target);
+    if (d) { pantryList = d; paintPantry(); }
+  });
+  host.ui.delegate(container, "click", "[data-action='pantry-reanalyze']", async (ev) => {
+    const d = await run("analyze_all", { force: true }, ev.target.closest("button"));
+    if (d) { await load(); host.ui.toast(`Re-analyzed ${d.analyzed ?? d.count ?? ""} items against the pantry list.`.replace("  ", " "), { kind: "success" }); }
+  });
   host.ui.delegate(container, "submit", "[data-note-form]", async (ev) => {
     ev.preventDefault();
     const f = ev.target.closest("form");
@@ -468,6 +539,26 @@ export async function mount(host, container) {
       if ((d?.completed || d?.alreadyClosed) && selectedId === id) { selectedId = null; analysis = null; }
       await load();
     }).catch((e) => { inFlight.delete(id); host.ui.toast(`Not completed (${id}): ${e?.message || e}`, { kind: "error" }); paintQueue(); paintDetail(); });
+  });
+  host.ui.delegate(container, "click", "[data-action='cause-tx']", async (ev) => {
+    const b = ev.target.closest("[data-action='cause-tx']");
+    const item = state.queue?.items.find((i) => i.id === selectedId);
+    if (!b || !item) return;
+    const cause = { transNum: b.dataset.tr, time: b.dataset.time, opNum: b.dataset.op, opName: b.dataset.opname, cashTendCents: b.dataset.cash, totalCents: b.dataset.total, tcNum: b.dataset.tc };
+    const d = await run("set_cause", { id: item.id, cause }, b);
+    if (!d?.cause) return;
+    state.causes = state.causes || {}; state.causes[item.id] = d.cause;
+    paintQueue(); paintDetail();
+    host.ui.toast(`Cause recorded: TR# ${d.cause.transNum} — now pick the reason and Complete in APPRISS`);
+  });
+  host.ui.delegate(container, "click", "[data-action='cause-clear']", async (ev) => {
+    const item = state.queue?.items.find((i) => i.id === selectedId);
+    if (!item) return;
+    const d = await run("clear_cause", { id: item.id }, ev.target.closest("button"));
+    if (!d) return;
+    if (state.causes) delete state.causes[item.id];
+    paintQueue(); paintDetail();
+    host.ui.toast("Cause retracted");
   });
   host.ui.delegate(container, "change", "[data-cause]", (ev) => {
     const btn = $("[data-action='prefill']"); if (btn) btn.disabled = !ev.target.value;

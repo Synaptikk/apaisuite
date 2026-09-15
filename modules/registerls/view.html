@@ -50,6 +50,22 @@
     <div class="rls-cashiers-body" data-cashiers-body></div>
   </details>
 
+  <details class="rls-pantrylist card" data-pantrylist>
+    <summary><span class="card-title">Pantry list — items rung as the associate pantry</span> <span class="rls-muted" data-pantrylist-meta></span></summary>
+    <div class="rls-pantrylist-body">
+      <div class="rls-muted">A cash ticket of $100 or more made mostly of these UPCs is treated as the pantry run: without a CFT keyed for it the register is short the ticket (process error, not a loss). Nothing else on a receipt counts as a store purchase. Add the items your store stocks, then re-analyze to generate the review list.</div>
+      <div data-pantrylist-table></div>
+      <form class="rls-pantry-form" data-pantry-form>
+        <label class="rls-muted" for="rls-pantry-text">Add items — one per line, UPC first, then the description as the receipt prints it</label>
+        <textarea class="input rls-pantry-text" id="rls-pantry-text" rows="4" placeholder="007874208830 FOAM PLATES&#10;7066203003, NISSIN CUP&#10;4011 BANANAS"></textarea>
+        <div class="rls-pantry-actions">
+          <button class="btn btn-sm btn-primary" type="submit"><span class="btn-label">Add to list</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>
+          <button class="btn btn-sm btn-secondary" type="button" data-action="pantry-reanalyze" title="Re-run every open item against the updated list"><span class="btn-label">Re-analyze with this list</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>
+        </div>
+      </form>
+    </div>
+  </details>
+
   <details class="rls-moves card" data-moves hidden>
     <summary><span class="card-title">Till handling — tills moved between registers</span> <span class="rls-muted" data-moves-meta></span></summary>
     <div class="rls-moves-body" data-moves-body></div>
