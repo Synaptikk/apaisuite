@@ -11,6 +11,10 @@
 // Read-only: only reads response bodies via .clone().text(). Never
 // initiates a request.
 //
+// Request headers are recorded too: the SW builds its own queries
+// (shared/pbi_query.js) and needs the MWCToken + QES url + modelId as transport.
+// They live only in this page's memory ring — never persisted.
+//
 // Public API (SW reads via chrome.scripting.executeScript world:"MAIN"):
 //   window.__APAISUITE_MARKET120_POWERBI_CAP.all()
 //   window.__APAISUITE_MARKET120_POWERBI_CAP.latest()
@@ -46,7 +50,7 @@
     if (typeof body !== "string") return false;
     // Match if the DAX query references ISA-related entities OR our known reports.
     for (const rid of ISA_REPORT_IDS) if (body.includes(rid)) return true;
-    if (/"Entity":\s*"(?:ISA|ISA 2|Alignment)"/i.test(body)) return true;
+    if (/"Entity":\s*"(?:ISA|ISA 2|Alignment|BR Adjustments)"/i.test(body)) return true;
     if (/Adj[_ ]?(?:Qty|Amt|Date|Reason)|acctg_dept_nbr|adj_(?:amt|qty|date)|Stolen_?Adj/i.test(body)) return true;
     return false;
   }
@@ -54,6 +58,15 @@
   function truncate(s) {
     if (typeof s !== "string") return s;
     return s.length > BODY_MAX ? s.slice(0, BODY_MAX) + "…[truncated]" : s;
+  }
+
+  function headersToObject(h) {
+    if (!h) return {};
+    try {
+      if (h instanceof Headers) { const o = {}; h.forEach((v, k) => { o[k] = v; }); return o; }
+      if (Array.isArray(h)) return Object.fromEntries(h);
+      return { ...h };
+    } catch { return {}; }
   }
 
   function record(entry) {
@@ -84,10 +97,11 @@
       return origFetch.apply(this, arguments);
     }
 
+    const reqHeaders = headersToObject(init?.headers ?? (typeof input !== "string" ? input?.headers : null));
     const resp = await origFetch.apply(this, arguments);
     let respBody = null;
     try { respBody = await resp.clone().text(); } catch {}
-    record({ via: "fetch", method, url, reqBody, status: resp.status, respBody });
+    record({ via: "fetch", method, url, reqHeaders, reqBody, status: resp.status, respBody });
     return resp;
   };
 
@@ -95,12 +109,20 @@
   const OrigXHR = window.XMLHttpRequest;
   const S_METHOD  = Symbol("m120pbimethod");
   const S_URL     = Symbol("m120pbiurl");
+  const S_HEADERS = Symbol("m120pbiheaders");
 
   const origOpen = OrigXHR.prototype.open;
   OrigXHR.prototype.open = function (method, url, ...rest) {
     this[S_METHOD] = (method || "GET").toUpperCase();
     this[S_URL] = url;
+    this[S_HEADERS] = {};
     return origOpen.call(this, method, url, ...rest);
+  };
+
+  const origSetHeader = OrigXHR.prototype.setRequestHeader;
+  OrigXHR.prototype.setRequestHeader = function (name, value) {
+    if (this[S_HEADERS]) this[S_HEADERS][name] = value;
+    return origSetHeader.call(this, name, value);
   };
 
   const origSend = OrigXHR.prototype.send;
@@ -108,10 +130,11 @@
     const url = this[S_URL];
     if (this[S_METHOD] === "POST" && URL_MATCHER.test(url) && isMarket120Request(typeof body === "string" ? body : "")) {
       const reqBody = typeof body === "string" ? body : null;
+      const reqHeaders = { ...(this[S_HEADERS] || {}) };
       this.addEventListener("loadend", () => {
         let respBody = null;
         try { respBody = this.responseText; } catch {}
-        record({ via: "xhr", method: "POST", url, reqBody, status: this.status, respBody });
+        record({ via: "xhr", method: "POST", url, reqHeaders, reqBody, status: this.status, respBody });
       });
     }
     return origSend.call(this, body);

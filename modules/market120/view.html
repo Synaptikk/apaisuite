@@ -2,10 +2,6 @@
   <header class="mkt120-header">
     <div class="mkt120-title">
       <h1>Market 120 · Clearance &amp; ISA Review</h1>
-      <p class="mkt120-subtitle">
-        Two separate metric families combined into one executive view.
-        Data pulled through the extension via background tabs — no iframes, no re-authentication prompts.
-      </p>
     </div>
     <div class="mkt120-toolbar">
       <button class="btn btn-primary" data-action="refresh-all">
@@ -51,14 +47,21 @@
         <span class="mkt120-kpi-value">—</span>
       </div>
       <div class="mkt120-kpi" data-metric="isa_total_adjusted_qty">
-        <span class="mkt120-kpi-label">Total Adjusted Qty</span>
+        <span class="mkt120-kpi-label">Total Adjusted Units</span>
         <span class="mkt120-kpi-value">—</span>
       </div>
       <div class="mkt120-kpi" data-metric="stolen_adjusted_dollars">
-        <span class="mkt120-kpi-label">Stolen Adj $</span>
+        <span class="mkt120-kpi-label">Stolen Adj $ (FY)</span>
         <span class="mkt120-kpi-value">—</span>
       </div>
     </div>
+    <p class="mkt120-isa-scope" data-isa-scope></p>
+    <details class="mkt120-isa-review" data-isa-review>
+      <summary>ISA review<span class="mkt120-isa-review-hint">reasons, stores, categories, items and stolen detail</span></summary>
+      <div class="mkt120-isa-body" data-isa-body>
+        <p class="mkt120-empty">Click Refresh on ISA Activity to load the Market 120 review.</p>
+      </div>
+    </details>
   </section>
 
   <!-- Store-level breakdown (report-style: insights + KPIs + charts) -->
@@ -150,11 +153,10 @@
     a top-10-stores bar chart and a clearance-vs-deleted donut (dependency-free
     inline SVG — MV3 CSP blocks CDN Chart.js), plus the week-over-week table.
     All aggregation + chart logic is unit-tested (32/32) against the real capture.
-    <br><em>Live note:</em> the store capture opens the Tableau tab in the
-    <em>foreground</em> (background tabs throttle Tableau's render, which made
-    it crawl) and only auto-closes it on success — a failed/half-loaded tab is
-    left open so you can re-auth or inspect. If a Refresh shows a
-    <code>NO_CAPTURE</code> badge, the export came through as a direct download
-    and we fall back to the <code>chrome.downloads</code> path (follow-up).
+    <br><em>Live note:</em> the store capture reads the Tableau "CD Store" sheet
+    from a background tab (no focus change, no export dialog) and closes it on
+    success — a tab that needs SSO is left open so you can sign in. The
+    Clearance / Deleted tiles are fed from the same data. Click a store in the
+    week-over-week table for its detail.
   </aside>
 </section>

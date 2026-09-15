@@ -65,6 +65,21 @@ export function computeBreakdown(rows, national = null, opts = {}) {
     .sort((a, b) => b.dollars - a.dollars)
     .slice(0, topN);
 
+  // Every store (not just top N), with quantities — feeds the store drill-down.
+  const stores = rows
+    .map((r) => ({
+      store: r.store,
+      region: r.region,
+      bu: r.bu,
+      dollars: n(r.totalDollars),
+      units: n(r.totalUnits),
+      clrDol: n(r.clearanceDollars),
+      clrQty: n(r.clearanceQty),
+      delDol: n(r.deletedDollars),
+      delQty: n(r.deletedQty),
+    }))
+    .sort((a, b) => b.dollars - a.dollars);
+
   const top3Dollars = topStores.slice(0, 3).reduce((s, x) => s + x.dollars, 0);
 
   const insights = buildInsights({ market, m, nat, pctDollars, delShareDol, topStores, top3Dollars });
@@ -78,6 +93,7 @@ export function computeBreakdown(rows, national = null, opts = {}) {
     delShareDol,
     clrShareDol,
     topStores,
+    stores,
     top3Dollars,
     insights,
   };

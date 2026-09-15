@@ -1,172 +1,133 @@
 // modules/market120/lib/sources/clearance_stores_tableau.js
 //
-// Store-level Clearance/Deleted capture via the Tableau *crosstab CSV export*
-// — the path that actually yields machine-readable numbers, unlike the
-// PNG-tile KPI cards that clearance_tableau.js (VizQL scrape) chokes on.
+// Store-level Clearance/Deleted capture from the Tableau ClearanceDeleted
+// dashboard's "CD Store" worksheet.
 //
-// Flow (adapted from the standalone CDP daemon in Trey/tools/tableau_grab.mjs,
-// re-expressed with chrome.scripting.executeScript in world:"MAIN"):
-//   1. Find/open the ClearanceDeleted tab.
-//   2. Wait for the viz toolbar (Download button) to exist = data rendered.
-//   3. Click Download → Crosstab → select the "CD Store" sheet → CSV → Export.
-//   4. The content-script fetch-ring captures the CSV response body.
-//   5. Parse it with parseStoresCsv (Market 120 filter) and return rows.
+// Reads the sheet through the live vizql session's summary-data command
+// (api-get-worksheet-summary-logical-table-data) — the same values the
+// crosstab export yields, but with no dialog and no rendering. That means the
+// tab can stay in the BACKGROUND: the old Download → Crosstab driver needed a
+// foregrounded tab (rAF throttling) and stole the user's focus. Pattern
+// mirrors modules/vizpick/lib/sources/tableau_export_replay.js::directSummaryExport.
 //
-// Read-only: export ≠ mutation (a crosstab download is a GET/POST that
-// renders existing data; classified read-only per Foundry Phase-1 decisions).
-
-import { parseStoresCsv, parseNationalTotal } from "../parse_stores_csv.js";
+// The sheet is national and long-format (one tuple per store × measure); we
+// keep Market 120 stores and sum every store for the national context.
+// Cross-checked live 2026-09-15: all 10 Market 120 stores matched the
+// crosstab export to the dollar.
+//
+// Read-only for data. Before reading, the Store quick filter is reset to all
+// values: Tableau saves a signed-in user's last filter state server-side, so
+// a leftover store filter would otherwise narrow the "national" sheet.
 
 const REPORT_URL  = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/Backroom/ClearanceDeleted?:iid=1&:linktarget=_self";
 const TAB_PATTERN = "https://stores.tableau.wal-mart.com/*Backroom*ClearanceDeleted*";
 const MARKET      = "120";
+const WORKSHEET   = "CD Store";
+const DASHBOARD   = "Clearance Deleted";
+// Store quick-filter field + the worksheet that owns it (verified 2026-09-15).
+// store_detail_tableau.js prefers the live name from bootstrap, falls back here.
+export const STORE_FILTER_FN        = "[sqlproxy.0igq6i01qw912t1gjb5p70hh2dar].[none:store_number:ok]";
+export const STORE_FILTER_WORKSHEET = "Last Update";
 
-const LOAD_TIMEOUT_MS   = 30_000;
-const VIZ_READY_WAIT_MS = 60_000;   // Tableau initial render can be slow, even foregrounded
-const EXPORT_WAIT_MS    = 45_000;
-const POLL_MS           = 800;
-const INSTALL_GRACE_MS  = 3_000;    // give the document_start script a beat before assuming it's missing
+const LOAD_TIMEOUT_MS = 30_000;
+const SESSION_WAIT_MS = 90_000;   // SSO bounce + bootstrap; ~3s when signed in
+const POLL_MS         = 1_000;
+const MIN_NATIONAL_STORES = 500;   // national sheet has ~4,600; fewer = filtered view
 
-// The "CD Store" sheet thumbnail index in the crosstab dialog (verified via
-// the standalone grabber: 0=Category 1=Location 2=Store 3=LastUpdate).
-const STORE_SHEET_INDEX = 2;
-
-// Identifying header the CSV body must contain to be the CD Store export.
-const STORE_CSV_NEEDLE = "Total Clearance Deleted";
+// Tableau measure name → StoreRow field (parse_stores_csv.js vocabulary).
+const MEASURES = {
+  totalUnits:       "Total Clearance Deleted Units",
+  totalDollars:     "Total Clearance Deleted $",
+  clearanceQty:     "Clearance Quantity",
+  clearanceDollars: "Clearance $",
+  deletedQty:       "Deleted Quantity",
+  deletedDollars:   "Deleted $",
+};
 
 export async function fetchClearanceStoresTableau() {
-  // Remember what was focused so we can politely restore it afterward.
-  const prevActive = await getActiveTab();
-
   const opened = await findOrOpenReportTab();
   if (!opened) {
     return { ok: false, errorClass: "TAB", error: "Could not open Tableau ClearanceDeleted tab." };
   }
   const { tab, didOpen } = opened;
-
-  // Tableau renders its viz almost entirely through requestAnimationFrame,
-  // which Chrome throttles hard in background tabs — that's what made this
-  // feel like it hung "forever". Foreground the capture tab so it renders at
-  // full speed; we restore the user's previous tab in the finally block.
-  await focusTab(tab.id).catch(() => {});
-
-  // Only close the tab we opened when the capture actually SUCCEEDS. On any
-  // failure (session/SSO, render timeout, export UI), leave it open so the
-  // user can see what happened and re-auth if needed — silently closing a
-  // half-loaded tab is exactly the "closes before it finishes" symptom.
-  let succeeded = false;
+  let keepOpen = false;
 
   try {
     await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
 
-    if (!(await waitForCaptureInstalled(tab.id, INSTALL_GRACE_MS))) {
-      await chrome.tabs.reload(tab.id, { bypassCache: false });
-      await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
-      await waitForCaptureInstalled(tab.id, INSTALL_GRACE_MS);
+    const got = await pollSummary(tab.id, SESSION_WAIT_MS);
+    if (!got?.ok) {
+      keepOpen = !got;   // no session at all → likely SSO; let the user see it
+      return got
+        ? { ok: false, errorClass: "SUMMARY", error: `Tableau summary read failed: ${got.reason}`, debug: got }
+        : {
+            ok: false,
+            errorClass: "SESSION",
+            error: "Tableau session did not start in time (may need SSO sign-in). " +
+                   "The tab was left open in the background — sign in there, then Refresh again.",
+            keptTabOpen: true,
+          };
     }
 
-    const ready = await waitForVizReady(tab.id, VIZ_READY_WAIT_MS);
-    if (!ready) {
+    // Tableau keeps a user's last filter state server-side, so a fresh session
+    // can open narrowed (seen live 2026-09-15: one store instead of ~4,600).
+    // Never let that overwrite the weekly history with a partial market.
+    if ((got.nationalStoreCount ?? 0) < MIN_NATIONAL_STORES) {
       return {
         ok: false,
-        errorClass: "SESSION",
-        error: "Tableau viz did not render in time (session may need SSO re-auth or a store filter). " +
-               "The tab was left open — confirm data renders there, then Refresh again.",
-        keptTabOpen: true,
+        errorClass: "FILTERED",
+        error: `Tableau returned only ${got.nationalStoreCount} store(s) nationally — the ClearanceDeleted view is filtered. ` +
+               "Reset its filters (Tableau toolbar → Revert), then Refresh.",
+        debug: { tupleCount: got.tupleCount, nationalStoreCount: got.nationalStoreCount },
       };
     }
 
-    // Clear the ring so we only match the CSV from *this* export, not a stale one.
-    await clearRing(tab.id);
-
-    const triggered = await triggerCrosstabExport(tab.id, STORE_SHEET_INDEX);
-    if (!triggered.ok) {
-      return { ok: false, errorClass: "EXPORT_UI", error: `Could not drive crosstab export: ${triggered.reason}`, debug: triggered, keptTabOpen: true };
+    const rows = storeRowsFromSummary(got.stores);
+    if (!rows.length) {
+      return { ok: false, errorClass: "PARSE", error: `No rows for Market ${MARKET} in "${WORKSHEET}".`, debug: { tupleCount: got.tupleCount } };
     }
 
-    const csv = await pollForCsv(tab.id, EXPORT_WAIT_MS, POLL_MS);
-    if (!csv) {
-      const ring = await dumpRingSummary(tab.id);
-      return {
-        ok: false,
-        errorClass: "NO_CAPTURE",
-        error: `No CSV containing "${STORE_CSV_NEEDLE}" captured within ${EXPORT_WAIT_MS}ms.`,
-        debug: ring,
-        keptTabOpen: true,
-      };
-    }
-
-    const parsed = parseStoresCsv(csv.respBody, { market: MARKET });
-    if (!parsed.ok) {
-      return {
-        ok: false,
-        errorClass: "PARSE",
-        error: `Store CSV parse failed: ${parsed.reason}`,
-        debug: { capturedUrl: csv.url, bodyPreview: (csv.respBody || "").slice(0, 2048) },
-      };
-    }
-
-    // National Total row rides along in the same crosstab; used for context %.
-    const nat = parseNationalTotal(csv.respBody);
-
-    succeeded = true;
     return {
       ok: true,
-      rows: parsed.rows,
-      national: nat.ok ? nat.national : null,
+      rows,
+      national: nationalFromSummary(got.national),
       capturedAt: new Date().toISOString(),
-      debug: { capturedUrl: csv.url, storeCount: parsed.rows.length, market: MARKET, hasNational: nat.ok },
+      debug: { source: `summary:${WORKSHEET}`, storeCount: rows.length, market: MARKET, tupleCount: got.tupleCount, ms: got.ms },
     };
   } finally {
-    // Close owned capture tabs on every outcome, then restore focus.
-    if (didOpen) {
-      chrome.tabs.remove(tab.id).catch(() => {});
-    }
-    if (prevActive?.id && prevActive.id !== tab.id) {
-      focusTab(prevActive.id).catch(() => {});
-    }
+    if (didOpen && !keepOpen) chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
 
-// ── Tab management (same lifecycle as clearance_tableau.js) ───────────
-async function findOrOpenReportTab() {
-  const existing = await chrome.tabs.query({ url: TAB_PATTERN });
-  if (existing.length) return { tab: existing[0], didOpen: false };
-  // Open ACTIVE: Tableau's rAF-driven render is throttled in background tabs,
-  // which is the main reason capture felt glacially slow. We restore the
-  // user's previous tab afterward.
-  const tab = await chrome.tabs.create({ url: REPORT_URL, active: true });
+/** Pivot per-store measure maps into StoreRow objects. Pure; exported for tests. */
+export function storeRowsFromSummary(stores) {
+  return (stores || []).map((s) => {
+    const row = { bu: s.bu ?? "", region: s.region ?? "", market: s.market ?? MARKET, store: s.store };
+    for (const [field, measure] of Object.entries(MEASURES)) row[field] = Number(s.m?.[measure]) || 0;
+    return row;
+  });
+}
+
+/** National rollup (sum over every store) in parseNationalTotal's shape. */
+export function nationalFromSummary(national) {
+  if (!national) return null;
+  const out = {};
+  for (const [field, measure] of Object.entries(MEASURES)) out[field] = Number(national[measure]) || 0;
+  return out;
+}
+
+// ── Tab management ─────────────────────────────────────────────────
+// Always a fresh background tab of our own: an existing ClearanceDeleted tab
+// may carry a Store/Market filter (the user's, or a store-detail read), and
+// the summary read honours session filters — reusing it would return a
+// filtered "national" table.
+export async function openReportTab() {
+  const tab = await chrome.tabs.create({ url: REPORT_URL, active: false });
   return tab ? { tab, didOpen: true } : null;
 }
+const findOrOpenReportTab = openReportTab;
 
-// The tab the user is currently looking at, so we can restore it afterward.
-async function getActiveTab() {
-  try {
-    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    return t || null;
-  } catch { return null; }
-}
-
-// Bring a tab (and its window) to the foreground so it renders un-throttled.
-async function focusTab(tabId) {
-  const t = await chrome.tabs.get(tabId).catch(() => null);
-  if (!t) return;
-  if (t.windowId != null) await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
-  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
-}
-
-// Poll for the document_start capture script for up to graceMs before giving
-// up — avoids a needless (slow) reload when it's just a few ms behind us.
-async function waitForCaptureInstalled(tabId, graceMs) {
-  const deadline = Date.now() + graceMs;
-  do {
-    if (await isCaptureInstalled(tabId)) return true;
-    await new Promise((r) => setTimeout(r, 250));
-  } while (Date.now() < deadline);
-  return false;
-}
-
-async function waitForTabLoad(tabId, timeoutMs) {
+export async function waitForTabLoad(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const t = await chrome.tabs.get(tabId).catch(() => null);
@@ -177,165 +138,109 @@ async function waitForTabLoad(tabId, timeoutMs) {
   return chrome.tabs.get(tabId).catch(() => null);
 }
 
-async function isCaptureInstalled(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      func:   () => !!window.__APAISUITE_MARKET120_TABLEAU_CAP,
-    });
-    return (results || []).some((r) => r?.result === true);
-  } catch { return false; }
+// executeScript never settles on a frozen/discarded tab — without a cap the
+// Refresh spinner hangs forever (same failure as the vizpick tab leak).
+export function execScript(opts, ms = 45_000) {
+  let timer;
+  return Promise.race([
+    chrome.scripting.executeScript(opts),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`executeScript timed out after ${ms}ms`)), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
-// Poll until the viz toolbar Download button exists (in any frame) = the
-// viz has rendered actual data (not just the shell / error dialog).
-async function waitForVizReady(tabId, timeoutMs) {
+// Retry until the viz frame has a vizql session and the summary read answers.
+// Returns the summary result, a {ok:false} from a frame that had a session,
+// or null when no frame ever had one.
+async function pollSummary(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  let lastFailure = null;
   while (Date.now() < deadline) {
-    const ok = await evalInVizFrame(tabId, VIZ_READY_FN);
-    if (ok === true) return true;
+    try {
+      const results = await execScript({
+        target: { tabId, allFrames: true },
+        world:  "MAIN",
+        args:   [WORKSHEET, DASHBOARD, MARKET, STORE_FILTER_FN, STORE_FILTER_WORKSHEET],
+        func:   summaryFn,
+      });
+      const answered = (results || []).map((r) => r?.result).filter(Boolean);
+      const ok = answered.find((r) => r.ok);
+      if (ok) return ok;
+      if (answered.length) lastFailure = answered[0];
+    } catch (e) {
+      lastFailure = { ok: false, reason: String(e?.message ?? e) };
+    }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
-  return false;
+  return lastFailure;
 }
 
-async function clearRing(tabId) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      func:   () => { window.__APAISUITE_MARKET120_TABLEAU_CAP?.clear?.(); },
-    });
-  } catch {}
-}
-
-// Drive the crosstab export dialog. Runs entirely inside the viz frame's
-// MAIN world with realistic pointer events (Tableau ignores synthetic
-// .click() on its toolbar). Returns {ok, reason?}.
-async function triggerCrosstabExport(tabId, sheetIndex) {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    world:  "MAIN",
-    args:   [sheetIndex],
-    func:   exportDriverFn,
-  });
-  // Take the first frame that actually ran the driver (found the toolbar).
-  for (const r of (results || [])) {
-    if (r?.result && r.result.ran) return r.result;
-  }
-  return { ok: false, reason: "viz frame with toolbar not found" };
-}
-
-async function pollForCsv(tabId, timeoutMs, pollMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const hit = await findCsvInRing(tabId);
-    if (hit) return hit;
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  return null;
-}
-
-async function findCsvInRing(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      args:   [STORE_CSV_NEEDLE],
-      func:   (needle) => window.__APAISUITE_MARKET120_TABLEAU_CAP?.findBySubstr?.(needle) || null,
-    });
-    for (const r of (results || [])) if (r?.result) return r.result;
-    return null;
-  } catch { return null; }
-}
-
-async function dumpRingSummary(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      func:   () => {
-        const cap = window.__APAISUITE_MARKET120_TABLEAU_CAP;
-        if (!cap) return { installed: false, url: location.href };
-        const all = cap.all();
-        return { installed: true, url: location.href, size: all.length, urls: all.slice(-12).map((e) => `${e.method} ${e.url} → ${e.status}`) };
-      },
-    });
-    return { byFrame: (results || []).map((r) => r?.result).filter(Boolean) };
-  } catch { return null; }
-}
-
-// Run a function inside whichever frame hosts the viz; return its result.
-async function evalInVizFrame(tabId, fn, ...args) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true }, world: "MAIN", args, func: fn,
-    });
-    for (const r of (results || [])) if (r?.result === true) return true;
-    return false;
-  } catch { return false; }
-}
-
-// ── Injected page functions (serialized to the tab; keep self-contained) ──
-
-// Returns true when the download toolbar button is present = viz rendered.
-function VIZ_READY_FN() {
-  return !!document.querySelector('[data-tb-test-id="viz-viewer-toolbar-button-download"]');
-}
-
-// Full export driver injected into the viz frame. Clicks
-// Download → Crosstab → select sheet → CSV radio → Export, using realistic
-// pointer event sequences. Returns { ran, ok, reason, steps }.
-function exportDriverFn(sheetIndex) {
-  const steps = {};
-  const rc = (el) => {
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    const o = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0, view: window };
-    for (const t of ["pointerover","mouseover","mousemove","pointerdown","mousedown","focus","pointerup","mouseup","click"]) {
-      const E = t.startsWith("pointer") ? PointerEvent : (t === "focus" ? FocusEvent : MouseEvent);
-      try { el.dispatchEvent(new E(t, o)); } catch { el.dispatchEvent(new MouseEvent(t, o)); }
-    }
-    return true;
+// Injected into every frame (MAIN world); self-contained. Returns null in
+// frames without a vizql session.
+async function summaryFn(worksheet, dashboard, market, storeFilterFn, storeFilterWs) {
+  const c = window.tsConfig;
+  if (!c?.sessionid || !c.repositoryUrl || !c.site_root) return null;
+  const [wb, view] = String(c.repositoryUrl).split("/");
+  const base = `${location.origin}/vizql${c.site_root}/w/${wb}/v/${view}/sessions/${c.sessionid}`;
+  const form = new FormData();
+  const args = {
+    visualIdPresModel: JSON.stringify({ worksheet, dashboard }),
+    versionName: "1.0", maxRows: "0", ignoreAliases: "false", ignoreSelection: "true",
   };
-  const q = (sel) => document.querySelector(sel);
-  const tid = (t) => document.querySelector(`[data-tb-test-id="${t}"]`);
+  for (const [k, v] of Object.entries(args)) form.append(k, v);
+  // Clear a Store filter a previous session left saved. A no-op on an
+  // unfiltered view; if it fails, the national store-count guard catches it.
+  if (storeFilterFn) {
+    const ff = new FormData();
+    const fargs = {
+      visualIdPresModel: JSON.stringify({ worksheet: storeFilterWs, dashboard }),
+      globalFieldName: storeFilterFn, membershipTarget: "filter",
+      filterValues: "[]", filterUpdateType: "filter-all",
+    };
+    for (const [k, v] of Object.entries(fargs)) ff.append(k, v);
+    await fetch(`${base}/commands/tabdoc/categorical-filter`, {
+      method: "POST", body: ff, credentials: "include", signal: AbortSignal.timeout(15000),
+    }).catch(() => {});
+  }
 
-  const dl = tid("viz-viewer-toolbar-button-download");
-  if (!dl) return { ran: false, ok: false, reason: "no toolbar in this frame" };
+  const t0 = performance.now();
+  let res;
+  try {
+    res = await fetch(`${base}/commands/tabdoc/api-get-worksheet-summary-logical-table-data`, {
+      method: "POST", body: form, credentials: "include", signal: AbortSignal.timeout(30000),
+    });
+  } catch (e) {
+    return { ok: false, reason: String(e?.message ?? e) };
+  }
+  if (!res.ok) return { ok: false, reason: `summary HTTP ${res.status}` };
+  const body = await res.json().catch(() => null);
+  const model = body?.vqlCmdResponse?.cmdResultList?.[0]?.commandReturn?.dataTablePresModel;
+  if (!model?.showDataFormattedTable) return { ok: false, reason: "summary returned no table (viz still bootstrapping?)" };
+  const table = JSON.parse(model.showDataFormattedTable).table;
+  const cols = (table.schema || []).map((name) =>
+    model.showDataTableColumnPresModels?.find((col) => col.uniqueName === name)?.fieldCaption || name);
+  const at = (n) => cols.indexOf(n);
+  const iB = at("BU"), iR = at("Region"), iM = at("Market"), iS = at("Store"), iN = at("Measure Names"), iV = at("Measure Values");
+  if ([iM, iS, iN, iV].some((i) => i < 0)) return { ok: false, reason: `unexpected columns: ${cols.join(", ")}` };
 
-  // Tableau's flyout + dialog open asynchronously and each stage can lag on a
-  // cold viz. Rather than fire two fixed-time shots (which race the dialog),
-  // run a self-scheduling state machine that advances only when the next
-  // element actually exists, retrying every 400ms for up to ~24s. Each stage
-  // is idempotent (re-clicking an already-open menu is harmless).
-  const stages = [
-    { name: "download",  find: () => tid("viz-viewer-toolbar-button-download") },
-    { name: "crosstab",  find: () => tid("download-flyout-download-crosstab-MenuItem") },
-    { name: "sheet",     find: () => tid(`sheet-thumbnail-${sheetIndex}`), pick: (el) => el.querySelector("img,[role=button],button,div") || el },
-    { name: "csv",       find: () => tid("crosstab-options-dialog-radio-csv-RadioButton"), pick: (el) => el.querySelector("input") || el },
-    { name: "export",    find: () => tid("export-crosstab-export-Button"), ready: (el) => !el.disabled },
-  ];
-
-  let i = 0;
-  let ticks = 0;
-  const MAX_TICKS = 60; // 60 * 400ms = 24s
-  steps.reached = {};
-
-  const advance = () => {
-    if (i >= stages.length) return;            // done
-    if (ticks++ > MAX_TICKS) return;           // give up (SW poll reports NO_CAPTURE)
-    const st = stages[i];
-    const el = st.find();
-    if (el && (!st.ready || st.ready(el))) {
-      rc(st.pick ? st.pick(el) : el);
-      steps.reached[st.name] = true;
-      i++;
-    }
-    if (i < stages.length) setTimeout(advance, 400);
+  const num = (s) => {
+    const t = String(s ?? "").trim();
+    const neg = /^\(.*\)$/.test(t);
+    const v = Number(t.replace(/[$,()\s]/g, ""));
+    return Number.isFinite(v) ? (neg ? -Math.abs(v) : v) : 0;
   };
-  advance();
-
-  return { ran: true, ok: true, steps };
+  const stores = {};
+  const national = {};
+  const tuples = table.tuples || [];
+  const allStores = new Set();
+  for (const t of tuples) {
+    const measure = t[iN];
+    const v = num(t[iV]);
+    national[measure] = (national[measure] || 0) + v;
+    const s = String(t[iS]).trim();
+    allStores.add(s);
+    if (String(t[iM]).trim() !== market) continue;
+    const entry = stores[s] || (stores[s] = { bu: iB >= 0 ? t[iB] : "", region: iR >= 0 ? t[iR] : "", market, store: s, m: {} });
+    entry.m[measure] = v;
+  }
+  return { ok: true, stores: Object.values(stores), national, nationalStoreCount: allStores.size, tupleCount: tuples.length, ms: Math.round(performance.now() - t0) };
 }

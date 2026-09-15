@@ -1,4 +1,4 @@
-// modules/market120/lib/parse_dax_grid.js
+// shared/parse_dax_grid.js
 //
 // Decode a Power BI DSR "grid" response into an array of row objects:
 //   [{ dims: { "<dimName>": value, ... }, measures: { "<measureName>": number } }]

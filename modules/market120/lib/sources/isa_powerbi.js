@@ -1,390 +1,353 @@
 // modules/market120/lib/sources/isa_powerbi.js
 //
-// Background-tab capture for Power BI ISA reports. One call visits two
-// reports (ISA Detail + Backroom Adjustments) sequentially in the same
-// hidden tab, since both live in the same Power BI app and reusing a tab
-// avoids repeated Azure AD bootstrap overhead.
+// Market 120 ISA review from Power BI, read with queries we BUILD
+// (shared/pbi_query.js) rather than values scraped from whatever the report
+// rendered.
 //
-// KPIs extracted:
-//   isa_total_adjusted_dollars   — ISA Detail Report card "Total Adjusted $"
-//   isa_total_adjusted_qty       — ISA Detail Report card "Total Adjusted Qty"
-//   stolen_adjusted_dollars      — Backroom Adjustments card "Stolen Adj $"
+// Why the rewrite (measured live 2026-09-15): both reports persist the
+// analyst's slicers, and the old capture read the cards those slicers
+// produced.
+//   - ISA Detail was saved on Market 120 + Store 1458 + reason ISA, so
+//     "Total Adjusted $" was store 1458's figure, not the market's.
+//   - Backroom Adjustments was saved on Market 29 + Stolen, so the page's
+//     "Stolen Adj $ $46,758" was Market 29's. Market 120 FY-to-date is
+//     -$400,300 (reconciled two ways: store×type and the item grid).
+//
+// What we read now, all filtered to Market 120 by us:
+//   ISA Detail (entity ISA)            daily trend over a lookback, then a
+//                                      store × reason × dept × category rollup
+//                                      and store × reason × source for the
+//                                      review window; per-store item lines on
+//                                      demand (the whole market's item grid
+//                                      exceeds Power BI's 30,000-row cap).
+//   Backroom Adjustments (BR Adjustments)  store × adjustment type for the
+//                                      fiscal year and for the window; Stolen
+//                                      item lines per store on demand.
+//
+// Transport (QES url, MWCToken, modelId) comes from the market120 Power BI
+// capture ring in a background tab WE open — never the user's own Power BI
+// tab — and is cached per report in chrome.storage.session (memory only).
+// The two reports use different semantic models, so each has its own.
 
-import { decodeDaxKpis } from "../parse_dax.js";
+import {
+  AGG, MAX_WINDOW, aggregate, buildQuery, column, decodeRows, measure,
+  pickTransport, readResult, whereDateRange, whereIn,
+} from "../../../../shared/pbi_query.js";
+import {
+  aggregateStolenItems, aggregateStoreItems, buildReview, fiscalYearStart,
+  latestDataDate, windowFromMaxDate, ymd,
+} from "../isa_review.js";
+import { execScript, waitForTabLoad } from "./clearance_stores_tableau.js";
 
 const APP_ID = "a185f4ed-8506-49a6-b135-743608a56ae6";
 const CTID   = "3cbcc3d3-094d-4006-9849-0d11d61f484d";
+const ISA_DETAIL_URL   = `https://app.powerbi.com/groups/me/apps/${APP_ID}/reports/b4835e03-3718-4b95-919f-8934bc83542c/ReportSection86afef1c8628ab2fa9d0?ctid=${CTID}&experience=power-bi`;
+const BACKROOM_ADJ_URL = `https://app.powerbi.com/groups/me/apps/${APP_ID}/reports/c929bfda-c409-49f5-b2cb-732370411af3/ReportSection?ctid=${CTID}&experience=power-bi`;
 
-const ISA_DETAIL = {
-  id:   "isa_detail",
-  reportId: "b4835e03-3718-4b95-919f-8934bc83542c",
-  url:  `https://app.powerbi.com/groups/me/apps/${APP_ID}/reports/b4835e03-3718-4b95-919f-8934bc83542c/ReportSection86afef1c8628ab2fa9d0?ctid=${CTID}&experience=power-bi`,
-  // Body-signature substrings we scan for. The ISA Detail's Total Adjusted
-  // Qty / Total Adjusted $ KPI queries reference these entity + property
-  // shapes (observed via CDP probe 2026-07-26).
-  bodyMustContainAny: [
-    'CountNonNull(ISA.Adj Qty)',
-    'Sum(ISA.Adj Amt)',
-    'Sum(ISA.adj_amt)',
-    '"Entity":"ISA"',   // matches many DAX queries against ISA table
-  ],
-  // Measure names to extract from the DSR response. `parse_dax.js` matches
-  // these against descriptor.Select[*].Name using an EXACT,
-  // punctuation-preserving key. Order the real, exact names first. Confirmed
-  // via CDP probe (dev/probe-isa-powerbi.mjs, 2026-07-28): the true Total
-  // Adjusted $ measure is literally "ISA.Adj $" (≈-656048). Beware the decoy
-  // "ISA.Adj $..." (≈-2837) and "ISA.Item $" (≈40) in the same response.
-  measures: [
-    "ISA.Adj $",                    // ← real Total Adjusted $ (exact)
-    "CountNonNull(ISA.Adj Qty)",   // ← real Total Adjusted Qty (exact)
-    "Min(ISA.Adj Date)",
-    "Max(ISA.Adj Date)",
-    "Sum(ISA.Adj Amt)",
-    "Sum(ISA.adj_amt)",
-    "Sum(ISA.Adj Retail)",
-    "Sum(ISA.adj_retail)",
-    "Sum(ISA.Adj Retail Amt)",
-    "Total Adjusted $",
-    "Total Adjusted Qty",
-    "Total Adj $",
-  ],
-  // KPI cards arrive in SEPARATE QES responses that trickle in over time.
-  // The poll must keep accumulating until every required measure is seen
-  // (or timeout) — otherwise an early qty-only response ends the poll and
-  // Total Adjusted $ is silently dropped. Each entry is an alias group;
-  // the requirement is satisfied when ANY alias in the group is captured.
-  requiredMeasures: [
-    ["ISA.Adj $", "Sum(ISA.Adj Amt)", "Sum(ISA.adj_amt)", "Total Adjusted $"],
-    ["CountNonNull(ISA.Adj Qty)", "Sum(ISA.Adj Qty)", "Total Adjusted Qty"],
-  ],
-};
-const BACKROOM_ADJ = {
-  id:   "backroom_adj",
-  reportId: "c929bfda-c409-49f5-b2cb-732370411af3",
-  url:  `https://app.powerbi.com/groups/me/apps/${APP_ID}/reports/c929bfda-c409-49f5-b2cb-732370411af3/ReportSection?ctid=${CTID}&experience=power-bi`,
-  // CRITICAL: "Stolen" is NOT a measure name here — it's a DAX FILTER value.
-  // Confirmed via CDP probe (dev/probe-backroom-powerbi.mjs, 2026-07-28): the
-  // Stolen Adj $ card runs the SAME measure `Sum(BR Adjustments.Total Adj $)`
-  // but with `WHERE 'BR Adjustments'[Adjustment Type] = 'Stolen'`. The
-  // unfiltered card uses the identical descriptor, so response matching alone
-  // cannot tell them apart — we MUST select by the REQUEST body's Stolen
-  // filter (reqBodyMustContainAll below).
-  bodyMustContainAny: [
-    'Total Adj $',
-    '"Entity":"BR Adjustments"',
-    'Adjustment Type',
-  ],
-  // Only accept envelopes whose ORIGINATING QES request carried the Stolen
-  // filter literal — that isolates the stolen-only aggregate from the
-  // all-adjustments total (both share the Total Adj $ descriptor).
-  reqBodyMustContainAll: ["'Stolen'"],
-  measures: [
-    "Sum(BR Adjustments.Total Adj $)",  // ← real measure; Stolen isolated via request filter
-    "Total Adj $",
-  ],
-  requiredMeasures: [
-    ["Sum(BR Adjustments.Total Adj $)", "Total Adj $"],
-  ],
+const MARKET = "120";
+const REPORTS = {
+  isa: { entity: "ISA",            url: ISA_DETAIL_URL,   from: [{ Name: "i", Entity: "ISA" }, { Name: "a", Entity: "Alignment" }] },
+  br:  { entity: "BR Adjustments", url: BACKROOM_ADJ_URL, from: [{ Name: "b", Entity: "BR Adjustments" }, { Name: "a", Entity: "Alignment" }] },
 };
 
-const CAPTURE_WAIT_MS = 30_000;
-const CAPTURE_POLL_MS = 800;
-const LOAD_TIMEOUT_MS = 30_000;
+export const WINDOW_PRESETS = [7, 14, 28];
 
-// One tab, two navigations. Reuses the same background tab for both ISA reports.
-export async function fetchIsaPowerbi() {
-  const opened = await openOrReuseTab(ISA_DETAIL.url);
-  if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI tab for ISA reports." };
-  const { tab, didOpen } = opened;
+const DAY = 86_400_000;
+const LOOKBACK_DAYS        = 42;          // daily trend; also finds the data-through date
+const TRANSPORT_KEY        = "market120.pbiTransport";
+const TRANSPORT_MAX_AGE_MS = 45 * 60_000; // MWCToken observed to live ~82 min
+const TRANSPORT_WAIT_MS    = 60_000;
+const LOAD_TIMEOUT_MS      = 30_000;
+const QUERY_TIMEOUT_MS     = 60_000;
 
-  const results = { isa_detail: null, backroom_adj: null };
-  const errors  = {};
-  const debug   = {};
+const m120 = () => whereIn(column("a", "Market"), [MARKET]);
+const cents = (v) => Math.round(v * 100) / 100;
 
-  try {
-    results.isa_detail = await captureReport(tab.id, ISA_DETAIL);
-  } catch (e) {
-    errors.isa_detail = String(e?.message ?? e);
+/**
+ * Market-level review for a `days` window ending on the latest date with data.
+ * @returns {Promise<{ok, kpis?, review?, capturedAt?, subErrors?, debug?, errorClass?, error?}>}
+ */
+export async function fetchIsaReview({ days = 14 } = {}) {
+  if (!WINDOW_PRESETS.includes(days)) days = 14;
+  const started = Date.now();
+  const debug = { queries: {} };
+
+  const lookFrom = ymd(Date.now() - LOOKBACK_DAYS * DAY);
+  const trend = await runQuery("isa", {
+    select: [
+      ["Store", column("a", "Store")], ["Reason", column("i", "Adj Reason")],
+      ["Date", column("i", "Adj Date")], ["Dollars", measure("i", "Adj $")],
+    ],
+    where: [m120(), whereDateRange(column("i", "Adj Date"), lookFrom, ymd(Date.now() + DAY))],
+  }, debug, "trend");
+  if (!trend.ok) return trend;
+
+  const maxMs = latestDataDate(trend.rows);
+  if (maxMs == null) {
+    return { ok: false, errorClass: "NO_DATA", error: `No Market ${MARKET} ISA adjustments since ${lookFrom}.`, debug };
+  }
+  const window = windowFromMaxDate(maxMs, days);
+  const fyFrom = fiscalYearStart(maxMs);
+  const inWindow = [m120(), whereDateRange(column("i", "Adj Date"), window.from, window.to)];
+
+  const rollup = await runQuery("isa", {
+    select: [
+      ["Store", column("a", "Store")], ["Reason", column("i", "Adj Reason")],
+      ["Dept", column("i", "Dept")], ["Cat", column("i", "Cat Desc")],
+      ["Dollars", measure("i", "Adj $")], ["Qty", aggregate("i", "Adj Qty", AGG.SUM)],
+      ["Lines", aggregate("i", "Adj Qty", AGG.COUNT_NON_NULL)],
+    ],
+    where: inWindow,
+  }, debug, "rollup");
+  if (!rollup.ok) return rollup;
+
+  const sources = await runQuery("isa", {
+    select: [
+      ["Store", column("a", "Store")], ["Reason", column("i", "Adj Reason")],
+      ["Source", column("i", "User ID")], ["Dollars", measure("i", "Adj $")],
+    ],
+    where: inWindow,
+  }, debug, "sources");
+  if (!sources.ok) return sources;
+
+  // Backroom Adjustments is secondary: a failure there must not sink the ISA review.
+  const subErrors = {};
+  const brSelect = [
+    ["Store", column("a", "Store")], ["Type", column("b", "Adjustment Type")],
+    ["Dollars", aggregate("b", "Total Adj $", AGG.SUM)], ["Qty", aggregate("b", "Qty", AGG.SUM)],
+  ];
+  const brFy = await runQuery("br", { select: brSelect, where: [m120(), whereDateRange(column("b", "Date"), fyFrom)] }, debug, "brFy");
+  let brWindow = null;
+  if (brFy.ok) {
+    brWindow = await runQuery("br", { select: brSelect, where: [m120(), whereDateRange(column("b", "Date"), window.from, window.to)] }, debug, "brWindow");
+    if (!brWindow.ok) subErrors.backroom_window = `${brWindow.errorClass}: ${brWindow.error}`;
+  } else {
+    subErrors.backroom = `${brFy.errorClass}: ${brFy.error}`;
   }
 
-  // Navigate the SAME tab to Backroom Adjustments Report.
-  try {
-    await chrome.tabs.update(tab.id, { url: BACKROOM_ADJ.url });
-    await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
-    results.backroom_adj = await captureReport(tab.id, BACKROOM_ADJ);
-  } catch (e) {
-    errors.backroom_adj = String(e?.message ?? e);
-  }
+  const review = buildReview({
+    window, dataThrough: ymd(maxMs), fyFrom,
+    trend: trend.rows, rollup: rollup.rows, sources: sources.rows,
+    brFy: brFy.ok ? brFy.rows : null,
+    brWindow: brWindow?.ok ? brWindow.rows : null,
+  });
 
-  if (didOpen) chrome.tabs.remove(tab.id).catch(() => {});
+  let dollars = 0, qty = 0;
+  for (const [, , d, q] of review.byStoreReason) { dollars += d; qty += q; }
+  const stolen = review.br.fy ? review.br.fy.filter((x) => x[1] === "Stolen").reduce((a, x) => a + x[2], 0) : null;
 
-  // Merge KPI values. Missing values stay null. Real measure names observed
-  // via CDP probe 2026-07-26: ISA Detail's Total-Adjusted-Qty card is
-  // "CountNonNull(ISA.Adj Qty)"; Total-Adjusted-$ is "Sum(ISA.Adj Amt)" or
-  // renders through "Adj $". Backroom Adjustments shows totals under
-  // "Total Adj $" and per-type breakdowns under specific measure names.
-  const kpis = {
-    isa_total_adjusted_dollars: pickFirstNumeric(results.isa_detail?.values, [
-      "ISA.Adj $", "Sum(ISA.Adj Amt)", "Sum(ISA.adj_amt)", "Sum(ISA.Adj Retail)",
-      "Sum(ISA.adj_retail)", "Sum(ISA.Adj Retail Amt)", "Total Adjusted $", "Total Adj $",
-    ]),
-    isa_total_adjusted_qty: pickFirstNumeric(results.isa_detail?.values, [
-      "CountNonNull(ISA.Adj Qty)", "Sum(ISA.Adj Qty)", "Total Adjusted Qty",
-    ]),
-    stolen_adjusted_dollars: pickFirstNumeric(results.backroom_adj?.values, [
-      // Real measure name (Stolen isolated via the request-side filter, see
-      // BACKROOM_ADJ.reqBodyMustContainAll). Legacy aliases kept as fallback.
-      "Sum(BR Adjustments.Total Adj $)", "Total Adj $",
-      "Stolen Adj $", "Sum(Stolen)", "Stolen_Adj_Amt",
-    ]),
-  };
-  debug.isa_detail   = summarizeCapture(results.isa_detail);
-  debug.backroom_adj = summarizeCapture(results.backroom_adj);
-
-  const allNull = Object.values(kpis).every((v) => v === null);
-  if (allNull) {
-    return {
-      ok: false,
-      errorClass: "PARSE",
-      error: "No ISA KPI values parsed from either report.",
-      kpis,
-      subErrors: errors,
-      debug,
-    };
-  }
-
+  debug.ms = Date.now() - started;
+  debug.window = window;
+  debug.dataThrough = review.dataThrough;
   return {
     ok: true,
-    kpis,
+    kpis: {
+      isa_total_adjusted_dollars: cents(dollars),
+      isa_total_adjusted_qty:     qty,
+      stolen_adjusted_dollars:    stolen == null ? null : cents(stolen),
+    },
+    review,
     capturedAt: new Date().toISOString(),
-    subErrors: Object.keys(errors).length ? errors : null,
+    subErrors: Object.keys(subErrors).length ? subErrors : null,
     debug,
   };
 }
 
-async function captureReport(tabId, report) {
-  const installed = await isCaptureInstalled(tabId);
-  if (!installed) {
-    await chrome.tabs.reload(tabId, { bypassCache: false });
-    await waitForTabLoad(tabId, LOAD_TIMEOUT_MS);
+/**
+ * One store's ISA item lines for the review window plus its Stolen lines for
+ * the fiscal year.
+ */
+export async function fetchIsaStoreDetail(store, { window, fyFrom }) {
+  const s = String(store ?? "").trim();
+  if (!/^\d+$/.test(s)) return { ok: false, errorClass: "INPUT", error: `Bad store number: ${store}` };
+  if (!window?.from || !window?.to || !fyFrom) {
+    return { ok: false, errorClass: "INPUT", error: "Review window missing — refresh ISA first." };
   }
+  const debug = { queries: {} };
 
-  const captured = await pollForCapture(tabId, report, CAPTURE_WAIT_MS, CAPTURE_POLL_MS);
-  if (!captured || !captured.length) {
-    const ringSummary = await dumpRingSummary(tabId);
+  const items = await runQuery("isa", {
+    // Sum the numbers rather than grouping on them: grouping on raw Qty/$
+    // merged identical lines (store 1458: -$147,300.95 vs -$147,341.57).
+    select: [
+      ["Date", column("i", "Adj Date")], ["Reason", column("i", "Adj Reason")],
+      ["Source", column("i", "User ID")], ["Rule", column("i", "rule_id")],
+      ["Dept", column("i", "Dept")], ["Cat", column("i", "Cat Desc")],
+      ["Item", column("i", "Item Nbr")], ["UPC", column("i", "UPC")], ["Desc", column("i", "Item Desc")],
+      ["ItemRetail", column("i", "Item $")],
+      ["Qty", aggregate("i", "Adj Qty", AGG.SUM)], ["Dollars", aggregate("i", "Adj $.", AGG.SUM)],
+      ["Lines", aggregate("i", "Adj Qty", AGG.COUNT_NON_NULL)],
+    ],
+    where: [m120(), whereIn(column("a", "Store"), [s]), whereDateRange(column("i", "Adj Date"), window.from, window.to)],
+  }, debug, "items");
+  if (!items.ok) return items;
+
+  const br = await runQuery("br", {
+    select: [
+      ["Date", column("b", "Date")], ["Dept", column("b", "Dept")], ["Category", column("b", "Category")],
+      ["Item", column("b", "Item Nbr")], ["UPC", column("b", "UPC")], ["Desc", column("b", "Item Desc")],
+      ["User", column("b", "UserID")],
+      ["Qty", aggregate("b", "Qty", AGG.SUM)], ["Dollars", aggregate("b", "Total Adj $", AGG.SUM)],
+    ],
+    where: [
+      m120(), whereIn(column("a", "Store"), [s]),
+      whereIn(column("b", "Adjustment Type"), ["Stolen"]),
+      whereDateRange(column("b", "Date"), fyFrom),
+    ],
+  }, debug, "stolen");
+
+  return {
+    ok: true,
+    detail: {
+      store: s, window, fyFrom,
+      capturedAt: new Date().toISOString(),
+      items: aggregateStoreItems(items.rows),
+      stolen: br.ok ? aggregateStolenItems(br.rows) : null,
+      stolenError: br.ok ? null : `${br.errorClass}: ${br.error}`,
+    },
+    debug,
+  };
+}
+
+// ── Query execution ─────────────────────────────────────────────────
+async function runQuery(reportKey, { select, where }, debug, label) {
+  const report = REPORTS[reportKey];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const t = await getTransport(reportKey, { fresh: attempt > 0 });
+    if (!t.ok) return t;
+    const body = buildQuery({ modelId: t.transport.modelId, from: report.from, select, where });
+    const started = Date.now();
+    const res = await postQuery(t.transport, body);
+    // An expired token: capture a fresh one and try once more.
+    if (res.auth && attempt === 0) { await dropTransport(reportKey); continue; }
+    if (debug) {
+      debug.queries[label] = { ok: res.ok, rows: res.rows?.length ?? 0, complete: res.complete ?? null, ms: Date.now() - started, error: res.error || null };
+    }
+    if (!res.ok) return res;
+    if (!res.complete) {
+      return {
+        ok: false, errorClass: "TRUNCATED",
+        error: `Power BI query "${label}" hit the ${MAX_WINDOW.toLocaleString("en-US")}-row limit; refusing a partial result.`,
+      };
+    }
+    return res;
+  }
+  return { ok: false, errorClass: "AUTH", error: "Power BI rejected the session token twice. Open Power BI once to sign in, then Refresh." };
+}
+
+async function postQuery(transport, body) {
+  let resp;
+  try {
+    resp = await fetch(transport.url, {
+      method: "POST",
+      headers: {
+        "Authorization": transport.auth,
+        "Content-Type": "application/json;charset=UTF-8",
+        "X-PowerBI-HostEnv": "Power BI Web App",
+        "Accept": "application/json, text/plain, */*",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(QUERY_TIMEOUT_MS),
+    });
+  } catch (e) {
+    return { ok: false, errorClass: "NETWORK", error: `Power BI query failed: ${e?.message ?? e}` };
+  }
+  const text = await resp.text();
+  if (resp.status === 401 || resp.status === 403 || /^\s*</.test(text)) {
+    return { ok: false, auth: true, errorClass: "AUTH", error: `Power BI returned HTTP ${resp.status} (session token expired?).` };
+  }
+  if (!resp.ok) return { ok: false, errorClass: "HTTP", error: `Power BI HTTP ${resp.status}: ${text.slice(0, 200)}` };
+  let json;
+  try { json = JSON.parse(text); }
+  catch { return { ok: false, errorClass: "PARSE", error: "Power BI response was not JSON." }; }
+  const { complete, error, warnings } = readResult(json);
+  if (error) return { ok: false, errorClass: "QUERY", error: `Power BI rejected the query: ${error}` };
+  for (const w of warnings) console.warn(`[market120] Power BI warning ${w?.Code}: ${w?.Message}`);
+  return { ok: true, rows: decodeRows(json), complete };
+}
+
+// ── Transport ───────────────────────────────────────────────────────
+async function getTransport(reportKey, { fresh = false } = {}) {
+  if (!fresh) {
+    const cached = await readCachedTransport(reportKey);
+    if (cached) return { ok: true, transport: cached };
+  }
+  const report = REPORTS[reportKey];
+  const captured = await captureTransport(report);
+  if (!captured) {
     return {
-      ok: false,
-      reason: "no capture within timeout",
-      values: null,
-      respBodyPreview: null,
-      ringSummary,
+      ok: false, errorClass: "NO_CAPTURE",
+      error: `Power BI did not issue a "${report.entity}" query within ${TRANSPORT_WAIT_MS / 1000}s. ` +
+             "Open the report in Power BI once to sign in, then Refresh.",
     };
   }
-
-  // Power BI splits a report's KPI cards across MULTIPLE QES responses (e.g.
-  // ISA Detail returns Total Adjusted $ and Total Adjusted Qty in different
-  // responses that arrive at different times). pollForCapture has already
-  // accumulated every matching envelope; merge their decoded values here
-  // (first non-null per measure wins; aggregate cards beat grid rows).
-  const mergedValues = decodeAccumulated(captured, report.measures);
-  const mergedSeen = {};
-  const capturedUrls = [];
-  let anyOk = false;
-  let lastReason = null;
-  for (const env of captured) {
-    const pr = decodeDaxKpis(env.respBody, report.measures);
-    anyOk = anyOk || pr.ok;
-    lastReason = pr.reason || lastReason;
-    for (const [k, v] of Object.entries(pr.seen || {})) {
-      if (!(k in mergedSeen)) mergedSeen[k] = v;
-    }
-    if (env.url) capturedUrls.push(env.url);
-  }
-  return {
-    ok: anyOk,
-    reason: anyOk ? undefined : lastReason,
-    values: mergedValues,
-    seen: mergedSeen,
-    capturedUrl: capturedUrls[0] || null,
-    capturedUrls,
-    respBodyPreview: (captured[0].respBody || "").slice(0, 4096),
-  };
+  await writeCachedTransport(reportKey, captured);
+  return { ok: true, transport: captured };
 }
 
-async function dumpRingSummary(tabId) {
+async function readCachedTransport(key) {
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      func:   () => {
-        const cap = window.__APAISUITE_MARKET120_POWERBI_CAP;
-        if (!cap) return { installed: false, url: location.href };
-        const all = cap.all();
-        return {
-          installed: true,
-          url: location.href,
-          size: all.length,
-          urls: all.slice(-20).map((e, i) => `[${i}] ${e.method} ${e.url} → ${e.status}`),
-        };
-      },
-    });
-    const frames = (results || []).map((r) => r?.result).filter(Boolean);
-    return { frames: frames.length, installed: frames.some((f) => f.installed), byFrame: frames };
-  } catch { return null; }
-}
-
-async function openOrReuseTab(url) {
-  // Reuse ANY app.powerbi.com tab first — we'll navigate it to what we need.
-  const existing = await chrome.tabs.query({ url: "https://app.powerbi.com/*" });
-  if (existing.length) {
-    const tab = existing[0];
-    // Navigate it to the ISA Detail URL. If the user was viewing a different
-    // report there, this would disrupt them — same tradeoff livedashboard's
-    // register source makes.
-    await chrome.tabs.update(tab.id, { url });
-    await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
-    return { tab, didOpen: false };
-  }
-  const tab = await chrome.tabs.create({ url, active: false });
-  if (!tab) return null;
-  await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
-  return { tab, didOpen: true };
-}
-
-async function waitForTabLoad(tabId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const t = await chrome.tabs.get(tabId).catch(() => null);
-    if (!t) return null;
-    if (t.status === "complete") return t;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return chrome.tabs.get(tabId).catch(() => null);
-}
-
-async function isCaptureInstalled(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      func:   () => !!window.__APAISUITE_MARKET120_POWERBI_CAP,
-    });
-    return (results || []).some((r) => r?.result === true);
-  } catch { return false; }
-}
-
-async function pollForCapture(tabId, report, timeoutMs, pollMs) {
-  // Accumulate matching envelopes across polls, de-duplicated. Return early
-  // only once every requiredMeasures group is satisfied; otherwise keep
-  // collecting until timeout so late-arriving KPI-card responses (e.g. Total
-  // Adjusted $, which lands after Total Adjusted Qty) are not missed.
-  const deadline = Date.now() + timeoutMs;
-  const byKey = new Map();
-  const required = report.requiredMeasures || [];
-
-  const isComplete = () => {
-    if (!required.length) return byKey.size > 0;
-    // Decode what we have so far and check each required alias group.
-    const values = decodeAccumulated([...byKey.values()], report.measures);
-    return required.every((group) => group.some((m) => Number.isFinite(values[m])));
-  };
-
-  while (Date.now() < deadline) {
-    const envs = await readCaptureForReport(tabId, report);
-    for (const env of (envs || [])) {
-      const key = `${env.requestId || ""}|${env.url || ""}|${(env.respBody || "").length}`;
-      if (!byKey.has(key)) byKey.set(key, env);
-    }
-    if (byKey.size && isComplete()) return [...byKey.values()];
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  return byKey.size ? [...byKey.values()] : null;
-}
-
-// Decode + merge a set of envelopes into { measure: value }. Shared by the
-// completeness check (pollForCapture) and the final result build
-// (captureReport) so both agree on what "captured" means.
-function decodeAccumulated(envelopes, measures) {
-  const merged = {};
-  for (const env of envelopes) {
-    const pr = decodeDaxKpis(env.respBody, measures);
-    for (const [k, v] of Object.entries(pr.values || {})) {
-      if ((merged[k] === undefined || merged[k] === null) && v !== null) merged[k] = v;
-    }
-  }
-  return merged;
-}
-
-async function readCaptureForReport(tabId, report) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world:  "MAIN",
-      args:   [report.bodyMustContainAny || [], report.measures || [], report.reqBodyMustContainAll || []],
-      func:   (reqNeedles, respNeedles, reqMustAll) => {
-        const cap = window.__APAISUITE_MARKET120_POWERBI_CAP;
-        if (!cap) return null;
-        // Collect ALL response envelopes whose body carries any measure
-        // descriptor we care about — KPI cards are spread across responses.
-        const found = cap.findAllByRespBodySubstr
-          ? cap.findAllByRespBodySubstr(respNeedles)
-          : [];
-        // Also include the request-body match (the DAX grid query) as a
-        // fallback so we never regress below the old single-hit behaviour.
-        for (const n of reqNeedles) {
-          const r = cap.findByReqBodySubstr(n);
-          if (r && !found.includes(r)) found.push(r);
-        }
-        // When a report shares one descriptor across differently-FILTERED
-        // queries (e.g. Backroom's Stolen card vs. the all-adjustments total,
-        // both "Total Adj $"), keep only envelopes whose ORIGINATING request
-        // carried every required filter literal. Otherwise the wrong (broader)
-        // aggregate would win the merge.
-        const filtered = reqMustAll.length
-          ? found.filter((r) => {
-              const body = (r && r.reqBody) || "";
-              return reqMustAll.every((lit) => body.includes(lit));
-            })
-          : found;
-        return filtered.length ? filtered : null;
-      },
-    });
-    // Merge envelope arrays across frames, de-duplicated by requestId+url.
-    const merged = [];
-    const seenKeys = new Set();
-    for (const r of (results || [])) {
-      const arr = r?.result;
-      if (!Array.isArray(arr)) continue;
-      for (const env of arr) {
-        const key = `${env.requestId || ""}|${env.url || ""}|${(env.respBody || "").length}`;
-        if (seenKeys.has(key)) continue;
-        seenKeys.add(key);
-        merged.push(env);
-      }
-    }
-    return merged.length ? merged : null;
-  } catch { return null; }
-}
-
-function pickFirstNumeric(values, keys) {
-  if (!values) return null;
-  for (const k of keys) {
-    const v = values[k];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-  }
+    const t = (await chrome.storage.session.get(TRANSPORT_KEY))[TRANSPORT_KEY]?.[key];
+    if (t?.auth && Date.now() - (t.cachedAt || 0) < TRANSPORT_MAX_AGE_MS) return t;
+  } catch {}
   return null;
 }
 
-function summarizeCapture(r) {
-  if (!r) return null;
-  return {
-    ok: r.ok,
-    reason: r.reason,
-    valuesFound: r.values ? Object.entries(r.values).filter(([, v]) => v !== null).map(([k]) => k) : null,
-    // All descriptor names the DSR decoder actually saw, matched or not.
-    // When Total Adjusted $ is missing, look here for the real measure name
-    // and add it to the pickFirstNumeric alias list below.
-    seenDescriptors: r.seen || null,
-    capturedUrl: r.capturedUrl,
-  };
+async function writeCachedTransport(key, transport) {
+  try {
+    const all = (await chrome.storage.session.get(TRANSPORT_KEY))[TRANSPORT_KEY] || {};
+    all[key] = { ...transport, cachedAt: Date.now() };
+    await chrome.storage.session.set({ [TRANSPORT_KEY]: all });
+  } catch {}
+}
+
+async function dropTransport(key) {
+  try {
+    const all = (await chrome.storage.session.get(TRANSPORT_KEY))[TRANSPORT_KEY] || {};
+    delete all[key];
+    await chrome.storage.session.set({ [TRANSPORT_KEY]: all });
+  } catch {}
+}
+
+// Open the report in our own background tab, wait for its first query against
+// the report's entity, take url + token + modelId, close the tab.
+async function captureTransport(report) {
+  const tab = await chrome.tabs.create({ url: report.url, active: false }).catch(() => null);
+  if (!tab) return null;
+  try {
+    await waitForTabLoad(tab.id, LOAD_TIMEOUT_MS);
+    const deadline = Date.now() + TRANSPORT_WAIT_MS;
+    while (Date.now() < deadline) {
+      try {
+        const results = await execScript({
+          target: { tabId: tab.id, allFrames: true },
+          world:  "MAIN",
+          args:   [report.entity],
+          // Hand back descriptors only — never the (large) response bodies.
+          func:   (entity) => {
+            const cap = window.__APAISUITE_MARKET120_POWERBI_CAP;
+            if (!cap) return null;
+            const escaped = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const needle = new RegExp(`"Entity":\\s*"${escaped}"`);
+            return cap.all()
+              .filter((e) => e.url && e.reqBody && needle.test(e.reqBody) &&
+                (e.reqHeaders?.Authorization || e.reqHeaders?.authorization))
+              .slice(-3)
+              .map((e) => ({
+                url: e.url,
+                auth: e.reqHeaders.Authorization || e.reqHeaders.authorization,
+                body: e.reqBody,
+                capturedAt: e.capturedAt,
+              }));
+          },
+        }, 15_000);
+        const entries = (results || []).flatMap((r) => (Array.isArray(r?.result) ? r.result : []));
+        const transport = pickTransport(entries, { entity: report.entity });
+        if (transport) return transport;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return null;
+  } finally {
+    chrome.tabs.remove(tab.id).catch(() => {});
+  }
 }
