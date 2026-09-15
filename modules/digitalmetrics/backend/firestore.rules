@@ -1,14 +1,16 @@
 rules_version = '2';
 
-// Digital Metrics — target Firestore rules.
+// Digital Metrics — Firestore rules for the `digitalmetrics` database in the
+// `apaisuite` project. LIVE: deployed via `firebase deploy --only
+// firestore:digitalmetrics` from unified-extension-suite/ (see backend/README.md).
 //
-// SCHEMATIC. Not deployed. Written against the new project that will host this
-// module; the legacy standalone project is untouched by this file.
+// Every path change in lib/firestore.js needs a matching edit here AND a
+// redeploy; the rules are not read at runtime, so an un-deployed edit shows up
+// only as 403 PERMISSION_DENIED in the SW console (2026-09-14: the
+// stores/{store}/classifications move sat undeployed for eight days).
 //
-// The legacy project it replaces currently runs `allow read, write: if true`,
-// i.e. anyone knowing the project id can read every associate name and delete
-// every document. These rules are the replacement, and they assume the
-// encrypted schema in docs/DIGITAL_METRICS_SCHEMA.md.
+// The legacy standalone project ran `allow read, write: if true`. These rules
+// assume the encrypted schema in docs/DIGITAL_METRICS_SCHEMA.md.
 //
 // Honest limits of what rules can enforce here:
 //   • Rules cannot iterate arrays, so "no element of associates[] carries a

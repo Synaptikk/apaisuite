@@ -2,7 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { wmWeek, fiscalYearStart, weekLabel, weeksInFiscalYear } from "../data/wmweek.js";
+// The helper moved to shared/ so every module (and the Express Pickup pull's
+// WM_WEEK URL parameter) computes the same fiscal week.
+import { wmWeek, fiscalYearStart, weekLabel, weeksInFiscalYear } from "../../../../shared/wmweek.js";
 
 // ── the two anchors this was pinned against ───────────────────────────────
 

@@ -209,6 +209,84 @@ them, warns, and keeps the true times on `shiftStart`/`shiftEnd`.
 The portal renders one week at a time and the extractor reads what is on
 screen. Backfill would mean driving its week navigation — a separate job.
 
+## Express Pickup: the Metric Overview dashboard (added 2026-09-15)
+
+Same workbook, different view, and a **different filter vocabulary**. The
+Insights tab's "Express Orders" / "Express Picks" columns come from
+`StoreFulfillmentScorecard/MetricOverviewandHourly`, worksheet `Overview`,
+via `lib/sources/tableau_express.js`. Probed live with
+`dev/probe-tableau-express.mjs` (generic: pass any query string).
+
+```
+…/views/StoreFulfillmentScorecard/MetricOverviewandHourly
+  ?:iid=1&:linktarget=_self
+  &WM_WEEK=202633            ← the fiscal week CONTAINING the date (shared/wmweek.js)
+  &MARKET=120                ← required; the Overview is empty without it
+  &STORE=1458
+  &FULFMT_TYPE=Express%20Pickup
+  &RPT_DT=2026-09-14         ← pins the Report Date slider to ONE day
+```
+
+| Caption in the UI | Field name to send |
+|---|---|
+| Select WM Week First | `WM_WEEK` |
+| Select Market Second | `MARKET` |
+| Store | `STORE` |
+| Fulfillment Type | `FULFMT_TYPE` |
+| Report Date (slider) | `RPT_DT` |
+
+What was measured (store 1458, Express Pickup):
+
+| RPT_DT | Overview ORDERS | Overview UNITS |
+|---|---|---|
+| 2026-09-13 | 54 | 1,197 |
+| 2026-09-14 | 33 | 589 |
+| 2026-09-13,2026-09-14 | 87 | 1,786 |
+
+The two-day read is exactly the sum, so a single-day `RPT_DT` is a clean
+per-day filter — even though the slider control still DISPLAYS its default
+range (8/8–9/14) afterwards.
+
+**A day with no Express Pickup returns NO rows, not a zero.** Sunday
+2026-09-07 for store 1458: 0 rows on every sheet under
+`FULFMT_TYPE=Express Pickup`, 1,043 orders / 18,085 units without it. Since an
+unscoped view (wrong market, week mismatch) also returns 0 rows, the pull
+reloads an empty day without the type filter: rows there → the day is
+recorded as 0/0; none → the day fails. First-run timing for eight days was
+~2.8 min (167 s including the two-day metrics pull). The dashboard has **no date dimension in any
+worksheet**, so a daily series costs one page load per day; the pull does the
+lookback window (8 days, 2 volatile) one tab at a time, ~20 s each.
+
+Things that did not work, so nobody repeats them:
+
+| Route | Result |
+|---|---|
+| `Pick Date=` / `Store #=` (the AssociatePerformance names) | 0 rows on every sheet |
+| `WM_WEEK` + `STORE`, no `MARKET` | hourly sheets return rows, **Overview returns none** |
+| `WM_WEEK=202633` with a date from week 32 | 0 rows — the week must contain the date |
+| `getUnderlyingDataAsync` to read the store's market | `PermissionDeniedException` (403) |
+| `MARKET=1,2,…,999` to skip knowing the market | the viz never became usable |
+
+So the market has to be KNOWN, not discovered: `service.js::resolveMarket`
+takes it from Settings › Defaults for the home store, else from
+`shared/marketRoster.js`. A store with neither is skipped with one error line.
+
+"Picks" in the Insights columns is the Overview's `UNITS` measure
+(`SUM(ITEMS)` on the hourly sheet). The hourly "Dispensed Orders" and "Units"
+sheets tolerate a missing market but disagree with the Overview by a few
+units/orders per day (9/11: 29 vs 28 orders), so the Overview is the source.
+
+`Report By` is a workbook parameter (Report Date | Slot Date | Pick Date |
+Delivery Date) left at its default, Report Date.
+
+URL-parameter filters do **not** persist into the signed-in user's saved view
+state (unlike an applied categorical filter — see the tableau-persisted-filter
+memory): a fresh, parameterless load after a run of scoped pulls opened with
+every control at "(None)".
+
+If the view ever stops serving, the pull reports one `express <store>` error
+per run and the columns show "—"; nothing else breaks.
+
 ## Privacy note
 
 `dev/wfm-schedule-probe.json` (the donor-replay dump) contains real names with

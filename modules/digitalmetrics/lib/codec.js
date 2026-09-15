@@ -42,10 +42,25 @@ const SCHEDULE_FIELDS   = ["shiftStart", "shiftEnd", "startSlot", "endSlot", "jo
 // part-hours. It is a time range, not an identifier.
 const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd", "shiftLabel", "role"];
 
+// Express Pickup daily totals ride inside the week document, keyed by ISO
+// date. Numbers only — no associate is involved — but the allowlist still
+// applies: an unknown key is dropped, not copied (data/express.js).
+const EXPRESS_FIELDS = ["orders", "units", "sales", "pulledAt"];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function pick(src, fields) {
   const out = {};
   for (const f of fields) if (src?.[f] !== undefined) out[f] = src[f];
   return out;
+}
+
+function encodeExpress(map) {
+  if (!map || typeof map !== "object") return null;
+  const out = {};
+  for (const [date, entry] of Object.entries(map)) {
+    if (ISO_DATE.test(date) && entry && typeof entry === "object") out[date] = pick(entry, EXPRESS_FIELDS);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function stamp(doc) {
@@ -60,6 +75,7 @@ export async function encodeWeek(doc) {
   }));
   return stamp({
     rawData:    rows,
+    express:    encodeExpress(doc.express),
     fileName:   doc.fileName ?? null,
     uploadDate: doc.uploadDate ?? null,
     store:      doc.store ?? null,

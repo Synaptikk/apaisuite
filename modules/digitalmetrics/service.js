@@ -13,10 +13,15 @@ import { splitByStoreWeek } from "./lib/data/parse.js";
 import { dayName } from "./lib/data/grid.js";
 import { pivotAssociateData } from "./lib/data/tableau.js";
 import { pullMetrics } from "./lib/sources/tableau_metrics.js";
+import { pullExpressDay } from "./lib/sources/tableau_express.js";
+import { mergeWeekDoc } from "./lib/data/express.js";
+import { weekKey } from "./lib/data/weeks.js";
 import { pullSchedule } from "./lib/sources/wfm_schedule.js";
 import { datesToPull, isPullDue, isoDay } from "./lib/pull_schedule.js";
-import { getUserHomeStore } from "../../shared/userStore.js";
+import { getUserHomeStore, getUserHomeMarket } from "../../shared/userStore.js";
+import { getMarketRoster, listKnownMarkets } from "../../shared/marketRoster.js";
 import { ensureAlarm } from "../../shared/alarms.js";
+import { withTableauLock } from "../../shared/tableau_lock.js";
 import { deriveClassifications } from "./lib/data/job_classify.js";
 
 const ALIAS_KEY = "digitalmetrics.aliases";
@@ -36,9 +41,72 @@ const MIN_PULL_GAP_MS = 45 * 60 * 1000;
 export const PULL_ALARM = "digitalmetrics.pull";
 const PULL_PERIOD_MIN = 60;
 
+// A run longer than this is not a run, it is a corpse. A typical honest run is
+// ~7 min (scheduler 90+90+6 s, Tableau 60+120+6 s for the metrics, then one
+// ~20 s tab per Express Pickup day, up to 8 on a first run — see
+// lib/sources/*), so anything past this has lost its worker: an extension
+// reload or an MV3 termination mid-pull skips runPull's `finally`, and the
+// `running: true` it wrote to storage would otherwise wedge every later run
+// with "a pull is already running" and pin the pill on "syncing…" for good
+// (2026-09-14: 15 minutes of "syncing…" with nothing written).
+const PULL_STALE_MS = 25 * 60 * 1000;
+
 async function getPullState() {
   const got = await chrome.storage.local.get(PULL_STATE_KEY);
-  return got[PULL_STATE_KEY] || { lastRunAt: 0, lastResult: null, running: false };
+  const state = got[PULL_STATE_KEY] || { lastRunAt: 0, lastResult: null, running: false };
+  if (state.running && Date.now() - (state.runningSince || 0) > PULL_STALE_MS) {
+    return abandonRun(state, "the previous run never finished (its worker was likely reloaded mid-pull)");
+  }
+  return state;
+}
+
+/**
+ * Mark a run as dead without pretending it completed. Its failure lands in
+ * lastResult so the pill reports "1 failed" rather than "synced", and
+ * lastRunAt is left alone so the next alarm is not pushed out by a run that
+ * did nothing.
+ */
+async function abandonRun(state, why) {
+  const next = {
+    ...state,
+    running: false,
+    runningSince: 0,
+    progress: null,
+    lastResult: {
+      startedAt: state.runningSince ? new Date(state.runningSince).toISOString() : null,
+      finishedAt: new Date().toISOString(),
+      abandoned: true,
+      metrics: [], schedule: null,
+      errors: [{ scope: "pull", error: why }],
+    },
+  };
+  await chrome.storage.local.set({ [PULL_STATE_KEY]: next });
+  return next;
+}
+
+/**
+ * Called once per worker boot (module.js, service-worker context only). No
+ * JS from a previous worker survives a boot, so a `running` flag found here
+ * belongs to a run that can never finish — clear it before the alarm or the
+ * shell asks.
+ */
+export async function resetStaleRun() {
+  const got = await chrome.storage.local.get(PULL_STATE_KEY);
+  const state = got[PULL_STATE_KEY];
+  if (!state?.running) return false;
+  await abandonRun(state, "the extension's worker restarted mid-pull");
+  return true;
+}
+
+/**
+ * Where a run is right now. Persisted so a view mounted mid-run can show it,
+ * and broadcast so an already-open view updates without polling.
+ */
+async function setProgress(phase, detail = {}) {
+  const progress = { phase, ...detail, at: Date.now() };
+  await setPullState({ progress });
+  chrome.runtime.sendMessage({ module: "digitalmetrics", type: "pull-progress", progress })
+    .catch(() => {});   // nobody listening is the normal case for an alarm run
 }
 
 async function setPullState(patch) {
@@ -60,27 +128,93 @@ async function pullEnabled() {
   return got[PULL_ENABLED_KEY] === true;
 }
 
-/** One store's metrics pull: fetch → pivot → split → persist. */
-async function pullMetricsForStore(storeId, { force = false } = {}) {
+/**
+ * One store's pull: the Associate By Day metrics (fetch → pivot → split) plus
+ * the Express Pickup daily totals (one Tableau load per day), merged into the
+ * stored week documents and persisted.
+ *
+ * The two sources keep separate "what do we have" ledgers, so a week that has
+ * its associate rows but no Express numbers yet gets only the Express loads.
+ */
+async function pullMetricsForStore(storeId, { force = false, onProgress = () => {} } = {}) {
+  const now = new Date();
   // Week documents hold rows, not a date index, so "what do we already have"
-  // means reading the recent weeks and collecting their distinct Pick Dates.
-  const have = force ? [] : await storedDates(storeId).catch(() => []);
-  const dates = datesToPull(new Date(), have);
-  if (!dates.length) return { store: storeId, skipped: "up to date" };
+  // means reading the recent weeks and collecting their distinct dates.
+  const have = force
+    ? { metrics: [], express: [] }
+    : await storedCoverage(storeId).catch(() => ({ metrics: [], express: [] }));
+  const dates        = datesToPull(now, have.metrics);
+  const expressDates = datesToPull(now, have.express);
+  if (!dates.length && !expressDates.length) return { store: storeId, skipped: "up to date" };
 
-  const pulled = await pullMetrics(storeId, dates);
-  const wide = pivotAssociateData(pulled.rows);
-  const { groups, skipped } = splitByStoreWeek(wide, { fileName: `auto-pull ${isoDay(new Date())}` });
+  // Everything this run will write, keyed by store+week. Metrics groups come
+  // from the splitter; Express days attach to the week that contains them.
+  const byWeek = new Map();
+  const groupFor = (s, wk) => {
+    const key = `${s}|${wk}`;
+    if (!byWeek.has(key)) {
+      byWeek.set(key, { store: s, weekKey: wk, doc: {
+        rawData: [], fileName: null, uploadDate: now.toISOString(), store: s, weekStart: wk,
+      } });
+    }
+    return byWeek.get(key);
+  };
 
-  // Who actually picked. Feeds the Store Help half of the classification rule
-  // (see lib/data/job_classify.js) — the roster is ~440 people and only ~150
-  // of them appear here.
-  const pickers = [...new Set(wide.map((r) => String(r.Associate || "").trim().toUpperCase()).filter(Boolean))];
+  // ── Associate By Day ────────────────────────────────────────────────────
+  let rows = 0, skipped = 0, pickers = [];
+  if (dates.length) {
+    const pulled = await pullMetrics(storeId, dates, { onProgress });
+    const wide = pivotAssociateData(pulled.rows);
+    const split = splitByStoreWeek(wide, { fileName: `auto-pull ${isoDay(now)}` });
+    rows = pulled.rows.length;
+    skipped = split.skipped;
+    for (const g of split.groups) byWeek.set(`${g.store}|${g.weekKey}`, g);
 
+    // Who actually picked. Feeds the Store Help half of the classification rule
+    // (see lib/data/job_classify.js) — the roster is ~440 people and only ~150
+    // of them appear here.
+    pickers = [...new Set(wide.map((r) => String(r.Associate || "").trim().toUpperCase()).filter(Boolean))];
+  }
+
+  // ── Express Pickup, one day per tab ─────────────────────────────────────
+  //
+  // Failures are collected, not thrown: a day that cannot be read must not
+  // cost the metrics pull above.
+  const express = { pulled: 0, failed: [] };
+  if (expressDates.length) {
+    const market = await resolveMarket(storeId);
+    if (!market) {
+      express.failed.push({ date: "*", error:
+        `no market known for store ${storeId} — set your market under Settings › Defaults` });
+    } else {
+      for (const d of expressDates) {
+        try {
+          const day = await pullExpressDay(storeId, market, d, { onProgress });
+          const doc = groupFor(storeId, weekKey(d)).doc;
+          doc.express = { ...(doc.express || {}), [d]: day };
+          express.pulled++;
+        } catch (e) {
+          express.failed.push({ date: d, error: String(e?.message ?? e) });
+        }
+      }
+    }
+  }
+
+  // ── Merge into what is stored, then write ───────────────────────────────
+  //
+  // put() replaces the whole document and this run only fetched SOME dates;
+  // writing the slice as-is used to wipe the rest of the week (and would now
+  // wipe the Express map too). mergeWeekDoc keeps everything not re-pulled.
   const written = [];
-  for (const g of groups) {
-    await weeks.put(g.store, g.weekKey, g.doc);
-    written.push({ store: g.store, weekKey: g.weekKey, rows: g.doc.rawData.length });
+  for (const g of byWeek.values()) {
+    const existing = await weeks.get(g.store, g.weekKey).catch(() => null);
+    const merged = mergeWeekDoc(existing, g.doc, { dates });
+    await weeks.put(g.store, g.weekKey, merged);
+    written.push({
+      store: g.store, weekKey: g.weekKey,
+      rows: merged.rawData.length,
+      expressDays: Object.keys(g.doc.express || {}).length,
+    });
   }
 
   // A newly-seen store must reach the store list or it never appears in the UI.
@@ -88,19 +222,41 @@ async function pullMetricsForStore(storeId, { force = false } = {}) {
   const added = [...new Set(written.map((w) => w.store))].filter((s) => !knownStores.has(s));
   if (added.length) await store.saveStores([...knownStores, ...added]);
 
-  return { store: storeId, dates, rows: pulled.rows.length, written, skippedRows: skipped, pickers };
+  return { store: storeId, dates, expressDates, rows, written, skippedRows: skipped, pickers, express };
 }
 
 /**
- * Which day-level dates do we already hold for a store?
+ * Which market does the Express Pickup dashboard need for this store?
+ *
+ * Its filters cascade WM week → market → store, and the Overview sheet is
+ * empty until all three are set. The market cannot be read off the store
+ * (underlying data is permission-denied), so it comes from the analyst's own
+ * Settings › Defaults for their home store, or from shared/marketRoster.js
+ * for any store listed there. Null means "don't try".
+ */
+async function resolveMarket(storeId) {
+  const home = await getUserHomeStore().catch(() => null);
+  if (home && String(home) === String(storeId)) {
+    const m = await getUserHomeMarket().catch(() => null);
+    if (m) return String(m);
+  }
+  const listed = listKnownMarkets().find((m) =>
+    (getMarketRoster(m) || []).some((s) => String(s) === String(storeId)));
+  return listed ? String(listed) : null;
+}
+
+/**
+ * Which day-level dates do we already hold for a store, per source?
  *
  * Week documents store rows, not a date index, so this reads the week docs
- * that cover the lookback window and collects their distinct Pick Dates.
+ * that cover the lookback window and collects their distinct Pick Dates
+ * (metrics) and Express map keys (express).
  */
-async function storedDates(storeId) {
+async function storedCoverage(storeId) {
   const weekKeys = await store.listWeeks(storeId).catch(() => []);
   const recent = weekKeys.sort().slice(-3);
-  const seen = new Set();
+  const metrics = new Set();
+  const express = new Set();
   for (const wk of recent) {
     const doc = await weeks.get(storeId, wk).catch(() => null);
     for (const row of doc?.rawData || []) {
@@ -109,10 +265,11 @@ async function storedDates(storeId) {
       const [m, d, y] = String(raw).split("/").map((n) => parseInt(n, 10));
       if (!Number.isFinite(m) || !Number.isFinite(d) || !Number.isFinite(y)) continue;
       const yyyy = y < 100 ? 2000 + y : y;
-      seen.add(`${yyyy}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+      metrics.add(`${yyyy}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
     }
+    for (const k of Object.keys(doc?.express || {})) express.add(k);
   }
-  return [...seen];
+  return { metrics: [...metrics], express: [...express] };
 }
 
 /**
@@ -184,8 +341,40 @@ async function runPull({ force = false, stores = null } = {}) {
     return { notRun: "pulled too recently", lastRunAt: state.lastRunAt };
   }
 
-  await setPullState({ running: true });
+  await setPullState({ running: true, runningSince: Date.now(), progress: null });
+
+  // One Tableau capture at a time across the suite (shared/tableau_lock.js).
+  // VizPick's open-check fires at the same moment a Sync-now click does, and
+  // its four tabs starve this pull's 120s viz wait. Queue instead, and say so.
+  return withTableauLock("Digital Metrics sync", () => runPullLocked({ force, stores }), {
+    onWait: ({ heldBy }) => setProgress("waiting", { text: `waiting for ${heldBy} to finish with Tableau` }),
+  });
+}
+
+async function runPullLocked({ force, stores }) {
+  // The clock for "is this run dead" starts now, not when we joined the queue.
+  await setPullState({ runningSince: Date.now(), progress: null });
   const result = { startedAt: new Date().toISOString(), metrics: [], schedule: null, errors: [] };
+
+  // The sources report phases; without this the pill says "syncing…" for
+  // the whole run and a slow sync is indistinguishable from a dead one.
+  const SCHEDULE_PHASES = {
+    opening:   "opening the scheduler",
+    rendering: "waiting for the scheduler to render",
+    reading:   "reading the schedule",
+  };
+  const METRICS_PHASES = {
+    opening:   (e) => e.source === "express"
+      ? `opening Express Pickup for store ${e.store} (${e.date})`
+      : `opening Tableau for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`,
+    rendering: (e) => e.source === "express"
+      ? `waiting for the Express Pickup viz (${e.date})`
+      : `waiting for the Tableau viz (store ${e.store})`,
+    reading:   (e) => e.source === "express"
+      ? `reading Express Pickup for ${e.date}`
+      : `reading metrics for store ${e.store}`,
+    done:      (e) => `store ${e.store}: ${e.rows} rows`,
+  };
 
   try {
     const preResolved = await resolveStores(stores);
@@ -206,7 +395,12 @@ async function runPull({ force = false, stores = null } = {}) {
     let scheduledAssociates = [];
     try {
       if (!scheduleStore) throw new Error("Choose a home store before syncing schedules.");
-      const sched = await pullSchedule({ store: scheduleStore });
+      await setProgress("schedule", { text: SCHEDULE_PHASES.opening });
+      const sched = await pullSchedule({
+        store: scheduleStore,
+        onProgress: (e) => setProgress("schedule", { text: SCHEDULE_PHASES[e.phase] || e.phase }),
+      });
+      await setProgress("schedule", { text: "saving the schedule" });
       const written = [];
       for (const [date, doc] of Object.entries(sched.schedules)) {
         await schedules.put(sched.store, date, {
@@ -240,8 +434,22 @@ async function runPull({ force = false, stores = null } = {}) {
     }
 
     for (const s of list) {
-      try { result.metrics.push(await pullMetricsForStore(s, { force })); }
-      catch (e) { result.errors.push({ scope: `metrics ${s}`, error: String(e?.message ?? e) }); }
+      const onProgress = (e) => setProgress("metrics", { text: (METRICS_PHASES[e.phase] || (() => e.phase))(e), store: s });
+      try {
+        const m = await pullMetricsForStore(s, { force, onProgress });
+        result.metrics.push(m);
+        // One error per store, not one per day — the view toasts each entry.
+        const failed = m.express?.failed || [];
+        if (failed.length) {
+          result.errors.push({
+            scope: `express ${s}`,
+            error: failed.length === 1 && failed[0].date === "*"
+              ? failed[0].error
+              : `${failed.length} day${failed.length === 1 ? "" : "s"} failed: ` +
+                failed.map((f) => `${f.date} (${f.error})`).join("; "),
+          });
+        }
+      } catch (e) { result.errors.push({ scope: `metrics ${s}`, error: String(e?.message ?? e) }); }
     }
 
     // ── classification, derived from the scheduler's job titles ─────────
@@ -251,6 +459,7 @@ async function runPull({ force = false, stores = null } = {}) {
     // picked from the metrics.
     if (scheduledAssociates.length) {
       try {
+        await setProgress("classify", { text: "classifying from job titles" });
         const pickers = result.metrics.flatMap((m) => m.pickers || []);
         // The scheduled associates came from the schedule pull, so they
         // belong to the store that pull identified.
@@ -285,7 +494,8 @@ async function runPull({ force = false, stores = null } = {}) {
     }
   } finally {
     result.finishedAt = new Date().toISOString();
-    await setPullState({ running: false, lastRunAt: Date.now(), lastResult: result });
+    await setPullState({ running: false, runningSince: 0, progress: null, lastRunAt: Date.now(), lastResult: result });
+    chrome.runtime.sendMessage({ module: "digitalmetrics", type: "pull-progress", progress: null }).catch(() => {});
   }
 
   return result;
@@ -492,6 +702,7 @@ export const handlers = {
     ...(await getPullState()),
     enabled: await pullEnabled(),
     minGapMs: MIN_PULL_GAP_MS,
+    staleMs: PULL_STALE_MS,
   }),
 
   "set_pull_enabled": async (m) => {

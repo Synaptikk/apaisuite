@@ -110,6 +110,12 @@ never written.
     "Exception Qty Req to Pick": number, "Exception Picked As Req Qty": number,
     "Exception Substitution Qty": number, "Exception Nil Pick Qty": number,
   }>,
+  // Express Pickup daily totals, keyed by ISO date. Since 2026-09-15. Pulled
+  // from the Metric Overview dashboard one day per Tableau load
+  // (lib/sources/tableau_express.js); no associate is involved. A day that
+  // is absent has not been pulled — the Insights tab shows "—", not 0.
+  express: { [isoDate: string]: { orders: number, units: number, sales: number,
+                                  pulledAt: string } } | null,
   fileName: string | null,
   uploadDate: string,     // ISO
   store: string,
@@ -119,6 +125,14 @@ never written.
 
 The column list is an **allowlist**, not documentation — `lib/codec.js` rebuilds
 each row from it, so anything not named here is dropped rather than stored.
+The same goes for the four `express` fields.
+
+Writes are **merged**, not replaced: an automated pull fetches only the dates
+that are missing or still volatile, so `service.js` reads the stored week,
+keeps every row for a date the pull did not cover, keeps the `express` map,
+and writes the union (`lib/data/express.js::mergeWeekDoc`). Before 2026-09-15
+the pulled slice was written as-is and the rest of the week was lost until the
+next run pulled it back.
 Four legacy columns are deliberately absent:
 
 | Dropped | Why |

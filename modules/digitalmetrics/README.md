@@ -69,10 +69,13 @@ assignment grid, autosave, finalise and print are wired.
   to mark which dates have data; that indicator is gone. Restore it by
   vendoring Flatpickr if the marking turns out to matter.
 - **The scraper's Tableau automation** (~3,500 lines driving the viz through
-  tab automation). The pure transforms are ported and tested
-  (`lib/data/tableau.js`), and `content/tableau_capture.js` exposes the viz API
-  to the SW, but the end-to-end "open tab, apply filters, page through dates"
-  driver is not yet rebuilt.
+  tab automation). Replaced, not ported: `lib/sources/tableau_driver.js` opens
+  the view in a background tab with the filters as URL parameters and reads
+  the worksheet through the embedding JS API — no clicking, no paging.
+  `tableau_metrics.js` (Associate By Day) and `tableau_express.js` (Express
+  Pickup orders/units, one load per day, feeds the Insights tab) sit on it.
+  See `dev/DIGITALMETRICS_PULL_FINDINGS.md` for the two views' filter
+  vocabularies, which differ.
 - **Mobile layout.** The grid has a touch task panel and scrolls, but the
   donor's phone-specific breakpoints were not carried over — the suite is a
   desktop sideload.

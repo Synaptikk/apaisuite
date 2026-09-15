@@ -7,10 +7,10 @@ import {
 } from "../data/insights.js";
 
 export function render(ctx) {
-  const { rawData = [], associates = [], classifications = {} } = ctx;
+  const { rawData = [], associates = [], classifications = {}, express = null } = ctx;
   if (!rawData.length) return empty("Select a store to see insights.");
 
-  const daily = dailyPicks(rawData, classifications);
+  const daily = dailyPicks(rawData, classifications, express);
   const dist  = distribution(daily);
   const peaks = storeHelpPeakHours(rawData, classifications);
   const late  = lateStarts(rawData, associates, classifications);
@@ -26,10 +26,26 @@ export function render(ctx) {
       format: (d) => esc(d.storeHelp.toLocaleString()) },
     { label: "Digital %",  key: "digitalPct",   align: "right",
       format: (d) => `<strong class="is-${esc(digitalTone(d.digitalPct))}">${esc(d.digitalPct)}%</strong>` },
+    // Express Pickup comes from a different dashboard, one Tableau load per
+    // day, so a day can be missing while its picks are not. "—" is "not
+    // pulled yet"; 0 is a real zero.
+    { label: "Express Orders", key: "expressOrders", align: "right",
+      format: (d) => esc(d.expressOrders == null ? "—" : d.expressOrders.toLocaleString()) },
+    { label: "Express Picks",  key: "expressPicks",  align: "right",
+      format: (d) => esc(d.expressPicks == null ? "—" : d.expressPicks.toLocaleString()) },
   ], daily, { emptyMessage: "No dated rows in this week." });
 
   const range = daily.length
     ? `${daily[daily.length - 1].date} – ${daily[0].date} · ${daily.length} days`
+    : "";
+
+  const expressCards = dist.expressDays
+    ? statRow([
+        statCard("Express Orders", dist.expressOrders.toLocaleString(),
+                 { note: `${dist.expressDays} of ${daily.length} days` }),
+        statCard("Express Picks",  dist.expressPicks.toLocaleString(),
+                 { note: "UNITS on the Metric Overview" }),
+      ])
     : "";
 
   // ── Split ──────────────────────────────────────────────────────────────
@@ -83,7 +99,7 @@ export function render(ctx) {
     : empty("No 5am associates in this week.");
 
   return [
-    section(`Daily Picks${range ? ` — ${range}` : ""}`, dailyTable),
+    section(`Daily Picks${range ? ` — ${range}` : ""}`, expressCards + dailyTable),
     section("Digital vs Store Help", split),
     section("Store Help Peak Hours", peakSection),
     section("5am Late Starts", lateSection),

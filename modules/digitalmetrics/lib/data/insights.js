@@ -6,6 +6,7 @@
 import { classificationOf } from "./classify.js";
 import { parsePickDate } from "./parse.js";
 import { scanHour, minutesPastFive } from "./clock.js";
+import { expressForLabel } from "./express.js";
 
 const LATE_FLAG_MINUTES = 5;    // >5:05 counts as late for the day count
 const LATE_MAX_MINUTE   = 50;   // 5:51+ is an early 6am start, not a late 5am one
@@ -30,8 +31,14 @@ function filled(rawData) {
   });
 }
 
-/** Per-day pick volume split by group. Most recent day first. */
-export function dailyPicks(rawData, classifications = {}) {
+/**
+ * Per-day pick volume split by group. Most recent day first.
+ *
+ * `express` is the week document's Express Pickup map (ISO date → { orders,
+ * units }). A day it does not cover reports null, not 0 — "not pulled yet" and
+ * "no express orders" must stay distinguishable in the table.
+ */
+export function dailyPicks(rawData, classifications = {}, express = null) {
   const byDate = new Map();
 
   for (const row of filled(rawData)) {
@@ -55,10 +62,14 @@ export function dailyPicks(rawData, classifications = {}) {
       // Exceptions are digital work; the split people care about is
       // "our team" vs "borrowed help".
       const digitalTotal = d.digital + d.exceptions;
+      const ex = expressForLabel(express, d.date);
       return {
         ...d,
         digitalTotal,
         digitalPct: d.total > 0 ? Math.round((digitalTotal / d.total) * 100) : 0,
+        // "Picks" is the dashboard's UNITS measure (SUM(ITEMS)).
+        expressOrders: ex ? (ex.orders ?? 0) : null,
+        expressPicks:  ex ? (ex.units  ?? 0) : null,
       };
     })
     .sort((a, b) => (parsePickDate(b.date) ?? 0) - (parsePickDate(a.date) ?? 0));
@@ -79,10 +90,17 @@ export function distribution(daily) {
 
   const digitalTotal = sum("digitalTotal");
   const storeHelp    = sum("storeHelp");
+
+  // Express totals cover only the days that have been pulled; say how many.
+  const withExpress = daily.filter((d) => d.expressOrders != null);
+  const expressDays = withExpress.length;
   return {
     total, digitalTotal, storeHelp,
     digitalPct:   share(digitalTotal),
     storeHelpPct: share(storeHelp),
+    expressDays,
+    expressOrders: expressDays ? withExpress.reduce((s, d) => s + d.expressOrders, 0) : null,
+    expressPicks:  expressDays ? withExpress.reduce((s, d) => s + d.expressPicks, 0)  : null,
   };
 }
 

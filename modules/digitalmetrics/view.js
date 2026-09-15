@@ -80,6 +80,7 @@ export async function mount(host, container) {
     store: null,
     week: null,
     rawData: [],
+    express: null,           // the week document's Express Pickup map (ISO date → totals)
     classifications: {},
     associates: [],
     benchmarks: {},
@@ -395,6 +396,7 @@ export async function mount(host, container) {
   async function loadWeek() {
     if (!state.store || !state.week) {
       state.rawData = [];
+      state.express = null;
       recompute();
       renderPage();
       setStatus("no data");
@@ -407,6 +409,7 @@ export async function mount(host, container) {
     const doc = await call("get_week", { store, weekKey: week });
     if (store !== state.store || week !== state.week) return;
     state.rawData = doc?.rawData || [];
+    state.express = doc?.express || null;
     state.adherence = {};
     recompute();
     renderPage();
@@ -835,18 +838,74 @@ export async function mount(host, container) {
     el.dataset.kind = kind;
   }
 
+  // ── Live run display ─────────────────────────────────────────────────
+  //
+  // A run is minutes of hidden background tabs. The SW reports each phase
+  // (pull-progress broadcasts, also persisted in the pull state for a view
+  // mounted mid-run) and this shows it with an elapsed clock, so a slow sync
+  // and a dead one look different. The SW abandons a run past `staleMs`.
+  const run = { since: 0, text: "", staleMs: 0, timer: null };
+
+  function fmtElapsed(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  }
+
+  function renderRun() {
+    if (!run.since) return;
+    const elapsed = Date.now() - run.since;
+    const text = `syncing · ${run.text || "starting"} · ${fmtElapsed(elapsed)}`;
+    // Past the worker's own give-up point the run is dead; say so instead of
+    // ticking forever, and let the next refresh pick up the abandoned result.
+    if (run.staleMs && elapsed > run.staleMs) {
+      stopRun();
+      setPullStatus("sync stalled — refreshing", { kind: "warn" });
+      refreshPullState();
+      return;
+    }
+    setPullStatus(text);
+  }
+
+  function startRun({ since, text = "", staleMs = 0 } = {}) {
+    run.since = since || Date.now();
+    run.text = text;
+    run.staleMs = staleMs;
+    if (!run.timer) run.timer = setInterval(renderRun, 1000);
+    renderRun();
+  }
+
+  function stopRun() {
+    run.since = 0;
+    run.text = "";
+    if (run.timer) { clearInterval(run.timer); run.timer = null; }
+  }
+
+  const offProgress = host.messaging.on("pull-progress", (msg) => {
+    if (!msg.progress) { stopRun(); refreshPullState(); return; }
+    if (!run.since) startRun({ since: msg.progress.at, staleMs: run.staleMs });
+    run.text = msg.progress.text || msg.progress.phase || "";
+    renderRun();
+  });
+
   async function refreshPullState() {
     const state = await call("get_pull_state");
     if (!state) return;
     const box = $("#dm-pull-enabled");
     if (box) box.checked = !!state.enabled;
-    if (state.running) { setPullStatus("syncing…"); return; }
+    if (state.running) {
+      startRun({ since: state.runningSince, text: state.progress?.text, staleMs: state.staleMs });
+      return;
+    }
+    stopRun();
     if (state.lastRunAt) {
       const mins = Math.round((Date.now() - state.lastRunAt) / 60000);
       const when = mins < 1 ? "just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
       const failed = state.lastResult?.errors?.length;
-      setPullStatus(`synced ${when}${failed ? ` · ${failed} failed` : ""}`,
-                    { kind: failed ? "warn" : "ok" });
+      const abandoned = state.lastResult?.abandoned;
+      setPullStatus(abandoned
+                      ? `last sync died ${when} — run Sync now`
+                      : `synced ${when}${failed ? ` · ${failed} failed` : ""}`,
+                    { kind: abandoned || failed ? "warn" : "ok" });
     } else {
       setPullStatus("never synced");
     }
@@ -858,7 +917,7 @@ export async function mount(host, container) {
     if (btn) btn.disabled = true;
     if (spinner) spinner.hidden = false;
     host.usage.record("pull_now");
-    setPullStatus("syncing…");
+    startRun({ text: "starting" });
     try {
       const res = await call("pull_now", {});
       if (!res) { setPullStatus("sync failed", { kind: "error" }); return; }
@@ -874,6 +933,8 @@ export async function mount(host, container) {
       const storesDone = (res.metrics || []).filter((m) => !m.skipped).length;
       const parts = [];
       if (storesDone) parts.push(`${rows.toLocaleString()} rows from ${storesDone} store${storesDone === 1 ? "" : "s"}`);
+      const expressDays = (res.metrics || []).reduce((n, m) => n + (m.express?.pulled || 0), 0);
+      if (expressDays) parts.push(`${expressDays} Express Pickup day${expressDays === 1 ? "" : "s"}`);
       if (res.schedule) parts.push(`${res.schedule.shifts} shifts`);
       if (!parts.length) parts.push("already up to date");
 
@@ -893,6 +954,7 @@ export async function mount(host, container) {
     } finally {
       if (btn) btn.disabled = false;
       if (spinner) spinner.hidden = true;
+      stopRun();
       await refreshPullState();
     }
   }
@@ -934,6 +996,8 @@ export async function mount(host, container) {
     $("#dm-store")?.removeEventListener("keydown", onStoreKey);
     $("#dm-week")?.removeEventListener("change", onWeek);
     link.remove();
+    stopRun();
+    offProgress?.();
     $("#dm-pull-now")?.removeEventListener("click", onPullClick);
     $("#dm-pull-enabled")?.removeEventListener("change", onPullToggle);
   };

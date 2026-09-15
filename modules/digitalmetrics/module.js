@@ -1,6 +1,6 @@
 // modules/digitalmetrics/module.js
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
-import { handlers as serviceHandlers, onPullAlarm, installPullAlarm } from "./service.js";
+import { handlers as serviceHandlers, onPullAlarm, installPullAlarm, resetStaleRun } from "./service.js";
 
 // ── Automated-pull alarm ───────────────────────────────────────────────────
 //
@@ -22,6 +22,11 @@ if (IS_SERVICE_WORKER) {
   });
   installPullAlarm().catch((e) =>
     console.warn("[digitalmetrics] installPullAlarm failed:", e?.message ?? e));
+  // A boot means any pull the previous worker had in flight is dead; its
+  // `running` flag would otherwise block every later run (service.js).
+  resetStaleRun()
+    .then((cleared) => { if (cleared) console.warn("[digitalmetrics] cleared a pull left running by a previous worker"); })
+    .catch((e) => console.warn("[digitalmetrics] resetStaleRun failed:", e?.message ?? e));
 }
 
 export default {
