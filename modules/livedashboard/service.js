@@ -389,7 +389,7 @@ async function pullRecognition({ storeNbr } = {}) {
     return res;
   }
   // Two series: Recognition and Engagement. Same table, different value of the
-  // observation-type filter — see recognition.js::swapObservationType.
+  // observation-type filter — see recognition.js::buildObservationQuery.
   const rolling7d    = recognitionRollup7d(res.rows);
   const engagement7d = recognitionRollup7d(res.engagementRows || []);
   await chrome.storage.local.set({

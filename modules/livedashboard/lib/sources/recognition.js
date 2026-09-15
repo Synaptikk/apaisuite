@@ -1,27 +1,39 @@
 // modules/livedashboard/lib/sources/recognition.js
 //
-// Safety Observations — "Recognition for Stores" table on the
-// Field_Dashboard Power BI report. Powers the rolling 7-day recognition
-// breakdown shown in the Accident Details drill-down.
+// Safety Observations — Recognition and Engagement counts from the
+// Field_Dashboard Power BI report, feeding the rolling 7-day breakdown in the
+// Accident Details drill-down.
 //
-// Pipeline:
-//   1. Find/open background app.powerbi.com tab on the Field_Dashboard
-//      Safety Observations page section.
-//   2. MAIN-world content script (powerbi_recognition_capture.js) has
-//      monkey-patched fetch+XHR; the QES bundle whose body references
-//      Description_of_the_Safety_Observation gets ring-buffered.
-//   3. Read the latest captured bundle via executeScript MAIN-world.
-//   4. If the captured store filter differs from the dashboard's store,
-//      mutate the body's fascility_nbr_padded literal and replay in-tab
-//      from MAIN world.
-//   5. Iterate response.results[] and pick the one whose descriptor.Select
-//      names Description_of_the_Safety_Observation. Decode its DSR using
-//      the same delta-encoded scheme as register's operator query.
-//   6. rollup7d(): group rows by date, return [{date, count}] for the
-//      most recent 7 days the data covers (or today-6..today if any rows
-//      fall in that window).
+// We BUILD the query (shared/pbi_query.js) instead of replaying the one the
+// report fired. Measured live 2026-09-15, the report's own query carried:
+//   - the viewer's saved store ('01458') — the old code only swapped it by
+//     regex, and decoded the saved response verbatim when it matched;
+//   - a store-tier slicer (tier_status_FY27_period IN G1/G2/G3) — a store
+//     outside those tiers would silently get nothing;
+//   - a 500-row window — the saved response was exactly 500 rows (Jun 15 →
+//     Sep 14), i.e. already at the cap;
+//   - grouping by (store, date, description) with no count — Engagements have
+//     no description, so every engagement on a day collapsed into ONE row.
+//     Store 01458 showed 9 engagements in 14 days; the real number is 32
+//     (01215: 14 vs 57). Recognitions were unaffected (86 = 86).
+// The built query filters only on store, observation type and a 14-day date
+// floor, asks for the full row window, checks completeness, and counts the
+// never-empty type column per group so merged rows expand back to real
+// observations.
+//
+// The capture (content/powerbi_recognition_capture.js) is still needed, but
+// only for TRANSPORT: the QES url, the request headers (MWCToken) and the
+// modelId. Pipeline:
+//   1. Find/open a background Field_Dashboard tab.
+//   2. Wait for any captured Recognition QES request carrying auth.
+//   3. POST our query in-tab (see replayInTab for why in-tab + omit creds).
+//   4. Decode, expand merged groups, return rows; rollup7d() buckets by day.
 
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../../../shared/auth.js";
+import {
+  AGG, MAX_WINDOW, aggregate, buildQuery, column, decodeRows, pickTransport,
+  readResult, whereDateRange, whereIn,
+} from "../../../../shared/pbi_query.js";
 
 // Field_Dashboard was republished on/around 2026-08-12 under a new workspace
 // (fd8e7aa4-…) with a NEW report id. The old artifact 52d28de7-a2ba-44e5-ab04-
@@ -35,9 +47,20 @@ const PAGE_ID      = "ceebb331d49c3b32c6a2";   // Safety Observations
 const REPORT_URL   = `https://app.powerbi.com/groups/me/reports/${REPORT_ID}/${PAGE_ID}?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi`;
 const TAB_PATTERN  = `https://app.powerbi.com/*${REPORT_ID}*`;
 
+const CAPTURE_KEY     = "__APAISUITE_LIVEDASHBOARD_RECOGNITION_CAP";
 const CAPTURE_WAIT_MS = 25_000;
 const CAPTURE_POLL_MS = 600;
 const MAX_REAUTH_ATTEMPTS = 2;
+const LOOKBACK_DAYS   = 14;   // rollup7d shows 7; the margin covers late-posted observations
+
+// Model names (verified 2026-09-15, model 3360717).
+const ENTITY_SURVEY = "High Accidents Survey";
+const FROM = [
+  { Name: "s", Entity: "Stores Master" },
+  { Name: "c", Entity: "Calendar" },
+  { Name: "h", Entity: ENTITY_SURVEY },
+];
+const TYPE_PROP = "Is_this_safety_observation_engagement_or_recognition";
 
 // ── Public entry point ─────────────────────────────────────────────
 
@@ -52,15 +75,14 @@ export async function fetchRecognition(storeNbr) {
   // not registered with shared/tabSessions.js, so the idle reaper cannot see
   // them either: nothing was cleaning them up.
   try {
-    return await runFetchRecognition(tab, didOpen, storeNbr);
+    return await runFetchRecognition(tab, storeNbr);
   } finally {
     // Only ours. A tab the user already had open stays open.
     if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
 
-async function runFetchRecognition(tab, didOpen, storeNbr) {
-
+async function runFetchRecognition(tab, storeNbr) {
   await waitForTabLoad(tab.id, 25_000);
 
   // After an extension reload, an existing tab's document_start content
@@ -71,7 +93,7 @@ async function runFetchRecognition(tab, didOpen, storeNbr) {
     await waitForTabLoad(tab.id, 25_000);
   }
 
-  let result = await runRecognitionPipeline(tab.id, storeNbr, didOpen);
+  let result = await runRecognitionPipeline(tab.id, storeNbr);
   let reauthAttempts = 0;
   while (result && !result.ok && result.errorClass === "AUTH" && reauthAttempts < MAX_REAUTH_ATTEMPTS) {
     reauthAttempts++;
@@ -88,7 +110,7 @@ async function runFetchRecognition(tab, didOpen, storeNbr) {
       console.log(`[livedashboard recognition] reauth reload failed: ${reloaded.reason}`);
       break;
     }
-    result = await runRecognitionPipeline(tab.id, storeNbr, false);
+    result = await runRecognitionPipeline(tab.id, storeNbr);
   }
 
   if (reauthAttempts > 0 && result && typeof result === "object") {
@@ -97,95 +119,113 @@ async function runFetchRecognition(tab, didOpen, storeNbr) {
   return result;
 }
 
-async function runRecognitionPipeline(tabId, storeNbr, didOpen) {
-  const cap = await pollForCapture(tabId, CAPTURE_WAIT_MS, CAPTURE_POLL_MS);
-  if (!cap) {
+async function runRecognitionPipeline(tabId, storeNbr) {
+  const transport = await pollForTransport(tabId, CAPTURE_WAIT_MS, CAPTURE_POLL_MS);
+  if (!transport) {
     return {
       ok: false, errorClass: "NO_CAPTURE",
-      error: "Recognition bundle not captured. Open the Safety Observations page once manually so the SPA fires its queries.",
+      error: "No Power BI request captured from the Safety Observations page. Open it once manually so the report signs in and fires its queries.",
     };
   }
 
-  // If captured store differs from requested, replay with the new filter.
-  let respBody = cap.respBody;
-  let respStatus = 200, respContentType = "application/json";
-  const capturedStore = extractStoreFilter(cap.reqBody);
   const requested = padStore(storeNbr);
-  const replay = capturedStore && requested !== capturedStore;
-  if (replay) {
-    const newBody = swapStoreFilter(cap.reqBody, requested);
-    const replayResult = await replayInTab(tabId, cap.url, newBody, cap.reqHeaders);
-    if (replayResult.ok) {
-      respBody        = replayResult.body;
-      respStatus      = replayResult.status ?? 200;
-      respContentType = replayResult.contentType || respContentType;
-    } else {
-      // 401 or login HTML — signal AUTH to the outer retry loop.
-      const replayAuth = classifyAuthResponse({
-        status: replayResult.status ?? 0,
-        contentType: replayResult.contentType || "",
-        body: replayResult.body || "",
-      });
-      if (isAuthFailureStatus(replayAuth)) {
-        return {
-          ok: false, errorClass: "AUTH", authStatus: replayAuth,
-          error: `Power BI recognition replay returned ${replayAuth} — autonomous reauth will retry.`,
-        };
-      }
-      return { ok: false, errorClass: "REPLAY", error: `Recognition replay failed: ${replayResult.error || replayResult.status}` };
-    }
+  const since = isoDaysAgo(LOOKBACK_DAYS);
+
+  const recognition = await queryObservations(tabId, transport, requested, "Recognition", since);
+  if (!recognition.ok) return recognition;
+
+  // Engagements are secondary: a failure there must not fail the whole pull.
+  const engagement = await queryObservations(tabId, transport, requested, "Engagement", since);
+  if (!engagement.ok) {
+    if (engagement.errorClass === "AUTH") return engagement;
+    console.log(`[livedashboard recognition] engagement query failed (${engagement.errorClass}: ${engagement.error}) — recognition-only this pull`);
   }
-
-  // Auth check on the body we're about to decode (catches stale captures
-  // where the request returned 200 but the body is login HTML).
-  const respAuth = classifyAuthResponse({
-    status: respStatus,
-    contentType: respContentType,
-    body: respBody || "",
-  });
-  if (isAuthFailureStatus(respAuth)) {
-    return {
-      ok: false, errorClass: "AUTH", authStatus: respAuth,
-      error: `Power BI recognition body classifies as ${respAuth} — autonomous reauth will retry.`,
-    };
-  }
-
-  const rows = decodeRecognitionResponse(respBody);
-  // Rows == 0 isn't an error — the store may simply have no recognitions in
-  // the date window. Surface that distinct from a missing result-block.
-
-  // The visual we capture is hard-filtered to one half of the data:
-  //   Is_this_safety_observation_engagement_or_recognition IN ('Recognition')
-  // Engagements are the other half and have no visual of their own on this
-  // page, so the only way to get them is to replay the same query with the
-  // type literal swapped. Best-effort: a store has safety observations either
-  // way, and losing engagements shouldn't fail the whole pull.
-  const engagementBody = swapObservationType(replay ? swapStoreFilter(cap.reqBody, requested) : cap.reqBody, "Engagement");
-  let engagementRows = [];
-  if (engagementBody) {
-    const engResult = await replayInTab(tabId, cap.url, engagementBody, cap.reqHeaders);
-    if (engResult.ok) {
-      engagementRows = decodeRecognitionResponse(engResult.body);
-    } else {
-      console.log(`[livedashboard recognition] engagement replay failed (${engResult.status ?? engResult.error}) — recognition-only this pull`);
-    }
-  }
-
-  const importedAt = new Date().toISOString();
-
-  // We're done with the tab. Only close it if WE opened it — leave alone
-  // any pre-existing Power BI tab the user might still be using.
-  // NOT closed here — fetchRecognition's finally owns the tab.
 
   return {
     ok: true,
-    rows,
-    engagementRows,
-    capturedAt:     importedAt,
-    capturedStore,
+    rows: recognition.rows,
+    engagementRows: engagement.ok ? engagement.rows : [],
+    capturedAt:     new Date().toISOString(),
+    capturedStore:  null,
     requestedStore: requested,
-    replayed:       replay,
+    replayed:       false,
+    method:         "built-query",
+    since,
   };
+}
+
+async function queryObservations(tabId, transport, store, type, since) {
+  const body = buildObservationQuery({ modelId: transport.modelId, store, type, since });
+  const res = await replayInTab(tabId, transport.url, JSON.stringify(body), transport.headers);
+
+  const authStatus = classifyAuthResponse({
+    status: res.status ?? (res.ok ? 200 : 0),
+    contentType: res.contentType || "",
+    body: res.body || "",
+  });
+  if (isAuthFailureStatus(authStatus)) {
+    return {
+      ok: false, errorClass: "AUTH", authStatus,
+      error: `Power BI recognition query returned ${authStatus} — autonomous reauth will retry.`,
+    };
+  }
+  if (!res.ok) {
+    return { ok: false, errorClass: "QUERY", error: `Recognition ${type} query failed: ${res.error || res.status}` };
+  }
+
+  let json;
+  try { json = JSON.parse(res.body); }
+  catch { return { ok: false, errorClass: "PARSE", error: `Recognition ${type} response was not JSON.` }; }
+
+  const { complete, error } = readResult(json);
+  if (error) return { ok: false, errorClass: "QUERY", error: `Power BI rejected the ${type} query: ${error}` };
+  if (!complete) {
+    return {
+      ok: false, errorClass: "TRUNCATED",
+      error: `${type} observations for store ${store} exceeded ${MAX_WINDOW.toLocaleString("en-US")} rows; refusing a partial count.`,
+    };
+  }
+  return { ok: true, rows: expandObservations(decodeRows(json)) };
+}
+
+// ── Query + row shaping (pure; exported for tests) ─────────────────
+
+export function buildObservationQuery({ modelId, store, type, since }) {
+  return buildQuery({
+    modelId,
+    from: FROM,
+    select: [
+      ["Store", column("s", "fascility_nbr_padded")],
+      ["Date", column("c", "GREGORIAN_DATE")],
+      ["Description", column("h", "Description_of_the_Safety_Observation")],
+      // Count of a never-empty column per group. AGG.COUNT returned 1 per
+      // group here; COUNT_NON_NULL returns the real number of observations.
+      ["Count", aggregate("h", TYPE_PROP, AGG.COUNT_NON_NULL)],
+    ],
+    where: [
+      whereIn(column("s", "fascility_nbr_padded"), [store]),
+      whereIn(column("h", TYPE_PROP), [type]),
+      whereDateRange(column("c", "GREGORIAN_DATE"), since),
+    ],
+  });
+}
+
+/** One output row per observation: a group with Count 3 becomes 3 rows. */
+export function expandObservations(rows) {
+  const out = [];
+  for (const r of rows || []) {
+    const dateIso = typeof r.Date === "number" ? epochToIsoDate(r.Date) : null;
+    if (!dateIso) continue;
+    const n = Math.max(1, Math.round(Number(r.Count) || 1));
+    const row = { storeNbr: String(r.Store ?? ""), dateIso, description: String(r.Description ?? "") };
+    for (let i = 0; i < n; i++) out.push({ ...row });
+  }
+  return out;
+}
+
+export function padStore(storeNbr) {
+  const s = String(storeNbr || "").replace(/\D/g, "");
+  return s.padStart(5, "0");
 }
 
 // ── Tab management ─────────────────────────────────────────────────
@@ -208,22 +248,13 @@ async function waitForTabLoad(tabId, timeoutMs = 25_000) {
   return chrome.tabs.get(tabId).catch(() => null);
 }
 
-async function pollForCapture(tabId, timeoutMs, pollMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const envelope = await readCapture(tabId);
-    if (envelope) return envelope;
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  return null;
-}
-
 async function isCaptureInstalled(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world:  "MAIN",
-      func:   () => !!window.__APAISUITE_LIVEDASHBOARD_RECOGNITION_CAP,
+      args:   [CAPTURE_KEY],
+      func:   (k) => !!window[k],
     });
     return results?.[0]?.result === true;
   } catch {
@@ -231,30 +262,50 @@ async function isCaptureInstalled(tabId) {
   }
 }
 
-async function readCapture(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world:  "MAIN",
-      func:   () => {
-        const cap = window.__APAISUITE_LIVEDASHBOARD_RECOGNITION_CAP;
-        return cap?.findRecognition ? cap.findRecognition() : null;
-      },
-    });
-    return results?.[0]?.result || null;
-  } catch {
-    return null;
+// Newest captured request that carries auth. Only descriptors cross the
+// executeScript boundary — never the (large) response bodies.
+async function pollForTransport(tabId, timeoutMs, pollMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world:  "MAIN",
+        args:   [CAPTURE_KEY],
+        func:   (k) => {
+          const cap = window[k];
+          if (!cap) return null;
+          return cap.all()
+            .filter((e) => e.url && e.reqBody && (e.reqHeaders?.Authorization || e.reqHeaders?.authorization))
+            .slice(-3)
+            .map((e) => ({
+              url: e.url,
+              auth: e.reqHeaders.Authorization || e.reqHeaders.authorization,
+              headers: e.reqHeaders,
+              body: e.reqBody,
+              capturedAt: e.capturedAt,
+            }));
+        },
+      });
+      const entries = results?.[0]?.result || [];
+      const picked = pickTransport(entries, { entity: ENTITY_SURVEY });
+      if (picked) {
+        const entry = entries.find((e) => e.url === picked.url && e.auth === picked.auth) || {};
+        return { ...picked, headers: entry.headers || { Authorization: picked.auth, "Content-Type": "application/json;charset=UTF-8" } };
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, pollMs));
   }
+  return null;
 }
 
-// Replaying a QES query has two hard requirements, both learned the hard way
+// Sending a QES query has two hard requirements, both learned the hard way
 // (verified against the live endpoint 2026-08-31):
 //
 //   credentials: "omit"  — the QES host is cross-origin from app.powerbi.com
 //     and answers preflight without Access-Control-Allow-Credentials. Sending
 //     "include" makes the browser reject the response before we see it, which
-//     surfaces as an opaque `TypeError: Failed to fetch`. This is exactly what
-//     register.js has been dying of since 2026-08-12.
+//     surfaces as an opaque `TypeError: Failed to fetch`.
 //   the captured request headers — QES authenticates on the Authorization
 //     bearer the SPA minted, NOT on cookies. Omit them and it's a flat 401.
 //
@@ -264,10 +315,10 @@ async function replayInTab(tabId, url, body, reqHeaders) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world:  "MAIN",
-      args:   [url, body, reqHeaders || null, "__APAISUITE_LIVEDASHBOARD_RECOGNITION_CAP"],
+      args:   [url, body, reqHeaders || null, CAPTURE_KEY],
       func:   async (u, b, h, capKey) => {
         try {
-          // Pre-patch fetch, so this replay isn't recorded into our own ring.
+          // Pre-patch fetch, so our query isn't recorded into the ring.
           const send = window[capKey]?.rawFetch || fetch;
           const r = await send(u, {
             method:      "POST",
@@ -290,137 +341,16 @@ async function replayInTab(tabId, url, body, reqHeaders) {
   }
 }
 
-// ── Body editing (store filter swap) ───────────────────────────────
-//
-// All inner queries in the bundle filter on `fascility_nbr_padded` with a
-// padded literal like "'01458'". One Where clause also uses `fascility_nbr`
-// (non-padded) for an `IS NOT NULL` check — we leave that untouched.
-
-function padStore(storeNbr) {
-  const s = String(storeNbr || "").replace(/\D/g, "");
-  return s.padStart(5, "0");
-}
-
-function extractStoreFilter(body) {
-  if (typeof body !== "string") return null;
-  const m = body.match(/"Property":"fascility_nbr_padded"[\s\S]{0,400}?"Value":"'(\d+)'"/);
-  return m ? m[1] : null;
-}
-
-// The observation-type Where clause, e.g.
-//   "Property":"Is_this_safety_observation_engagement_or_recognition" … "Value":"'Recognition'"
-// Returns null when the clause isn't present, so the caller can skip the
-// engagement replay instead of POSTing an unmodified (duplicate) query.
-const OBSERVATION_TYPE_RE =
-  /("Property":"Is_this_safety_observation_engagement_or_recognition"[\s\S]{0,400}?"Value":")'[^']*'(")/g;
-
-function swapObservationType(body, type) {
-  if (typeof body !== "string") return null;
-  OBSERVATION_TYPE_RE.lastIndex = 0;
-  if (!OBSERVATION_TYPE_RE.test(body)) return null;
-  OBSERVATION_TYPE_RE.lastIndex = 0;
-  return body.replace(OBSERVATION_TYPE_RE, `$1'${type}'$2`);
-}
-
-function swapStoreFilter(body, newStorePadded) {
-  if (typeof body !== "string") return body;
-  return body.replace(
-    /("Property":"fascility_nbr_padded"[\s\S]{0,400}?"Value":")'\d+'(")/g,
-    `$1'${newStorePadded}'$2`,
-  );
-}
-
-// ── DSR decoder for the Recognition table inner result ─────────────
-
-const SELECT_DESCRIPTION = "High_Accidents_Survey.Description_of_the_Safety_Observation";
-const SELECT_DATE        = "Calendar.GREGORIAN_DATE";
-const SELECT_STORE       = "Stores Master.fascility_nbr_padded";
-
-export function decodeRecognitionResponse(respBody) {
-  if (!respBody) return [];
-  let resp;
-  try { resp = JSON.parse(respBody); } catch { return []; }
-  const results = resp?.results || [];
-
-  // Find the inner result whose descriptor.Select names the description
-  // column — that's the row-level "Recognition for Stores" table.
-  const match = results.find((r) => {
-    const sel = r?.result?.data?.descriptor?.Select || [];
-    return sel.some((s) => s?.Name === SELECT_DESCRIPTION);
-  });
-  if (!match) return [];
-
-  const data = match.result.data;
-  const ds   = data?.dsr?.DS?.[0];
-  if (!ds) return [];
-
-  const dm = ds.PH?.[0]?.DM0 || [];
-  if (!dm.length) return [];
-
-  // First entry carries the schema (S); subsequent entries are data rows
-  // with delta encoding: R is a bitmask of which positions repeat from prev.
-  const schema = dm[0].S;
-  if (!schema) return [];
-  const dicts = ds.ValueDicts || {};
-
-  // Map Select.Name → schema position index. The DM rows' S array is in the
-  // same order as descriptor.Select. We resolve by Select.Name lookup so
-  // future column re-ordering by Power BI doesn't break the decoder.
-  const selects = data.descriptor.Select;
-  const posByName = {};
-  for (let i = 0; i < schema.length; i++) {
-    posByName[selects[i]?.Name] = i;
-  }
-  const iDesc  = posByName[SELECT_DESCRIPTION];
-  const iDate  = posByName[SELECT_DATE];
-  const iStore = posByName[SELECT_STORE];
-  if (iDesc == null || iDate == null || iStore == null) return [];
-
-  const out = [];
-  let prev = new Array(schema.length).fill(null);
-  for (const e of dm) {
-    const c = e.C || [];
-    const r = e.R ?? 0;
-    const row = new Array(schema.length);
-    let ci = 0;
-    for (let j = 0; j < schema.length; j++) {
-      if ((r >> j) & 1) row[j] = prev[j];
-      else              row[j] = ci < c.length ? c[ci++] : null;
-    }
-    prev = row;
-
-    // Resolve dict-ref columns
-    const descCol  = schema[iDesc];
-    const storeCol = schema[iStore];
-    const description = descCol.DN && typeof row[iDesc]  === "number"
-      ? (dicts[descCol.DN] || [])[row[iDesc]]
-      : row[iDesc];
-    const store = storeCol.DN && typeof row[iStore] === "number"
-      ? (dicts[storeCol.DN] || [])[row[iStore]]
-      : row[iStore];
-    const dateMs = row[iDate];
-    const dateIso = typeof dateMs === "number" ? epochToIsoDate(dateMs) : null;
-    if (!dateIso) continue;
-    out.push({
-      storeNbr:    String(store || ""),
-      dateIso,
-      description: String(description || ""),
-    });
-  }
-  return out;
-}
+// ── Dates + rolling 7-day rollup ───────────────────────────────────
 
 function epochToIsoDate(ms) {
   if (typeof ms !== "number") return null;
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-// ── Rolling 7-day rollup ───────────────────────────────────────────
-//
 // Group rows by dateIso and return the most recent 7 distinct dates from
 // (today-6 .. today) inclusive — days with zero observations show as count
 // 0 rather than being skipped, so the drill-down always renders 7 rows.
-
 export function rollup7d(rows, todayIso = isoToday()) {
   const counts = new Map();
   for (const r of rows) {
@@ -439,6 +369,15 @@ export function rollup7d(rows, todayIso = isoToday()) {
 
 function isoToday() {
   const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function isoDaysAgo(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
