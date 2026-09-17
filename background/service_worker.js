@@ -283,7 +283,20 @@ self.addEventListener("push", (event) => {
         console.warn("[SW push] checkForUpdate after push failed:", e?.message);
       });
     } else {
-      console.debug("[SW push] unknown payload type, ignoring:", payload);
+      // Module-owned push types (e.g. workvivo's "workvivo-refresh"). A
+      // module opts in by exporting manifest.service.onPush(payload) and
+      // returns true when the payload was its own.
+      let handled = false;
+      for (const m of listModules()) {
+        const fn = m.manifest?.service?.onPush;
+        if (typeof fn !== "function") continue;
+        try {
+          if (await fn(payload)) { handled = true; break; }
+        } catch (e) {
+          console.warn(`[SW push] ${m.manifest.id}.onPush threw:`, e?.message ?? e);
+        }
+      }
+      if (!handled) console.debug("[SW push] unknown payload type, ignoring:", payload);
     }
   })());
 });

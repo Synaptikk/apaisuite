@@ -36,7 +36,7 @@ through `qrcallbox.com` (Chrome Web Store path is deferred — see
 | SparkFraud | `sparkfraud` | live | Register-event → Spark/Express/GMD delivery-driver trip correlation; OMS order/item drill-down. Canonical enums registry added. |
 | ClaimsDisposition | `claimsdisposition` | live | 30-day Looker Studio pull (`apscpi.wal-mart.com`), per-store/per-user outlier analysis. Uses BigQuery via Cloud Functions for historical roll-ups. |
 | DigitalLocks | `digitallocks` | live | Daily AP review of digital-lock unlock events; risk-scored, stored in-browser (IndexedDB). Pulls a store by querying Power BI's DAX endpoint directly — the query is **built**, not replayed from the report, because replaying inherited the analyst's live slicers and returned 3.6% of one store's events (`CURRENT_TASKS.md` §4). Manual XLSX import shares the same parser/scorer path. |
-| Workvivo | `workvivo` | live | QRCallBox ↔ Workvivo token-heartbeat: reads `window.v2.chatConfig.access_token` hourly and POSTs it to QRCallBox. |
+| Workvivo | `workvivo` | beta (0.3.0) | QRCallBox ↔ Workvivo courier: reads `window.v2.chatConfig.access_token` hourly (opening a background Workvivo tab when stale >6 h or the server says the token died) and POSTs it to `qrcallbox.com/api/workvivo/token-heartbeat`; retries 10 min ×3, nudges the user to sign in after two misses, answers the server's `workvivo-refresh` Web Push with an immediate heartbeat, and lets the user pick the store channel. QRCallBox's `postScanToWorkvivo` trigger does the actual posting. |
 | ClosingList | `closinglist` | live | Closing-shift email draft from CaseVisibility + IVR call-offs |
 | StockingPlan | `stockingplan` | live | Overnight stocking plan: freight from CaseVisibility → labour hours → associate assignments. |
 | MetricShot | `metricshot` | beta | Scheduled screenshots of internal metric dashboards (Tableau, etc.) posted to Workvivo channels via the user's live Sendbird SDK session. Seed metric: VizPick Score → "1458 Leadership" at 10:00/14:00/20:00 daily. |
@@ -118,7 +118,11 @@ each module's `module.js`. Examples that follow this rule:
   heartbeat handler at top-level; `service_worker.js` registers the update
   checker + Web Push handlers
 - `self.addEventListener("push", ...)` — Web Push notifications from
-  QRCallBox; same wake constraint
+  QRCallBox; same wake constraint. `service_worker.js` handles the
+  update-notice payload itself and hands any unknown payload `type` to
+  every module that exports `manifest.service.onPush(payload)`; the first
+  one that returns `true` has handled it (`workvivo` uses this for
+  `workvivo-refresh`). No module registers its own `push` listener.
 
 If you add any wake-on-event handler, register it at module/SW top level,
 **never inside a message handler**.
@@ -181,20 +185,25 @@ Open Qs that are NOT blockers: [`DIGITAL_LOCKS_QUESTIONS.md`](DIGITAL_LOCKS_QUES
 ## Cross-repo dependency: workvivo ↔ QRCallBox
 
 The `workvivo` module talks to a different repo's backend
-(`C:\Users\ses008s.s01458\Desktop\QRCallBox`). The contract:
+(`C:\Users\ses008s.s01458\Desktop\Projects\QRCallBox`). The contract:
 
-- Extension SW reads `window.v2.chatConfig.access_token` from any open
-  `workvivo.walmart.com` tab via `chrome.scripting.executeScript({world: "MAIN"})`.
-- POSTs `{accessToken, workvivoUserId, appId}` hourly to
-  `/api/workvivo/token-heartbeat` (Cloud Function in QRCallBox).
-- QRCallBox stores it in Firestore (`workvivo_config/{uid}`) and uses it for
-  QR-scan Workvivo posts.
+- Extension SW reads `window.v2.chatConfig.access_token` from an open
+  `workvivo.walmart.com` tab via `chrome.scripting.executeScript({world: "MAIN"})`,
+  opening one in the background when it has to.
+- POSTs `{accessToken, workvivoUserId, appId, timeZone, installationId, source}`
+  hourly to `/api/workvivo/token-heartbeat` (Cloud Function in QRCallBox).
+- QRCallBox stores it in Firestore (`workvivo_config/{uid}`) and its
+  `postScanToWorkvivo` trigger posts each new scan to the store channel;
+  a Sendbird 401 flips the doc to `needs_reauth` and Web-Pushes
+  `workvivo-refresh` back to this extension.
 
 `modules/workvivo/lib/qrcallbox.js` (extension side) and
 `QRCallBox/functions/src/http/workvivo/token-heartbeat.js` (server side) MUST
 stay in sync. Branch for in-flight work in QRCallBox: `feat/workvivo-autonomy`.
 
-Background reading: `QRCallBox/Workvivo/WORKVIVO.md`. Don't propose
+Background reading: `QRCallBox/docs/setup/WORKVIVO_SETUP.md` (runbook,
+status vocabulary, deploy rules) and
+`QRCallBox/docs/architecture/WORKVIVO_CUTOVER.md`. Don't propose
 server-side headless reauth — `QRCallBox/scripts/dev/workvivo_auth_canary.py`
 proved Walmart's SAML setup makes that dead.
 
@@ -245,7 +254,7 @@ are user-authored`.
 | Edit an existing module's view/style | [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) + the module's own `styles.css` |
 | Add a new module | [`MODULE_CONTRACT.md`](MODULE_CONTRACT.md) |
 | Cut a release | [`RELEASING.md`](RELEASING.md) (skip the CWS sections) |
-| Touch the `workvivo` module | `../../CLAUDE.md::Cross-repo` + `QRCallBox/Workvivo/WORKVIVO.md` |
+| Touch the `workvivo` module | `../../CLAUDE.md::Cross-repo` + `QRCallBox/docs/setup/WORKVIVO_SETUP.md` |
 | Implement Hoops Sell-Through | [`../dev/HOOPS_FINDINGS.md`](../dev/HOOPS_FINDINGS.md) |
 | Touch ClaimsDisposition's Looker pull | [`../../claims_disposition_reference.md`](../../claims_disposition_reference.md) + `MEMORY.md::Claims Disposition store IDs no leading zeros` |
 | Extend DigitalLocks | [`DIGITAL_LOCKS_MODULE.md`](DIGITAL_LOCKS_MODULE.md) + [`DIGITAL_LOCKS_QUESTIONS.md`](DIGITAL_LOCKS_QUESTIONS.md) |

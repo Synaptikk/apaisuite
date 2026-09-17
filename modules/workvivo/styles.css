@@ -11,7 +11,9 @@
   margin: 0 0 0.25rem 0;
 }
 
-.module-workvivo .card + .card {
+.module-workvivo .card + .card,
+.module-workvivo section + details.card,
+.module-workvivo details.card + .card {
   margin-top: 1rem;
 }
 
@@ -20,7 +22,7 @@
   font-size: 1rem;
 }
 
-/* ── Status card ─────────────────────────────────────────────── */
+/* ── Health card ─────────────────────────────────────────────── */
 
 .module-workvivo .wv-status-head {
   display: flex;
@@ -58,27 +60,104 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   flex-wrap: wrap;
 }
 
-/* ── Config + help cards ─────────────────────────────────────── */
+/* ── Setup checklist ─────────────────────────────────────────── */
 
-.module-workvivo .wv-config .field {
-  margin-top: 0.75rem;
-}
-
-.module-workvivo .wv-help-list {
-  margin: 0.5rem 0 0.5rem 1.25rem;
+.module-workvivo .wv-steps {
+  list-style: none;
+  margin: 0;
   padding: 0;
 }
 
-.module-workvivo .wv-help-list li {
-  margin: 0.25rem 0;
+.module-workvivo .wv-step {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--apai-border, rgba(0,0,0,0.08));
+}
+
+.module-workvivo .wv-step:first-child {
+  border-top: 0;
+  padding-top: 0.25rem;
+}
+
+.module-workvivo .wv-step p {
+  margin: 0.25rem 0 0 2rem;
+}
+
+.module-workvivo .wv-step .wv-action-row {
+  margin-left: 2rem;
+  margin-top: 0.5rem;
+}
+
+.module-workvivo .wv-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.module-workvivo .wv-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--apai-surface-2, rgba(0,0,0,0.06));
+  color: inherit;
+  flex: 0 0 auto;
+}
+
+.module-workvivo .wv-step[data-done="true"] .wv-step-num {
+  background: var(--apai-success, #2ea44f);
+  color: #fff;
+}
+
+.module-workvivo .wv-step[data-done="true"] .wv-step-state {
+  color: var(--apai-success, #2ea44f);
+}
+
+.module-workvivo .wv-step-state {
+  margin-left: auto;
+}
+
+.module-workvivo .wv-key-input {
+  min-width: 18rem;
+  flex: 1 1 18rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.module-workvivo .wv-channel-select {
+  min-width: 16rem;
+  flex: 1 1 16rem;
+}
+
+/* ── How it works ────────────────────────────────────────────── */
+
+.module-workvivo details.wv-about summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.module-workvivo details.wv-about summary::-webkit-details-marker {
+  display: none;
+}
+
+.module-workvivo details.wv-about summary::before {
+  content: "▸ ";
+}
+
+.module-workvivo details.wv-about[open] summary::before {
+  content: "▾ ";
 }
 
 .module-workvivo .wv-about p + ul,
-.module-workvivo .wv-about ul + p {
+.module-workvivo .wv-about ul + p,
+.module-workvivo .wv-about summary + p {
   margin-top: 0.5rem;
 }
 

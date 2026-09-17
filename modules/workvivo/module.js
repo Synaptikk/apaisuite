@@ -10,11 +10,11 @@
 // QRCallBox then has an always-fresh token to use when QR scans happen.
 //
 // See APAISuite/CLAUDE.md for the cross-repo integration notes, and
-// QRCallBox/Workvivo/WORKVIVO.md for the auth discovery that motivated it.
+// QRCallBox/docs/setup/WORKVIVO_SETUP.md for the per-store runbook.
 
 // Statically imported (MV3 SW contract — see service_worker.js notes).
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
-import { handlers, installHeartbeatAlarm, onAlarm } from "./service.js";
+import { handlers, installHeartbeatAlarm, onAlarm, onPush, onNotificationClicked } from "./service.js";
 
 // Alarm wiring is service-worker-only and lives at top level — during the
 // SW's initial script execution — so Chrome will wake the SW on a matching
@@ -24,6 +24,8 @@ import { handlers, installHeartbeatAlarm, onAlarm } from "./service.js";
 // than in register(), which only ever runs in the shell page.
 if (IS_SERVICE_WORKER) {
   chrome.alarms.onAlarm.addListener(onAlarm);
+  // The "sign in to Workvivo" OS notification opens chat when clicked.
+  chrome.notifications?.onClicked?.addListener(onNotificationClicked);
   installHeartbeatAlarm().catch((e) =>
     console.warn("[workvivo] installHeartbeatAlarm failed:", e?.message ?? e));
 }
@@ -32,8 +34,8 @@ export default {
   manifest: {
     id:          "workvivo",
     name:        "QRCallBox",
-    description: "Keeps QRCallBox notifications working by silently couriering your Workvivo/Sendbird token to qrcallbox.com once an hour while you have Workvivo open.",
-    version:     "0.2.0",
+    description: "Keeps QRCallBox scan alerts flowing into your store's Workvivo chat by couriering your Workvivo chat token to qrcallbox.com every hour, opening Workvivo in the background when it has to.",
+    version:     "0.3.0",
     status:      "beta",
 
     ui: {
@@ -53,6 +55,10 @@ export default {
 
     service: {
       handlers,
+      // Web Push from QRCallBox ("workvivo-refresh"): the service worker's
+      // push listener hands unknown payload types to every module that
+      // declares onPush. Returns true when it handled the payload.
+      onPush,
     },
 
     // Permissions consumed by this module (informational; the actual grant
@@ -65,7 +71,7 @@ export default {
     // by the suite-wide "https://*.walmart.com/*" wildcard. The QRCallBox
     // cloud function host is added separately in the top-level manifest.
     permissions: {
-      needs: ["alarms", "scripting", "tabs", "storage"],
+      needs: ["alarms", "scripting", "tabs", "storage", "notifications"],
       hosts: [
         "https://workvivo.walmart.com/*",
         // Endpoint host — keep in sync with manifest.json::host_permissions

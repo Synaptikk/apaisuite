@@ -8,11 +8,14 @@
 //     Content-Type: application/json
 //     X-API-Key: <user's heartbeat API key from QRCallBox UI>
 //   Body:
-//     { accessToken, workvivoUserId, appId, source: "apai-suite" }
+//     { accessToken, workvivoUserId, appId, timeZone, installationId, source: "apai-suite" }
 //   200 OK:
-//     { ok: true, storeNumber, channelName, validatedAt }
+//     { ok: true, storeNumber, channelName, channelUrl, channels: [{url,name}],
+//       health: { status, lastServerPostAtMs, tokenAgeMs, pushLinked, ... }, validatedAt }
 //   401: bad/missing API key
-//   422: token validation against Sendbird failed (returned token was no good)
+//   400: missing accessToken / workvivoUserId
+//   (a token Sendbird rejects is still stored; the server answers 200 with
+//    health.status "validation_warn" and the scan bridge is the real test)
 //   5xx: server error — caller retries on next alarm tick
 //
 // No retry inside this client — the heartbeat alarm fires hourly, so a single
@@ -30,6 +33,8 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  * @param {string} args.accessToken   Sendbird access_token from window.v2.chatConfig
  * @param {string} args.workvivoUserId  Numeric user id (window.v2.id, stringified)
  * @param {string|null} args.appId    Sendbird app id (or null — server falls back to constant)
+ * @param {string|null} [args.installationId]  shell.installationId, so the server can
+ *                                   Web-Push a "refresh now" to this browser
  *
  * @returns {Promise<{ok:boolean, status:number, body:object|string,
  *                    errorClass?: "AUTH"|"VALIDATION"|"SERVER"|"NETWORK"|"TIMEOUT"}>}
@@ -40,6 +45,7 @@ export async function postHeartbeat({
   accessToken,
   workvivoUserId,
   appId,
+  installationId = null,
 }) {
   if (!endpointUrl) {
     return { ok: false, status: 0, body: "missing endpoint URL", errorClass: "AUTH" };
@@ -71,6 +77,10 @@ export async function postHeartbeat({
         // CT. Read from the SW's Intl runtime, which reflects the user's
         // OS clock. Safe to send: it's not PII.
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        installationId: installationId || null,
+        // Ask for the channel list (kept out of the response by default so
+        // older clients' sync-storage writes stay under quota).
+        wantChannels: true,
         source: "apai-suite",
       }),
     });
@@ -224,6 +234,49 @@ export async function fetchConnectionInfo({ endpointUrl, apiKey }) {
     if (resp.status === 404) {
       return { ok: false, status: resp.status, body, errorClass: "NOT_FOUND" };
     }
+    return { ok: false, status: resp.status, body, errorClass: "SERVER" };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      return { ok: false, status: 0, body: `timeout after ${DEFAULT_TIMEOUT_MS}ms`, errorClass: "TIMEOUT" };
+    }
+    return { ok: false, status: 0, body: String(err?.message ?? err), errorClass: "NETWORK" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Save which Workvivo channel the server posts scans into. The server
+ * verifies the url against a live channel list, so only a channel the user
+ * belongs to can be chosen.
+ *
+ * @returns {Promise<{ok:boolean, status:number, body:object|string,
+ *                    errorClass?: "AUTH"|"TOKEN_STALE"|"NOT_FOUND"|"VALIDATION"|"SERVER"|"NETWORK"|"TIMEOUT"}>}
+ */
+export async function postSetChannel({ endpointUrl, apiKey, channelUrl }) {
+  if (!endpointUrl || !apiKey) {
+    return { ok: false, status: 0, body: "missing endpoint or api key", errorClass: "AUTH" };
+  }
+  const url = deriveSiblingUrl(endpointUrl, "set-channel");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({ channelUrl }),
+    });
+    const text = await resp.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+    if (resp.ok) return { ok: true, status: resp.status, body };
+    if (resp.status === 401) {
+      const msg = String(body?.error ?? body ?? "");
+      return { ok: false, status: 401, body, errorClass: /api key/i.test(msg) ? "AUTH" : "TOKEN_STALE" };
+    }
+    if (resp.status === 404) return { ok: false, status: 404, body, errorClass: "NOT_FOUND" };
+    if (resp.status === 400) return { ok: false, status: 400, body, errorClass: "VALIDATION" };
     return { ok: false, status: resp.status, body, errorClass: "SERVER" };
   } catch (err) {
     if (err?.name === "AbortError") {
