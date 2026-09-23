@@ -2,9 +2,68 @@
 // Pure functions — no DOM, no chrome.*.
 
 const FOOD_CONS_DEPTS = new Set([4, 8, 13, 2, 46, 40, 92, 95, 90, 91]);
-const FOOD_CONS_RATE  = 55;   // cases per hour
-const GM_RATE         = 45;   // cases per hour
-const BP_RATE         = 80;   // breakpacks per hour (all depts)
+
+// Department-specific stocking standards reverse-engineered from Case Details
+// Overview (2026-09-22). Null/omitted values mean that day's report did not
+// contain enough freight to establish a rate. Low-volume observations are
+// retained as estimates and can be tightened as more Case Details days are
+// captured.
+const DEPT_RATES = new Map([
+  [2,  { cases: 48,  breakpacks: 48 }],
+  [3,  { cases: 40,  breakpacks: 40 }],
+  [4,  { cases: 90,  breakpacks: null }],
+  [5,  { cases: null, breakpacks: 55 }],
+  [6,  { cases: 60,  breakpacks: 48 }],
+  [7,  { cases: 40,  breakpacks: null }],
+  [8,  { cases: 50,  breakpacks: 50 }],
+  [9,  { cases: 40,  breakpacks: 40 }],
+  [10, { cases: 51,  breakpacks: 51 }],
+  [11, { cases: 40,  breakpacks: 40 }],
+  [12, { cases: 40,  breakpacks: 40 }],
+  [13, { cases: 55,  breakpacks: 60 }],
+  [14, { cases: 40,  breakpacks: 40 }],
+  [16, { cases: 46,  breakpacks: null }],
+  [17, { cases: 35,  breakpacks: 36 }],
+  [18, { cases: 40,  breakpacks: 40 }],
+  [19, { cases: 36,  breakpacks: 35 }],
+  [20, { cases: 37,  breakpacks: 35 }],
+  [22, { cases: 40,  breakpacks: 42 }],
+  [23, { cases: 60,  breakpacks: 60 }],
+  [24, { cases: null, breakpacks: 60 }],
+  [25, { cases: 60,  breakpacks: 50 }],
+  [26, { cases: 60,  breakpacks: 60 }],
+  [29, { cases: 60,  breakpacks: 60 }],
+  [31, { cases: 60,  breakpacks: 60 }],
+  [32, { cases: null, breakpacks: 60 }],
+  [33, { cases: null, breakpacks: 60 }],
+  [34, { cases: 62,  breakpacks: 60 }],
+  [40, { cases: 55,  breakpacks: 55 }],
+  [46, { cases: 43,  breakpacks: 43 }],
+  [49, { cases: 60,  breakpacks: null }],
+  [56, { cases: 111, breakpacks: null }],
+  [67, { cases: 41,  breakpacks: 40 }],
+  [71, { cases: 52,  breakpacks: null }],
+  [72, { cases: 48,  breakpacks: 48 }],
+  [74, { cases: 53,  breakpacks: 60 }],
+  [79, { cases: 55,  breakpacks: 56 }],
+  [80, { cases: 40,  breakpacks: null }],
+  [81, { cases: 49,  breakpacks: null }],
+  [82, { cases: 36,  breakpacks: 38 }],
+  [90, { cases: 48,  breakpacks: null }],
+  [91, { cases: 50,  breakpacks: null }],
+  [92, { cases: 47,  breakpacks: 60 }],
+  [93, { cases: 40,  breakpacks: null }],
+  [94, { cases: 40,  breakpacks: null }],
+  [95, { cases: 47,  breakpacks: null }],
+  [96, { cases: 40,  breakpacks: null }],
+  [97, { cases: 48,  breakpacks: null }],
+  [98, { cases: 40,  breakpacks: 40 }],
+]);
+
+// Fallbacks preserve prior behavior when a department/rate is unknown.
+const FOOD_CONS_RATE = 55;
+const GM_RATE        = 45;
+const BP_RATE        = 80;
 
 // Round a raw hour value up to the nearest 30-minute mark.
 function roundUpHalf(raw) {
@@ -12,8 +71,11 @@ function roundUpHalf(raw) {
 }
 
 export function hoursForTask(cases, breakpacks, deptNbr) {
-  const rate = FOOD_CONS_DEPTS.has(Number(deptNbr)) ? FOOD_CONS_RATE : GM_RATE;
-  const raw  = (cases || 0) / rate + (breakpacks || 0) / BP_RATE;
+  const dept = Number(deptNbr);
+  const rates = DEPT_RATES.get(dept);
+  const caseRate = rates?.cases || (FOOD_CONS_DEPTS.has(dept) ? FOOD_CONS_RATE : GM_RATE);
+  const bpRate = rates?.breakpacks || BP_RATE;
+  const raw = (cases || 0) / caseRate + (breakpacks || 0) / bpRate;
   return roundUpHalf(raw);
 }
 
