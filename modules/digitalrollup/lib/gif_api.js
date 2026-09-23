@@ -50,7 +50,7 @@ export class GifApiError extends Error {
   constructor(kind, message, detail = {}) {
     super(message);
     this.name = "GifApiError";
-    this.kind = kind; // AUTH | DISCLAIMER | HTTP | TAB | PARSE | NETWORK
+    this.kind = kind; // AUTH | DISCLAIMER | HTTP | TAB | NO_TAB | PARSE | NETWORK
     this.detail = detail;
   }
 }
@@ -59,7 +59,7 @@ export class GifApiError extends Error {
  * Fetch a JSON path from the app, direct first and via a tab as fallback.
  * @returns {Promise<{json:any, via:"direct"|"tab"}>}
  */
-export async function fetchAppJson(path) {
+export async function fetchAppJson(path, { noOpen = false } = {}) {
   let directErr = null;
   try {
     return { json: await fetchDirect(path), via: "direct" };
@@ -69,7 +69,7 @@ export async function fetchAppJson(path) {
     directErr = e;
   }
   try {
-    return { json: await fetchViaTab(path), via: "tab" };
+    return { json: await fetchViaTab(path, { noOpen }), via: "tab" };
   } catch (e) {
     e.detail = { ...(e.detail || {}), directError: String(directErr?.message ?? directErr) };
     throw e;
@@ -84,8 +84,8 @@ async function fetchDirect(path) {
   return interpret(res.status, res.headers.get("content-type") || "", await res.text(), path);
 }
 
-async function fetchViaTab(path) {
-  const { tabId, opened } = await findOrOpenTab();
+async function fetchViaTab(path, { noOpen = false } = {}) {
+  const { tabId, opened } = await findOrOpenTab({ noOpen });
   try {
     const [frame] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -142,12 +142,16 @@ function interpret(status, contentType, body, path) {
   }
 }
 
-async function findOrOpenTab() {
+async function findOrOpenTab({ noOpen = false } = {}) {
   // Any tab already on the origin will do — the fetch is relative, so it does
   // not matter which page it is sitting on.
   const existing = await chrome.tabs.query({ url: `${ORIGIN}/*` });
   const ready = existing.find((t) => t.status === "complete" && t.id != null);
   if (ready) return { tabId: ready.id, opened: false };
+  // The once-a-minute live poll must never open and close a tab every tick;
+  // when the direct fetch is not enough it rides only on a board tab the user
+  // already has open, and otherwise waits for the 10-minute pull.
+  if (noOpen) throw new GifApiError("NO_TAB", "Live updates need the board open in a tab in this browser.");
 
   const tab = await chrome.tabs.create({ url: ORIGIN + ANCHOR_PATH, active: false });
   try { await waitForLoad(tab.id); }
@@ -194,8 +198,8 @@ export async function fetchHierarchy() {
 }
 
 /** One market's whole rollup — every store card plus the market summary. */
-export async function fetchDashboard(market) {
+export async function fetchDashboard(market, { noOpen = false } = {}) {
   const m = encodeURIComponent(String(market));
-  const { json, via } = await fetchAppJson(`/api/dashboard?market=${m}`);
+  const { json, via } = await fetchAppJson(`/api/dashboard?market=${m}`, { noOpen });
   return { raw: json, via };
 }

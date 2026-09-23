@@ -68,6 +68,17 @@
   user-select: none;
 }
 .dmr-auto input { accent-color: var(--apai-blue); cursor: pointer; }
+/* Pulses while a live poll is running, so "Live" visibly means something. */
+.dmr-auto[data-live-state="on"] [data-live-label]::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--apai-success, #16a34a);
+  vertical-align: 1px;
+}
+.dmr-auto[data-live-state="waiting"] [data-live-label] { color: var(--apai-warn); }
 
 .dmr-freshness {
   font-size: var(--fs-xs);
@@ -388,6 +399,28 @@
    an elevated dark surface. */
 .module-digitalrollup { --dmr-amber: #E07B00; }
 [data-theme="dark"] .module-digitalrollup { --dmr-amber: #FBBF24; }
+
+/* Items picked in the rolling last hour — the one figure here the board does
+   not publish itself (derived in lib/pick_history.js), so it gets its own line
+   rather than posing as one of the board's headline cells. */
+.dmr-hour {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--apai-bg-soft);
+}
+.dmr-hour-value {
+  font-size: var(--fs-lg, 1.25rem);
+  font-weight: var(--fw-bold, 800);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.dmr-hour-label { font-size: var(--fs-xs); color: var(--apai-muted); }
+.dmr-hour-pace  { margin-left: auto; font-size: var(--fs-xs); color: var(--apai-muted); white-space: nowrap; }
+.dmr-hour.is-partial .dmr-hour-value { color: var(--apai-muted); }
 
 /* An overdue or at-risk store gets a line of its own — a count that is
    normally zero and matters entirely when it is not. */

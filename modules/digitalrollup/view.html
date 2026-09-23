@@ -11,6 +11,12 @@
         <input type="checkbox" data-auto-toggle>
         <span data-auto-label>Auto</span>
       </label>
+      <!-- Live: poll about once a minute, but only while this board is on
+           screen. Feeds the "picked last hour" line on each card. -->
+      <label class="dmr-auto" data-live-wrap title="Update this board about once a minute while it is on screen">
+        <input type="checkbox" data-live-toggle>
+        <span data-live-label>Live</span>
+      </label>
       <span class="dmr-freshness" data-freshness>no data yet</span>
       <button class="btn btn-primary" data-action="refresh">
         <span class="btn-label">Refresh</span>

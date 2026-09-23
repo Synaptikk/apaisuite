@@ -110,6 +110,19 @@ function present(v) {
   return { text: String(v), missing: false };
 }
 
+const fmtInt = (n) => Number(n).toLocaleString();
+
+// Below this much history the hourly pace is left off: seen live 2026-09-23,
+// a boot pull and the first live tick two seconds apart scaled one pick to
+// "≈ 1,705/hr".
+const PACE_MIN_SPAN_MS = 10 * 60 * 1000;
+
+/** "23 min" / "1h 5m", for the span a partial rolling hour covers. */
+function spanText(ms) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 function relAge(ms) {
   if (!Number.isFinite(ms)) return "";
   const m = Math.round(ms / 60000);
@@ -149,8 +162,16 @@ export async function mount(host, container) {
   const marketSelect = container.querySelector("[data-market-select]");
   const sortSelect   = container.querySelector("[data-sort-select]");
   const autoToggle   = container.querySelector("[data-auto-toggle]");
+  const liveToggle   = container.querySelector("[data-live-toggle]");
+  const liveWrap     = container.querySelector("[data-live-wrap]");
 
-  let state = { snapshot: null, hierarchy: null, debug: null, auto: { enabled: true }, periodMin: null };
+  let state = { snapshot: null, hierarchy: null, debug: null, auto: { enabled: true }, periodMin: null, livePeriodSec: 60, rolling: {} };
+  // Live polling is a view preference, not a background job: it only runs
+  // while this board is mounted AND visible. On by default.
+  let liveOn = true;
+  // null = polling fine; otherwise why the last live tick could not run.
+  let liveNote = null;
+  let liveTimer = null;
   let selectedMarket = null;
   let marketIsUserSet = false;
   let sortMode = DEFAULT_SORT;
@@ -171,6 +192,19 @@ export async function mount(host, container) {
 
   // ── Wiring ──────────────────────────────────────────────────────
   btnRefresh.addEventListener("click", () => runPull());
+
+  liveToggle.addEventListener("change", async () => {
+    liveOn = liveToggle.checked;
+    liveNote = null;
+    await savePrefs();
+    scheduleLive();
+    paintLive();
+  });
+
+  // A hidden tab stops ticking (checked per tick below); coming back should
+  // not wait out the rest of a minute to catch up.
+  const onVisibility = () => { if (document.visibilityState === "visible") liveTick(); };
+  document.addEventListener("visibilitychange", onVisibility);
 
   autoToggle.addEventListener("change", async () => {
     await host.messaging.send("set_auto", { auto: { enabled: autoToggle.checked } });
@@ -233,6 +267,7 @@ export async function mount(host, container) {
   });
 
   await paint();
+  scheduleLive();
   // Nothing stored yet means a first-run user staring at an empty board with
   // no idea the Refresh button is the whole interaction. Pull for them.
   if (!state.snapshot) runPull({ trigger: "auto" });
@@ -247,6 +282,8 @@ export async function mount(host, container) {
       debug:     res?.debug     ?? null,
       auto:      res?.auto      ?? { enabled: true },
       periodMin: res?.periodMin ?? null,
+      livePeriodSec: res?.livePeriodSec ?? 60,
+      rolling:   res?.rolling   ?? {},
     };
     resolveMarket();
     render();
@@ -288,6 +325,45 @@ export async function mount(host, container) {
     }
   }
 
+  // ── Live ────────────────────────────────────────────────────────
+
+  function scheduleLive() {
+    clearInterval(liveTimer);
+    liveTimer = null;
+    if (!liveOn) return;
+    liveTimer = setInterval(liveTick, (state.livePeriodSec || 60) * 1000);
+  }
+
+  /**
+   * One poll. Skipped while the tab is hidden, while a manual Refresh is
+   * running, and before there is a market — so an idle or backgrounded board
+   * costs nothing. Repaints come through the board_updated broadcast.
+   */
+  async function liveTick() {
+    if (!liveOn || busy || document.visibilityState !== "visible") return;
+    const market = selectedMarket || state.snapshot?.market;
+    if (!market) return;
+    try {
+      const res = await host.messaging.sendRaw("live_tick", { market }, { timeoutMs: 30_000 });
+      liveNote = res?.ok ? null : res?.kind === "NO_TAB"
+        ? "Live needs the Digital Market Rollup board open in another tab of this browser. Until then this updates every 10 minutes."
+        : (res?.error || "The last live update failed.");
+    } catch (e) {
+      liveNote = `The last live update failed: ${String(e?.message ?? e)}`;
+    }
+    paintLive();
+  }
+
+  function paintLive() {
+    liveToggle.checked = liveOn;
+    const label = container.querySelector("[data-live-label]");
+    if (label) label.textContent = liveOn ? `Live · ${Math.round((state.livePeriodSec || 60) / 60)}m` : "Live";
+    liveWrap.dataset.liveState = !liveOn ? "off" : liveNote ? "waiting" : "on";
+    liveWrap.title = !liveOn
+      ? "Live updates are off. This board updates on the Auto cadence or when you click Refresh."
+      : liveNote || `Updating about every ${state.livePeriodSec || 60} seconds while this board is on screen.`;
+  }
+
   /** Turn a failure class into something the reader can act on. */
   function adviceFor(res) {
     const msg = res?.error || "The pull failed.";
@@ -309,6 +385,7 @@ export async function mount(host, container) {
 
   function render() {
     paintAuto();
+    paintLive();
     paintMarketOptions();
     paintRunNote();
     paintFreshness();
@@ -455,6 +532,28 @@ export async function mount(host, container) {
     }).join("");
   }
 
+  /** The rolling last-hour line — home store card only (see service.js). */
+  function hourHtml(store) {
+    const r = state.rolling?.[store];
+    if (!r) {
+      return `
+        <div class="dmr-hour is-partial" title="Builds up from each refresh: needs two board updates to show a figure.">
+          <span class="dmr-hour-value">—</span>
+          <span class="dmr-hour-label">picked last hour</span>
+        </div>`;
+    }
+    const asOf = new Date(r.asOf).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const title = r.full
+      ? `Items picked in the 60 minutes up to the board's ${asOf} update (${r.samples} readings today).`
+      : `Only ${spanText(r.spanMs)} of history so far, so this counts the last ${spanText(r.spanMs)}; the pace on the right scales it to an hour.`;
+    return `
+      <div class="dmr-hour${r.full ? "" : " is-partial"}" title="${esc(title)}">
+        <span class="dmr-hour-value">${esc(fmtInt(r.picked))}</span>
+        <span class="dmr-hour-label">${r.full ? "picked last hour" : `picked last ${esc(spanText(r.spanMs))}`}</span>
+        ${r.full || r.spanMs < PACE_MIN_SPAN_MS ? "" : `<span class="dmr-hour-pace">≈ ${esc(fmtInt(r.perHour))}/hr pace</span>`}
+      </div>`;
+  }
+
   function visibleCards() {
     const snap = state.snapshot;
     if (!snap || String(snap.market) !== String(selectedMarket ?? snap.market)) return [];
@@ -561,6 +660,7 @@ export async function mount(host, container) {
           </div>
           <span class="dmr-chip" data-status="${esc(overall.status)}">${esc(overall.label || "—")}</span>
         </header>
+        ${home ? hourHtml(store) : ""}
         <div class="dmr-headline" style="--dmr-headline-n:${HEADLINE.length}">${headline}</div>
         ${flagsHtml}
         <button class="dmr-card-toggle" data-toggle-store="${esc(store)}" aria-expanded="${open}">${
@@ -599,6 +699,7 @@ export async function mount(host, container) {
       // sortCards silently fell through to "attention".
       if (typeof p.sortMode === "string" && isKnownSort(p.sortMode)) sortMode = p.sortMode;
       if (p.expanded && typeof p.expanded === "object") expanded = p.expanded;
+      if (typeof p.liveOn === "boolean") liveOn = p.liveOn;
       if (typeof p.selectedMarket === "string") { selectedMarket = p.selectedMarket; marketIsUserSet = !!p.marketIsUserSet; }
     } catch { /* prefs are a convenience; never block the render on them */ }
     sortSelect.value = sortMode;
@@ -607,7 +708,7 @@ export async function mount(host, container) {
   async function savePrefs() {
     try {
       await host.storage.local.set({
-        [UI_PREFS_KEY]: { sortMode, expanded, selectedMarket, marketIsUserSet },
+        [UI_PREFS_KEY]: { sortMode, expanded, selectedMarket, marketIsUserSet, liveOn },
       });
     } catch { /* as above */ }
   }
@@ -616,6 +717,8 @@ export async function mount(host, container) {
     // The shell unmounts the container but does not GC listeners — without
     // this, a subscription stacks on every route change.
     unsubUpdated();
+    clearInterval(liveTimer);
+    document.removeEventListener("visibilitychange", onVisibility);
     link.remove();
   };
 }

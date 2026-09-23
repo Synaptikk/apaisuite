@@ -12,9 +12,10 @@ import { ensureAlarm } from "../../shared/alarms.js";
 import { keepAwake } from "../../shared/sw_keepalive.js";
 import { createLogging } from "../../shared/logging.js";
 import { watchSourceSchema } from "../../shared/schema_watch_report.js";
-import { getUserHomeMarket } from "../../shared/userStore.js";
+import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import { fetchDashboard, fetchHierarchy, GifApiError } from "./lib/gif_api.js";
 import { flattenKeys, normalizeDashboard } from "./lib/normalize.js";
+import { recordSnapshot, rollingWindow } from "./lib/pick_history.js";
 
 const K = {
   snapshot:  "digitalrollup.snapshot",
@@ -22,7 +23,15 @@ const K = {
   debug:     "digitalrollup.debug",
   auto:      "digitalrollup.auto.v1",
   lastAuto:  "digitalrollup.auto.lastRun",
+  // Per-store (source time, running items-picked) samples for the rolling
+  // hour. See lib/pick_history.js.
+  picks:     "digitalrollup.pickHistory.v1",
 };
+
+// How often an OPEN board polls, set by the view. Exported so the view and the
+// diagnostics can name the cadence. It only runs while the board is visible,
+// and the 10-minute alarm below keeps collecting samples when it is not.
+export const LIVE_PERIOD_SEC = 60;
 
 export const ALARM_NAMES = { autorefresh: "digitalrollup.autorefresh" };
 
@@ -74,16 +83,19 @@ async function readAll() {
  * it is scoped server-side to the caller — so a change in the user's access
  * should show up on the next Refresh, not on the next reinstall.
  */
-async function pull(market) {
+async function pull(market, { live = false } = {}) {
   const started = Date.now();
   const release = keepAwake("digitalrollup.pull");
   try {
-    log.emit("pull-start", { market: String(market ?? "") });
+    // Live ticks run every minute; logging each one would bury everything
+    // else in the feed. Their failures are still logged below.
+    if (!live) log.emit("pull-start", { market: String(market ?? "") });
 
     // The picker is refreshed even when the caller already named a market, so
-    // the two can never disagree about which markets exist.
+    // the two can never disagree about which markets exist. A live tick skips
+    // it: it always names its market, and the next full pull catches up.
     let hierarchy = null;
-    try {
+    if (!live) try {
       hierarchy = await fetchHierarchy();
       await chrome.storage.local.set({ [K.hierarchy]: { ...hierarchy, capturedAt: Date.now() } });
     } catch (e) {
@@ -97,7 +109,7 @@ async function pull(market) {
       throw new GifApiError("HTTP", "No market to pull — the hierarchy returned none and none was given.");
     }
 
-    const { raw, via } = await fetchDashboard(target);
+    const { raw, via } = await fetchDashboard(target, { noOpen: live });
 
     // Report the shape BEFORE deciding whether we can use it, so a rename is
     // recorded even on the run where it breaks us. Fire-and-forget by design.
@@ -114,11 +126,16 @@ async function pull(market) {
     }
 
     const snapshot = { ...norm.snapshot, via };
+    const prevPicks = (await chrome.storage.local.get(K.picks))[K.picks] ?? null;
     await chrome.storage.local.set({
       [K.snapshot]: snapshot,
+      // Home store only: the rolling hour is a "how is MY store doing" figure,
+      // and tracking one store keeps the history to a few KB. No home store
+      // (e.g. a market-role user) records nothing.
+      [K.picks]: recordSnapshot(prevPicks, snapshot, { stores: [await getUserHomeStore().catch(() => null)] }),
       [K.debug]: { ok: true, at: Date.now(), via, market: target, ms: Date.now() - started },
     });
-    log.emit("pull-ok", {
+    if (!live) log.emit("pull-ok", {
       market: target, via, stores: snapshot.cards.length, ms: Date.now() - started,
     });
     // An open view repaints from this. It matters most for the alarm-driven
@@ -126,6 +143,11 @@ async function pull(market) {
     broadcast("board_updated", { ok: true, market: target });
     return { ok: true, snapshot };
   } catch (e) {
+    // No board tab to ride on is the normal state for a live tick, not a
+    // failure: leave the last good pull's debug record and the board alone.
+    if (live && e?.kind === "NO_TAB") {
+      return { ok: false, kind: e.kind, error: String(e.message) };
+    }
     const debug = {
       ok: false,
       at: Date.now(),
@@ -153,9 +175,9 @@ async function pull(market) {
  * once — the second joins the first rather than opening a second anchor tab
  * and closing it out from under the first.
  */
-function startPull(market) {
+function startPull(market, opts) {
   if (inFlight) return inFlight;
-  inFlight = pull(market).finally(() => { inFlight = null; });
+  inFlight = pull(market, opts).finally(() => { inFlight = null; });
   return inFlight;
 }
 
@@ -255,6 +277,18 @@ export async function bootstrapIfNeeded() {
   }
 }
 
+/** Rolling-hour figure per store for the market the snapshot holds. */
+async function rollingForSnapshot(snapshot) {
+  const history = (await chrome.storage.local.get(K.picks))[K.picks];
+  if (!snapshot || !history || history.market !== String(snapshot.market)) return {};
+  const out = {};
+  for (const [store, samples] of Object.entries(history.series || {})) {
+    const r = rollingWindow(samples);
+    if (r) out[store] = { ...r, samples: samples.length };
+  }
+  return out;
+}
+
 // Every handler returns an explicit { ok: true, ... }. The SW dispatcher
 // auto-wraps a bare return as { ok: true, data: <value> }, and callers then
 // have to remember which handlers are wrapped and which are not — so we
@@ -266,7 +300,19 @@ export const handlers = {
       readAuto(),
       chrome.storage.local.get(K.lastAuto),
     ]);
-    return { ok: true, ...all, auto, periodMin: AUTO_PERIOD_MIN, lastAuto: lastAuto[K.lastAuto] || 0 };
+    return {
+      ok: true, ...all, auto, periodMin: AUTO_PERIOD_MIN, livePeriodSec: LIVE_PERIOD_SEC,
+      lastAuto: lastAuto[K.lastAuto] || 0,
+      rolling: await rollingForSnapshot(all.snapshot),
+    };
+  },
+
+  // One poll from an open, visible board. Light by design: no hierarchy call,
+  // never opens a tab (see gif_api.js::findOrOpenTab), and joins a pull that
+  // is already running instead of queuing a second.
+  async "live_tick"(msg) {
+    if (!msg?.market) return { ok: false, error: "No market to poll." };
+    return await startPull(msg.market, { live: true });
   },
 
   async "pull"(msg) {
