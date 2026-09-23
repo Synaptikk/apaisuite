@@ -423,6 +423,38 @@
 .dmr-hour-pace  { margin-left: auto; font-size: var(--fs-xs); color: var(--apai-muted); white-space: nowrap; }
 .dmr-hour.is-partial .dmr-hour-value { color: var(--apai-muted); }
 
+/* Home store's pick rate through the day (lib/pick_chart.js). */
+.dmr-chart { position: relative; margin-top: var(--sp-2); }
+.dmr-chart-title { font-size: var(--fs-xs); font-weight: 600; color: var(--apai-text, inherit); margin-bottom: 2px; }
+.dmr-chart-title span { font-weight: 400; color: var(--apai-muted); }
+.dmr-chart svg { display: block; width: 100%; height: auto; overflow: visible; cursor: crosshair; }
+.dmr-chart-tip {
+  position: absolute;
+  top: 16px;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+.dmr-chart-empty { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); color: var(--apai-muted); }
+
+.dmr-share { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.dmr-share-chan { font-size: var(--fs-xs); color: var(--apai-muted); }
+.dmr-linkbtn {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: var(--apai-blue);
+  text-decoration: underline; cursor: pointer;
+}
+.dmr-share-note { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--apai-muted); }
+.dmr-share-note[data-state="ok"]    { color: var(--apai-success, #047857); }
+.dmr-share-note[data-state="error"] { color: var(--apai-error); }
+
 /* An overdue or at-risk store gets a line of its own — a count that is
    normally zero and matters entirely when it is not. */
 .dmr-flags {

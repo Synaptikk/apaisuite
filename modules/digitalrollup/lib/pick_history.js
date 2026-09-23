@@ -134,3 +134,42 @@ export function dayAverage(samples) {
   if (spanMs <= 0) return null;
   return { perHour: Math.round((p1 - p0) * HOUR_MS / spanMs), picked: p1 - p0, spanMs, since: t0 };
 }
+
+/** Running total at time t, interpolated between the samples around it. */
+function totalAt(samples, t) {
+  if (t <= samples[0][0]) return samples[0][1];
+  for (let i = 1; i < samples.length; i++) {
+    const [tb, pb] = samples[i];
+    if (t <= tb) {
+      const [ta, pa] = samples[i - 1];
+      return tb === ta ? pb : pa + (pb - pa) * (t - ta) / (tb - ta);
+    }
+  }
+  return samples[samples.length - 1][1];
+}
+
+/**
+ * The day's pick rate as a line: items/hour over a trailing `windowMs`,
+ * evaluated every `stepMs` and at the latest reading.
+ *
+ * A trailing window rather than the raw gap between readings: readings land
+ * every 1-10 minutes depending on whether the board is open, and a
+ * reading-to-reading rate would spike on every short gap. 15 minutes smooths
+ * that without hiding a slow half hour.
+ *
+ * @returns {Array<[tMs:number, perHour:number]>} empty until one window of history
+ */
+export function rateSeries(samples, { windowMs = 15 * 60 * 1000, stepMs = 5 * 60 * 1000 } = {}) {
+  if (!Array.isArray(samples) || samples.length < 2) return [];
+  const t0 = samples[0][0];
+  const tEnd = samples[samples.length - 1][0];
+  const first = t0 + windowMs;
+  if (first > tEnd) return [];
+  const rate = (t) => Math.round((totalAt(samples, t) - totalAt(samples, t - windowMs)) * HOUR_MS / windowMs);
+  const out = [];
+  // Steps land on wall-clock multiples (2:05, 2:10 …) so two renders a minute
+  // apart draw the same points instead of a line that shimmers sideways.
+  for (let t = Math.ceil(first / stepMs) * stepMs; t < tEnd; t += stepMs) out.push([t, rate(t)]);
+  out.push([tEnd, rate(tEnd)]);
+  return out;
+}

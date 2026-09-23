@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recordSnapshot, rollingWindow, parseCount, dayAverage, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
+import { recordSnapshot, rollingWindow, parseCount, dayAverage, rateSeries, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-09-23T12:00:00Z");
@@ -119,4 +119,39 @@ test("15-second polls keep minute-spaced history with a current tail", () => {
   assert.equal(rollingWindow(series).perHour, 3600);
 });
 
+test("rate series: trailing-window rate on wall-clock steps, ending at the latest reading", () => {
+  let h = null;
+  // 600/hr for 30 min, then 1200/hr for 30 min, read every 5 min.
+  for (let m = 0; m <= 60; m += 5) h = recordSnapshot(h, snap(m, { 1458: m <= 30 ? m * 10 : 300 + (m - 30) * 20 }));
+  const pts = rateSeries(h.series["1458"]);
+  assert.equal(pts[0][0], T0 + 15 * MIN);
+  assert.equal(pts[0][1], 600);
+  assert.deepEqual(pts.at(-1), [T0 + 60 * MIN, 1200]);
+  assert.ok(pts.every(([t], i) => i === 0 || t > pts[i - 1][0]));
+  assert.deepEqual(rateSeries(h.series["1458"].slice(0, 2)), []);
+});
+
 test("HOUR_MS is an hour", () => assert.equal(HOUR_MS, 60 * MIN));
+
+// ── pick_chart.js ─────────────────────────────────────────────────────────
+import { chartSvg, niceStep, EXPORT_PALETTE } from "../../modules/digitalrollup/lib/pick_chart.js";
+
+test("chart: empty under two points, one path, end label, avg line", () => {
+  assert.equal(chartSvg([[T0, 100]]), "");
+  const pts = [[T0, 1200], [T0 + 30 * MIN, 1500], [T0 + 60 * MIN, 1780]];
+  const svg = chartSvg(pts, { avg: 1650 });
+  assert.equal((svg.match(/<path /g) || []).length, 1);
+  assert.match(svg, />1,780\/hr</);
+  assert.match(svg, /avg 1,650/);
+  assert.match(svg, /data-t0=/);
+  const png = chartSvg(pts, { avg: 1650, width: 800, height: 420, palette: EXPORT_PALETTE, title: "Store 1458", subtitle: "x" });
+  assert.match(png, /fill:#FFFFFF/);
+  assert.doesNotMatch(png, /var\(|data-t0/);
+});
+
+test("niceStep picks 1/2/2.5/5 × 10^n", () => {
+  assert.equal(niceStep(2000), 1000);
+  assert.equal(niceStep(1800), 1000);
+  assert.equal(niceStep(600), 200);
+  assert.equal(niceStep(7), 2.5);
+});

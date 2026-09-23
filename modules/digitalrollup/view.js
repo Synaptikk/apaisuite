@@ -15,6 +15,7 @@ import {
   at, cardStatus, cardSeverity, sortCards, isKnownSort,
   METRIC_SORTS, DEFAULT_SORT,
 } from "./lib/sorting.js";
+import { chartSvg, SCREEN_PALETTE, EXPORT_PALETTE } from "./lib/pick_chart.js";
 
 const UI_PREFS_KEY = "ui.v1";
 
@@ -174,6 +175,11 @@ export async function mount(host, container) {
   // null = polling fine; otherwise why the last live tick could not run.
   let liveNote = null;
   let liveTimer = null;
+  // Workvivo share: the chat is remembered; the note under the button says how
+  // the last share went and survives the 15 s re-render.
+  let shareChannel = "";
+  let shareNote = null;
+  let sharing = false;
   let selectedMarket = null;
   let marketIsUserSet = false;
   let sortMode = DEFAULT_SORT;
@@ -201,6 +207,18 @@ export async function mount(host, container) {
     await savePrefs();
     scheduleLive();
     paintLive();
+  });
+
+  // Hover readout on the day graph. Delegated because the card is rebuilt on
+  // every live tick; the SVG carries its own plot bounds (pick_chart.js).
+  const grid = container.querySelector("[data-store-cards]");
+  grid.addEventListener("mousemove", (e) => {
+    const svg = e.target?.closest?.(".dmr-chart svg");
+    if (svg) showChartTip(svg, e);
+  });
+  grid.addEventListener("mouseleave", hideChartTip, true);
+  grid.addEventListener("mouseout", (e) => {
+    if (e.target?.closest?.(".dmr-chart svg") && !e.relatedTarget?.closest?.(".dmr-chart svg")) hideChartTip();
   });
 
   // A hidden tab stops ticking (checked per tick below); coming back should
@@ -244,6 +262,8 @@ export async function mount(host, container) {
 
   // Delegated: the grid is rebuilt on every render.
   container.querySelector("[data-store-cards]").addEventListener("click", async (e) => {
+    if (e.target?.closest?.("[data-share]")) return shareToWorkvivo();
+    if (e.target?.closest?.("[data-share-channel]")) return askChannel();
     const btn = e.target?.closest?.("[data-toggle-store]");
     if (!btn) return;
     const store = btn.getAttribute("data-toggle-store");
@@ -569,6 +589,157 @@ export async function mount(host, container) {
       </div>`;
   }
 
+  /** The day graph + Share row under the home card's per-hour line. */
+  function homeExtrasHtml(card) {
+    const r = state.rolling?.[String(card.store_nbr)];
+    const pts = r?.series || [];
+    const svg = chartSvg(pts, { avg: dayAvgShown(r), width: 320, height: 120 });
+    const chart = svg
+      ? `<div class="dmr-chart"><div class="dmr-chart-title">Pick rate today <span>items/hr, 15-min average</span></div>${svg}<div class="dmr-chart-tip" hidden></div></div>`
+      : `<p class="dmr-chart-empty">The pick-rate graph starts after 15 minutes of readings.</p>`;
+    const canShare = !!svg && !sharing;
+    const chan = shareChannel
+      ? `to <button class="dmr-linkbtn" data-share-channel title="Change the Workvivo chat">${esc(shareChannel)}</button>`
+      : `<button class="dmr-linkbtn" data-share-channel>set chat</button>`;
+    const note = shareNote
+      ? `<p class="dmr-share-note" data-state="${esc(shareNote.state)}">${esc(shareNote.text)}</p>`
+      : "";
+    return `
+      ${chart}
+      <div class="dmr-share">
+        <button class="btn btn-sm" data-share ${canShare ? "" : "disabled"}
+          title="${esc(svg ? "Post this summary and graph to the Workvivo chat" : "Available once the graph has 15 minutes of readings")}">${sharing ? "Sharing…" : "Share to Workvivo"}</button>
+        <span class="dmr-share-chan">${chan}</span>
+      </div>
+      ${note}`;
+  }
+
+  // Today's average only once it covers more than the rolling hour: before
+  // that it is the same figure as the pace, and a second line would just
+  // shadow the first.
+  const dayAvgShown = (r) => (r?.day && r.day.spanMs > HOUR_MS_VIEW ? r.day.perHour : null);
+
+  /** 'Store 1458 picks @ 2:15 PM: 1,780/hr last hour · today avg 1,650/hr · 10,068 picked' */
+  function summaryText(card) {
+    const store = String(card.store_nbr);
+    const r = state.rolling?.[store];
+    if (!r) return "";
+    const rate = r.full
+      ? `${fmtInt(r.perHour)}/hr last hour`
+      : `${fmtInt(r.perHour)}/hr pace (last ${spanText(r.spanMs)})`;
+    const bits = [rate];
+    if (dayAvgShown(r) != null) bits.push(`today avg ${fmtInt(r.day.perHour)}/hr`);
+    const total = card.picking?.total_picks;
+    if (total != null && total !== "—") bits.push(`${total} picked`);
+    return `Store ${store} picks @ ${timeText(r.asOf)}: ${bits.join(" · ")}`;
+  }
+
+  function askChannel() {
+    const v = window.prompt(
+      "Workvivo chat to share to — the exact name as it appears in your Workvivo chat list:",
+      shareChannel
+    );
+    if (v == null) return false;
+    shareChannel = v.trim();
+    shareNote = null;
+    savePrefs();
+    render();
+    return !!shareChannel;
+  }
+
+  async function shareToWorkvivo() {
+    if (sharing) return;
+    const card = visibleCards().find((c) => isHomeStore(c.store_nbr));
+    const r = card && state.rolling?.[String(card.store_nbr)];
+    if (!card || !r?.series?.length) return;
+    if (!shareChannel && !askChannel()) return;
+    const text = summaryText(card);
+    // Posting speaks for the user in a shared chat: show exactly what goes
+    // where, every time.
+    if (!window.confirm(`Post to the Workvivo chat "${shareChannel}"?\n\n${text}\n\n(plus the pick-rate graph)`)) return;
+    host.usage.record("share_workvivo", {});
+    sharing = true;
+    shareNote = { state: "pending", text: "Posting… this opens Workvivo in a background tab for a few seconds." };
+    render();
+    try {
+      const svg = chartSvg(r.series, {
+        avg: dayAvgShown(r), width: 800, height: 420, palette: EXPORT_PALETTE,
+        title: `Store ${card.store_nbr} · pick rate today (items/hr)`, subtitle: text,
+      });
+      const pngBase64 = await svgToPngBase64(svg, 800, 420);
+      const res = await host.messaging.sendRaw("share_workvivo", { channelName: shareChannel, text, pngBase64 }, { timeoutMs: 120_000 });
+      shareNote = res?.ok
+        ? { state: "ok", text: `Posted to "${shareChannel}" at ${timeText(Date.now())}.` }
+        : { state: "error", text: shareAdvice(res) };
+    } catch (e) {
+      shareNote = { state: "error", text: `Share failed: ${String(e?.message ?? e)}` };
+    } finally {
+      sharing = false;
+      render();
+    }
+  }
+
+  function shareAdvice(res) {
+    switch (res?.kind) {
+      case "NOT_FOUND":
+        return `No Workvivo chat named "${shareChannel}" in your chat list. Check the exact name (click it to change).`;
+      case "NO_SESSION": case "NO_TAB": case "NO_CSRF":
+        return "Could not reach Workvivo. Open workvivo.walmart.com, make sure you are signed in, then try again.";
+      default:
+        return `Share failed: ${res?.error || "Workvivo did not accept the post."}`;
+    }
+  }
+
+  /** Rasterise an SVG string to PNG base64 (no data: prefix), at 2× for sharpness. */
+  function svgToPngBase64(svg, w, h) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = w * 2; c.height = h * 2;
+        const ctx = c.getContext("2d");
+        ctx.scale(2, 2);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/png").split(",")[1]);
+      };
+      img.onerror = () => reject(new Error("could not draw the graph"));
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    });
+  }
+
+  function showChartTip(svg, e) {
+    const tip = svg.parentElement.querySelector(".dmr-chart-tip");
+    const r = state.rolling?.[visibleCards().find((c) => isHomeStore(c.store_nbr))?.store_nbr + ""];
+    const pts = r?.series || [];
+    if (!tip || pts.length < 2) return;
+    const ds = svg.dataset;
+    const box = svg.getBoundingClientRect();
+    const vbW = svg.viewBox.baseVal.width;
+    const vx = ((e.clientX - box.left) / box.width) * vbW;
+    const t = Number(ds.t0) + ((vx - Number(ds.x0)) / (Number(ds.x1) - Number(ds.x0))) * (Number(ds.tn) - Number(ds.t0));
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    const px = Number(ds.x0) + ((best[0] - Number(ds.t0)) / ((Number(ds.tn) - Number(ds.t0)) || 1)) * (Number(ds.x1) - Number(ds.x0));
+    let cross = svg.querySelector("[data-cross]");
+    if (!cross) {
+      cross = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      cross.setAttribute("data-cross", "");
+      cross.setAttribute("style", "stroke:var(--apai-muted);stroke-width:1;stroke-dasharray:2 2");
+      svg.appendChild(cross);
+    }
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px);
+    cross.setAttribute("y1", ds.y1); cross.setAttribute("y2", ds.y0);
+    tip.hidden = false;
+    tip.textContent = `${timeText(best[0])} · ${fmtInt(best[1])}/hr`;
+    const left = (px / vbW) * box.width;
+    tip.style.left = `${Math.min(Math.max(left, 40), box.width - 40)}px`;
+  }
+
+  function hideChartTip() {
+    container.querySelectorAll(".dmr-chart-tip").forEach((t) => { t.hidden = true; });
+    container.querySelectorAll(".dmr-chart [data-cross]").forEach((l) => l.remove());
+  }
+
   function visibleCards() {
     const snap = state.snapshot;
     if (!snap || String(snap.market) !== String(selectedMarket ?? snap.market)) return [];
@@ -675,7 +846,7 @@ export async function mount(host, container) {
           </div>
           <span class="dmr-chip" data-status="${esc(overall.status)}">${esc(overall.label || "—")}</span>
         </header>
-        ${home ? hourHtml(store) : ""}
+        ${home ? hourHtml(store) + homeExtrasHtml(card) : ""}
         <div class="dmr-headline" style="--dmr-headline-n:${HEADLINE.length}">${headline}</div>
         ${flagsHtml}
         <button class="dmr-card-toggle" data-toggle-store="${esc(store)}" aria-expanded="${open}">${
@@ -715,6 +886,7 @@ export async function mount(host, container) {
       if (typeof p.sortMode === "string" && isKnownSort(p.sortMode)) sortMode = p.sortMode;
       if (p.expanded && typeof p.expanded === "object") expanded = p.expanded;
       if (typeof p.liveOn === "boolean") liveOn = p.liveOn;
+      if (typeof p.shareChannel === "string") shareChannel = p.shareChannel;
       if (typeof p.selectedMarket === "string") { selectedMarket = p.selectedMarket; marketIsUserSet = !!p.marketIsUserSet; }
     } catch { /* prefs are a convenience; never block the render on them */ }
     sortSelect.value = sortMode;
@@ -723,7 +895,7 @@ export async function mount(host, container) {
   async function savePrefs() {
     try {
       await host.storage.local.set({
-        [UI_PREFS_KEY]: { sortMode, expanded, selectedMarket, marketIsUserSet, liveOn },
+        [UI_PREFS_KEY]: { sortMode, expanded, selectedMarket, marketIsUserSet, liveOn, shareChannel },
       });
     } catch { /* as above */ }
   }

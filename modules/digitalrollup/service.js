@@ -15,7 +15,11 @@ import { watchSourceSchema } from "../../shared/schema_watch_report.js";
 import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import { fetchDashboard, fetchHierarchy, GifApiError } from "./lib/gif_api.js";
 import { flattenKeys, normalizeDashboard } from "./lib/normalize.js";
-import { recordSnapshot, rollingWindow, dayAverage } from "./lib/pick_history.js";
+import { recordSnapshot, rollingWindow, dayAverage, rateSeries } from "./lib/pick_history.js";
+// Cross-module on purpose: MetricShot owns the only working "post an image to a
+// Workvivo chat" path (session-key sniffing + Workvivo's own file endpoint), and
+// a second copy would drift. It needs nothing from MetricShot's state.
+import { postScreenshotToWorkvivo } from "../metricshot/lib/sendbird.js";
 
 const K = {
   snapshot:  "digitalrollup.snapshot",
@@ -38,7 +42,16 @@ const K = {
 // tick, only while the board is visible.
 export const LIVE_PERIOD_SEC = 15;
 
-export const ALARM_NAMES = { autorefresh: "digitalrollup.autorefresh" };
+export const ALARM_NAMES = {
+  autorefresh: "digitalrollup.autorefresh",
+  picksampler: "digitalrollup.picksampler",
+};
+
+// Background reading of the home store's picks for the day graph, between the
+// 10-minute full refreshes. Light (no hierarchy, never opens a tab), so it is
+// one ~13 KB request. 5 minutes is enough: every graph point is a rate over a
+// trailing 15 minutes (lib/pick_history.js::rateSeries).
+const SAMPLER_PERIOD_MIN = 5;
 
 // The board republishes off GRT in near real time, so unlike VizPick there is
 // no cheap "has it changed?" probe to run first — and none is needed. One pull
@@ -236,6 +249,11 @@ async function autoRefresh(reason) {
 }
 
 export async function onAlarm(alarm) {
+  if (alarm?.name === ALARM_NAMES.picksampler) {
+    try { await samplePicks(); }
+    catch (e) { console.warn("[digitalrollup] pick sample failed:", e?.message ?? e); }
+    return;
+  }
   if (alarm?.name !== ALARM_NAMES.autorefresh) return;
   // Proves the alarm actually fires. Its absence from the feed is itself the
   // diagnosis — that was the 2026-08-20 bug across six modules, and nothing
@@ -260,6 +278,22 @@ export async function installAlarms() {
     delayInMinutes: 1,
   });
   log.emit("alarm-ensured", { created: r.created, reason: r.reason, periodMin: AUTO_PERIOD_MIN });
+  const s = await ensureAlarm(ALARM_NAMES.picksampler, { periodInMinutes: SAMPLER_PERIOD_MIN, delayInMinutes: 1 });
+  log.emit("alarm-ensured", { name: ALARM_NAMES.picksampler, created: s.created, reason: s.reason, periodMin: SAMPLER_PERIOD_MIN });
+}
+
+/**
+ * One background pick reading. Follows the Auto switch (off means off), and
+ * does nothing without a home store — nothing would be recorded. Quiet on
+ * success: 288 feed lines a day would bury everything else.
+ */
+async function samplePicks() {
+  if (!(await readAuto()).enabled) return;
+  if (!(await getUserHomeStore().catch(() => null))) return;
+  const { market } = await autoTargetMarket();
+  if (!market || inFlight) return;
+  const res = await startPull(market, { live: true });
+  if (!res?.ok) log.emit("sample-failed", { market, kind: res?.kind ?? null, error: res?.error ?? null });
 }
 
 /**
@@ -313,7 +347,7 @@ async function rollingForSnapshot(snapshot) {
   const out = {};
   for (const [store, samples] of Object.entries(history.series || {})) {
     const r = rollingWindow(samples);
-    if (r) out[store] = { ...r, samples: samples.length, day: dayAverage(samples) };
+    if (r) out[store] = { ...r, samples: samples.length, day: dayAverage(samples), series: rateSeries(samples) };
   }
   return out;
 }
@@ -334,6 +368,32 @@ export const handlers = {
       lastAuto: lastAuto[K.lastAuto] || 0,
       rolling: await rollingForSnapshot(all.snapshot),
     };
+  },
+
+  // Post the home store's pick summary + day graph to a Workvivo chat. The
+  // view renders the PNG (it has the chart); this side only delivers it. The
+  // user presses Share and confirms the chat name each time — nothing here
+  // posts on its own.
+  async "share_workvivo"(msg) {
+    const channelName = String(msg?.channelName || "").trim();
+    const text = String(msg?.text || "").trim();
+    if (!channelName) return { ok: false, error: "Enter the Workvivo chat name first." };
+    if (!text || !msg?.pngBase64) return { ok: false, error: "Nothing to share yet." };
+    const release = keepAwake("digitalrollup.share");
+    try {
+      const r = await postScreenshotToWorkvivo({
+        channelName,
+        pngBase64: msg.pngBase64,
+        fileName: `picks-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`,
+        caption: text,
+      });
+      log.emit(r?.ok ? "share-ok" : "share-failed", { channelName, errorClass: r?.errorClass ?? null });
+      return r?.ok
+        ? { ok: true, channelName }
+        : { ok: false, kind: r?.errorClass ?? null, error: r?.error || "Workvivo did not accept the post." };
+    } finally {
+      release();
+    }
   },
 
   // One poll from an open, visible board. Light by design: no hierarchy call,
