@@ -112,10 +112,12 @@ function present(v) {
 
 const fmtInt = (n) => Number(n).toLocaleString();
 
-// Below this much history the hourly pace is left off: seen live 2026-09-23,
-// a boot pull and the first live tick two seconds apart scaled one pick to
-// "≈ 1,705/hr".
-const PACE_MIN_SPAN_MS = 10 * 60 * 1000;
+// Below this much history no hourly rate is shown: seen live 2026-09-23, a
+// boot pull and the first live tick two seconds apart scaled one pick to
+// "≈ 1,705/hr". At ~30 picks a minute, 5 minutes keeps the noise near 5%.
+const PACE_MIN_SPAN_MS = 5 * 60 * 1000;
+const HOUR_MS_VIEW = 60 * 60 * 1000;
+const timeText = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 /** "23 min" / "1h 5m", for the span a partial rolling hour covers. */
 function spanText(ms) {
@@ -268,6 +270,10 @@ export async function mount(host, container) {
 
   await paint();
   scheduleLive();
+  // Tick now rather than a minute from now: the last-hour line needs two
+  // readings, so waiting a full period first meant two minutes of "—" on
+  // every open. (First-run users with no board yet get runPull below.)
+  if (state.snapshot) liveTick();
   // Nothing stored yet means a first-run user staring at an empty board with
   // no idea the Refresh button is the whole interaction. Pull for them.
   if (!state.snapshot) runPull({ trigger: "auto" });
@@ -535,22 +541,30 @@ export async function mount(host, container) {
   /** The rolling last-hour line — home store card only (see service.js). */
   function hourHtml(store) {
     const r = state.rolling?.[store];
-    if (!r) {
+    // Too little history for a rate that means anything: say what has been
+    // seen so far instead of scaling one minute up to an hour.
+    if (!r || (!r.full && r.spanMs < PACE_MIN_SPAN_MS)) {
+      const seen = r ? `${fmtInt(r.picked)} picked in ${spanText(r.spanMs)} so far` : "waiting for the next update";
       return `
-        <div class="dmr-hour is-partial" title="Builds up from each refresh: needs two board updates to show a figure.">
-          <span class="dmr-hour-value">—</span>
-          <span class="dmr-hour-label">picked last hour</span>
+        <div class="dmr-hour is-partial" title="The hourly rate appears after ${PACE_MIN_SPAN_MS / 60000} minutes of readings. Leave the board open (Live) or let Auto collect in the background.">
+          <span class="dmr-hour-value">—<small>/hr</small></span>
+          <span class="dmr-hour-label">measuring · ${esc(seen)}</span>
         </div>`;
     }
     const asOf = new Date(r.asOf).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     const title = r.full
-      ? `Items picked in the 60 minutes up to the board's ${asOf} update (${r.samples} readings today).`
-      : `Only ${spanText(r.spanMs)} of history so far, so this counts the last ${spanText(r.spanMs)}; the pace on the right scales it to an hour.`;
+      ? `${fmtInt(r.picked)} items picked in the 60 minutes up to the board's ${asOf} update (${r.samples} readings today).`
+      : `${fmtInt(r.picked)} items picked in the last ${spanText(r.spanMs)}, scaled to an hour. Becomes the true last-hour count once there is an hour of readings.`;
+    const d = r.day;
+    // Only worth its space once it covers more than the rolling hour does.
+    const dayHtml = d && d.spanMs > HOUR_MS_VIEW
+      ? `<span class="dmr-hour-pace" title="${esc(`${fmtInt(d.picked)} items picked since ${timeText(d.since)}, the first reading today.`)}">today avg ${esc(fmtInt(d.perHour))}/hr since ${esc(timeText(d.since))}</span>`
+      : "";
     return `
       <div class="dmr-hour${r.full ? "" : " is-partial"}" title="${esc(title)}">
-        <span class="dmr-hour-value">${esc(fmtInt(r.picked))}</span>
-        <span class="dmr-hour-label">${r.full ? "picked last hour" : `picked last ${esc(spanText(r.spanMs))}`}</span>
-        ${r.full || r.spanMs < PACE_MIN_SPAN_MS ? "" : `<span class="dmr-hour-pace">≈ ${esc(fmtInt(r.perHour))}/hr pace</span>`}
+        <span class="dmr-hour-value">${esc(fmtInt(r.perHour))}<small>/hr</small></span>
+        <span class="dmr-hour-label">${r.full ? "picks, last hour" : `pace, last ${esc(spanText(r.spanMs))}`}</span>
+        ${dayHtml}
       </div>`;
   }
 

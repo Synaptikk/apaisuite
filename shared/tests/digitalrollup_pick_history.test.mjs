@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recordSnapshot, rollingWindow, parseCount, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
+import { recordSnapshot, rollingWindow, parseCount, dayAverage, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-09-23T12:00:00Z");
@@ -89,6 +89,19 @@ test("tracking can be limited to the home store, matched numerically", () => {
   assert.deepEqual(Object.keys(h.series), ["1458"]);
   const none = recordSnapshot(null, snap(0, { 1458: 10 }), { stores: [null] });
   assert.deepEqual(none.series, {});
+});
+
+test("the day average spans first to latest reading", () => {
+  let h = null;
+  // 300/hr for two hours, then 900/hr for one: 1500 over 3h = 500/hr.
+  h = recordSnapshot(h, snap(0, { 1458: 0 }));
+  h = recordSnapshot(h, snap(120, { 1458: 600 }));
+  h = recordSnapshot(h, snap(180, { 1458: 1500 }));
+  const d = dayAverage(h.series["1458"]);
+  assert.equal(d.perHour, 500);
+  assert.equal(d.since, T0);
+  assert.equal(rollingWindow(h.series["1458"]).perHour, 900);
+  assert.equal(dayAverage(h.series["1458"].slice(0, 1)), null);
 });
 
 test("HOUR_MS is an hour", () => assert.equal(HOUR_MS, 60 * MIN));

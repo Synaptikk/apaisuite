@@ -107,3 +107,20 @@ export function rollingWindow(samples, windowMs = HOUR_MS) {
   const picked = Math.round(pEnd - pAtTarget);
   return { picked, spanMs: windowMs, full: true, perHour: Math.round(picked * HOUR_MS / windowMs), asOf: tEnd };
 }
+
+/**
+ * Average items per hour across everything recorded today: first to latest
+ * sample. The series resets each report day (recordSnapshot), and the
+ * 10-minute background pull keeps it growing while the board is closed, so
+ * this is "since the browser first saw the board today" — `since` says when.
+ *
+ * @returns {null | { perHour:number, picked:number, spanMs:number, since:number }}
+ */
+export function dayAverage(samples) {
+  if (!Array.isArray(samples) || samples.length < 2) return null;
+  const [t0, p0] = samples[0];
+  const [t1, p1] = samples[samples.length - 1];
+  const spanMs = t1 - t0;
+  if (spanMs <= 0) return null;
+  return { perHour: Math.round((p1 - p0) * HOUR_MS / spanMs), picked: p1 - p0, spanMs, since: t0 };
+}

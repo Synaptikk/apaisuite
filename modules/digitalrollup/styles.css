@@ -419,6 +419,7 @@
   line-height: 1;
 }
 .dmr-hour-label { font-size: var(--fs-xs); color: var(--apai-muted); }
+.dmr-hour-value small { font-size: var(--fs-xs); font-weight: 600; color: var(--apai-muted); margin-left: 1px; }
 .dmr-hour-pace  { margin-left: auto; font-size: var(--fs-xs); color: var(--apai-muted); white-space: nowrap; }
 .dmr-hour.is-partial .dmr-hour-value { color: var(--apai-muted); }
 

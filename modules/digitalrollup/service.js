@@ -15,7 +15,7 @@ import { watchSourceSchema } from "../../shared/schema_watch_report.js";
 import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import { fetchDashboard, fetchHierarchy, GifApiError } from "./lib/gif_api.js";
 import { flattenKeys, normalizeDashboard } from "./lib/normalize.js";
-import { recordSnapshot, rollingWindow } from "./lib/pick_history.js";
+import { recordSnapshot, rollingWindow, dayAverage } from "./lib/pick_history.js";
 
 const K = {
   snapshot:  "digitalrollup.snapshot",
@@ -26,6 +26,8 @@ const K = {
   // Per-store (source time, running items-picked) samples for the rolling
   // hour. See lib/pick_history.js.
   picks:     "digitalrollup.pickHistory.v1",
+  // Outcome of the last live tick, for diagnostics only.
+  liveLast:  "digitalrollup.live.last",
 };
 
 // How often an OPEN board polls, set by the view. Exported so the view and the
@@ -277,6 +279,30 @@ export async function bootstrapIfNeeded() {
   }
 }
 
+async function liveDiagnostics(snapshot) {
+  const got = await chrome.storage.local.get([K.picks, K.liveLast]);
+  const history = got[K.picks] ?? null;
+  const homeStore = await getUserHomeStore().catch((e) => `error: ${e?.message ?? e}`);
+  const series = history?.series || {};
+  return {
+    periodSec: LIVE_PERIOD_SEC,
+    homeStore,
+    homeInMarket: !!snapshot?.cards?.some((c) => Number(c.store_nbr) === Number(homeStore)),
+    lastTick: got[K.liveLast]
+      ? { ...got[K.liveLast], at: new Date(got[K.liveLast].at).toISOString() }
+      : null,
+    history: history && {
+      market: history.market,
+      day: history.day,
+      stores: Object.fromEntries(Object.entries(series).map(([k, v]) => [k, {
+        samples: v.length,
+        first: v[0] ? new Date(v[0][0]).toISOString() : null,
+        last: v.at(-1) ? new Date(v.at(-1)[0]).toISOString() : null,
+      }])),
+    },
+  };
+}
+
 /** Rolling-hour figure per store for the market the snapshot holds. */
 async function rollingForSnapshot(snapshot) {
   const history = (await chrome.storage.local.get(K.picks))[K.picks];
@@ -284,7 +310,7 @@ async function rollingForSnapshot(snapshot) {
   const out = {};
   for (const [store, samples] of Object.entries(history.series || {})) {
     const r = rollingWindow(samples);
-    if (r) out[store] = { ...r, samples: samples.length };
+    if (r) out[store] = { ...r, samples: samples.length, day: dayAverage(samples) };
   }
   return out;
 }
@@ -312,7 +338,11 @@ export const handlers = {
   // is already running instead of queuing a second.
   async "live_tick"(msg) {
     if (!msg?.market) return { ok: false, error: "No market to poll." };
-    return await startPull(msg.market, { live: true });
+    const res = await startPull(msg.market, { live: true });
+    chrome.storage.local.set({
+      [K.liveLast]: { at: Date.now(), ok: !!res?.ok, kind: res?.kind ?? null, error: res?.ok ? null : (res?.error ?? null) },
+    }).catch(() => {});
+    return res;
   },
 
   async "pull"(msg) {
@@ -371,6 +401,9 @@ export const handlers = {
         capturedAt: new Date(snapshot.capturedAt).toISOString(),
       },
       hierarchy: hierarchy && { markets: hierarchy.markets?.length ?? 0, via: hierarchy.via },
+      // "Why is my last-hour figure not moving?" in one paste: which store the
+      // worker thinks is home, what it has recorded, and the last live tick.
+      live: await liveDiagnostics(snapshot),
       tabs,
     };
     return { ok: true, diagnostics };
