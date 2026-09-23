@@ -15,7 +15,7 @@ import {
   at, cardStatus, cardSeverity, sortCards, isKnownSort,
   METRIC_SORTS, DEFAULT_SORT,
 } from "./lib/sorting.js";
-import { chartSvg, SCREEN_PALETTE, EXPORT_PALETTE } from "./lib/pick_chart.js";
+import { barChartSvg, EXPORT_PALETTE } from "./lib/pick_chart.js";
 
 const UI_PREFS_KEY = "ui.v1";
 
@@ -117,7 +117,6 @@ const fmtInt = (n) => Number(n).toLocaleString();
 // boot pull and the first live tick two seconds apart scaled one pick to
 // "≈ 1,705/hr". At ~30 picks a minute, 5 minutes keeps the noise near 5%.
 const PACE_MIN_SPAN_MS = 5 * 60 * 1000;
-const HOUR_MS_VIEW = 60 * 60 * 1000;
 const timeText = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 /** "23 min" / "1h 5m", for the span a partial rolling hour covers. */
@@ -576,10 +575,9 @@ export async function mount(host, container) {
     const title = r.full
       ? `${fmtInt(r.picked)} items picked in the 60 minutes up to the board's ${asOf} update (${r.samples} readings today).`
       : `${fmtInt(r.picked)} items picked in the last ${spanText(r.spanMs)}, scaled to an hour. Becomes the true last-hour count once there is an hour of readings.`;
-    const d = r.day;
-    // Only worth its space once it covers more than the rolling hour does.
-    const dayHtml = d && d.spanMs > HOUR_MS_VIEW
-      ? `<span class="dmr-hour-pace" title="${esc(`${fmtInt(d.picked)} items picked since ${timeText(d.since)}, the first reading today.`)}">today avg ${esc(fmtInt(d.perHour))}/hr since ${esc(timeText(d.since))}</span>`
+    const d = r.hourly;
+    const dayHtml = d && d.dayAvgPerHour > 0
+      ? `<span class="dmr-hour-pace" title="${esc(`${fmtInt(d.total)} items picked since ${timeText(d.dayStart)}, when the board's day began.`)}">today avg ${esc(fmtInt(d.dayAvgPerHour))}/hr since ${esc(timeText(d.dayStart))}</span>`
       : "";
     return `
       <div class="dmr-hour${r.full ? "" : " is-partial"}" title="${esc(title)}">
@@ -592,11 +590,10 @@ export async function mount(host, container) {
   /** The day graph + Share row under the home card's per-hour line. */
   function homeExtrasHtml(card) {
     const r = state.rolling?.[String(card.store_nbr)];
-    const pts = r?.series || [];
-    const svg = chartSvg(pts, { avg: dayAvgShown(r), width: 320, height: 120 });
+    const svg = barChartSvg(r?.hourly, { width: 320, height: 130 });
     const chart = svg
-      ? `<div class="dmr-chart"><div class="dmr-chart-title">Pick rate today <span>items/hr, 15-min average</span></div>${svg}<div class="dmr-chart-tip" hidden></div></div>`
-      : `<p class="dmr-chart-empty">The pick-rate graph starts after 15 minutes of readings.</p>`;
+      ? `<div class="dmr-chart"><div class="dmr-chart-title">Picks per hour today <span>since ${esc(timeText(r.hourly.dayStart))}</span></div>${svg}<div class="dmr-chart-tip" hidden></div></div>`
+      : `<p class="dmr-chart-empty">The hourly graph appears after the first reading.</p>`;
     const canShare = !!svg && !sharing;
     const chan = shareChannel
       ? `to <button class="dmr-linkbtn" data-share-channel title="Change the Workvivo chat">${esc(shareChannel)}</button>`
@@ -614,14 +611,6 @@ export async function mount(host, container) {
       ${note}`;
   }
 
-  // Today's average only once it covers more than the rolling hour: before
-  // that it is the same figure as the pace, and a second line would just
-  // shadow the first.
-  // A declaration, not a const arrow: mount() renders before execution reaches
-  // this line, and a const here threw "before initialization" on first paint.
-  function dayAvgShown(r) {
-    return r?.day && r.day.spanMs > HOUR_MS_VIEW ? r.day.perHour : null;
-  }
 
   /** 'Store 1458 picks @ 2:15 PM: 1,780/hr last hour · today avg 1,650/hr · 10,068 picked' */
   function summaryText(card) {
@@ -632,7 +621,7 @@ export async function mount(host, container) {
       ? `${fmtInt(r.perHour)}/hr last hour`
       : `${fmtInt(r.perHour)}/hr pace (last ${spanText(r.spanMs)})`;
     const bits = [rate];
-    if (dayAvgShown(r) != null) bits.push(`today avg ${fmtInt(r.day.perHour)}/hr`);
+    if (r.hourly?.dayAvgPerHour > 0) bits.push(`today avg ${fmtInt(r.hourly.dayAvgPerHour)}/hr`);
     const total = card.picking?.total_picks;
     if (total != null && total !== "—") bits.push(`${total} picked`);
     return `Store ${store} picks @ ${timeText(r.asOf)}: ${bits.join(" · ")}`;
@@ -655,7 +644,7 @@ export async function mount(host, container) {
     if (sharing) return;
     const card = visibleCards().find((c) => isHomeStore(c.store_nbr));
     const r = card && state.rolling?.[String(card.store_nbr)];
-    if (!card || !r?.series?.length) return;
+    if (!card || !r?.hourly) return;
     if (!shareChannel && !askChannel()) return;
     const text = summaryText(card);
     // Posting speaks for the user in a shared chat: show exactly what goes
@@ -666,9 +655,9 @@ export async function mount(host, container) {
     shareNote = { state: "pending", text: "Posting… this opens Workvivo in a background tab for a few seconds." };
     render();
     try {
-      const svg = chartSvg(r.series, {
-        avg: dayAvgShown(r), width: 800, height: 420, palette: EXPORT_PALETTE,
-        title: `Store ${card.store_nbr} · pick rate today (items/hr)`, subtitle: text,
+      const svg = barChartSvg(r.hourly, {
+        width: 800, height: 420, palette: EXPORT_PALETTE,
+        title: `Store ${card.store_nbr} · picks per hour today`, subtitle: text,
       });
       const pngBase64 = await svgToPngBase64(svg, 800, 420);
       const res = await host.messaging.sendRaw("share_workvivo", { channelName: shareChannel, text, pngBase64 }, { timeoutMs: 120_000 });
@@ -713,35 +702,22 @@ export async function mount(host, container) {
 
   function showChartTip(svg, e) {
     const tip = svg.parentElement.querySelector(".dmr-chart-tip");
-    const r = state.rolling?.[visibleCards().find((c) => isHomeStore(c.store_nbr))?.store_nbr + ""];
-    const pts = r?.series || [];
-    if (!tip || pts.length < 2) return;
-    const ds = svg.dataset;
-    const box = svg.getBoundingClientRect();
-    const vbW = svg.viewBox.baseVal.width;
-    const vx = ((e.clientX - box.left) / box.width) * vbW;
-    const t = Number(ds.t0) + ((vx - Number(ds.x0)) / (Number(ds.x1) - Number(ds.x0))) * (Number(ds.tn) - Number(ds.t0));
-    let best = pts[0];
-    for (const p of pts) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
-    const px = Number(ds.x0) + ((best[0] - Number(ds.t0)) / ((Number(ds.tn) - Number(ds.t0)) || 1)) * (Number(ds.x1) - Number(ds.x0));
-    let cross = svg.querySelector("[data-cross]");
-    if (!cross) {
-      cross = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      cross.setAttribute("data-cross", "");
-      cross.setAttribute("style", "stroke:var(--apai-muted);stroke-width:1;stroke-dasharray:2 2");
-      svg.appendChild(cross);
-    }
-    cross.setAttribute("x1", px); cross.setAttribute("x2", px);
-    cross.setAttribute("y1", ds.y1); cross.setAttribute("y2", ds.y0);
+    const hit = e.target?.closest?.(".dmr-bar-hit");
+    if (!tip) return;
+    if (!hit) { hideChartTip(); return; }
+    svg.querySelectorAll(".dmr-bar-hit.is-on").forEach((r) => r.classList.remove("is-on"));
+    hit.classList.add("is-on");
     tip.hidden = false;
-    tip.textContent = `${timeText(best[0])} · ${fmtInt(best[1])}/hr`;
-    const left = (px / vbW) * box.width;
-    tip.style.left = `${Math.min(Math.max(left, 40), box.width - 40)}px`;
+    tip.textContent = hit.dataset.tip;
+    const box = svg.getBoundingClientRect();
+    const hb = hit.getBoundingClientRect();
+    const left = hb.left - box.left + hb.width / 2;
+    tip.style.left = `${Math.min(Math.max(left, 90), box.width - 90)}px`;
   }
 
   function hideChartTip() {
     container.querySelectorAll(".dmr-chart-tip").forEach((t) => { t.hidden = true; });
-    container.querySelectorAll(".dmr-chart [data-cross]").forEach((l) => l.remove());
+    container.querySelectorAll(".dmr-bar-hit.is-on").forEach((r) => r.classList.remove("is-on"));
   }
 
   function visibleCards() {

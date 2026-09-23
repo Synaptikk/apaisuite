@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recordSnapshot, rollingWindow, parseCount, dayAverage, rateSeries, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
+import { recordSnapshot, rollingWindow, parseCount, hourlyBars, dayStartFrom, HOUR_MS } from "../../modules/digitalrollup/lib/pick_history.js";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-09-23T12:00:00Z");
@@ -91,62 +91,59 @@ test("tracking can be limited to the home store, matched numerically", () => {
   assert.deepEqual(none.series, {});
 });
 
-test("the day average spans first to latest reading", () => {
+test("hourly bars: 'before' block up to the first full hour, measured hours, a partial now", () => {
+  const H = 60 * MIN;
+  const start = T0;                       // day starts at T0 (think 5 AM)
   let h = null;
-  // 300/hr for two hours, then 900/hr for one: 1500 over 3h = 500/hr.
-  h = recordSnapshot(h, snap(0, { 1458: 0 }));
-  h = recordSnapshot(h, snap(120, { 1458: 600 }));
-  h = recordSnapshot(h, snap(180, { 1458: 1500 }));
-  const d = dayAverage(h.series["1458"]);
-  assert.equal(d.perHour, 500);
-  assert.equal(d.since, T0);
-  assert.equal(rollingWindow(h.series["1458"]).perHour, 900);
-  assert.equal(dayAverage(h.series["1458"].slice(0, 1)), null);
+  // First reading at +2h30 with 3,000 picked; then 1,200/hr, read every 10 min.
+  for (let m = 150; m <= 285; m += 5) h = recordSnapshot(h, snap(m, { 1458: 3000 + (m - 150) * 20 }));
+  const r = hourlyBars(h.series["1458"], start);
+  // Nothing is known hour by hour before the first reading: one block to +3h.
+  assert.equal(r.before.start, start);
+  assert.equal(r.before.end, start + 3 * H);
+  assert.equal(r.before.picked, 3600);             // 3,000 + 30 min at 1,200/hr
+  assert.equal(r.before.perHour, 1200);
+  assert.deepEqual(r.hours.map((x) => [x.kind, x.picked]), [["hour", 1200], ["now", 900]]);
+  assert.equal(r.hours[1].end, start + 285 * MIN);
+  assert.equal(r.total, 5700);
+  assert.equal(r.dayAvgPerHour, Math.round(5700 / 4.75));
 });
 
-test("15-second polls keep minute-spaced history with a current tail", () => {
+test("hourly bars: readings from before the day start leave no 'before' block", () => {
   let h = null;
-  const SEC = 1000;
-  for (let s = 0; s <= 180; s += 15) {
-    h = recordSnapshot(h, { ...snap(0, { 1458: 1000 + s }), refreshedAtIso: new Date(T0 + s * SEC).toISOString() });
-  }
-  const series = h.series["1458"];
-  // Latest total is always the newest reading.
-  assert.deepEqual(series.at(-1), [T0 + 180 * SEC, 1180]);
-  // Everything before the tail is at least a minute apart.
-  for (let i = 1; i < series.length - 1; i++) assert.ok(series[i][0] - series[i - 1][0] >= 60 * SEC);
-  assert.ok(series.length <= 5, `got ${series.length}`);
-  assert.equal(rollingWindow(series).perHour, 3600);
+  for (let m = 0; m <= 120; m += 10) h = recordSnapshot(h, snap(m, { 1458: m * 10 }));
+  const r = hourlyBars(h.series["1458"], T0);
+  assert.equal(r.before, null);
+  assert.deepEqual(r.hours.map((x) => x.picked), [600, 600]);
+  assert.equal(hourlyBars([], T0), null);
 });
 
-test("rate series: trailing-window rate on wall-clock steps, ending at the latest reading", () => {
-  let h = null;
-  // 600/hr for 30 min, then 1200/hr for 30 min, read every 5 min.
-  for (let m = 0; m <= 60; m += 5) h = recordSnapshot(h, snap(m, { 1458: m <= 30 ? m * 10 : 300 + (m - 30) * 20 }));
-  const pts = rateSeries(h.series["1458"]);
-  assert.equal(pts[0][0], T0 + 15 * MIN);
-  assert.equal(pts[0][1], 600);
-  assert.deepEqual(pts.at(-1), [T0 + 60 * MIN, 1200]);
-  assert.ok(pts.every(([t], i) => i === 0 || t > pts[i - 1][0]));
-  assert.deepEqual(rateSeries(h.series["1458"].slice(0, 2)), []);
+test("day start is read from the board's window label, else 5 AM local", () => {
+  const got = dayStartFrom({ dataAge: { tooltip: "Real-time from GRT (2026-09-23 05:00:00 to 2026-09-24 04:59:59)" } });
+  assert.equal(got, new Date(2026, 8, 23, 5, 0).getTime());
+  const fallback = dayStartFrom({}, new Date(2026, 8, 23, 14, 7).getTime());
+  assert.equal(fallback, new Date(2026, 8, 23, 5, 0).getTime());
 });
 
 test("HOUR_MS is an hour", () => assert.equal(HOUR_MS, 60 * MIN));
 
 // ── pick_chart.js ─────────────────────────────────────────────────────────
-import { chartSvg, niceStep, EXPORT_PALETTE } from "../../modules/digitalrollup/lib/pick_chart.js";
+import { barChartSvg, niceStep, EXPORT_PALETTE } from "../../modules/digitalrollup/lib/pick_chart.js";
 
-test("chart: empty under two points, one path, end label, avg line", () => {
-  assert.equal(chartSvg([[T0, 100]]), "");
-  const pts = [[T0, 1200], [T0 + 30 * MIN, 1500], [T0 + 60 * MIN, 1780]];
-  const svg = chartSvg(pts, { avg: 1650 });
-  assert.equal((svg.match(/<path /g) || []).length, 1);
-  assert.match(svg, />1,780\/hr</);
-  assert.match(svg, /avg 1,650/);
-  assert.match(svg, /data-t0=/);
-  const png = chartSvg(pts, { avg: 1650, width: 800, height: 420, palette: EXPORT_PALETTE, title: "Store 1458", subtitle: "x" });
+test("bar chart: before block, one bar per hour, hour labels, avg line", () => {
+  let h = null;
+  for (let m = 150; m <= 285; m += 5) h = recordSnapshot(h, snap(m, { 1458: 3000 + (m - 150) * 20 }));
+  const day = hourlyBars(h.series["1458"], T0);
+  assert.equal(barChartSvg(null), "");
+  const svg = barChartSvg(day);
+  assert.equal((svg.match(/<path /g) || []).length, 3);          // before + 2 hours
+  assert.equal((svg.match(/data-tip=/g) || []).length, 3);
+  assert.match(svg, /fill-opacity:0.4/);                          // the "so far" bar
+  assert.match(svg, /avg 1,200/);
+  const png = barChartSvg(day, { width: 800, height: 420, palette: EXPORT_PALETTE, title: "t", subtitle: "s" });
   assert.match(png, /fill:#FFFFFF/);
-  assert.doesNotMatch(png, /var\(|data-t0/);
+  assert.match(png, /900 so far/);
+  assert.doesNotMatch(png, /var\(|data-tip/);
 });
 
 test("niceStep picks 1/2/2.5/5 × 10^n", () => {

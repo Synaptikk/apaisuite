@@ -118,23 +118,6 @@ export function rollingWindow(samples, windowMs = HOUR_MS) {
   return { picked, spanMs: windowMs, full: true, perHour: Math.round(picked * HOUR_MS / windowMs), asOf: tEnd };
 }
 
-/**
- * Average items per hour across everything recorded today: first to latest
- * sample. The series resets each report day (recordSnapshot), and the
- * 10-minute background pull keeps it growing while the board is closed, so
- * this is "since the browser first saw the board today" — `since` says when.
- *
- * @returns {null | { perHour:number, picked:number, spanMs:number, since:number }}
- */
-export function dayAverage(samples) {
-  if (!Array.isArray(samples) || samples.length < 2) return null;
-  const [t0, p0] = samples[0];
-  const [t1, p1] = samples[samples.length - 1];
-  const spanMs = t1 - t0;
-  if (spanMs <= 0) return null;
-  return { perHour: Math.round((p1 - p0) * HOUR_MS / spanMs), picked: p1 - p0, spanMs, since: t0 };
-}
-
 /** Running total at time t, interpolated between the samples around it. */
 function totalAt(samples, t) {
   if (t <= samples[0][0]) return samples[0][1];
@@ -149,27 +132,63 @@ function totalAt(samples, t) {
 }
 
 /**
- * The day's pick rate as a line: items/hour over a trailing `windowMs`,
- * evaluated every `stepMs` and at the latest reading.
- *
- * A trailing window rather than the raw gap between readings: readings land
- * every 1-10 minutes depending on whether the board is open, and a
- * reading-to-reading rate would spike on every short gap. 15 minutes smooths
- * that without hiding a slow half hour.
- *
- * @returns {Array<[tMs:number, perHour:number]>} empty until one window of history
+ * When the board's day began. The API labels its window in `data_age.tooltip`
+ * ("Real-time from GRT (2026-09-23 05:00:00 to 2026-09-24 04:59:59)", seen
+ * 2026-09-23) and total_picks counts from that moment, so the running total is
+ * 0 there. Read as local time; falls back to 5 AM on the day of `atMs`.
  */
-export function rateSeries(samples, { windowMs = 15 * 60 * 1000, stepMs = 5 * 60 * 1000 } = {}) {
-  if (!Array.isArray(samples) || samples.length < 2) return [];
-  const t0 = samples[0][0];
-  const tEnd = samples[samples.length - 1][0];
-  const first = t0 + windowMs;
-  if (first > tEnd) return [];
-  const rate = (t) => Math.round((totalAt(samples, t) - totalAt(samples, t - windowMs)) * HOUR_MS / windowMs);
-  const out = [];
-  // Steps land on wall-clock multiples (2:05, 2:10 …) so two renders a minute
-  // apart draw the same points instead of a line that shimmers sideways.
-  for (let t = Math.ceil(first / stepMs) * stepMs; t < tEnd; t += stepMs) out.push([t, rate(t)]);
-  out.push([tEnd, rate(tEnd)]);
-  return out;
+export function dayStartFrom(snapshot, atMs = Date.now()) {
+  const m = /\((\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(snapshot?.dataAge?.tooltip || "");
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+  const d = new Date(atMs);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 5, 0).getTime();
+}
+
+/**
+ * Items picked in each clock hour from the day start to the latest reading.
+ *
+ * Only what the readings support is broken out. Before the first reading of
+ * the day the one fact is the total since the day start (which began at 0),
+ * so that stretch comes back as a single `before` entry at its average rate,
+ * never as invented per-hour bars. The hour containing the latest reading is
+ * `now` (picked so far). Everything else is `hour`, differenced from the
+ * interpolated running total at each hour boundary.
+ *
+ * @returns {null | { dayStart:number, asOf:number, total:number, dayAvgPerHour:number,
+ *   before: null | { start:number, end:number, picked:number, perHour:number },
+ *   hours: Array<{ start:number, end:number, picked:number, kind:"hour"|"now" }> }}
+ */
+export function hourlyBars(samples, dayStart) {
+  if (!Array.isArray(samples) || !samples.length || !Number.isFinite(dayStart)) return null;
+  const [t0, p0] = samples[0];
+  const [tEnd, pEnd] = samples[samples.length - 1];
+  if (tEnd <= dayStart) return null;
+  const dayAvgPerHour = Math.round(pEnd * HOUR_MS / (tEnd - dayStart));
+
+  // The measured span starts at the first clock hour on or after the first
+  // reading; the part of the day before that is the `before` block.
+  const firstHour = Math.ceil(Math.max(t0, dayStart) / HOUR_MS) * HOUR_MS;
+  const withZero = t0 > dayStart ? [[dayStart, 0], ...samples] : samples;
+  const beforeEnd = Math.min(firstHour, tEnd);
+  const before = t0 > dayStart
+    ? {
+        start: dayStart,
+        end: beforeEnd,
+        picked: Math.round(totalAt(withZero, beforeEnd)),
+        perHour: Math.round(totalAt(withZero, beforeEnd) * HOUR_MS / (beforeEnd - dayStart)),
+      }
+    : null;
+
+  const hours = [];
+  for (let a = firstHour; a < tEnd; a += HOUR_MS) {
+    const b = a + HOUR_MS;
+    const now = b > tEnd;
+    hours.push({
+      start: a,
+      end: now ? tEnd : b,
+      picked: Math.round(totalAt(withZero, Math.min(b, tEnd)) - totalAt(withZero, a)),
+      kind: now ? "now" : "hour",
+    });
+  }
+  return { dayStart, asOf: tEnd, total: pEnd, dayAvgPerHour, before, hours };
 }

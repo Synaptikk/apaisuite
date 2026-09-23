@@ -15,7 +15,7 @@ import { watchSourceSchema } from "../../shared/schema_watch_report.js";
 import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import { fetchDashboard, fetchHierarchy, GifApiError } from "./lib/gif_api.js";
 import { flattenKeys, normalizeDashboard } from "./lib/normalize.js";
-import { recordSnapshot, rollingWindow, dayAverage, rateSeries } from "./lib/pick_history.js";
+import { recordSnapshot, rollingWindow, hourlyBars, dayStartFrom } from "./lib/pick_history.js";
 // Cross-module on purpose: MetricShot owns the only working "post an image to a
 // Workvivo chat" path (session-key sniffing + Workvivo's own file endpoint), and
 // a second copy would drift. It needs nothing from MetricShot's state.
@@ -49,8 +49,8 @@ export const ALARM_NAMES = {
 
 // Background reading of the home store's picks for the day graph, between the
 // 10-minute full refreshes. Light (no hierarchy, never opens a tab), so it is
-// one ~13 KB request. 5 minutes is enough: every graph point is a rate over a
-// trailing 15 minutes (lib/pick_history.js::rateSeries).
+// one ~13 KB request. 5 minutes is plenty for per-hour bars
+// (lib/pick_history.js::hourlyBars), which only need each hour's boundaries.
 const SAMPLER_PERIOD_MIN = 5;
 
 // The board republishes off GRT in near real time, so unlike VizPick there is
@@ -344,10 +344,11 @@ async function liveDiagnostics(snapshot) {
 async function rollingForSnapshot(snapshot) {
   const history = (await chrome.storage.local.get(K.picks))[K.picks];
   if (!snapshot || !history || history.market !== String(snapshot.market)) return {};
+  const dayStart = dayStartFrom(snapshot);
   const out = {};
   for (const [store, samples] of Object.entries(history.series || {})) {
     const r = rollingWindow(samples);
-    if (r) out[store] = { ...r, samples: samples.length, day: dayAverage(samples), series: rateSeries(samples) };
+    if (r) out[store] = { ...r, samples: samples.length, hourly: hourlyBars(samples, dayStart) };
   }
   return out;
 }

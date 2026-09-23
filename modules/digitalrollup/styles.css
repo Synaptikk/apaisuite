@@ -427,7 +427,9 @@
 .dmr-chart { position: relative; margin-top: var(--sp-2); }
 .dmr-chart-title { font-size: var(--fs-xs); font-weight: 600; color: var(--apai-text, inherit); margin-bottom: 2px; }
 .dmr-chart-title span { font-weight: 400; color: var(--apai-muted); }
-.dmr-chart svg { display: block; width: 100%; height: auto; overflow: visible; cursor: crosshair; }
+.dmr-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* Hovered hour: a faint column behind the bar, so the tooltip's hour is obvious. */
+.dmr-bar-hit.is-on { fill: var(--apai-muted) !important; fill-opacity: 0.08; }
 .dmr-chart-tip {
   position: absolute;
   top: 16px;
@@ -438,7 +440,9 @@
   border: 1px solid var(--apai-border);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  white-space: normal;
+  max-width: 240px;
+  text-align: center;
   pointer-events: none;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 }
