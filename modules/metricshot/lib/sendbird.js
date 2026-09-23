@@ -43,7 +43,7 @@
 // custom_type:GROUP_FILES and the image URL embedded in `data`, not a
 // Sendbird FILE message at all. That server-side path isn't subject to the
 // client-SDK restriction. Auth for this half is the page's own CSRF/XSRF
-// pair (meta[name=csrf-token] + the XSRF-TOKEN cookie — same convention as
+// pair (meta[name=csrf_token] (was csrf-token until 2026-09) + the XSRF-TOKEN cookie — same convention as
 // GET /api/chat/config, see docs/workvivo-auth.md), not the Sendbird
 // session-key. See IN_PAGE_SB's "file" action for the exact 3-request
 // sequence: POST /api/s3/signature/generate → POST to the returned S3 URL →
@@ -498,7 +498,10 @@ async function IN_PAGE_SB(arg) {
     // Auth here is the page's own CSRF pair, the same convention Workvivo
     // uses for GET /api/chat/config (docs/workvivo-auth.md), not the
     // Sendbird Session-key used by every other action in this function.
-    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    // Workvivo renamed the tag from csrf-token to csrf_token (seen 2026-09-23:
+    // only the underscore form exists, and its value is what the page's own
+    // /api calls send as X-CSRF-Token). Accept either.
+    const csrfMeta = document.querySelector('meta[name="csrf_token"], meta[name="csrf-token"]');
     const csrf = csrfMeta ? csrfMeta.content : "";
     const xsrfCookieMatch = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
     const xsrf = xsrfCookieMatch ? decodeURIComponent(xsrfCookieMatch[1]) : "";
