@@ -617,7 +617,11 @@ export async function mount(host, container) {
   // Today's average only once it covers more than the rolling hour: before
   // that it is the same figure as the pace, and a second line would just
   // shadow the first.
-  const dayAvgShown = (r) => (r?.day && r.day.spanMs > HOUR_MS_VIEW ? r.day.perHour : null);
+  // A declaration, not a const arrow: mount() renders before execution reaches
+  // this line, and a const here threw "before initialization" on first paint.
+  function dayAvgShown(r) {
+    return r?.day && r.day.spanMs > HOUR_MS_VIEW ? r.day.perHour : null;
+  }
 
   /** 'Store 1458 picks @ 2:15 PM: 1,780/hr last hour · today avg 1,650/hr · 10,068 picked' */
   function summaryText(card) {
