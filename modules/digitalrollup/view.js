@@ -676,8 +676,22 @@ export async function mount(host, container) {
     switch (res?.kind) {
       case "NOT_FOUND":
         return `No Workvivo chat named "${shareChannel}" in your chat list. Check the exact name (click it to change).`;
-      case "NO_SESSION": case "NO_TAB": case "NO_CSRF":
-        return "Could not reach Workvivo. Open workvivo.walmart.com, make sure you are signed in, then try again.";
+      case "NO_SESSION": {
+        // Name the cause from what the Workvivo tab looked like when it gave up.
+        const p = res?.probe;
+        if (p && p.page && !/^https:\/\/workvivo\.walmart\.com\//.test(p.page)) {
+          return `Workvivo sent its tab to a sign-in page (${new URL(p.page).host}). Sign in to Workvivo in this browser, then Share again.`;
+        }
+        if (p && !p.snifferInstalled) {
+          return "The suite's Workvivo helper did not load in the Workvivo tab. Reload APAISuite at edge://extensions, then Share again.";
+        }
+        if (p && !p.signedIn) {
+          return "Workvivo opened but you are not signed in there. Sign in at workvivo.walmart.com, then Share again.";
+        }
+        return "Workvivo chat did not connect within 30 seconds in a background tab. Open workvivo.walmart.com/chat in a tab, leave it open, and Share again — it will use that tab.";
+      }
+      case "NO_TAB": case "NO_CSRF":
+        return `Could not reach Workvivo (${res.kind}). Open workvivo.walmart.com/chat in a tab, leave it open, and Share again.`;
       default:
         return `Share failed: ${res?.error || "Workvivo did not accept the post."}`;
     }

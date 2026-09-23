@@ -32,6 +32,9 @@ const K = {
   picks:     "digitalrollup.pickHistory.v1",
   // Outcome of the last live tick, for diagnostics only.
   liveLast:  "digitalrollup.live.last",
+  // Outcome of the last Workvivo share, incl. what the Workvivo tab looked like
+  // when it failed — the only evidence of WHY, since that tab is closed after.
+  shareLast: "digitalrollup.share.last",
 };
 
 // How often an OPEN board polls, set by the view. Exported so the view and the
@@ -388,10 +391,22 @@ export const handlers = {
         fileName: `picks-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`,
         caption: text,
       });
-      log.emit(r?.ok ? "share-ok" : "share-failed", { channelName, errorClass: r?.errorClass ?? null });
+      // Page state from MetricShot's failure probe, minus the network log:
+      // where the tab ended up and whether it was signed in / sniffed.
+      const d = r?.debug || null;
+      const probe = d && {
+        page: d.href ? String(d.href).replace(/[?#].*$/, "") : null,
+        signedIn: !!d.signedIn,
+        snifferInstalled: !!d.snifferInstalled,
+        hasSessionKey: !!d.hasSessionKey,
+      };
+      log.emit(r?.ok ? "share-ok" : "share-failed", { channelName, errorClass: r?.errorClass ?? null, ...(probe || {}) });
+      await chrome.storage.local.set({
+        [K.shareLast]: { at: Date.now(), ok: !!r?.ok, channelName, errorClass: r?.errorClass ?? null, error: r?.ok ? null : (r?.error ?? null), probe },
+      }).catch(() => {});
       return r?.ok
         ? { ok: true, channelName }
-        : { ok: false, kind: r?.errorClass ?? null, error: r?.error || "Workvivo did not accept the post." };
+        : { ok: false, kind: r?.errorClass ?? null, error: r?.error || "Workvivo did not accept the post.", probe };
     } finally {
       release();
     }
@@ -468,6 +483,10 @@ export const handlers = {
       // "Why is my last-hour figure not moving?" in one paste: which store the
       // worker thinks is home, what it has recorded, and the last live tick.
       live: await liveDiagnostics(snapshot),
+      share: await chrome.storage.local.get(K.shareLast).then((g) => {
+        const s = g[K.shareLast];
+        return s ? { ...s, at: new Date(s.at).toISOString() } : null;
+      }).catch(() => null),
       tabs,
     };
     return { ok: true, diagnostics };

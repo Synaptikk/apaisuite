@@ -192,6 +192,24 @@ export async function readNetlogFromOpenTab() {
  */
 async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
   const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
+
+  // A Workvivo tab the user already has open, whose sniffer has already seen a
+  // key, is the most reliable session there is: signed in, SDK booted, not a
+  // throttled background load. Borrowed, never closed (openedFresh: false).
+  // A tab loaded before the extension was (re)loaded has no sniffer and is
+  // skipped rather than reloaded out from under the user.
+  const existing = await chrome.tabs.query({ url: "https://workvivo.walmart.com/*" }).catch(() => []);
+  for (const t of existing) {
+    if (t.id == null || t.discarded || t.status !== "complete") continue;
+    const c = await _runInTab(t.id, IN_PAGE_READ_CREDS, []).catch(() => null);
+    // Recent keys only: an idle tab's key from hours ago may have rotated out,
+    // and sbFetch's 401 replay needs the SDK to be active to see a new one.
+    if (c?.sessionKey && (c.ageMs == null || c.ageMs < 15 * 60_000)) {
+      step("tab-reused", { tabId: t.id });
+      return { ok: true, tabId: t.id, openedFresh: false };
+    }
+  }
+
   step("tab-create");
   const tab = await chrome.tabs.create({ url: WORKVIVO_URL, active: false })
     .catch((e) => ({ __err: String(e?.message ?? e) }));
