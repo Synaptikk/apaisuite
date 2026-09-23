@@ -104,4 +104,19 @@ test("the day average spans first to latest reading", () => {
   assert.equal(dayAverage(h.series["1458"].slice(0, 1)), null);
 });
 
+test("15-second polls keep minute-spaced history with a current tail", () => {
+  let h = null;
+  const SEC = 1000;
+  for (let s = 0; s <= 180; s += 15) {
+    h = recordSnapshot(h, { ...snap(0, { 1458: 1000 + s }), refreshedAtIso: new Date(T0 + s * SEC).toISOString() });
+  }
+  const series = h.series["1458"];
+  // Latest total is always the newest reading.
+  assert.deepEqual(series.at(-1), [T0 + 180 * SEC, 1180]);
+  // Everything before the tail is at least a minute apart.
+  for (let i = 1; i < series.length - 1; i++) assert.ok(series[i][0] - series[i - 1][0] >= 60 * SEC);
+  assert.ok(series.length <= 5, `got ${series.length}`);
+  assert.equal(rollingWindow(series).perHour, 3600);
+});
+
 test("HOUR_MS is an hour", () => assert.equal(HOUR_MS, 60 * MIN));

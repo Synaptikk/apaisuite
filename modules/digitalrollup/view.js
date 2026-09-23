@@ -363,7 +363,8 @@ export async function mount(host, container) {
   function paintLive() {
     liveToggle.checked = liveOn;
     const label = container.querySelector("[data-live-label]");
-    if (label) label.textContent = liveOn ? `Live · ${Math.round((state.livePeriodSec || 60) / 60)}m` : "Live";
+    const sec = state.livePeriodSec || 60;
+    if (label) label.textContent = liveOn ? `Live · ${sec < 60 ? `${sec}s` : `${Math.round(sec / 60)}m`}` : "Live";
     liveWrap.dataset.liveState = !liveOn ? "off" : liveNote ? "waiting" : "on";
     liveWrap.title = !liveOn
       ? "Live updates are off. This board updates on the Auto cadence or when you click Refresh."

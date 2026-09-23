@@ -20,6 +20,12 @@ export const HOUR_MS = 60 * 60 * 1000;
 // reset below is what normally keeps the series short.
 const MAX_SAMPLES_PER_STORE = 1500;
 
+// Stored readings are kept at least this far apart. Live polls every 15 s, but
+// a per-hour figure gains nothing from that resolution and it would eat the
+// cap above in six hours. Readings closer than this refresh the newest entry
+// in place instead, so the latest total is always current.
+export const MIN_SAMPLE_GAP_MS = 60 * 1000;
+
 /** Source time for a snapshot, falling back to our fetch time. */
 export function sampleTime(snapshot) {
   const t = Date.parse(snapshot?.refreshedAtIso ?? "");
@@ -69,7 +75,11 @@ export function recordSnapshot(history, snapshot, { stores = null } = {}) {
     const last = s[s.length - 1];
     if (last && t <= last[0]) continue;          // same or older board — not new
     if (last && picks < last[1]) s = [];         // source reset its running total
-    s.push([t, picks]);
+    const prev = s[s.length - 2];
+    // The tail keeps moving until it is a full gap past the entry before it;
+    // only then does a new reading start a new entry.
+    if (prev && last[0] - prev[0] < MIN_SAMPLE_GAP_MS) s[s.length - 1] = [t, picks];
+    else s.push([t, picks]);
     if (s.length > MAX_SAMPLES_PER_STORE) s = s.slice(-MAX_SAMPLES_PER_STORE);
     series[store] = s;
   }

@@ -33,7 +33,10 @@ const K = {
 // How often an OPEN board polls, set by the view. Exported so the view and the
 // diagnostics can name the cadence. It only runs while the board is visible,
 // and the 10-minute alarm below keeps collecting samples when it is not.
-export const LIVE_PERIOD_SEC = 60;
+// 15 s: the source reads GRT on demand (about 0.3 s) and has no push channel
+// (checked 2026-09-23), so this is as live as it gets. One ~13 KB request per
+// tick, only while the board is visible.
+export const LIVE_PERIOD_SEC = 15;
 
 export const ALARM_NAMES = { autorefresh: "digitalrollup.autorefresh" };
 
