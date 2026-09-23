@@ -26,7 +26,9 @@ globalThis.FormData = class { constructor() { this.d = {}; } append(k, v, n) { t
 // Sendbird Session-key) — see sendbird.js's module header for why.
 globalThis.document = {
   cookie: "XSRF-TOKEN=" + encodeURIComponent("xsrf-abc"),
-  querySelector: (sel) => (sel === 'meta[name="csrf-token"]' ? { content: "csrf-abc" } : null),
+  // Models Workvivo as of 2026-09-23: only <meta name="csrf_token"> exists
+  // (it was csrf-token before). Selector lists are matched part by part.
+  querySelector: (sel) => (sel.split(",").some((s) => s.trim() === 'meta[name="csrf_token"]') ? { content: "csrf-abc" } : null),
 };
 
 let channels = [
