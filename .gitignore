@@ -42,3 +42,37 @@ node_modules/
 
 # Recovered source dumps from dev/web-grep.mjs — internal app code, not ours.
 dev/web-*.txt
+
+# Incident Intake — LOCAL ONLY for now (not registered in the repo's _registry.js;
+# registered only in the APAISuite-dev mirror the debug Edge loads). Keeps the
+# scanner helper, gateway test and any scans/models out of the public repo.
+modules/incidentintake/
+dev/intake-helper.py
+dev/gateway-ocr-test.py
+dev/scan-*.py
+dev/packet-status.py
+dev/win-ocr.ps1
+dev/trocr-test.mjs
+dev/.models/
+dev/.intake/
+dev/pack-local.sh
+dev/OTHER-PC-SETUP.md
+dev/local-registration.patch
+dev/.intake-helper.log
+dev/probe-ii-*.mjs
+dev/video-helper.py
+
+# Probe outputs and caches carrying live store data — associate names and
+# punches (GTA), claims payloads, CX customer comments, report screenshots.
+# The scripts that produced them are committed; their captures never are.
+dev/.cache/
+dev/.claim-probe/
+dev/.gta-cache-*.json
+dev/.gta-survey.json
+dev/__pycache__/
+dev/*.png
+gta-survey-*.png
+dev/cx-hoops-comments-*.json
+dev/cx-replay2.json
+dev/clearsight-intake-catalog.json
+dev/clearsight-intake-lookups.json
