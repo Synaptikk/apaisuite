@@ -1,0 +1,214 @@
+<section class="cx">
+  <header class="cx-header">
+    <div class="cx-title">
+      <h1>Cx</h1>
+      <span class="cx-store" data-store-label></span>
+    </div>
+    <div class="cx-toolbar">
+      <span class="cx-freshness" data-freshness>no data yet</span>
+      <button class="cx-linkbtn" data-action="open-settings">Settings</button>
+      <button class="btn" data-action="refresh-full" title="Re-read the whole window from Medallia — eight requests, about two minutes">
+        Full pull
+      </button>
+      <button class="btn btn-primary" data-action="refresh">
+        <span class="btn-label">Refresh</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Progress and outcome of the last pull, including the cases that changed
+       nothing. Each source reports separately: Hoops working while Medallia is
+       signed out is a normal state, not a failure. -->
+  <p class="cx-runnote" data-run-note hidden></p>
+
+  <!-- ── The graded numbers. Straight from Hoops, never recomputed. ── -->
+  <section class="cx-panel cx-scorecard">
+    <div class="cx-panel-head">
+      <h2>Scorecard</h2>
+      <span class="cx-panel-stamp" data-scores-stamp>—</span>
+    </div>
+    <div class="cx-score-row" data-score-row>
+      <p class="cx-empty">Click Refresh to read the scorecard.</p>
+    </div>
+  </section>
+
+  <!-- ── Chips. One blended view; everything below reacts to these. ── -->
+  <section class="cx-filters" data-filters hidden>
+    <div class="cx-filter-block">
+      <div class="cx-filter-label">
+        Journey
+        <button class="cx-linkbtn cx-filter-clear" data-action="clear-journeys">all</button>
+      </div>
+      <div class="cx-chips" data-journey-chips></div>
+    </div>
+    <div class="cx-filter-block">
+      <div class="cx-filter-label">
+        Source
+        <button class="cx-linkbtn cx-filter-clear" data-action="clear-channels">all</button>
+      </div>
+      <div class="cx-chips" data-channel-chips></div>
+    </div>
+    <div class="cx-filter-block cx-filter-window">
+      <div class="cx-filter-label" id="cx-window-label">Compare</div>
+      <select class="cx-window-select" data-window-select aria-labelledby="cx-window-label">
+        <option value="14">last 2 weeks vs the 2 before</option>
+        <option value="28">last 4 weeks vs the 4 before</option>
+        <option value="56">last 8 weeks vs the 8 before</option>
+        <option value="91">last 13 weeks vs the 13 before</option>
+      </select>
+    </div>
+    <p class="cx-filter-meta" data-filter-meta></p>
+  </section>
+
+  <!-- ── The written read. Optional; the panel works without it. ── -->
+  <section class="cx-panel cx-narrative" data-narrative-panel hidden>
+    <div class="cx-panel-head">
+      <h2>The read</h2>
+      <span class="cx-panel-stamp" data-narrative-stamp></span>
+      <button class="cx-linkbtn" data-action="narrate">Write it up</button>
+      <button class="cx-linkbtn" data-action="narrate-force" hidden>Regenerate</button>
+      <button class="cx-linkbtn" data-action="show-facts" hidden>What was sent</button>
+    </div>
+    <div class="cx-narrative-body" data-narrative-body>
+      <p class="cx-empty">
+        <strong>Write it up</strong> sends the ranked themes, the movement figures and a
+        handful of verbatims to Walmart's internal AI gateway and gets back a written
+        summary. Every number in it is one already on this page — the model is told to
+        use the figures it is given and not to derive any.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── What's wrong / what's right, side by side. ── -->
+  <section class="cx-columns" data-columns hidden>
+    <div class="cx-panel cx-col cx-col-bad">
+      <div class="cx-panel-head">
+        <h2>What's going wrong</h2>
+        <span class="cx-panel-sub" data-bad-sub></span>
+      </div>
+      <div class="cx-themes" data-bad-themes></div>
+    </div>
+    <div class="cx-panel cx-col cx-col-good">
+      <div class="cx-panel-head">
+        <h2>What's going right</h2>
+        <span class="cx-panel-sub" data-good-sub></span>
+      </div>
+      <div class="cx-themes" data-good-themes></div>
+    </div>
+  </section>
+
+  <!-- ── Movement. The answer to "what changed", which is usually the
+           question behind "why did NPS drop". ── -->
+  <section class="cx-panel cx-movement" data-movement-panel hidden>
+    <div class="cx-panel-head">
+      <h2>What changed</h2>
+      <span class="cx-panel-sub" data-movement-sub></span>
+    </div>
+    <div class="cx-movers" data-movers></div>
+    <p class="cx-note">
+      Compared as negative mentions per 100 comments, so a light week does not read as
+      an improvement. Rows marked <em>thin</em> have too few mentions in either window
+      to mean anything on a single store — they are listed, not ranked.
+    </p>
+  </section>
+
+  <!-- ── Rating mix by week. The shape of the feedback, not its average:
+           this store's ratings are barbelled at 1 and 5. ── -->
+  <section class="cx-panel cx-trend" data-trend-panel hidden>
+    <div class="cx-panel-head">
+      <h2>Rating mix by week</h2>
+      <span class="cx-panel-sub" data-trend-sub></span>
+    </div>
+    <div class="cx-trend-chart" data-trend-chart></div>
+  </section>
+
+  <!-- ── The comments themselves. Everything above is a summary of this. ── -->
+  <section class="cx-panel cx-comments" data-comments-panel hidden>
+    <div class="cx-panel-head">
+      <h2>Comments</h2>
+      <span class="cx-panel-sub" data-comments-sub></span>
+      <input class="cx-search" type="search" data-comment-search
+             placeholder="Search the comments" aria-label="Search the comments">
+      <select class="cx-comment-filter" data-comment-rating aria-label="Filter by rating">
+        <option value="">Any rating</option>
+        <option value="detractor">1-3 stars</option>
+        <option value="4">4 stars</option>
+        <option value="5">5 stars</option>
+      </select>
+      <button class="cx-linkbtn" data-action="export-comments">Export CSV</button>
+    </div>
+    <div class="cx-comment-list" data-comment-list></div>
+    <button class="cx-linkbtn cx-more" data-action="more-comments" hidden>Show more</button>
+  </section>
+
+  <!-- ── Hoops' own GenAI summary. Shown under its own date because it has
+           been frozen since January and must not read as current. ── -->
+  <section class="cx-panel cx-genai" data-genai-panel hidden>
+    <div class="cx-panel-head">
+      <h2>Ops Portal summary</h2>
+      <span class="cx-panel-stamp cx-stale" data-genai-stamp></span>
+    </div>
+    <div class="cx-genai-body" data-genai-body></div>
+  </section>
+
+  <!-- ── Settings. Window length and the gateway token, which the extension
+           cannot read off disk. ── -->
+  <section class="cx-panel cx-settings" data-settings-panel hidden>
+    <div class="cx-panel-head">
+      <h2>Settings</h2>
+      <button class="cx-linkbtn" data-action="close-settings">Done</button>
+    </div>
+    <div class="cx-setting">
+      <label for="cx-window-weeks">How much history to pull</label>
+      <select id="cx-window-weeks" data-setting-weeks>
+        <option value="13">13 weeks — matches the Hoops trend line</option>
+        <option value="26">26 weeks</option>
+        <option value="52">52 weeks — full year over year</option>
+      </select>
+      <p class="cx-setting-hint">
+        A 52-week first pull is about 8,000 comments in eight requests, roughly two
+        minutes. After that a Refresh only reads what is new.
+      </p>
+    </div>
+    <div class="cx-setting">
+      <label for="cx-gateway-token">AI gateway token</label>
+      <input id="cx-gateway-token" type="password" data-setting-token
+             placeholder="paste your Code Puppy token" autocomplete="off" spellcheck="false">
+      <span class="cx-token-status" data-token-status></span>
+      <p class="cx-setting-hint">
+        Only needed for <strong>The read</strong>. It is the <code>puppy_token</code> from
+        <code>~/.code_puppy/puppy.cfg</code> — an extension cannot read that file, so it has
+        to be pasted. Stored on this device only, never sent anywhere except
+        <code>puppy-backend.walmart.com</code>, and it expires every few weeks.
+      </p>
+    </div>
+    <div class="cx-setting">
+      <label for="cx-gateway-model">Model</label>
+      <select id="cx-gateway-model" data-setting-model>
+        <option value="claude-sonnet-5">claude-sonnet-5 — quick</option>
+        <option value="claude-opus-5">claude-opus-5 — slower, better prose</option>
+      </select>
+    </div>
+    <div class="cx-setting cx-setting-danger">
+      <button class="btn" data-action="clear-history">Clear stored comments</button>
+      <p class="cx-setting-hint">
+        Drops the local comment history. The next Refresh pulls the whole window again.
+      </p>
+    </div>
+  </section>
+
+  <!-- Shown only when the last pull failed. -->
+  <section class="cx-panel cx-debug" data-debug-panel hidden>
+    <div class="cx-panel-head">
+      <h2>Last pull details</h2>
+      <button class="cx-linkbtn" data-action="copy-diagnostics">Copy diagnostics</button>
+    </div>
+    <div class="cx-debug-body" data-debug-body></div>
+    <p class="cx-note">
+      <strong>Copy diagnostics</strong> puts the pull state on your clipboard — which
+      source failed, its error class, and the record counts held. It carries no comment
+      text and no token.
+    </p>
+  </section>
+</section>
