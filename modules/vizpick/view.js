@@ -9,10 +9,12 @@
 
 import { gaugeSvg, bandFor } from "./lib/charts.js";
 import { isTodayRowComplete, withholdDuplicateLocations } from "./lib/today_coverage.js";
+import { rowSourceUpdate, stampSpread } from "./lib/store_stamp.js";
 import { getUserHomeMarket, getUserHomeStore, onUserMarketChange } from "../../shared/userStore.js";
 import { rollUpSkippedByAssociate } from "./lib/parse_vizpick_stores_csv.js";
 import { buildPerformanceHtml, buildPickListHtml, buildCardEmail } from "./lib/card_report.js";
-import { timeline as historyTimeline, toCsv as historyCsv, indexSchedule, matchPerson, unseenBins, firstSeenEvents, diffDepts } from "./lib/home_history.js";
+import { timeline as historyTimeline, toCsv as historyCsv, indexSchedule, matchPerson, unseenBins, firstSeenEvents, diffDepts, updateGaps,
+  scanLedger, scanImpact, ledgerCsv, cleanDay } from "./lib/home_history.js";
 import { isDigitalJob } from "../digitalmetrics/lib/data/job_classify.js";
 import * as associateDirectory from "../../shared/associateDirectory.js";
 import { hasName, normalizeWin } from "../../shared/associateDirectory.js";
@@ -379,7 +381,7 @@ export async function mount(host, container) {
 
   /** Load the digital roster for every store on screen; true when something new arrived. */
   async function refreshDigital() {
-    const stores = [...new Set(rowsForActiveTab().filter((r) => r.isToday && topAssociatesFor(r).shown.length).map((r) => String(r.store)))];
+    const stores = [...new Set(rowsForActiveTab().filter((r) => (r.isToday || r.dayDetail) && topAssociatesFor(r).shown.length).map((r) => String(r.store)))];
     const now = Date.now();
     const due = stores.filter((s) => { const d = digitalByStore.get(s); return !d || now - d.at > (d.names ? DIGITAL_TTL_MS : DIGITAL_MISS_TTL_MS); });
     if (!due.length) return false;
@@ -860,7 +862,38 @@ export async function mount(host, container) {
   /** Rows of whichever closed day is selected. */
   function dayRows() {
     const all = activeDay()?.rows || [];
-    return selectedMarket ? all.filter((r) => r.market === selectedMarket) : [];
+    const rows = selectedMarket ? all.filter((r) => r.market === selectedMarket) : [];
+    // The summary export has no department or location dimension; those come
+    // from the day's LAST current-day capture (lib/day_details.js), joined by
+    // store. The headline numbers stay the summary's — it is the closed day.
+    const details = state?.dayDetails?.[activeDayKey()];
+    if (!details) return rows;
+    const safe = new Map(withholdDuplicateLocations(Object.values(details)).map((d) => [String(d.store), d]));
+    return rows.map((r) => {
+      const d = safe.get(String(r.store));
+      return d ? {
+        ...r,
+        depts: d.depts, deptCount: d.deptCount, deptGroups: d.deptGroups,
+        locations: d.locations, locationsWithheld: d.locationsWithheld || null,
+        dayDetail: { sourceUpdate: d.sourceUpdate, capturedAt: d.capturedAt, fromHistory: !!d.fromHistory },
+      } : r;
+    });
+  }
+
+  /** "As of the last update that day" line for a closed-day card's detail. */
+  function dayDetailNote(r) {
+    const d = r.dayDetail;
+    if (!d) return "";
+    const iso = d.sourceUpdate?.iso || d.capturedAt;
+    const at = iso ? new Date(iso) : null;
+    const when = at && !Number.isNaN(at.getTime())
+      ? at.toLocaleString(undefined, { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "time unknown";
+    const label = d.sourceUpdate?.iso ? "Tableau update" : "read";
+    const title = "Department and associate detail is the last current-day reading kept for this day; "
+      + "the rings above are the closed-day summary, so the two can differ."
+      + (d.fromHistory ? " Rebuilt from the home-store pick history; percentages are computed." : "");
+    return `<p class="vizpick-dept-none vizpick-daydetail-note" title="${escapeHtml(title)}">As of the day's last ${label}: ${escapeHtml(when)}</p>`;
   }
 
   function todayRows() {
@@ -883,6 +916,22 @@ export async function mount(host, container) {
         const { bu, region, market } = roster.get(t.store);
         return { bu, region, market, ...projectTodayRow(t) };
       });
+  }
+
+  /**
+   * Roster stores the last Today run recorded a real per-store failure for
+   * (lane and budget notes are soft and excluded). Only the most recent
+   * result counts: an older saved envelope describes a different run.
+   */
+  function lastRunFailedStores() {
+    const dbg = state?.debugToday;
+    const fails = dbg?.debug?.failures;
+    if (!dbg?.ok || !Array.isArray(fails)) return [];
+    const todayAt = state?.today?.capturedAt ? new Date(state.today.capturedAt).getTime() : 0;
+    const dbgAt = dbg.capturedAt ? new Date(dbg.capturedAt).getTime() : 0;
+    if (todayAt && dbgAt && dbgAt < todayAt - 60_000) return [];
+    const roster = new Set(rosterRows().map((r) => String(r.store)));
+    return [...new Set(fails.filter((f) => !f.soft && roster.has(String(f.store))).map((f) => String(f.store)))];
   }
 
   // Map the Details/current-day fields onto the same shape the cards render.
@@ -913,6 +962,12 @@ export async function mount(host, container) {
       locations:       t.locations,
       locationsWithheld: t.locationsWithheld || null,
       deptCount:       t.deptCount,
+      // This store's own Tableau stamp and capture time. Stores publish on
+      // their own clocks, so each card shows its own rather than the
+      // snapshot's; rows captured before 2026-09-15 have none.
+      sourceUpdate:    t.sourceUpdate ?? null,
+      capturedAt:      t.capturedAt ?? null,
+      confirmedAt:     t.confirmedAt ?? null,
       isToday:         true,
     };
   }
@@ -1021,7 +1076,11 @@ export async function mount(host, container) {
     const freshEl = container.querySelector('[data-freshness="stores"]');
     if (absEl) {
       const snap = activeSnapshot();
-      const su = snap?.sourceUpdate;
+      // Today: stores publish on their own clocks, so the header can only
+      // honestly show the NEWEST store's stamp and say so when they differ —
+      // each card carries its own.
+      const spread = activeTab === "today" ? stampSpread(snap?.rows) : null;
+      const su = spread?.newest ?? snap?.sourceUpdate;
       const note = activeNote();
 
       if (!snap) {
@@ -1032,8 +1091,14 @@ export async function mount(host, container) {
         const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
         if (su.hasTime) {
           const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-          absEl.textContent = `${day} — ${time}`;
-          absEl.title = `Tableau last updated ${d.toLocaleString()} (${humanAge(Date.now() - d.getTime())} ago). ${note}`;
+          if (spread?.differ) {
+            const o = new Date(spread.oldest.iso);
+            absEl.textContent = `${day} — ${time} (newest store)`;
+            absEl.title = `Stores update at different times. Newest store stamp ${d.toLocaleString()} (${humanAge(Date.now() - d.getTime())} ago), oldest ${o.toLocaleString()} (${humanAge(Date.now() - o.getTime())} ago). Each card shows its own. ${note}`;
+          } else {
+            absEl.textContent = `${day} — ${time}`;
+            absEl.title = `Tableau last updated ${d.toLocaleString()} (${humanAge(Date.now() - d.getTime())} ago). ${note}`;
+          }
         } else {
           absEl.textContent = day;
           absEl.title = `Tableau last updated ${day}. This view publishes a date with no clock time. ${note}`;
@@ -1080,11 +1145,20 @@ export async function mount(host, container) {
     // Captured but thin is a DIFFERENT problem and deserves different words:
     // the store is there, some of its rings are not.
     const thin = todayRows().filter((r) => !isTodayRowComplete(r)).length;
-    const coverageNote = missing
+    // A store the last run could not read KEEPS its previous row (the crawl
+    // merges, never replaces — 2026-09-15), so it is on screen under an older
+    // "Updated" time rather than missing. Say so; a quiet stale card is the
+    // wrong-store bug's cousin.
+    const shown = new Set(todayRows().map((r) => String(r.store)));
+    const kept = lastRunFailedStores().filter((s) => shown.has(s));
+    const keptNote = kept.length
+      ? ` ${kept.length} store${kept.length === 1 ? "" : "s"} (${kept.join(", ")}) did not answer on the last run and ${kept.length === 1 ? "shows its" : "show their"} previous numbers — see each card's Updated time and the capture details below.`
+      : "";
+    const coverageNote = (missing
       ? ` ${missing} store${missing === 1 ? "" : "s"} could not be captured — see the capture details below.`
       : thin
         ? ` ${thin} store${thin === 1 ? " needs" : "s need"} a data repair — Refresh retries incomplete stores.`
-        : "";
+        : "") + keptNote;
 
     renderTodayBar(
       null,
@@ -1143,7 +1217,7 @@ export async function mount(host, container) {
     // republishes every few hours, so the check almost always finds nothing to
     // do and costs nothing. Saying "auto-refreshing every 30 minutes" implied a
     // two-minute crawl on the half hour, which is not what happens.
-    return `Checks ${mine} (${a.market}) every ${a.periodMin} min and reloads only when Tableau's Updated stamp moves.`;
+    return `Checks ${mine} (${a.market}) every ${a.periodMin} min and re-reads only the stores whose own Updated stamp has moved.`;
   }
 
   function renderTodayBar(progress, message) {
@@ -1274,11 +1348,14 @@ export async function mount(host, container) {
   // crosstab, which has no department dimension at all — so day tabs say so
   // rather than rendering an empty table that looks like missing data.
   function deptBreakdownHtml(r) {
-    if (!r.isToday) {
-      return `<p class="vizpick-dept-none">Department breakdown is current-day only — the daily summary export has no department detail.</p>`;
+    if (!r.isToday && !r.dayDetail) {
+      return `<p class="vizpick-dept-none">No current-day capture was kept for this store on this day, and the daily summary export has no department detail.</p>`;
     }
     const depts = Array.isArray(r.depts) ? r.depts : [];
-    if (!depts.length) {
+    // A kept day with location detail but no department breakout still has its
+    // associates to show, so it keeps the tabs.
+    const keptAssociatesOnly = !!r.dayDetail && Array.isArray(r.locations?.gaps);
+    if (!depts.length && !keptAssociatesOnly) {
       return `<p class="vizpick-dept-none">No department detail captured for this store.</p>`;
     }
 
@@ -1324,7 +1401,8 @@ export async function mount(host, container) {
             ? `<span class="vizpick-dept-omitted" title="Departments with no suggested picks and no expected cases today">${omitted} idle hidden</span>`
             : ""}
         </div>
-        ${pane === "assoc" ? assoc : `
+        ${dayDetailNote(r)}
+        ${pane === "assoc" ? assoc : !depts.length ? `<p class="vizpick-dept-none">No department detail was kept for this day.</p>` : `
         <table class="vizpick-dept-table">
           <thead><tr><th>Dept</th><th>Picks</th><th>Cases Seen</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -1404,8 +1482,8 @@ export async function mount(host, container) {
   }
 
   function associatesHtml(r) {
-    if (!r.isToday) {
-      return `<p class="vizpick-dept-none">Associate detail is current-day only — the daily summary export has no per-location data.</p>`;
+    if (!r.isToday && !r.dayDetail) {
+      return `<p class="vizpick-dept-none">No current-day capture was kept for this store on this day, and the daily summary export has no per-location data.</p>`;
     }
     const gaps = r.locations?.gaps;
     if (r.locationsWithheld) {
@@ -1504,11 +1582,41 @@ export async function mount(host, container) {
   function cardMeta(r) {
     const snap = activeSnapshot();
     return {
-      sourceUpdate: snap?.sourceUpdate ?? null,
+      // The row's own stamp on Today — stores update at different times.
+      sourceUpdate: activeTab === "today" ? rowSourceUpdate(r, snap) : (snap?.sourceUpdate ?? null),
       capturedAt: r?.capturedAt ?? snap?.capturedAt ?? null,
       isToday: activeTab === "today",
+      detailAsOf: r?.dayDetail ? (r.dayDetail.sourceUpdate?.iso || r.dayDetail.capturedAt || null) : null,
       market: r?.market ?? selectedMarket ?? null,
     };
+  }
+
+  /**
+   * The "Updated" line on a Today card: this store's own Tableau stamp. Time
+   * only when the stamp is today, else day + time. The stamp is when Tableau
+   * published this store's numbers; the tooltip adds when the row was read
+   * (and last confirmed unchanged), which is a different moment.
+   */
+  function cardStampHtml(r) {
+    if (activeTab !== "today") return "";
+    const su = rowSourceUpdate(r, state?.today);
+    const now = Date.now();
+    if (su?.iso) {
+      const d = new Date(su.iso);
+      const sameDay = d.toDateString() === new Date(now).toDateString();
+      const time = su.hasTime ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+      const text = sameDay && time ? time
+        : `${d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" })}${time ? ` ${time}` : ""}`;
+      const read = r?.capturedAt ? ` Read ${humanAge(now - new Date(r.capturedAt).getTime())} ago` : "";
+      const confirmed = r?.confirmedAt ? `, still current ${humanAge(now - new Date(r.confirmedAt).getTime())} ago` : "";
+      const title = `Tableau last updated store ${r.store} ${d.toLocaleString()} (${humanAge(now - d.getTime())} ago).${read}${confirmed}${read ? "." : ""} Stores update at different times.`;
+      return `<div class="vizpick-store-card-stamp" title="${escapeHtml(title)}">Updated ${escapeHtml(text)}</div>`;
+    }
+    if (r?.capturedAt) {
+      const age = humanAge(now - new Date(r.capturedAt).getTime());
+      return `<div class="vizpick-store-card-stamp" title="Tableau's Updated stamp could not be read for store ${escapeHtml(r.store)}. Read ${escapeHtml(age)} ago.">Read ${escapeHtml(age)} ago</div>`;
+    }
+    return "";
   }
 
   // How long a report will wait for names before printing what it has.
@@ -1705,6 +1813,7 @@ export async function mount(host, container) {
             <div class="vizpick-store-card-sub">${
               isHome ? `<span class="vizpick-home-chip" title="Your home store, from Settings > Defaults">yours</span>` : ""
             }${sub}</div>
+            ${cardStampHtml(r)}
           </div>
           <div class="vizpick-store-card-gauge">${gauge}</div>
           <div class="vizpick-card-actions">
@@ -1732,7 +1841,11 @@ export async function mount(host, container) {
     const body    = container.querySelector("[data-debug-body]");
     if (!section || !body) return;
     const dbg = activeTab === "today" ? state?.debugToday : state?.debug;
-    const clean = !dbg || dbg.ok;
+    // An ok run that still lost stores has something to show: the per-store
+    // reasons. Without this the Today bar pointed at "the capture details
+    // below" and the section was empty.
+    const lostStores = !!dbg?.ok && (dbg.debug?.failures || []).some((f) => !f.soft);
+    const clean = !dbg || (dbg.ok && !lostStores);
 
     // Always reachable, even with nothing wrong on record. The failure that
     // most needs diagnosing is a capture that does nothing and stores no
@@ -1779,6 +1892,13 @@ export async function mount(host, container) {
     if (dbg.error) parts.push(`<br><span class="vizpick-debug-error">${escapeHtml(String(dbg.error))}</span>`);
     const fix = FIXES[dbg.errorClass];
     if (fix) parts.push(`<p class="vizpick-debug-fix"><strong>What to do:</strong> ${escapeHtml(fix)}</p>`);
+    // Per-store reasons in plain sight — an ok run that lost stores has no
+    // errorClass, and the reasons used to be reachable only inside the JSON.
+    const perStore = (dbg.debug?.failures || []).filter((f) => !f.soft);
+    if (perStore.length) {
+      parts.push(`<p class="vizpick-debug-fix"><strong>Stores this run could not read</strong> (they keep their previous numbers):</p><ul>` +
+        perStore.map((f) => `<li><strong>${escapeHtml(String(f.store))}</strong> — ${escapeHtml(String(f.reason))}</li>`).join("") + `</ul>`);
+    }
     if (dbg.debug) {
       parts.push(`<details><summary>Capture debug</summary><pre>${escapeHtml(JSON.stringify(dbg.debug, null, 2))}</pre></details>`);
     }
@@ -1908,6 +2028,15 @@ export async function mount(host, container) {
   let histData = null;
   let histTimer = null;
   let histBusy = false;
+  // Which view of the dialog is showing, and the Bin-by-bin filters. The
+  // business case opens first: it is what the dialog is now mostly for.
+  let histView = "case";
+  let histLedgerQuery = "";
+  let histLedgerFilter = "all";
+  let histCaseText = "";          // plain-text summary for "Copy summary"
+  let histFileNote = "";          // result of the last Save / Load history file
+  let histOtherOpen = false;      // Business case: "Other jobs" broken out by job title
+  let histCaseModel = null;       // what the Business case shows, for the PDF (lib/case_report.js)
   // WIN → directory record ({ name, title }). Shared across days.
   const histPeople = new Map();
   // day → schedule index (lib/home_history.js::indexSchedule), or null when
@@ -2032,6 +2161,10 @@ export async function mount(host, container) {
       <div class="vizpick-panel-head">
         <h2>${title}</h2>
         ${extra}
+        <button class="vizpick-linkbtn" data-hist-save title="Save every kept day to a file, to load into another Edge">Save history file</button>
+        <button class="vizpick-linkbtn" data-hist-load title="Add days from a saved history file">Load history file</button>
+        <input type="file" id="vizpick-hist-file" accept=".json,application/json" data-hist-file hidden>
+        ${histFileNote ? `<span class="vizpick-hist-muted" role="status">${escapeHtml(histFileNote)}</span>` : ""}
         <button class="btn" data-hist-capture ${histBusy ? "disabled" : ""}>${histBusy ? "Capturing…" : "Capture now"}</button>
         <button class="vizpick-linkbtn vizpick-hist-close" data-hist-close aria-label="Close">Close</button>
       </div>`;
@@ -2102,6 +2235,9 @@ export async function mount(host, container) {
       ? (histSchedules.get(histDay) ? "" : ` Job titles: Digital Metrics has no schedule for ${escapeHtml(histDay)} (or is not signed in), so only Workday titles already on file are shown.`)
       : " Loading names and job titles…";
 
+    // A long stretch of Tableau data time between two kept updates gets its own
+    // row, so a missing hour reads as a gap rather than silently absent.
+    const gapAt = new Map(updateGaps(entries).map((g) => [g.index, g]));
     const tl = rows.map(({ entry: e, diff: d }, i) => {
       const late = (minutesOfDay(dataTime(e)) ?? 0) >= cut;
       const binRows = (d?.bins || []).filter((b) => b.dSeen || b.dDone).map((b) => `<tr>
@@ -2112,9 +2248,18 @@ export async function mount(host, container) {
           ${personCell(b.win, b.lastSeenAt, cut)}
           <td>${escapeHtml(b.lastSeenAt ? clock(b.lastSeenAt) : "not scanned")}</td>
         </tr>`).join("");
-      return `<tbody class="${late ? "vizpick-hist-after" : ""}">
+      const gap = gapAt.get(i);
+      const gapRow = gap
+        ? `<tbody><tr class="vizpick-hist-muted"><td colspan="8">No update kept for Tableau data between ${escapeHtml(clock(gap.from))} and ${escapeHtml(clock(gap.to))} (${Math.floor(gap.minutes / 60)} h ${gap.minutes % 60} min).</td></tr></tbody>`
+        : "";
+      const stampFlag = e.stampUnverified
+        ? ` <span class="vizpick-hist-flag" title="Recorded under the market crawl's Updated time before per-store stamps; this store's own stamp later showed different data at the same time.">time unverified</span>`
+        : e.relabeledFrom
+          ? ` <span class="vizpick-hist-flag" title="First recorded as ${escapeHtml(e.relabeledFrom)}; this store's own stamp showed the data belongs to this earlier update.">moved from ${escapeHtml(clock(e.relabeledFrom))}</span>`
+          : "";
+      return `${gapRow}<tbody class="${late ? "vizpick-hist-after" : ""}">
         <tr class="vizpick-hist-row" data-hist-toggle="${i}">
-          <td>${escapeHtml(clock(dataTime(e)))}</td>
+          <td>${escapeHtml(clock(dataTime(e)))}${stampFlag}</td>
           <td class="vizpick-hist-muted">${escapeHtml(clock(e.capturedAt))}</td>
           <td class="num">${e.totals.seen}</td>
           <td class="num">${e.totals.done}</td>
@@ -2129,11 +2274,7 @@ export async function mount(host, container) {
       </tbody>`;
     }).join("");
 
-    histEl.innerHTML = `
-      ${head(`Home store ${escapeHtml(last.store)} — pick progression`, `
-        <label class="vizpick-hist-ctl">Day <select data-hist-day>${dayOpts}</select></label>
-        <label class="vizpick-hist-ctl">Stocking leaves <input type="time" data-hist-cutoff value="${escapeHtml(histCutoff)}"></label>
-        <button class="vizpick-linkbtn" data-hist-export>Export CSV</button>`)}
+    const timelineHtml = `
       <p class="vizpick-hist-summary">
         ${entries.length} update${entries.length === 1 ? "" : "s"} kept, Tableau data from ${escapeHtml(clock(dataTime(first)))} to ${escapeHtml(clock(dataTime(last)))}.
         Suggested picks <strong>${first.totals.seen} → ${last.totals.seen}</strong>;
@@ -2214,9 +2355,385 @@ export async function mount(host, container) {
           ${tl}
         </table>
       </div>
+      ${histPollNote(histData?.polls || [])}
       <p class="vizpick-hist-note">Click an update to see which bins changed. Shaded rows are Tableau data from after the cutoff (the source runs 1–2 h behind the floor).
       VizPick assigns picks to locations, not people: the scanner shown is whoever scanned the bin last, so a scan after the cutoff inherits whatever was left there.
       Job and shift come from Digital Metrics' schedule for the selected day, matched by name.</p>`;
+
+    const tabs = `<div class="vizpick-detail-tabs vizpick-hist-tabs" role="tablist" aria-label="Pick progression view">
+      ${[["case", "Business case"], ["timeline", "Day timeline"], ["bins", "Bin by bin"]].map(([id, label]) =>
+        `<button class="vizpick-detail-tab${histView === id ? " is-active" : ""}" role="tab" aria-selected="${histView === id}" data-hist-view="${id}">${label}</button>`).join("")}
+    </div>`;
+    histEl.innerHTML = `
+      ${head(`Home store ${escapeHtml(last.store)} — pick progression`, `
+        <label class="vizpick-hist-ctl">Day <select data-hist-day>${dayOpts}</select></label>
+        <label class="vizpick-hist-ctl">Stocking leaves <input type="time" data-hist-cutoff value="${escapeHtml(histCutoff)}"></label>
+        <button class="vizpick-linkbtn" data-hist-export>Export CSV</button>`)}
+      ${tabs}
+      ${histView === "case" ? businessCaseHtml(entries) : histView === "bins" ? ledgerShellHtml() : timelineHtml}`;
+    if (histView === "bins") paintLedgerList();
+  }
+
+  // ── Business case: do digital scans add picks? ─────────────────────────────
+  // The analyst's case to the VizPick report owner (2026-09-16): scanning with
+  // the digital exception filter still adds suggested picks to a bin, which then
+  // count as open under the digital associate. Everything below is measured from
+  // the kept updates by lib/home_history.js::scanImpact / scanLedger.
+
+  // Scan times arrive as "9/15/2026 3:20:17 PM", sometimes with a narrow
+  // no-break space before AM/PM that Date() will not parse.
+  const scanClock = (s) => clock(String(s || "").replace(/[  ]/g, " "));
+  const scanDayKey = (s) => {
+    const m = String(s || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    return m ? `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : null;
+  };
+  const personName = (win) => (win ? histPerson(win)?.name || win : "nobody");
+
+  /** The groups the case compares; every other job is pooled. */
+  function caseGroup(win) {
+    const g = jobGroup(histPerson(win));
+    return g === "Digital" || g === "Stocking 1" || g === "Not on today's schedule" || g === "Name not resolved" ? g : "Other jobs";
+  }
+
+  function businessCaseHtml(rawEntries) {
+    // Foreign captures and repeat captures of one Tableau update are set aside
+    // first, so the totals and the lists below read the same updates.
+    const cleaned = cleanDay(rawEntries);
+    const entries = cleaned.entries;
+    const setAside = [
+      cleaned.foreign.length ? `${cleaned.foreign.length} update${cleaned.foreign.length === 1 ? "" : "s"} whose bins weren't this store's` : "",
+      cleaned.duplicates ? `${cleaned.duplicates} repeat capture${cleaned.duplicates === 1 ? "" : "s"} of the same Tableau update` : "",
+    ].filter(Boolean).join(" and ");
+    if (entries.length < 2) {
+      histCaseText = "";
+      histCaseModel = null;
+      return `<p class="vizpick-hist-empty">The business case needs at least two updates on this day.</p>`;
+    }
+    const impact = scanImpact(entries, caseGroup);
+    const ledger = scanLedger(entries);
+    const byGroup = new Map(impact.groups.map((g) => [g.group, g]));
+    const dig = byGroup.get("Digital") || null;
+    const stk = byGroup.get("Stocking 1") || null;
+    const pct = (v) => (v == null ? "—" : `${v}%`);
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const loading = !histSchedules.has(histDay);
+    const noSchedule = histSchedules.has(histDay) && !histSchedules.get(histDay);
+    const digAdds = [];
+    for (const b of ledger) for (const r of b.rows) {
+      if (r.kind === "scan" && r.dDue > 0 && r.win && caseGroup(r.win) === "Digital") digAdds.push({ location: b.location, ...r });
+    }
+    digAdds.sort((a, b) => String(a.at).localeCompare(String(b.at)) || a.location.localeCompare(b.location));
+
+    let verdict;
+    if (loading) verdict = "Loading names and the Digital Metrics schedule for this day…";
+    else if (noSchedule) verdict = "Digital Metrics has no schedule for this day (or is not signed in), so scans cannot be grouped by job. Sign in to Digital Metrics and reopen this view.";
+    else if (!dig?.scans) verdict = "No scans by digital associates were caught on this day.";
+    else {
+      verdict = `Digital associates' scans added ${plural(dig.picksAdded, "suggested pick")} to the store's pick total across ${plural(dig.scans, "scan")}.`;
+      if (dig.rescans >= 3) {
+        verdict += ` When a digital associate rescanned a bin already scanned that day, its picks went up ${pct(dig.rescanRate)} of the time`;
+        verdict += stk?.rescans ? `, against ${pct(stk.rescanRate)} for Stocking 1` : "";
+        verdict += ".";
+      }
+      verdict += ` At the last update, ${plural(dig.openAtClose, "pick")} ${dig.openAtClose === 1 ? "was" : "were"} still open in ${plural(dig.binsOpenAtClose, "bin")} last scanned by digital associates.`;
+    }
+
+    const order = ["Digital", "Stocking 1", "Other jobs", "Not on today's schedule", "Name not resolved"];
+    const groupRows = order.map((g) => byGroup.get(g)).filter(Boolean);
+    // "Other jobs" pools every scheduled job that is neither digital nor
+    // Stocking 1; the same measure per job title, with who held it that day.
+    const jobPeople = new Map();
+    const otherJobs = scanImpact(entries, (w) => {
+      if (caseGroup(w) !== "Other jobs") return "__skip";
+      const p = histPerson(w);
+      const job = p?.job || "Other";
+      if (!jobPeople.has(job)) jobPeople.set(job, new Set());
+      jobPeople.get(job).add(p?.name || w);
+      return job;
+    }).groups.filter((g) => g.group !== "__skip")
+      .map((g) => ({ ...g, people: [...(jobPeople.get(g.group) || [])] }))
+      .sort((a, b) => (b.rescans + b.firstScans) - (a.rescans + a.firstScans) || a.group.localeCompare(b.group));
+    const statCells = (g) => `<td class="num">${g.rescans}</td>
+        <td class="num">${g.rescansGained} (${pct(g.rescanRate)})</td><td class="num">${g.rescanPicks}</td>
+        <td class="num">${g.firstScans}</td><td class="num">${g.firstScanPicks}</td>`;
+    // Open picks are only reported for digital associates (verdict + tally):
+    // leftovers under other jobs are not part of this case (analyst, 2026-09-16).
+    const otherToggle = otherJobs.length
+      ? ` <button class="vizpick-linkbtn" data-hist-other-toggle aria-expanded="${histOtherOpen}">${histOtherOpen ? "hide" : "show"} ${otherJobs.length} job${otherJobs.length === 1 ? "" : "s"}</button>`
+      : "";
+    const otherSubRows = histOtherOpen
+      ? otherJobs.map((j) => `<tr class="vizpick-case-sub"><td>${escapeHtml(j.group)} <span class="vizpick-hist-muted">${escapeHtml(j.people.join(", "))}</span></td>${statCells(j)}</tr>`).join("")
+      : "";
+    const groupTable = `<div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
+      <thead><tr><th>Scanned by</th><th class="num">Rescans</th><th class="num">Rescans that added picks</th><th class="num">New picks on rescans</th><th class="num">First scans of the day</th><th class="num">New picks on first scans</th></tr></thead>
+      <tbody>${groupRows.map((g) => `<tr class="${g.group === "Digital" ? "vizpick-case-digital" : ""}">
+        <td>${escapeHtml(g.group)}${g.group === "Other jobs" ? otherToggle : ""}</td>${statCells(g)}</tr>${g.group === "Other jobs" ? otherSubRows : ""}`).join("")}
+      </tbody></table></div>`;
+
+    const scanRow = (s, prevLabel = true) => `<tr>
+      <td>${escapeHtml(s.location)}</td>
+      <td>${escapeHtml(personName(s.win))}</td>
+      <td>${escapeHtml(scanClock(s.scanAt))}</td>
+      ${prevLabel ? `<td>${escapeHtml(personName(s.prevWin))}${s.prevWin ? ` <span class="vizpick-hist-muted">${escapeHtml(histPerson(s.prevWin)?.job || "")}</span>` : ""}</td>` : ""}
+      <td class="num ${s.dDue > 0 ? "vizpick-ledger-up" : ""}">${signed(s.dDue)}</td>
+      <td class="num">${s.done} / ${s.due}</td>
+    </tr>`;
+    // The same picks per digital associate, so each person's share is visible.
+    const byAssociate = new Map();
+    for (const r of digAdds) {
+      const cur = byAssociate.get(r.win) || { win: r.win, scans: 0, picks: 0, bins: new Set() };
+      cur.scans++; cur.picks += r.dDue; cur.bins.add(r.location);
+      byAssociate.set(r.win, cur);
+    }
+    const associates = [...byAssociate.values()].sort((a, b) => b.picks - a.picks);
+    const digAddsTotal = associates.reduce((n, a) => n + a.picks, 0);
+    const associatesHtml = associates.length
+      ? `<div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
+          <thead><tr><th>Digital associate</th><th class="num">Scans that added picks</th><th class="num">Bins</th><th class="num">Picks added</th></tr></thead>
+          <tbody>${associates.map((a) => `<tr><td>${escapeHtml(personName(a.win))} <span class="vizpick-hist-muted">${escapeHtml(histPerson(a.win)?.job || "")}</span></td>
+            <td class="num">${a.scans}</td><td class="num">${a.bins.size}</td><td class="num vizpick-ledger-up">+${a.picks}</td></tr>`).join("")}
+          <tr class="vizpick-case-digital"><td>All digital associates</td><td class="num">${digAdds.length}</td><td class="num">${new Set(digAdds.map((r) => r.location)).size}</td><td class="num">+${digAddsTotal}</td></tr></tbody></table></div>`
+      : "";
+    const addsHtml = digAdds.length
+      ? `${associatesHtml}<div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
+          <thead><tr><th>Tableau data as of</th><th>Bin</th><th>Scanned by</th><th>Scan</th><th>Scanned before by</th><th class="num">Picks added</th><th class="num">Done / due after</th></tr></thead>
+          <tbody>${digAdds.map((r) => `<tr><td>${escapeHtml(clock(r.at))}</td>${scanRow(r).replace(/^<tr>/, "").replace(/<\/tr>$/, "")}</tr>`).join("")}</tbody></table></div>`
+      : `<p class="vizpick-hist-note">No digital scan added picks on this day.</p>`;
+
+    // ── How this is measured, with a worked example from this day ───────────
+    // The example is the digital scan that added the most picks to a bin
+    // someone else had scanned before, so it shows a handover plainly.
+    const example = [...digAdds].filter((r) => r.prevWin && r.prevWin !== r.win).sort((a, b) => b.dDue - a.dDue)[0]
+      || [...digAdds].sort((a, b) => b.dDue - a.dDue)[0] || null;
+    let methodHtml = "";
+    let exampleModel = null;
+    const methodLines = [];
+    const steps = [
+      "Tableau's VizPick Details report has a \"Location Details\" download: one row per backroom bin with its suggested picks due, suggested picks done, who scanned the bin last (user ID) and when.",
+      "Every time Tableau publishes an update for the store (checked every 30 minutes, published about hourly), the suite saves that whole table: every bin, its counts, and its last scanner.",
+      "Each bin is compared with itself at the previous update. If its last-scan time changed, someone scanned it in between, and the change in picks due and done between those two updates is recorded against that scan.",
+      "The scanner's job comes from that day's Digital Metrics schedule, matched by name. A scan counts as digital when the scheduled job is a digital job.",
+    ];
+    if (example) {
+      const bin = ledger.find((b) => b.location === example.location);
+      const exTime = Date.parse(example.at);
+      const before = [...entries].reverse().find((e) => Date.parse(e.sourceIso || e.capturedAt) < exTime && (e.bins || []).some((b) => b.location === example.location));
+      const priorBin = before?.bins.find((b) => b.location === example.location) || null;
+      const who = (win) => `${personName(win)}${histPerson(win)?.job ? ` (${histPerson(win).job})` : ""}`;
+      const narrative = priorBin
+        ? `At the ${clock(before.sourceIso || before.capturedAt)} update, bin ${example.location} had last been scanned at ${scanClock(priorBin.lastSeenAt)} by ${who(priorBin.win)} and showed ${priorBin.done} of ${priorBin.seen} picks done. `
+          + `At the ${clock(example.at)} update, its last scan was ${scanClock(example.scanAt)} by ${who(example.win)}, and it showed ${example.done} of ${example.due} picks done: `
+          + `${example.dDue} more picks due${example.dDone ? ` and ${example.dDone} more done` : " and none more done"}, with no other scan of that bin recorded in between.`
+        : "";
+      const rows = (bin?.rows || []).map((r) => `<tr class="${r.kind === "noscan" ? "vizpick-ledger-noscan" : ""}${r === bin.rows.find((x) => x.kind === "scan" && x.at === example.at && x.scanAt === example.scanAt) ? " vizpick-case-digital" : ""}">
+          <td>${escapeHtml(clock(r.at))}</td>
+          <td>${r.kind === "noscan" ? "no new scan" : escapeHtml(scanClock(r.scanAt))}${r.scanAt && scanDayKey(r.scanAt) !== histDay ? ` <span class="vizpick-hist-muted">(${escapeHtml(scanDayKey(r.scanAt) || "")})</span>` : ""}</td>
+          <td>${r.kind === "noscan" ? "—" : escapeHtml(personName(r.win))} <span class="vizpick-hist-muted">${r.kind === "noscan" ? "" : escapeHtml(histPerson(r.win)?.job || "")}</span></td>
+          <td class="num">${r.done} / ${r.due}</td>
+          <td class="num">${r.dDue == null ? "starting point" : `${r.dDue ? `<span class="vizpick-ledger-up">${signed(r.dDue)} due</span>` : "+0 due"}${r.dDone ? `, <span class="vizpick-ledger-done">${signed(r.dDone)} done</span>` : ""}`}</td>
+        </tr>`).join("");
+      methodHtml = `
+        <h3 class="vizpick-hist-sub">How this is measured</h3>
+        <ol class="vizpick-case-steps">${steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
+        <p class="vizpick-hist-summary"><strong>Worked example, bin ${escapeHtml(example.location)}.</strong> ${escapeHtml(narrative)}</p>
+        <div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
+          <thead><tr><th>Tableau update</th><th>Bin's last scan</th><th>Scanned by</th><th class="num">Done / due</th><th class="num">Change since the row above</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <p class="vizpick-hist-note">What this can't show: who pulled a pick ("done" is the bin's total, not a person's), which screen or filter was open on the device, or a second scan inside the same update window. The counts on a scan row are the next update's, so they can include work finished shortly after the scan.</p>`;
+      methodLines.push("", "How this is measured:");
+      steps.forEach((s, i) => methodLines.push(`${i + 1}. ${s}`));
+      if (narrative) methodLines.push("", `Worked example, bin ${example.location}: ${narrative}`);
+      methodLines.push("What this can't show: who pulled a pick (\"done\" is the bin's total), which screen or filter was open on the device, or a second scan inside the same update window.");
+      exampleModel = {
+        location: example.location,
+        narrative,
+        rows: (bin?.rows || []).map((r) => ({
+          update: clock(r.at),
+          scan: r.kind === "noscan" ? "no new scan" : `${scanClock(r.scanAt)}${r.scanAt && scanDayKey(r.scanAt) !== histDay ? ` (${scanDayKey(r.scanAt) || ""})` : ""}`,
+          name: r.kind === "noscan" ? "—" : personName(r.win),
+          job: r.kind === "noscan" ? "" : histPerson(r.win)?.job || "",
+          done: r.done, due: r.due,
+          change: r.dDue == null ? "starting point" : `${signed(r.dDue)} due${r.dDone ? `, ${signed(r.dDone)} done` : ""}`,
+        })),
+      };
+    }
+
+    // Plain text for an email or Teams message to the report owner.
+    const lines = [`VizPick, store ${entries[0].store}, ${histDay}`, "", verdict, "", "Rescans of bins already scanned that day:"];
+    for (const g of groupRows) lines.push(`- ${g.group}: ${g.rescans} rescans, ${g.rescansGained} added picks (${pct(g.rescanRate)}), ${g.rescanPicks} new picks`);
+    if (otherJobs.length) {
+      lines.push("", "\"Other jobs\" is every scheduled job that is neither digital nor Stocking 1:");
+      for (const j of otherJobs) lines.push(`- ${j.group} (${j.people.join(", ")}): ${j.rescans} rescans, picks went up on ${j.rescansGained}, +${j.rescanPicks} picks; ${j.firstScans} first scans, +${j.firstScanPicks} picks`);
+    }
+    if (associates.length) {
+      lines.push("", `Picks added on digital scans, by associate (${digAddsTotal} total):`);
+      for (const a of associates) lines.push(`- ${personName(a.win)}: +${a.picks} picks on ${a.scans} scans across ${a.bins.size} bins`);
+    }
+    lines.push(...methodLines);
+    lines.push("", "Limits: Tableau keeps only each bin's last scan per update, and a scan's counts are the next update's. The data shows whose scan it was, not which filter was active.");
+    histCaseText = lines.join("\n");
+
+    // Everything above as plain values for "Generate PDF report", so the PDF
+    // says exactly what the tab says (lib/case_report.js).
+    const people = {};
+    for (const e of entries) for (const b of e.bins || []) {
+      if (!b.win || people[b.win]) continue;
+      const p = histPerson(b.win);
+      people[b.win] = { name: p?.name || b.win, job: p?.job || null, shiftStart: p?.shiftStart || null, shiftEnd: p?.shiftEnd || null };
+    }
+    const countsOf = (g) => ({ rescans: g.rescans, rescansGained: g.rescansGained, rescanRate: g.rescanRate, rescanPicks: g.rescanPicks, firstScans: g.firstScans, firstScanPicks: g.firstScanPicks });
+    histCaseModel = {
+      store: String(entries[0].store), day: histDay,
+      generatedAt: new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
+      verdict, setAside,
+      tallies: dig?.scans ? [
+        { value: `+${dig.picksAdded}`, label: `picks added on ${plural(dig.scans, "digital scan")}` },
+        { value: `${pct(dig.rescanRate)} vs ${pct(stk?.rescanRate ?? null)}`, label: "digital rescans that added picks, vs Stocking 1" },
+        { value: dig.openAtClose, label: `picks open at the last update under digital associates (${plural(dig.binsOpenAtClose, "bin")})` },
+      ] : [],
+      groupRows: groupRows.map((g) => ({ group: g.group, ...countsOf(g) })),
+      otherJobs: otherJobs.map((j) => ({ group: j.group, people: j.people, ...countsOf(j) })),
+      associates: associates.map((a) => ({ name: personName(a.win), job: histPerson(a.win)?.job || "", scans: a.scans, bins: a.bins.size, picks: a.picks })),
+      digAdds: digAdds.map((r) => ({
+        update: clock(r.at), location: r.location, name: personName(r.win), job: histPerson(r.win)?.job || "",
+        scan: scanClock(r.scanAt), prevName: r.prevWin ? personName(r.prevWin) : "", prevJob: r.prevWin ? histPerson(r.prevWin)?.job || "" : "",
+        dDue: r.dDue, done: r.done, due: r.due,
+      })),
+      steps, example: exampleModel,
+      cannotShow: "What this can't show: who pulled a pick (\"done\" is the bin's total, not a person's), which screen or filter was open on the device, or a second scan inside the same update window. The counts on a scan row are the next update's, so they can include work finished shortly after the scan.",
+      limits: "Limits: Tableau keeps only each bin's last scan per update, so a second scan inside the same update window is invisible. A scan's counts are the next update's, up to an hour later. The data shows whose scan it was, not which filter was active on the device. Jobs come from the Digital Metrics schedule for the selected day.",
+      summaryText: histCaseText,
+      entries, people,
+    };
+
+    const tally = (value, label) => `<div class="vizpick-case-tally"><strong>${value}</strong><span>${label}</span></div>`;
+    return `
+      <p class="vizpick-case-verdict">${escapeHtml(verdict)}</p>
+      ${setAside ? `<p class="vizpick-hist-note">Measured from ${entries.length} Tableau updates. Set aside: ${escapeHtml(setAside)}.</p>` : ""}
+      ${dig?.scans ? `<div class="vizpick-case-tallies">
+        ${tally(`+${dig.picksAdded}`, `picks added on ${plural(dig.scans, "digital scan")}`)}
+        ${tally(`${pct(dig.rescanRate)} <small>vs ${pct(stk?.rescanRate ?? null)}</small>`, "digital rescans that added picks, vs Stocking 1")}
+        ${tally(dig.openAtClose, `picks open at the last update under digital associates (${plural(dig.binsOpenAtClose, "bin")})`)}
+      </div>` : ""}
+      <div class="vizpick-case-actions">
+        <button class="btn btn-primary" data-hist-pdf>Generate PDF report</button>
+        <button class="btn" data-hist-copy>Copy summary</button>
+        <button class="vizpick-linkbtn" data-hist-ledger-export>Export bin history CSV</button>
+        <span class="vizpick-hist-muted" data-hist-copied aria-live="polite"></span>
+      </div>
+
+      <h3 class="vizpick-hist-sub">Do picks go up when a bin is scanned, whoever scans it?</h3>
+      ${groupTable}
+      <p class="vizpick-hist-note">"New picks" are picks that appeared in a bin when that group scanned it: how many picks each group's scans generated. They are not picks left behind; most were pulled afterwards. "Rescans" are bins already scanned earlier that day, so a first scan of the day doesn't inflate them.</p>
+
+      <h3 class="vizpick-hist-sub">Every digital scan that added picks (${digAdds.length})</h3>
+      ${addsHtml}
+
+      ${methodHtml}
+
+      <p class="vizpick-hist-note">Limits: Tableau keeps only each bin's last scan per update, so a second scan inside the same update window is invisible. A scan's counts are the next update's, up to an hour later. The data shows whose scan it was, not which filter was active on the device. Jobs come from the Digital Metrics schedule for the selected day.</p>`;
+  }
+
+  // ── Bin by bin: every bin's scans across the day ───────────────────────────
+  function ledgerShellHtml() {
+    const opt = (v, label) => `<option value="${v}"${histLedgerFilter === v ? " selected" : ""}>${label}</option>`;
+    return `
+      <div class="vizpick-ledger-tools">
+        <input type="search" id="vizpick-hist-ledger-q" data-hist-ledger-q placeholder="Bin (040/005) or name" value="${escapeHtml(histLedgerQuery)}" aria-label="Filter bins by bin code or associate name">
+        <select id="vizpick-hist-ledger-filter" data-hist-ledger-filter aria-label="Which bins">
+          ${opt("all", "All bins")}${opt("picks", "Had picks")}${opt("open", "Open at last update")}${opt("handed", "Changed hands with picks open")}${opt("digital", "A digital scan added picks")}
+        </select>
+        <button class="vizpick-linkbtn" data-hist-ledger-expand="1">Expand all</button>
+        <button class="vizpick-linkbtn" data-hist-ledger-expand="0">Collapse all</button>
+        <button class="vizpick-linkbtn" data-hist-ledger-export>Export bin history CSV</button>
+        <span class="vizpick-hist-muted" data-hist-ledger-count></span>
+      </div>
+      <p class="vizpick-hist-note">Each scan row shows who scanned the bin, when, and the bin's picks done / due at the next Tableau update, with the change since the row above. "No scan" rows are updates where the counts changed but nobody had rescanned the bin.</p>
+      <div class="vizpick-ledger-list" data-hist-ledger-list></div>`;
+  }
+
+  function paintLedgerList() {
+    const listEl = histEl?.querySelector("[data-hist-ledger-list]");
+    if (!listEl) return;
+    const ledger = scanLedger(cleanDay(histData?.entries || []).entries);
+    const q = histLedgerQuery.trim().toLowerCase();
+    const isDigitalAdd = (b) => b.rows.some((r) => r.kind === "scan" && r.dDue > 0 && r.win && caseGroup(r.win) === "Digital");
+    const shown = ledger.filter((b) => {
+      if (histLedgerFilter === "picks" && !b.hadPicks) return false;
+      if (histLedgerFilter === "open" && !b.open) return false;
+      if (histLedgerFilter === "handed" && !b.handedOver) return false;
+      if (histLedgerFilter === "digital" && !isDigitalAdd(b)) return false;
+      if (!q) return true;
+      if (b.location.toLowerCase().includes(q)) return true;
+      return b.rows.some((r) => [r.win, personName(r.win)].some((v) => String(v || "").toLowerCase().includes(q)));
+    });
+    const change = (r) => {
+      if (r.dDue == null) return "";
+      const parts = [];
+      if (r.dDue) parts.push(`<span class="vizpick-ledger-up">${signed(r.dDue)} due</span>`);
+      if (r.dDone) parts.push(`<span class="vizpick-ledger-done">${signed(r.dDone)} done</span>`);
+      return parts.join(", ") || "no change";
+    };
+    const what = (r) => {
+      if (r.kind === "start") return r.scannedToday ? "already scanned today when tracking began" : "last scanned before today";
+      if (r.kind === "noscan") return "counts changed with no new scan";
+      const handed = r.prevWin && r.win && r.prevWin !== r.win;
+      const base = handed
+        ? (r.carriedOpen ? `took over ${r.carriedOpen} open from ${escapeHtml(personName(r.prevWin))}` : `after ${escapeHtml(personName(r.prevWin))}, nothing open`)
+        : "rescanned by the same associate";
+      return r.firstToday ? `${base} · first scan today` : base;
+    };
+    const when = (r) => {
+      const upd = `<span class="vizpick-hist-muted"> · update ${escapeHtml(clock(r.at))}</span>`;
+      if (r.kind === "noscan") return `no scan${upd}`;
+      if (!r.scanAt) return `not scanned${upd}`;
+      const d = scanDayKey(r.scanAt);
+      return `${escapeHtml(scanClock(r.scanAt))}${d && d !== histDay ? ` <span class="vizpick-hist-muted">(${escapeHtml(d)})</span>` : ""}${upd}`;
+    };
+    listEl.innerHTML = shown.map((b) => {
+      const end = !b.hadPicks ? `<span class="vizpick-hist-muted">no picks</span>`
+        : b.open ? `<span class="vizpick-ledger-up">${b.open} open</span> · ${b.done} / ${b.due}` : `<span class="vizpick-ledger-done">${b.done} / ${b.due} done</span>`;
+      const rows = b.rows.map((r) => {
+        const p = r.win ? histPerson(r.win) : null;
+        return `<tr class="${r.kind === "noscan" ? "vizpick-ledger-noscan" : ""}">
+          <td>${when(r)}</td>
+          <td>${r.kind === "noscan" ? "—" : escapeHtml(personName(r.win))}</td>
+          <td>${r.kind === "noscan" ? "" : escapeHtml(p?.job || (r.win ? "not on the schedule" : ""))}</td>
+          <td class="num">${r.done} / ${r.due}</td>
+          <td>${change(r)}</td>
+          <td>${what(r)}</td>
+        </tr>`;
+      }).join("");
+      return `<details class="vizpick-ledger-bin" open>
+        <summary><span class="code">${escapeHtml(b.location)}</span>
+          <span class="vizpick-hist-muted">${b.scans} scan${b.scans === 1 ? "" : "s"} · last ${escapeHtml(personName(b.win))}</span>
+          <span class="end">${end}</span></summary>
+        <div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
+          <thead><tr><th>Scan</th><th>Associate</th><th>Job</th><th class="num">Done / due</th><th>Change</th><th>What happened</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+      </details>`;
+    }).join("") || `<p class="vizpick-hist-note">No bins match. Try a bin code like 040/005 or part of a name.</p>`;
+    const countEl = histEl.querySelector("[data-hist-ledger-count]");
+    if (countEl) countEl.textContent = `${shown.length} of ${ledger.length} bins`;
+  }
+
+  // What the home-store checks found on the selected day, so a missing hour
+  // says whether Tableau had not published or the check itself failed.
+  function histPollNote(polls) {
+    if (!polls.length) return "";
+    const lastPoll = polls[polls.length - 1];
+    const said = {
+      unchanged: `Tableau still showed data as of ${clock(lastPoll.stamp)}`,
+      added: `a new update was kept (Tableau data as of ${clock(lastPoll.stamp)})`,
+      confirmed: `same data as the newest update kept`,
+      rejected: `the capture was refused because its bins were not this store's`,
+      failed: `the check failed (${lastPoll.error || "no data"})`,
+    }[lastPoll.outcome] || String(lastPoll.outcome || "");
+    const failed = polls.filter((p) => !p.ok);
+    const failedText = failed.length
+      ? ` ${failed.length} failed: ${failed.slice(-6).map((p) => `${clock(p.at)} (${p.error || "no data"})`).join("; ")}.`
+      : " None failed.";
+    return `<p class="vizpick-hist-note">Last checked ${escapeHtml(clock(lastPoll.at))}: ${escapeHtml(said)}. ${polls.length} check${polls.length === 1 ? "" : "s"} logged this day.${escapeHtml(failedText)}</p>`;
   }
 
   container.querySelector('[data-action="open-history"]')?.addEventListener("click", () => {
@@ -2230,6 +2747,79 @@ export async function mount(host, container) {
 
   histEl?.addEventListener("click", async (e) => {
     if (e.target.closest?.("[data-hist-close]")) { histDialog?.close(); return; }
+    if (e.target.closest?.("[data-hist-load]")) { histEl.querySelector("[data-hist-file]")?.click(); return; }
+    if (e.target.closest?.("[data-hist-save]")) {
+      try {
+        const res = await host.messaging.send("home_history_export", {});
+        const days = Object.keys(res.history?.days || {}).sort();
+        if (!days.length) { histFileNote = "Nothing kept yet to save."; paintHomeHistory(); return; }
+        const store = res.history.days[days[days.length - 1]]?.[0]?.store || "home";
+        const blob = new Blob([JSON.stringify(res.history)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `vizpick-pick-history-${store}-${days[0]}-to-${days[days.length - 1]}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        histFileNote = `Saved ${days.length} day${days.length === 1 ? "" : "s"} (${days[0]} to ${days[days.length - 1]}).`;
+      } catch (err) {
+        histFileNote = `Couldn't save the history file: ${err?.message ?? err}`;
+      }
+      paintHomeHistory();
+      return;
+    }
+    if (e.target.closest?.("[data-hist-other-toggle]")) { histOtherOpen = !histOtherOpen; paintHomeHistory(); return; }
+    const viewBtn = e.target.closest?.("[data-hist-view]");
+    if (viewBtn) { histView = viewBtn.dataset.histView; paintHomeHistory(); return; }
+    const pdfBtn = e.target.closest?.("[data-hist-pdf]");
+    if (pdfBtn) {
+      const note = histEl.querySelector("[data-hist-copied]");
+      const say = (text) => { if (note) note.textContent = text; };
+      if (!histCaseModel || histCaseModel.day !== histDay) { say("Open a day with at least two updates first."); return; }
+      if (!histSchedules.get(histDay)) { say("The schedule for this day hasn't loaded, so scans can't be grouped by job yet. Sign in to Digital Metrics, reopen, and try again."); return; }
+      const model = histCaseModel;
+      pdfBtn.disabled = true;
+      say("Building the PDF…");
+      try {
+        const { generateCasePdf } = await import("./lib/case_report.js");
+        const { blob, files } = await generateCasePdf(model);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `vizpick-business-case-${model.store}-${model.day}.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+        say(`PDF saved with ${files.length} data files attached. Open it in Adobe Acrobat Reader and click the paperclip to get the files.`);
+      } catch (err) {
+        say(`Couldn't build the PDF: ${err?.message ?? err}`);
+      } finally {
+        pdfBtn.disabled = false;
+      }
+      return;
+    }
+    if (e.target.closest?.("[data-hist-copy]")) {
+      const note = histEl.querySelector("[data-hist-copied]");
+      try {
+        await navigator.clipboard.writeText(histCaseText);
+        if (note) note.textContent = "Copied. Paste it into an email or Teams.";
+      } catch {
+        if (note) note.textContent = "Couldn't copy: the browser blocked clipboard access. Click in the page and try again.";
+      }
+      return;
+    }
+    const expand = e.target.closest?.("[data-hist-ledger-expand]");
+    if (expand) {
+      const open = expand.dataset.histLedgerExpand === "1";
+      histEl.querySelectorAll(".vizpick-ledger-bin").forEach((d) => { d.open = open; });
+      return;
+    }
+    if (e.target.closest?.("[data-hist-ledger-export]") && histData?.entries?.length) {
+      const blob = new Blob([ledgerCsv(scanLedger(cleanDay(histData.entries).entries), { person: histPerson })], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `vizpick-bins-${histData.entries[0].store}-${histData.day}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      return;
+    }
     const toggle = e.target.closest?.("[data-hist-toggle]");
     if (toggle) {
       const bins = histEl.querySelector(`[data-hist-bins="${toggle.dataset.histToggle}"]`);
@@ -2260,6 +2850,30 @@ export async function mount(host, container) {
   histEl?.addEventListener("change", (e) => {
     if (e.target.matches?.("[data-hist-day]")) { histDay = e.target.value; loadHomeHistory(); }
     if (e.target.matches?.("[data-hist-cutoff]")) { histCutoff = e.target.value || "15:00"; paintHomeHistory(); }
+    if (e.target.matches?.("[data-hist-ledger-filter]")) { histLedgerFilter = e.target.value; paintLedgerList(); }
+    if (e.target.matches?.("[data-hist-file]")) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      (async () => {
+        try {
+          const history = JSON.parse(await file.text());
+          const res = await host.messaging.send("home_history_import", { history });
+          const days = Object.keys(res.added || {}).sort();
+          const total = days.reduce((n, d) => n + res.added[d], 0);
+          histFileNote = total
+            ? `Loaded ${total} update${total === 1 ? "" : "s"} from ${file.name} (${days.map((d) => `${d}: ${res.added[d]}`).join(", ")}).`
+            : `Nothing new in ${file.name}: every update in it was already kept.`;
+          if (days.length) histDay = days[days.length - 1];
+        } catch (err) {
+          histFileNote = `Couldn't load ${file.name}: ${err instanceof SyntaxError ? "the file isn't valid JSON" : (err?.message ?? err)}`;
+        }
+        await loadHomeHistory();
+      })();
+    }
+  });
+  // Typing in the bin search repaints only the list, so the box keeps focus.
+  histEl?.addEventListener("input", (e) => {
+    if (e.target.matches?.("[data-hist-ledger-q]")) { histLedgerQuery = e.target.value; paintLedgerList(); }
   });
   const scheduleHistory = () => {
     if (!histOpen()) return;

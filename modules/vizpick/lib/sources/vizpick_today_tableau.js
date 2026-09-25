@@ -1,5 +1,6 @@
 import { createCaptureTab } from "../background_tab.js";
 import { TODAY_DATA_REVISION, isTodayRowComplete, locationSignature } from "../today_coverage.js";
+import { decideStoreExports } from "../store_stamp.js";
 // modules/vizpick/lib/sources/vizpick_today_tableau.js
 //
 // Current-day ("Today") capture from the VizPickDetails view.
@@ -89,8 +90,9 @@ const INSTALL_GRACE_MS  = 3_000;
 // legitimately runs for minutes — but it must still be guaranteed to end.
 const OVERALL_BUDGET_MS = 25 * 60_000;
 
-// Hard ceiling on how stale the Today snapshot may get, REGARDLESS of what the
-// stamp says.
+// Hard ceiling on how stale a stored Today row may get, REGARDLESS of what its
+// store's stamp says. Applied per store since 2026-09-15 (each row carries its
+// own stamp and capture time).
 //
 // The stamp is an optimisation, not a guarantee. It has now been wrong twice in
 // ways that were invisible from outside: on 2026-08-22 a check reported
@@ -157,11 +159,15 @@ const LOC_CSV_NEEDLE = "last_seen_timestamp";
  *   Called as soon as each store is parsed, so the caller can persist and
  *   display it immediately instead of the UI sitting empty for the whole
  *   multi-minute crawl.
- * @param {string|null} [opts.knownSourceKey]  Stamp of the data already stored
- *   for this same market; when it matches, the whole crawl is skipped.
- * @param {string[]} [opts.coveredStores]  Stores already held at that stamp;
- *   when the stamp matches, only stores NOT in this list are visited.
- * @param {boolean} [opts.force]  Crawl even if the stamp is unchanged.
+ * @param {Record<string,{raw:string|null,iso:string|null,capturedAt:string|null}>} [opts.knownStoreStamps]
+ *   Per-store stamps of the rows already stored for this same market
+ *   (lib/store_stamp.js::knownStoreStamps). Every store is still visited; a
+ *   store whose own stamp matches, and whose row is younger than
+ *   MAX_TODAY_AGE_MS, is confirmed instead of exported. Empty = read them all.
+ * @param {(info:{store:string,sourceUpdate:object|null,index:number})=>Promise<void>} [opts.onStoreUnchanged]
+ *   Called for each store confirmed unchanged, so the caller can note the
+ *   confirmation on the stored row.
+ * @param {boolean} [opts.force]  Export every store even if its stamp is unchanged.
  * @param {number}  [opts.concurrency]  How many background tabs to crawl with
  *   (capped at MAX_TABS). 1 restores the old serial behaviour.
  * @returns {Promise<object>}
@@ -282,9 +288,11 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     // ("2026-08-16 10:26:07"), which is what makes an honest absolute
     // "Last updated" display possible for Today.
     //
-    // Read on the primary tab BEFORE fanning out: it is one export, every lane
-    // would return the same answer, and the skip decision below may mean no
-    // extra tabs need opening at all.
+    // Read on the primary tab BEFORE fanning out. This is the stamp of
+    // whichever store the tab is showing by default — NOT the market's: each
+    // store is read again for its own once its parameter is set (see
+    // captureStore). Kept as the fallback for a store whose own stamp cannot
+    // be read, and as the snapshot-level stamp for rows without one.
     // A REUSED tab reports the stamp of ITS OWN vizql session, not the
     // server's current state. A tab left open since 09:10 keeps exporting
     // "09:10:21" however many hours pass, so the skip check compares a stale
@@ -313,72 +321,28 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     stage("Reading Tableau's last-update time");
     const sourceUpdate = await readSourceStamp(primaryId);
 
-    // ── Skip the crawl when nothing has been republished ───────────────
-    // This matters far more here than on the yesterday capture: the crawl is
-    // two exports per store and takes minutes. If Tableau's current-day stamp
-    // is the one we already have for this market, there is nothing to fetch.
-    // An unchanged stamp means the stored rows are still valid — but ONLY for
-    // the stores they actually contain. Comparing the stamp alone was a bug: a
-    // partial snapshot (3 of 10 stores, say, because a previous run was
-    // cancelled or scoped to fewer stores) looked "current", so the missing 7
-    // were never fetched and the tab silently stayed short.
+    // ── Freshness is decided PER STORE, never for the market ──────────
+    // The stamp just read is for whichever store the primary tab happened to
+    // be showing. Stores publish their current-day numbers on their own
+    // clocks, so it says nothing about the other stores in the market. Until
+    // 2026-09-15 this stamp alone decided "nothing changed" — and skipped
+    // every store whenever the DEFAULT store had not moved, while stamping
+    // every row with that one value. So every requested store is visited.
+    // The cheap part — set the Store parameter, read the stamp off the
+    // dashboard — runs for each; only a store whose own stamp moved, or whose
+    // stored row is incomplete or older than MAX_TODAY_AGE_MS, pays for the
+    // exports (lib/store_stamp.js::decideStoreExports). The stamp read above
+    // is kept only as the fallback for a store whose own cannot be read.
     //
-    // Full coverage  -> skip entirely.
-    // Partial        -> visit only the gaps; the caller MERGES the result.
-    // Changed stamp  -> everything is stale, crawl the lot.
-    let toVisit = wanted;
-    let topUp = false;
-    // Compared on the NORMALISED iso, falling back to the raw string. The
-    // stamp can now arrive from two places — the dashboard's own "Updated"
-    // text or the Last-update sheet export — and those could render the same
-    // instant differently ("2026-08-22 07:04:54" vs "8/22/2026 7:04:54 AM").
-    // A raw-only compare would read that as "changed" on every check and
-    // re-crawl the whole market forever.
-    const knownIso = opts.knownSourceKey ? (parseLastUpdate(opts.knownSourceKey).iso || null) : null;
-    const stampMatches =
-      !opts.force && !!opts.knownSourceKey && !!sourceUpdate && (
-        (knownIso && sourceUpdate.iso && sourceUpdate.iso === knownIso) ||
-        (!!sourceUpdate.raw && sourceUpdate.raw === opts.knownSourceKey)
-      );
-
-    // The stamp says nothing changed — but how old is what we are holding?
-    const storedAgeMs = opts.knownCapturedAt
-      ? Date.now() - new Date(opts.knownCapturedAt).getTime()
-      : Infinity;
-    const tooOldToTrust = storedAgeMs > MAX_TODAY_AGE_MS;
-    const stampUnchanged = stampMatches && !tooOldToTrust;
-    if (stampMatches && tooOldToTrust) {
-      stage(`Stamp unchanged but the stored data is ${Math.round(storedAgeMs / 60_000)}min old — refreshing anyway`);
-    }
-
-    if (stampUnchanged) {
-      const covered = new Set((opts.coveredStores || []).map((x) => String(x).trim()));
-      const missing = wanted.filter((st) => !covered.has(st));
-      if (!missing.length) {
-        succeeded = true;
-        return {
-          ok: true, unchanged: true, sourceUpdate, checkedAt: new Date().toISOString(),
-          // BOTH sides of the comparison that produced this decision. Without
-          // them "unchanged: true" is unfalsifiable from the outside: on
-          // 2026-08-22 the server reported 10:04:03 while the stored key was
-          // 09:10:21 — plainly different — and the crawl still skipped, with
-          // no way to see which value it had actually read. Never report a
-          // skip without showing what was compared.
-          stampRead: sourceUpdate?.raw ?? null,
-          stampReadIso: sourceUpdate?.iso ?? null,
-          stampReadVia: sourceUpdate?.via ?? null,
-          stampKnown: opts.knownSourceKey ?? null,
-          stampKnownIso: knownIso,
-          storedAgeMin: Number.isFinite(storedAgeMs) ? Math.round(storedAgeMs / 60_000) : null,
-        };
-      }
-      toVisit = missing;
-      topUp = true;
-    }
+    // `topUp` tells the caller the stored rows are still in play (merge, do
+    // not replace): a store confirmed unchanged writes nothing, and its row
+    // must survive the run.
+    const toVisit = wanted;
+    const knownStamps = opts.force ? {} : (opts.knownStoreStamps || {});
+    const topUp = Object.keys(knownStamps).length > 0;
+    if (topUp) stage("Checking each store's Updated stamp");
 
     // ── Open the extra lanes ───────────────────────────────────────────
-    // Only now, once we know there is real work: an unchanged stamp with full
-    // coverage returns above without ever creating a second tab.
     const laneTarget = Math.max(1, Math.min(MAX_TABS, Number(opts.concurrency) || MAX_TABS));
     const laneCount = Math.min(laneTarget, toVisit.length);
     if (laneCount > 1) stage(`Opening ${laneCount} background tabs`);
@@ -410,6 +374,9 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     let done = 0;
     let cancelled = false;
     let exhausted = false;
+    // The list the lanes drain: every requested store first, then one retry
+    // pass over the stores that did not answer (below).
+    let queue = toVisit;
 
     // onStore ultimately does a read-modify-write on chrome.storage.local
     // (mergeToday). Two lanes publishing at once would each read the same
@@ -437,6 +404,14 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
       publishChain = publishChain.then(() => opts.onStore?.(info)).catch(() => {});
       return publishChain;
     };
+    const publishUnchanged = (info) => {
+      publishChain = publishChain.then(() => opts.onStoreUnchanged?.(info)).catch(() => {});
+      return publishChain;
+    };
+    // Stores whose own stamp matched the stored row: nothing exported, the
+    // stored row stands. Reported alongside `rows` so the caller can tell a
+    // confirmed store from a missing one.
+    const confirmed = [];
 
     const runLane = async (rec) => {
       // Wrong-store guard 3: location detail identical to the store this lane
@@ -448,8 +423,8 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         // Claim is a single synchronous step, so no two lanes can take the
         // same index however the awaits below interleave.
         const i = next++;
-        if (i >= toVisit.length) return;
-        const store = toVisit[i];
+        if (i >= queue.length) return;
+        const store = queue[i];
 
         // ETA from measured throughput (stores per ms across ALL lanes), not
         // from one lane's pace — otherwise three tabs would still quote the
@@ -471,9 +446,19 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
           lanes: lanes.length,
         });
 
-        const row = await captureStore(rec.tab.id, store, failures, replay, sameStore(store, homeStore));
+        const got = await captureStore(rec.tab.id, store, failures, replay, sameStore(store, homeStore), {
+          check: topUp,
+          known: knownStamps[store] ?? null,
+          fallbackStamp: sourceUpdate,
+        });
         done++;
-        if (!row) continue;
+        if (!got) continue;
+        if (got.unchanged) {
+          confirmed.push({ store, sourceUpdate: got.sourceUpdate });
+          await publishUnchanged({ store, sourceUpdate: got.sourceUpdate, index: i });
+          continue;
+        }
+        const row = got;
         const locSig = locationSignature(row);
         if (locSig && locSig === prevLocSig) {
           failures.push({ store, reason: "location detail identical to the previous store in this lane — the Store parameter did not apply; row discarded" });
@@ -483,14 +468,43 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         rows.push(row);
 
         // Publish this store straight away. Persisting per store also means a
-        // crawl that dies at store 7 keeps those 7 — and because the skip logic
-        // is coverage-aware, the next run tops up only the remainder.
+        // crawl that dies at store 7 keeps those 7 — and because the next run
+        // checks each stored row's own stamp, it re-reads only what it must.
         await publish({ row, sourceUpdate, topUp, index: i });
       }
     };
 
     await Promise.all(lanes.map(runLane));
     await publishChain;   // the last lane's write may still be queued
+
+    // ── One more pass over the stores that did not answer ──────────────
+    // A dropped Enter or a refused parameter value is transient: the same
+    // store answers a minute later on the same tab. Without a retry the store
+    // simply produces nothing for this run — 2 of 10 on 2026-09-15 ("Store
+    // parameter never committed") — and the market reads as partial. The
+    // first-pass reasons are kept for debug but only count as failures when
+    // the retry fails too.
+    let retried = 0, recovered = 0;
+    const firstPassFailures = [];
+    if (!cancelled && !exhausted) {
+      const answered = () => new Set([...rows.map((r) => String(r.store)), ...confirmed.map((c) => String(c.store))]);
+      const before = answered();
+      const retry = toVisit.filter((s2) => !before.has(String(s2)));
+      if (retry.length) {
+        retried = retry.length;
+        stage(`Retrying ${retry.length} store${retry.length === 1 ? "" : "s"} that did not answer`);
+        for (let k = failures.length - 1; k >= 0; k--) {
+          if (retry.includes(String(failures[k].store))) firstPassFailures.unshift(...failures.splice(k, 1));
+        }
+        queue = retry;
+        next = 0;
+        done = toVisit.length - retry.length;
+        await Promise.all(lanes.map(runLane));
+        await publishChain;
+        const after = answered();
+        recovered = retry.filter((s2) => after.has(String(s2))).length;
+      }
+    }
 
     if (cancelled) {
       return { ok: false, errorClass: "CANCELLED", error: "Today capture cancelled.", rows, sourceUpdate, keptTabOpen: keepFailedTab };
@@ -500,26 +514,47 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
     }
     opts.onProgress?.({ done: toVisit.length, total: toVisit.length, store: null, lanes: lanes.length });
 
-    if (!rows.length) {
+    // Coverage is decided by what came back, not by what went wrong. A store
+    // is missing only if it produced no row AND was not confirmed unchanged.
+    const capturedStores = new Set(rows.map((r) => String(r.store)));
+    const confirmedStores = confirmed.map((c) => String(c.store));
+    const missingStores = toVisit.map(String).filter((s2) => !capturedStores.has(s2) && !confirmedStores.includes(s2));
+    // What each store's OWN stamp read as — both sides of every skip decision
+    // are visible from outside, never a bare "unchanged".
+    const storeStamps = Object.fromEntries([
+      ...confirmed.map((c) => [String(c.store), { read: c.sourceUpdate?.raw ?? null, via: c.sourceUpdate?.via ?? null, known: knownStamps[c.store]?.raw ?? null, unchanged: true }]),
+      ...rows.map((r) => [String(r.store), { read: r.sourceUpdate?.raw ?? null, via: r.stampVia ?? null, known: knownStamps[r.store]?.raw ?? null, unchanged: false }]),
+    ]);
+
+    if (!rows.length && !confirmed.length) {
       return {
         ok: false,
         errorClass: "NO_CAPTURE",
         error: `Captured no current-day data for any of the ${toVisit.length} stores attempted.`,
-        debug: { failures },
+        debug: { failures, storeStamps },
         keptTabOpen: keepFailedTab,
       };
     }
 
     succeeded = true;
-    // Coverage is decided by what came back, not by what went wrong. A store
-    // is missing only if it produced no row.
-    const capturedStores = new Set(rows.map((r) => String(r.store)));
-    const missingStores = toVisit.map(String).filter((s2) => !capturedStores.has(s2));
+    if (!rows.length) {
+      // Every store that answered had the stamp we already hold: nothing was
+      // exported and nothing needs writing beyond the confirmations.
+      return {
+        ok: true, unchanged: true, sourceUpdate, checkedAt: new Date().toISOString(),
+        confirmedStores, missingStores, partial: missingStores.length > 0,
+        storeStamps, stampReadVia: sourceUpdate?.via ?? null,
+        debug: { requested: wanted.length, visited: toVisit.length, topUp, lanes: lanes.length, elapsedMs: Date.now() - startedAt, confirmed: confirmed.length, retried, recovered, retriedFailures: firstPassFailures, storeStamps, failures },
+      };
+    }
+
     return {
       ok: true,
       rows,
       sourceUpdate,
       capturedAt: new Date().toISOString(),
+      confirmedStores,
+      storeStamps,
       // Partial means STORES ARE MISSING — a requested store produced no row
       // at all. It does NOT mean "something went wrong somewhere".
       //
@@ -547,6 +582,13 @@ export async function fetchVizpickTodayTableau(stores, opts = {}) {
         lanes: lanes.length,
         elapsedMs: Date.now() - startedAt,
         captured: rows.length,
+        confirmed: confirmed.length,
+        // Stores that produced nothing on the first pass and were run again;
+        // `recovered` of them answered the second time.
+        retried,
+        recovered,
+        retriedFailures: firstPassFailures,
+        storeStamps,
         withHealth: rows.filter((r) => r.hasHealth).length,
         // How much of this crawl avoided the dialog. `replayed` should climb to
         // roughly 2x(stores-1) once the GUIDs are learned; if it stays at 0 the
@@ -591,7 +633,12 @@ function sameStore(a, b) {
   return Number.isFinite(x) && Number.isFinite(y) && x === y;
 }
 
-async function captureStore(tabId, store, failures, replay, isHomeStore = false) {
+// `stampOpts` — { check, known, fallbackStamp }: when `check` is set, the
+// store's own Updated stamp is compared with `known` and a match returns
+// { unchanged: true, store, sourceUpdate } instead of a row. Every row
+// returned carries its own `sourceUpdate` (falling back to the crawl-level
+// stamp when the dashboard's could not be read) and `capturedAt`.
+async function captureStore(tabId, store, failures, replay, isHomeStore = false, stampOpts = null) {
   try {
     // Clear first so "a new vizql response arrived" is an unambiguous
     // signal that THIS store's re-query completed.
@@ -670,6 +717,26 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
         return null;
       }
     }
+
+    // This store's OWN Updated stamp, read now that the viz is showing it.
+    // Cheap — the dashboard text, else one summary command; never the export
+    // fallback, which can wait 20s for a Blob. It decides, per store, whether
+    // the exports below are needed at all, and it is what the row is filed
+    // under: stores publish on their own clocks, so the crawl-level stamp is
+    // only a fallback for a store whose own could not be read.
+    //
+    // Measured 2026-09-15 (dev/probe-vizpick-store-stamps.mjs): the Last-update
+    // sheet is max(data_last_updated) FOR THE SELECTED STORE — 1089 read
+    // 14:03:26 while 1458/3660/669/5151 read 15:03:26 at the same moment. The
+    // dashboard draws its "Updated" text on canvas, so the DOM read finds
+    // nothing here and the stamp comes from the summary command (~100 ms).
+    const own = await readSourceStamp(tabId, { cheap: true });
+    if (stampOpts?.check) {
+      const d = decideStoreExports({ known: stampOpts.known, read: own, maxAgeMs: MAX_TODAY_AGE_MS });
+      if (d.skip) return { unchanged: true, store, sourceUpdate: own };
+    }
+    const rowStamp = own || stampOpts?.fallbackStamp || null;
+    const stampVia = own ? own.via : (rowStamp ? "crawl" : null);
 
     const dept = await exportSheetText(tabId, DEPT_SHEET, DEPT_CSV_NEEDLE, replay);
     if (!dept.ok) { failures.push({ store, reason: dept.reason }); return null; }
@@ -812,6 +879,9 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false)
     return {
       store, ...parsed.total, ...(health || {}), dataRevision: TODAY_DATA_REVISION,
       depts: parsed.depts || [], deptCount: parsed.deptCount, hasHealth: !!health,
+      // This store's own Tableau stamp and when it was exported — the row's
+      // identity for dedupe (home history) and the card's "Updated" line.
+      sourceUpdate: rowStamp, stampVia, capturedAt: new Date().toISOString(),
       // Per-department location rollup + the bins still holding picks.
       locations,
       // Tableau's own group scores. null (not []) when the export failed, so
@@ -983,8 +1053,12 @@ async function readSourceStampFromDom(tabId) {
   return null;
 }
 
-/** Tableau's own "Last update" stamp for the current-day view, or null. */
-async function readSourceStamp(tabId) {
+/**
+ * Tableau's own "Last update" stamp for the store the view is showing, or
+ * null. `cheap` skips the export fallback — used per store, where a 20s
+ * export wait would cost more than the exports it is trying to avoid.
+ */
+async function readSourceStamp(tabId, { cheap = false } = {}) {
   // Cheap path first. If it yields a parseable stamp we trust it: it is the
   // number the dashboard itself is showing the user.
   const fromDom = await readSourceStampFromDom(tabId);
@@ -1002,6 +1076,7 @@ async function readSourceStamp(tabId) {
       if (p.ok) return { raw: p.raw, iso: p.iso, hasTime: p.hasTime, via: "summary" };
     }
   } catch { /* use the export fallback */ }
+  if (cheap) return null;
 
   // Compatibility fallback: export the authoritative sheet when the summary
   // command is unavailable in an older Tableau session.

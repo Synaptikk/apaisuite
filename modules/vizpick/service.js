@@ -21,7 +21,9 @@ import { createLogging } from "../../shared/logging.js";
 import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import * as freshness from "./lib/freshness.js";
 import * as snapshots from "./lib/snapshots.js";
+import { knownStoreStamps } from "./lib/store_stamp.js";
 import * as homeHistory from "./lib/home_history.js";
+import * as dayDetails from "./lib/day_details.js";
 import { fetchVizpickStoresTableau } from "./lib/sources/vizpick_stores_tableau.js";
 import { fetchVizpickTodayTableau } from "./lib/sources/vizpick_today_tableau.js";
 
@@ -160,6 +162,9 @@ async function getState() {
     days:      store.days || [],
     yesterday: y || null,
     today:     store.today || null,
+    // Each closed day's department / associate detail as of that day's last
+    // current-day capture (lib/day_details.js): { [dataDate]: { [store]: detail } }.
+    dayDetails: await dayDetails.read((store.days || []).map((d) => d.dataDate)).catch(() => ({})),
 
     freshness:      freshStores,
     todayFreshness: freshToday,
@@ -288,52 +293,48 @@ async function _pullTodayLocked(msg, stores, market) {
 
   try {
     await freshness.startAttempt("today");
-    // Only reuse the stored stamp when it belongs to the SAME market — a
-    // different market needs a different set of stores regardless of how fresh
-    // the timestamp is. todayIsCurrent() enforces that.
+    // What each store's stored row was stamped with, for THIS market only. The
+    // source visits every store and re-reads only those whose own Updated
+    // stamp moved (stores publish on their own clocks — a market-wide stamp
+    // check skipped stores that had updated, 2026-09-15). Another market, no
+    // snapshot, or a forced refresh: empty, so every store is read.
     const snapStore = await snapshots.read();
-    const knownSourceKey = snapshots.todayIsCurrent(snapStore, snapStore.today?.sourceKey, market)
-      ? snapStore.today.sourceKey
-      : null;
-    // Which stores that stamp actually covers. Without this the capture treats a
-    // partial snapshot as complete and never fetches the stores it is missing.
-    const coveredStores = knownSourceKey ? snapshots.todayCoveredStores(snapStore, market) : [];
+    const known = msg?.force ? {} : knownStoreStamps(snapStore.today, market);
 
-    // A full crawl (changed stamp) must REPLACE the stale rows on its first
-    // write; every later write merges. A top-up merges from the start, since
-    // the rows it is adding to are still valid at the same stamp.
-    let replacedOnce = false;
+    // Every write MERGES into the same-market snapshot; only another market
+    // empties it (snapshots.mergeToday). A full crawl used to replace the
+    // stored rows on its first write, so a store that then failed to answer
+    // — Tableau dropped its Store-parameter Enter — vanished from the market
+    // instead of keeping the row it already had (2 of 10 stores on
+    // 2026-09-15, 15:53). A row from an earlier read, shown under its own
+    // older "Updated" stamp, beats a hole; the per-store age ceiling and the
+    // stamp check re-read it as soon as the store answers again.
 
     const result = await fetchVizpickTodayTableau(stores, {
-      knownSourceKey,
-      // Lets the source enforce a maximum staleness even when the stamp claims
-      // nothing changed — see MAX_TODAY_AGE_MS.
-      knownCapturedAt: snapStore.today?.capturedAt ?? null,
-      coveredStores,
+      knownStoreStamps: known,
       force: !!msg?.force,
       auto: !!msg?.auto,
       // Only ever set by dev/test-vizpick-lanes.mjs, which measures the crawl
       // at 1 lane vs 3. Unset in normal use, so the source picks its default.
       concurrency: msg?.concurrency,
-      onStore: async ({ row, sourceUpdate, topUp }) => {
+      onStore: async ({ row, sourceUpdate }) => {
         // Without a source version we cannot safely merge incremental lanes.
         // Keep the previous snapshot until the final result supplies all rows.
-        if (!sourceUpdate?.raw) return;
-        const payload = {
+        const stamp = row?.sourceUpdate?.raw ? row.sourceUpdate : sourceUpdate;
+        if (!stamp?.raw) return;
+        await snapshots.mergeToday({
           rows: [row],
-          sourceUpdate,
+          sourceUpdate: stamp,
           capturedAt: new Date().toISOString(),
           partial: true,            // still mid-crawl
           market,
-        };
-        if (!topUp && !replacedOnce) {
-          await snapshots.recordToday(payload);
-          replacedOnce = true;
-        } else {
-          await snapshots.mergeToday(payload);
-        }
+        });
         // Tells the view to re-read state and paint the card now.
         broadcast("today_rows", { store: row.store });
+      },
+      onStoreUnchanged: async ({ store, sourceUpdate }) => {
+        await snapshots.confirmTodayRow({ store, confirmedAt: new Date().toISOString(), sourceUpdate, market });
+        broadcast("today_rows", { store });
       },
       onProgress: (p) => {
         if (!todayRun) return;
@@ -367,8 +368,9 @@ async function _pullTodayLocked(msg, stores, market) {
       };
     }
 
-    // Upstream hasn't republished since this market's stored crawl — skip the
-    // multi-minute walk and keep what we have.
+    // No store had republished since its stored row — every visited store's
+    // own stamp matched, nothing was exported, and the confirmations were
+    // written per store as they came in. Keep what we have.
     if (result.unchanged) {
       await freshness.markSuccess("today");
       broadcast("source_complete", { sourceId: "today", ok: true, unchanged: true });
@@ -376,16 +378,17 @@ async function _pullTodayLocked(msg, stores, market) {
         ok: true, sourceId: "today", unchanged: true,
         sourceUpdate: result.sourceUpdate ?? null,
         storeCount: snapStore.today?.rows?.length ?? 0,
-        // Carried through so the telemetry can show WHY it skipped.
-        stampRead: result.stampRead ?? null,
+        confirmed: result.confirmedStores?.length ?? 0,
+        missingStores: result.missingStores ?? [],
+        // Carried through so the telemetry can show WHY each store skipped.
+        storeStamps: result.storeStamps ?? null,
         stampReadVia: result.stampReadVia ?? null,
-        stampKnown: result.stampKnown ?? null,
       };
     }
 
-    // A top-up visited only the missing stores, so merge rather than replace.
-    const persist = result.topUp ? snapshots.mergeToday : snapshots.recordToday;
-    await persist({
+    // Merge, never replace: stores this run could not re-read keep the row
+    // they had (see the note above `known`).
+    await snapshots.mergeToday({
       rows:         result.rows,
       sourceUpdate: result.sourceUpdate,
       capturedAt:   result.capturedAt,
@@ -401,6 +404,8 @@ async function _pullTodayLocked(msg, stores, market) {
       storeCount: result.rows.length,
       requested: stores.length,
       toppedUp: !!result.topUp,
+      confirmed: result.confirmedStores?.length ?? 0,
+      storeStamps: result.storeStamps ?? null,
       partial: result.partial,
       // A PARTIAL success is the interesting case here: ok:true with fewer
       // rows than stores asked for. Without the per-store reasons that reads
@@ -508,11 +513,12 @@ async function _autoCheck(reason) {
       }
       log.emit("autocheck-today", {
         ok: !!out.today?.ok, unchanged: !!out.today?.unchanged,
-        // The two values the skip decision was made from. "unchanged" with
-        // these absent is an assertion; with them it is evidence.
-        stampRead: out.today?.stampRead ?? null,
-        stampReadVia: out.today?.stampReadVia ?? null,
-        stampKnown: out.today?.stampKnown ?? null,
+        // Per store, both sides of every skip decision (read vs known stamp).
+        // "unchanged" with these absent is an assertion; with them it is
+        // evidence. Stores update at different times, so it is a map, not
+        // one pair.
+        storeStamps: out.today?.storeStamps ?? null,
+        confirmed: out.today?.confirmed ?? null,
         captured: out.today?.storeCount ?? null,
         requested: out.today?.requested ?? null,
         errorClass: out.today?.errorClass ?? null,
@@ -639,23 +645,36 @@ async function _pollHomeStore(reason, { force, repair = false }) {
     .map((d) => [...h.days[d]].reverse().find((e) => e.store === String(home)))
     .find(Boolean) || null;
 
+  // The store's own stamp from its newest entry; `lastConfirmedAt` is the
+  // last time its numbers were actually exported, which is what the age
+  // ceiling is measured from.
   const res = await withTableauLock("VizPick home-store history", () =>
     fetchVizpickTodayTableau([home], {
-      knownSourceKey: force ? null : latest?.sourceKey ?? null,
-      knownCapturedAt: latest?.lastConfirmedAt ?? latest?.capturedAt ?? null,
-      coveredStores: latest ? [String(home)] : [],
+      knownStoreStamps: force || !latest?.sourceKey ? {} : {
+        [String(home)]: {
+          raw: latest.sourceKey ?? null,
+          iso: latest.sourceIso ?? null,
+          capturedAt: latest.lastConfirmedAt ?? latest.capturedAt ?? null,
+        },
+      },
       force,
       auto: true,
       concurrency: 1,
     }));
 
+  // Every outcome is also kept per day beside the history (shell telemetry is a
+  // 500-event ring, gone within hours), so the progression view can say why an
+  // hour has no update: Tableau had not published, or the check failed.
   if (!res?.ok) {
     log.emit("home-history-poll", { reason, ok: false, error: res?.error ?? null });
+    await homeHistory.recordPoll({ reason, ok: false, outcome: "failed", error: res?.error ?? "capture failed" });
     return { ok: false, error: res?.error ?? "capture failed" };
   }
   if (res.unchanged) {
-    log.emit("home-history-poll", { reason, ok: true, unchanged: true, stamp: res.stampRead ?? null });
-    return { ok: true, unchanged: true, stamp: res.stampRead ?? null };
+    const stamp = res.storeStamps?.[String(home)]?.read ?? null;
+    log.emit("home-history-poll", { reason, ok: true, unchanged: true, stamp });
+    await homeHistory.recordPoll({ reason, ok: true, outcome: "unchanged", stamp });
+    return { ok: true, unchanged: true, stamp };
   }
   const meta = { sourceUpdate: res.sourceUpdate, capturedAt: res.capturedAt || new Date().toISOString() };
   let rec = await homeHistory.recordFromRows(res.rows, meta);
@@ -676,7 +695,13 @@ async function _pollHomeStore(reason, { force, repair = false }) {
       if (rep.removed.length) broadcast("home_history", { store: String(home) });
     }
   }
-  log.emit("home-history-poll", { reason, ok: true, added: rec.added, stamp: res.sourceUpdate?.raw ?? null, error: rec.error ?? null, rejected: rec.rejected ?? null });
+  log.emit("home-history-poll", { reason, ok: true, added: rec.added, stamp: res.sourceUpdate?.raw ?? null, error: rec.error ?? null, rejected: rec.rejected ?? null, revised: rec.revised ?? null });
+  await homeHistory.recordPoll({
+    reason, ok: !rec.error,
+    outcome: rec.error ? "failed" : rec.added ? "added" : rec.rejected ? "rejected" : "confirmed",
+    stamp: ref?.sourceKey ?? res.sourceUpdate?.raw ?? null,
+    revised: rec.revised ?? null, error: rec.error ?? null,
+  });
   if (rec.added) broadcast("home_history", { store: String(home) });
   return { ok: true, added: rec.added, stamp: res.sourceUpdate?.raw ?? null, rows: res.rows?.length ?? 0, error: rec.error ?? null, rejected: rec.rejected ?? null, repaired };
 }
@@ -847,7 +872,17 @@ export const handlers = {
     const h = await homeHistory.read();
     const days = Object.keys(h.days).sort().reverse();
     const day = msg?.day && h.days[msg.day] ? msg.day : days[0] ?? null;
-    return { ok: true, days, day, entries: day ? h.days[day] : [] };
+    return { ok: true, days, day, entries: day ? h.days[day] : [], polls: day ? await homeHistory.readPolls(day) : [] };
+  },
+  // The whole kept history, for "Save history file" (moving days between Edge profiles).
+  async "home_history_export"(_msg) {
+    return { ok: true, history: await homeHistory.read() };
+  },
+  // Merge a history file saved from another install; updates already kept are not duplicated.
+  async "home_history_import"(msg) {
+    const res = await homeHistory.importHistory(msg?.history);
+    if (res.ok) broadcast("home_history", { imported: Object.keys(res.added || {}) });
+    return res;
   },
   // Capture the home store now instead of waiting for the alarm. `force`
   // re-reads even when Tableau's stamp has not moved.

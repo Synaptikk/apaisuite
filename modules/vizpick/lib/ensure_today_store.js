@@ -84,7 +84,7 @@ export async function ensureTodayRowForStore(store, opts = {}) {
     return {
       row: stored,
       capturedAt: snapshots.rowCapturedAt(stored, today),
-      sourceUpdate: today?.sourceUpdate || null,
+      sourceUpdate: snapshots.rowSourceUpdate(stored, today),
       refreshed: false, ageMs, reason: "fresh",
     };
   }
@@ -93,7 +93,7 @@ export async function ensureTodayRowForStore(store, opts = {}) {
     return {
       row: stored,
       capturedAt: snapshots.rowCapturedAt(stored, today),
-      sourceUpdate: today?.sourceUpdate || null,
+      sourceUpdate: snapshots.rowSourceUpdate(stored, today),
       refreshed: false, ageMs,
       reason: stored ? "stale, capture not allowed" : "absent, capture not allowed",
     };
@@ -109,7 +109,7 @@ export async function ensureTodayRowForStore(store, opts = {}) {
     return {
       row: stored,
       capturedAt: snapshots.rowCapturedAt(stored, today),
-      sourceUpdate: today?.sourceUpdate || null,
+      sourceUpdate: snapshots.rowSourceUpdate(stored, today),
       refreshed: false, ageMs, reason: `capture threw: ${String(e?.message ?? e)}`,
     };
   }
@@ -121,7 +121,7 @@ export async function ensureTodayRowForStore(store, opts = {}) {
     return {
       row: stored,
       capturedAt: snapshots.rowCapturedAt(stored, today),
-      sourceUpdate: today?.sourceUpdate || null,
+      sourceUpdate: snapshots.rowSourceUpdate(stored, today),
       refreshed: false, ageMs,
       reason: result?.error ? `capture failed: ${result.error}` : "capture returned no row",
     };
@@ -140,7 +140,7 @@ export async function ensureTodayRowForStore(store, opts = {}) {
   return {
     row: fresh,
     capturedAt,
-    sourceUpdate: result.sourceUpdate || today?.sourceUpdate || null,
+    sourceUpdate: fresh.sourceUpdate || result.sourceUpdate || snapshots.rowSourceUpdate(stored, today),
     refreshed: true, ageMs, reason: "recaptured",
   };
 }

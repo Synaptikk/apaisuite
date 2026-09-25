@@ -117,13 +117,18 @@ export function cardAssociates(r, opts = {}) {
  * next week. This is Tableau's OWN publish time where we have it, falling back
  * to when we captured, and it says which.
  */
-export function cardStamp({ sourceUpdate, capturedAt, isToday } = {}) {
+export function cardStamp({ sourceUpdate, capturedAt, isToday, detailAsOf } = {}) {
   const src = sourceUpdate?.iso
     ? new Date(sourceUpdate.iso).toLocaleString()
     : sourceUpdate?.raw || null;
-  if (src) return `Data as of ${src} (Tableau's last update)`;
-  if (capturedAt) return `Captured ${new Date(capturedAt).toLocaleString()}`;
-  return isToday ? "Current day — capture time unknown" : "Capture time unknown";
+  // A closed-day card's department / associate detail is that day's last
+  // current-day reading, a different moment from the summary's stamp.
+  const detail = detailAsOf && !Number.isNaN(new Date(detailAsOf).getTime())
+    ? ` · department and associate detail as of ${new Date(detailAsOf).toLocaleString()} (that day's last current-day reading)`
+    : "";
+  if (src) return `Data as of ${src} (Tableau's last update)${detail}`;
+  if (capturedAt) return `Captured ${new Date(capturedAt).toLocaleString()}${detail}`;
+  return (isToday ? "Current day — capture time unknown" : "Capture time unknown") + detail;
 }
 
 /**

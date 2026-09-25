@@ -1,5 +1,25 @@
 import { isTodayRowComplete, mergeTodayRow } from "./today_coverage.js";
 import * as homeHistory from "./home_history.js";
+import * as dayDetails from "./day_details.js";
+import { stampSpread, rowSourceUpdate } from "./store_stamp.js";
+export { rowSourceUpdate };
+
+// The snapshot-level stamp is a SUMMARY: the newest of the rows' own stamps.
+// Stores publish their current-day numbers on their own clocks, so each row
+// carries its own `sourceUpdate` (since 2026-09-15); rows written before that
+// have none, and the stamp passed by the writer stands in for them.
+function snapshotStamp(rows, passed, previous) {
+  return stampSpread(rows).newest ?? passed ?? previous ?? null;
+}
+
+// The snapshot about to be overwritten may hold the last reading of an earlier
+// day (the first crawl of a morning replaces last night's rows). Filed under
+// each row's own stamp, with the OLD snapshot's stamp standing in for rows that
+// have none — never the incoming crawl's. Never throws (lib/day_details.js).
+function archiveReplaced(today) {
+  if (!today?.rows?.length) return Promise.resolve();
+  return dayDetails.recordFromRows(today.rows, { sourceUpdate: today.sourceUpdate, capturedAt: today.capturedAt });
+}
 
 let writeQueue = Promise.resolve();
 function serializeWrite(operation) {
@@ -206,6 +226,8 @@ async function recordTodayImpl({ rows, sourceUpdate, capturedAt, partial, market
   await homeHistory.recordFromRows(rows, { sourceUpdate, capturedAt });
   const store = await read();
   const old = store.today;
+  await archiveReplaced(old);
+  await dayDetails.recordFromRows(rows, { sourceUpdate, capturedAt });
   const sameSource = !!sourceUpdate?.raw && old?.sourceKey === sourceUpdate.raw
     && String(old?.market) === String(market);
   if (sameSource && partial) {
@@ -218,9 +240,10 @@ async function recordTodayImpl({ rows, sourceUpdate, capturedAt, partial, market
     partial = old.partial;
     capturedAt = old.capturedAt;
   }
+  const stamp = snapshotStamp(rows, sourceUpdate, null);
   store.today = {
-    sourceKey:    sourceUpdate?.raw ?? null,
-    sourceUpdate: sourceUpdate || null,
+    sourceKey:    stamp?.raw ?? null,
+    sourceUpdate: stamp,
     rows,
     capturedAt,
     partial: !!partial,
@@ -250,9 +273,14 @@ export function todayCoveredStores(store, market) {
 }
 
 /**
- * Merge a top-up crawl into the existing Today snapshot: same stamp, extra
- * stores. Replacing outright would discard the stores already captured, which
- * is the entire point of only visiting the gaps.
+ * Merge a crawl's rows into the existing Today snapshot for the same market.
+ * Replacing outright would discard the stores the crawl did not re-read —
+ * and since 2026-09-15 that is the normal case: a store whose own Updated
+ * stamp has not moved is confirmed, not exported, so its row must survive.
+ *
+ * Only a different MARKET empties the snapshot: its rows are other stores'.
+ * A changed crawl-level stamp does not — stores publish on their own clocks,
+ * and each row keeps its own stamp.
  */
 export async function mergeToday(...args) {
   return serializeWrite(() => mergeTodayImpl(...args));
@@ -261,26 +289,64 @@ export async function mergeToday(...args) {
 async function mergeTodayImpl({ rows, sourceUpdate, capturedAt, partial, market }) {
   await homeHistory.recordFromRows(rows, { sourceUpdate, capturedAt });
   const store = await read();
-  const sameSource = !!sourceUpdate?.raw && store.today?.sourceKey === sourceUpdate.raw
-    && String(store.today?.market) === String(market);
-  const byStore = new Map((sameSource ? store.today?.rows || [] : []).map((r) => [String(r.store), r]));
+  const sameMarket = !!store.today && String(store.today?.market) === String(market);
+  const byStore = new Map((sameMarket ? store.today?.rows || [] : []).map((r) => [String(r.store), r]));
   for (const r of rows) {
     const oldRow = byStore.get(String(r.store));
     byStore.set(String(r.store), mergeTodayRow(oldRow, r));
   }
-  if (sameSource && partial && store.today?.partial === false) {
+  if (sameMarket && partial && store.today?.partial === false) {
     partial = false;
     capturedAt = store.today.capturedAt;
   }
 
+  const merged = [...byStore.values()];
+  // Replaced rows first: a store's previous row may be an earlier day's last reading.
+  // (merged rows that did not change fold to a no-op.)
+  await archiveReplaced(store.today);
+  await dayDetails.recordFromRows(merged, { sourceUpdate, capturedAt });
+  const stamp = snapshotStamp(merged, sourceUpdate, sameMarket ? store.today?.sourceUpdate : null);
   store.today = {
-    sourceKey:    sourceUpdate?.raw ?? store.today?.sourceKey ?? null,
-    sourceUpdate: sourceUpdate || store.today?.sourceUpdate || null,
-    rows:         [...byStore.values()],
+    sourceKey:    stamp?.raw ?? null,
+    sourceUpdate: stamp,
+    rows:         merged,
     capturedAt,
     partial:      !!partial,
     market:       market ?? store.today?.market ?? null,
   };
+  await write(store);
+  return store;
+}
+
+/**
+ * Note that a store's own Updated stamp was read again and had not moved:
+ * its stored row stands. Only `confirmedAt` advances — `capturedAt` stays
+ * the moment the numbers were actually exported, so the per-store age
+ * ceiling (MAX_TODAY_AGE_MS in the Today source) still forces a real
+ * re-read eventually. A row that predates per-store stamps takes the stamp
+ * it was just confirmed at. No row for the store: nothing to confirm.
+ */
+export async function confirmTodayRow(...args) {
+  return serializeWrite(() => confirmTodayRowImpl(...args));
+}
+
+async function confirmTodayRowImpl({ store: storeNo, confirmedAt, sourceUpdate = null, market = null }) {
+  const store = await read();
+  const t = store.today;
+  if (!t?.rows?.length) return store;
+  if (market != null && t.market != null && String(t.market) !== String(market)) return store;
+  let touched = false;
+  const rows = t.rows.map((r) => {
+    if (String(r.store) !== String(storeNo)) return r;
+    touched = true;
+    return {
+      ...r,
+      confirmedAt: confirmedAt ?? new Date().toISOString(),
+      sourceUpdate: r.sourceUpdate?.raw ? r.sourceUpdate : (sourceUpdate ?? r.sourceUpdate ?? null),
+    };
+  });
+  if (!touched) return store;
+  store.today = { ...t, rows };
   await write(store);
   return store;
 }
@@ -315,6 +381,8 @@ async function upsertTodayRowImpl({ row, capturedAt, sourceUpdate, market = null
   const store = await read();
   const existing = store.today;
   const stamped = { ...row, capturedAt };
+  await archiveReplaced(existing);
+  await dayDetails.recordFromRows([stamped], { sourceUpdate, capturedAt });
 
   const byStore = new Map((existing?.rows || []).map((r) => [String(r.store), r]));
   byStore.set(String(row.store), stamped);

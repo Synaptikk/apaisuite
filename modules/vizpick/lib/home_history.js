@@ -71,6 +71,10 @@ export function entryFromRow(row, { sourceUpdate, capturedAt }) {
   const bins = row?.locations?.bins;
   if (!Array.isArray(bins) || !bins.length) return null;
   const at = row.capturedAt || capturedAt || new Date().toISOString();
+  // The row's OWN stamp first: stores publish on their own clocks, and the
+  // crawl-level stamp is whichever store the primary tab was showing. It is
+  // only the fallback for rows captured before per-store stamps existed.
+  const stamp = row.sourceUpdate?.raw ? row.sourceUpdate : sourceUpdate;
   const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
   const clean = bins.map((b) => ({
     location: b.location,
@@ -97,8 +101,11 @@ export function entryFromRow(row, { sourceUpdate, capturedAt }) {
   return {
     capturedAt: at,
     lastConfirmedAt: at,
-    sourceKey: sourceUpdate?.raw ?? null,
-    sourceIso: sourceUpdate?.iso ?? null,
+    sourceKey: stamp?.raw ?? null,
+    sourceIso: stamp?.iso ?? null,
+    // "crawl" = a stand-in stamp (see isStandInStamp); anything else is how the
+    // store's own stamp was read. addEntry only trusts the latter.
+    stampVia: row.sourceUpdate?.raw ? (row.stampVia || "row") : (stamp?.raw ? "crawl" : null),
     store: String(row.store),
     totals: totalsOf(clean),
     fp: fingerprint(clean),
@@ -137,11 +144,49 @@ export function addEntry(history, entry, { maxDays = MAX_DAYS } = {}) {
   const list = [...(h.days[day] || [])];
   const last = [...list].reverse().find((e) => e.store === entry.store);
   let added = false;
+  let revised = null;
   const stampOf = (e) => e?.sourceIso || e?.sourceKey || null;
   const sameStamp = !!last && !!stampOf(last) && stampOf(last) === stampOf(entry);
-  if (last && (sameStamp || last.fp === entry.fp)) {
-    const i = list.lastIndexOf(last);
-    list[i] = { ...last, lastConfirmedAt: entry.capturedAt, sourceKey: last.sourceKey ?? entry.sourceKey };
+  const kept = last ? list.lastIndexOf(last) : -1;
+  // The same-stamp rule only holds for a stamp that was the store's OWN. An
+  // entry kept before per-store stamps carries the crawl-level stamp, which is
+  // whichever store the primary tab showed: on 2026-09-15 that filed 1458's
+  // 2:03 PM data under 3:03 PM, and the real 3:03 PM update then folded into
+  // it as "the same stamp" and was never kept.
+  const ownStamp = !isStandInStamp(entry);
+  const standInLast = !!last && isStandInStamp(last);
+  if (last && sameStamp && last.fp !== entry.fp && standInLast && ownStamp) {
+    // The store's own stamp reads the kept instant with different data, so the
+    // kept label was not this store's. Keep both and flag the old one.
+    if (!isSameStoreAsHistory(h, entry, day, last)) {
+      return { history: h, added: false, day, rejected: { store: entry.store, capturedAt: entry.capturedAt, locations: entry.totals?.locations ?? null } };
+    }
+    list[kept] = { ...last, stampUnverified: true };
+    list.push(entry);
+    list.sort((a, b) => String(a.capturedAt).localeCompare(String(b.capturedAt)));
+    added = true;
+    revised = "unverified";
+  } else if (last && (sameStamp || last.fp === entry.fp)) {
+    // Identical data under the store's own EARLIER stamp: the kept label ran
+    // ahead of this store's clock. Move it back, so the real later update is
+    // not folded into it.
+    const relabel = !sameStamp && standInLast && ownStamp
+      && !!stampOf(entry) && !!stampOf(last) && stampOf(entry) < stampOf(last)
+      && !list.some((e) => e !== last && e.store === entry.store && stampOf(e) === stampOf(entry));
+    if (relabel) {
+      list[kept] = {
+        ...last, lastConfirmedAt: entry.capturedAt,
+        sourceKey: entry.sourceKey, sourceIso: entry.sourceIso, stampVia: entry.stampVia,
+        relabeledFrom: last.sourceKey ?? last.sourceIso ?? null,
+      };
+      revised = "relabeled";
+    } else {
+      list[kept] = {
+        ...last, lastConfirmedAt: entry.capturedAt, sourceKey: last.sourceKey ?? entry.sourceKey,
+        // Same instant, same data, now read under the store's own stamp: the label is right.
+        ...(sameStamp && last.fp === entry.fp && standInLast && ownStamp ? { stampVia: entry.stampVia } : {}),
+      };
+    }
   } else if (!isSameStoreAsHistory(h, entry, day, last)) {
     // Wrong-store guard: a store's bins are physical locations, so its
     // location list barely moves between updates (149 bins every update on
@@ -162,7 +207,15 @@ export function addEntry(history, entry, { maxDays = MAX_DAYS } = {}) {
 
   const keep = Object.keys(h.days).sort().reverse().slice(0, maxDays);
   for (const k of Object.keys(h.days)) if (!keep.includes(k)) delete h.days[k];
-  return { history: h, added, day };
+  return revised ? { history: h, added, day, revised } : { history: h, added, day };
+}
+
+/**
+ * Was this entry's stamp a stand-in rather than the store's own? True for the
+ * crawl-level fallback and for entries kept before `stampVia` was recorded.
+ */
+export function isStandInStamp(entry) {
+  return !entry?.stampVia || entry.stampVia === "crawl";
 }
 
 /** Bins shared between two entries, over the bins either has (Jaccard). */
@@ -411,6 +464,197 @@ export function matchPerson(index, name, canonical) {
   return index.exact.get(c) || index.firstLast.get(firstLastKey(c)) || null;
 }
 
+// ── scan ledger and business case ──────────────────────────────────────────
+//
+// The analyst's case to the VizPick report owner (2026-09-16): a digital
+// associate scanning with the exception filter still adds suggested picks to
+// the bins they scan, and those picks then count as open under their name.
+// On 2026-09-15 a digital rescan added picks as often as a Stocking 1 rescan
+// (51% vs 50%), bins nobody rescanned almost never gained any (0.7%), and in
+// the 8:02 PM update every new scan in the backroom was one digital associate's
+// and every one of those bins gained picks.
+//
+// Only a bin's LAST scan survives in each update, so a scan row carries the
+// counts of the first update that showed it, and a second scanner inside the
+// same update window is invisible. The windows where a single group did all
+// the scanning are what rule that out.
+
+/**
+ * Every bin's day, oldest first: its state at the first update ("start"),
+ * each new scan ("scan") and each count change with no new scan ("noscan").
+ */
+export function scanLedger(entries) {
+  const list = entries || [];
+  const maps = list.map((e) => new Map((e.bins || []).map((b) => [b.location, b])));
+  const locations = new Set();
+  for (const m of maps) for (const loc of m.keys()) locations.add(loc);
+  const out = [];
+  for (const location of [...locations].sort()) {
+    const rows = [];
+    let prev = null, prevEntry = null, hadPicks = false;
+    list.forEach((e, i) => {
+      const b = maps[i].get(location);
+      if (!b) return;
+      if (b.seen > 0 || b.done > 0) hadPicks = true;
+      const at = e.sourceIso || e.capturedAt;
+      if (!prev) {
+        rows.push({ kind: "start", at, scanAt: b.lastSeenAt || null, win: b.win || null, due: b.seen, done: b.done, scannedToday: isScannedToday(b, e) });
+      } else if ((prev.lastSeenAt || null) !== (b.lastSeenAt || null)) {
+        rows.push({
+          kind: "scan", at, scanAt: b.lastSeenAt || null, win: b.win || null, prevWin: prev.win || null,
+          due: b.seen, done: b.done, dDue: b.seen - prev.seen, dDone: b.done - prev.done,
+          carriedOpen: Math.max(0, prev.seen - prev.done), firstToday: !isScannedToday(prev, prevEntry),
+        });
+      } else if (b.seen !== prev.seen || b.done !== prev.done) {
+        rows.push({ kind: "noscan", at, win: b.win || null, due: b.seen, done: b.done, dDue: b.seen - prev.seen, dDone: b.done - prev.done });
+      }
+      prev = b; prevEntry = e;
+    });
+    if (!prev) continue;
+    out.push({
+      location, hadPicks, due: prev.seen, done: prev.done, open: Math.max(0, prev.seen - prev.done), win: prev.win || null,
+      scans: rows.filter((r) => r.kind === "scan").length,
+      handedOver: rows.some((r) => r.kind === "scan" && r.prevWin && r.win && r.prevWin !== r.win && r.carriedOpen > 0),
+      rows,
+    });
+  }
+  return out;
+}
+
+/**
+ * Do scans by each group add picks? `groupOf(win)` names a scanner's group
+ * (e.g. "Digital", "Stocking 1"). Compares, per update transition:
+ *   · rescans of bins already scanned that day, by group — picks went up how often
+ *   · first scans of the day, by group
+ *   · bins nobody rescanned — the baseline
+ * and lists `windows`: updates where every new scan was by one group.
+ */
+export function scanImpact(entries, groupOf) {
+  const list = entries || [];
+  const nameOf = (win) => (win ? (groupOf(win) || "Unknown") : "Unknown");
+  const groups = new Map();
+  const bump = (group) => {
+    let r = groups.get(group);
+    if (!r) groups.set(group, r = { group, scans: 0, picksAdded: 0, rescans: 0, rescansGained: 0, rescanPicks: 0, firstScans: 0, firstScanPicks: 0, openAtClose: 0, binsOpenAtClose: 0 });
+    return r;
+  };
+  const idle = { bins: 0, gained: 0, picks: 0 };
+  const windows = [];
+  // Each bin is compared with its OWN previous appearance, exactly as
+  // scanLedger reads it, so an update missing a bin (a partial or foreign
+  // capture) cannot break the chain and make these totals disagree with the
+  // ledger (2026-09-16: 26 vs 78 picks on a merged day).
+  const lastSeen = new Map();
+  for (const x of list[0]?.bins || []) lastSeen.set(x.location, { bin: x, entry: list[0] });
+  for (let i = 1; i < list.length; i++) {
+    const b = list[i];
+    const scans = [];
+    let idleChanged = 0;
+    let prevAt = null;
+    for (const x of b.bins || []) {
+      const prior = lastSeen.get(x.location);
+      lastSeen.set(x.location, { bin: x, entry: b });
+      if (!prior) continue;
+      const p = prior.bin, a = prior.entry;
+      if (!prevAt || String(a.sourceIso || a.capturedAt) > String(prevAt)) prevAt = a.sourceIso || a.capturedAt;
+      const dDue = x.seen - p.seen;
+      if ((p.lastSeenAt || null) === (x.lastSeenAt || null)) {
+        idle.bins++;
+        if (dDue > 0) { idle.gained++; idle.picks += dDue; }
+        if (dDue || x.done !== p.done) idleChanged++;
+        continue;
+      }
+      const group = nameOf(x.win);
+      const r = bump(group);
+      const added = Math.max(0, dDue);
+      r.scans++; r.picksAdded += added;
+      if (isScannedToday(p, a)) {
+        r.rescans++;
+        if (dDue > 0) { r.rescansGained++; r.rescanPicks += added; }
+      } else {
+        r.firstScans++; r.firstScanPicks += added;
+      }
+      scans.push({ location: x.location, win: x.win || null, prevWin: p.win || null, group, scanAt: x.lastSeenAt || null, dDue, dDone: x.done - p.done, due: x.seen, done: x.done });
+    }
+    if (scans.length && new Set(scans.map((s) => s.group)).size === 1) {
+      windows.push({
+        at: b.sourceIso || b.capturedAt, prevAt: prevAt || list[i - 1].sourceIso || list[i - 1].capturedAt, group: scans[0].group, scans,
+        picksAdded: scans.reduce((n, s) => n + Math.max(0, s.dDue), 0),
+        binsGained: scans.filter((s) => s.dDue > 0).length,
+        otherBinsChanged: idleChanged,
+      });
+    }
+  }
+  const last = list[list.length - 1];
+  for (const x of last?.bins || []) {
+    const open = x.seen - x.done;
+    if (open > 0 && x.win) { const r = bump(nameOf(x.win)); r.openAtClose += open; r.binsOpenAtClose++; }
+  }
+  const rate = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : null);
+  for (const r of groups.values()) r.rescanRate = rate(r.rescansGained, r.rescans);
+  return {
+    groups: [...groups.values()].sort((a, b) => b.scans - a.scans || a.group.localeCompare(b.group)),
+    idle: { ...idle, rate: rate(idle.gained, idle.bins) },
+    windows,
+  };
+}
+
+/**
+ * A day's updates made fit for the business case, oldest Tableau data first:
+ *   · `foreign` — updates whose bins are not the store's (under half shared
+ *     with the day's most typical bin list), e.g. wrong-store captures kept
+ *     before the 2026-09-15 guards or merged in from another install;
+ *   · `duplicates` — extra captures of the same Tableau update (same store and
+ *     stamp); the most recently confirmed one is kept. Entries flagged
+ *     `stampUnverified` are never folded, since their stamp is not trusted.
+ * Order is by Tableau data time, not capture time: a merged day interleaves
+ * captures made by two installs at different moments.
+ */
+export function cleanDay(entries) {
+  const list = [...(entries || [])];
+  if (list.length < 2) return { entries: list, foreign: [], duplicates: 0 };
+  let ref = list[0], bestScore = -1;
+  for (const e of list) {
+    let score = 0;
+    for (const o of list) if (o !== e) score += locationOverlap(e.bins, o.bins);
+    if (score > bestScore) { bestScore = score; ref = e; }
+  }
+  const foreign = list.filter((e) => e !== ref && locationOverlap(e.bins, ref.bins) < MIN_LOCATION_OVERLAP);
+  const byStamp = new Map();
+  let duplicates = 0;
+  for (const e of list) {
+    if (foreign.includes(e)) continue;
+    const stamp = e.sourceIso || e.sourceKey;
+    const key = stamp && !e.stampUnverified ? `${e.store}|${stamp}` : `${e.store}|unfolded|${byStamp.size}`;
+    const kept = byStamp.get(key);
+    if (!kept) { byStamp.set(key, e); continue; }
+    duplicates++;
+    if (String(e.lastConfirmedAt || e.capturedAt) > String(kept.lastConfirmedAt || kept.capturedAt)) byStamp.set(key, e);
+  }
+  const time = (e) => { const t = Date.parse(e.sourceIso || e.capturedAt); return Number.isFinite(t) ? t : 0; };
+  const out = [...byStamp.values()].sort((a, b) => time(a) - time(b) || String(a.capturedAt).localeCompare(String(b.capturedAt)));
+  return { entries: out, foreign, duplicates };
+}
+
+/** CSV of scanLedger(): one line per bin event, for the report owner. */
+export function ledgerCsv(ledger, { person } = {}) {
+  const head = ["bin", "event", "tableau_update", "scan_time", "scanner_win", "scanner_name", "scanner_job",
+    "previous_scanner_win", "previous_scanner_name", "picks_done", "picks_due", "due_change", "done_change", "open_carried_over", "first_scan_today"];
+  const lines = [head.join(",")];
+  const who = (win) => (win && typeof person === "function" ? (person(win) || {}) : {});
+  for (const bin of ledger || []) {
+    for (const r of bin.rows) {
+      const p = who(r.win), q = who(r.prevWin);
+      lines.push([
+        bin.location, r.kind, r.at, r.scanAt ?? "", r.win ?? "", p.name ?? "", p.job ?? "",
+        r.prevWin ?? "", q.name ?? "", r.done, r.due, r.dDue ?? "", r.dDone ?? "",
+        r.kind === "scan" ? r.carriedOpen : "", r.kind === "scan" ? (r.firstToday ? "yes" : "no") : "",
+      ].map(csvCell).join(","));
+    }
+  }
+  return lines.join("\r\n");
+}
+
 // ── storage (service worker + view page) ───────────────────────────────────
 
 let queue = Promise.resolve();
@@ -482,16 +726,146 @@ export function recordFromRows(rows, meta) {
       let h = await read();
       let added = 0;
       const rejected = [];
+      const revised = [];
       for (const e of entries) {
         const res = addEntry(h, e);
         h = res.history;
         if (res.added) added++;
         if (res.rejected) rejected.push(res.rejected);
+        if (res.revised) revised.push(res.revised);
       }
       await chrome.storage.local.set({ [KEY]: h });
-      return rejected.length ? { added, rejected } : { added };
+      return { added, ...(rejected.length ? { rejected } : {}), ...(revised.length ? { revised } : {}) };
     } catch (e) {
       return { added: 0, error: String(e?.message ?? e) };
+    }
+  };
+  const p = queue.then(run, run);
+  queue = p.catch(() => {});
+  return p;
+}
+
+// ── gaps and poll log ──────────────────────────────────────────────────────
+//
+// Tableau publishes the home store roughly hourly, on its own clock. A missing
+// hour in the progression is either Tableau not publishing or a check that
+// failed; the history alone cannot tell the two apart, so every home-store
+// check is logged beside it under its own key (addEntry rebuilds the history
+// object, so extra fields there would not survive).
+
+// Longer than this between two kept updates' data times is shown as a gap.
+export const GAP_MINUTES = 75;
+
+/** Stretches of Tableau data time with no kept update, as { index, from, to, minutes }. */
+export function updateGaps(entries, { gapMinutes = GAP_MINUTES } = {}) {
+  const out = [];
+  for (let i = 1; i < (entries || []).length; i++) {
+    const from = entries[i - 1].sourceIso || entries[i - 1].capturedAt;
+    const to = entries[i].sourceIso || entries[i].capturedAt;
+    const ms = Date.parse(to) - Date.parse(from);
+    if (Number.isFinite(ms) && ms > gapMinutes * 60_000) out.push({ index: i, from, to, minutes: Math.round(ms / 60_000) });
+  }
+  return out;
+}
+
+export const POLLS_KEY = "vizpick.homeHistory.polls.v1";
+export const MAX_POLLS_PER_DAY = 96;
+
+/** Pure: append one check to its local day, newest last, capped per day and by days. */
+export function addPoll(log, poll, { maxPerDay = MAX_POLLS_PER_DAY, maxDays = MAX_DAYS } = {}) {
+  const day = poll?.at ? localDayKey(poll.at) : null;
+  if (!day) return log;
+  const next = { v: 1, days: { ...(log?.days || {}) } };
+  next.days[day] = [...(next.days[day] || []), poll].slice(-maxPerDay);
+  const keep = Object.keys(next.days).sort().reverse().slice(0, maxDays);
+  for (const k of Object.keys(next.days)) if (!keep.includes(k)) delete next.days[k];
+  return next;
+}
+
+/** Log one home-store check ({ reason, ok, outcome, stamp, error, revised }). Never throws. */
+export function recordPoll(poll) {
+  const run = async () => {
+    try {
+      const got = (await chrome.storage.local.get(POLLS_KEY))[POLLS_KEY];
+      const next = addPoll(got?.v === 1 ? got : null, { ...poll, at: poll?.at || new Date().toISOString() });
+      if (next) await chrome.storage.local.set({ [POLLS_KEY]: next });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  };
+  const p = queue.then(run, run);
+  queue = p.catch(() => {});
+  return p;
+}
+
+/** One day's logged checks, oldest first. */
+export async function readPolls(day) {
+  try {
+    const got = (await chrome.storage.local.get(POLLS_KEY))[POLLS_KEY];
+    return got?.v === 1 ? (got.days?.[day] || []) : [];
+  } catch {
+    return [];
+  }
+}
+
+// ── history files (move days between installs) ─────────────────────────────
+//
+// Each Edge profile keeps its own history, so a day captured in one (the debug
+// Edge, 2026-09-15) is missing from the other. A history file is the stored
+// object itself: { v: 1, days: { "YYYY-MM-DD": [entry, ...] } }.
+
+/** Is this a usable history file? Returns a reason when not. */
+export function validateHistoryFile(obj) {
+  if (!obj || typeof obj !== "object") return "not a history file";
+  if (obj.v !== 1 || !obj.days || typeof obj.days !== "object") return "not a VizPick pick history file (expected v: 1 with days)";
+  for (const [day, list] of Object.entries(obj.days)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(list)) return `day "${day}" is not a list of updates`;
+    for (const e of list) if (!e?.store || !Array.isArray(e.bins) || !e.capturedAt) return `an update on ${day} has no store, bins or capture time`;
+  }
+  return null;
+}
+
+/**
+ * Pure: merge `incoming` days into `base`. An update already kept (same store,
+ * same Tableau stamp and same data) is not duplicated; everything else is added
+ * and each day re-sorted by capture time. Returns per-day counts.
+ */
+export function mergeHistories(base, incoming, { maxDays = MAX_DAYS } = {}) {
+  const h = { v: 1, days: { ...(base?.days || {}) } };
+  const added = {};
+  const idOf = (e) => `${e.store}|${e.sourceIso || e.sourceKey || e.capturedAt}|${e.fp ?? fingerprint(e.bins)}`;
+  for (const [day, list] of Object.entries(incoming?.days || {})) {
+    const kept = (h.days[day] || []).map((e) => (e.fp && e.totals ? e : { ...e, fp: e.fp ?? fingerprint(e.bins), totals: e.totals ?? totalsOf(e.bins) }));
+    const seen = new Set(kept.map(idOf));
+    let n = 0;
+    for (const e of list) {
+      const id = idOf(e);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      kept.push({ ...e, fp: e.fp ?? fingerprint(e.bins), totals: e.totals ?? totalsOf(e.bins) });
+      n++;
+    }
+    kept.sort((a, b) => String(a.capturedAt).localeCompare(String(b.capturedAt)));
+    h.days[day] = kept;
+    added[day] = n;
+  }
+  const keep = Object.keys(h.days).sort().reverse().slice(0, maxDays);
+  for (const k of Object.keys(h.days)) if (!keep.includes(k)) delete h.days[k];
+  return { history: h, added };
+}
+
+/** Merge a history file into storage. Never throws. */
+export function importHistory(file) {
+  const run = async () => {
+    try {
+      const reason = validateHistoryFile(file);
+      if (reason) return { ok: false, error: reason };
+      const { history, added } = mergeHistories(await read(), file);
+      await chrome.storage.local.set({ [KEY]: history });
+      return { ok: true, added };
+    } catch (e) {
+      return { ok: false, error: String(e?.message ?? e) };
     }
   };
   const p = queue.then(run, run);

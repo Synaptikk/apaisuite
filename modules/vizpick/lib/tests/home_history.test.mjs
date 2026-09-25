@@ -278,3 +278,220 @@ test("repairAgainst drops the entries that are other stores' bins and keeps the 
   const gone = repairAgainst({ v: 1, days: { "2026-09-13": [wrong1] } }, { store: "1458", bins: binsOf("100", 144) });
   assert.deepEqual(Object.keys(gone.history.days), []);
 });
+
+test("a history entry is stamped with the row OWN Tableau stamp, not the crawl stamp", () => {
+  // Stores update at different times (2026-09-15): the crawl-level stamp is
+  // whichever store the primary tab was showing. Two rows for the home store
+  // at the same own-stamp are one update however the crawl stamp moved.
+  const bins = [bin("001/002", 3, 1, "aaa111a", "9/15/2026 6:12:55 AM")];
+  const own = { raw: "2026-09-15 14:03:00", iso: "2026-09-15T14:03:00" };
+  const e1 = entryFromRow({ ...rowWith(bins, "2026-09-15T14:10:00"), sourceUpdate: own }, { sourceUpdate: SU, capturedAt: "2026-09-15T14:10:00" });
+  assert.equal(e1.sourceIso, "2026-09-15T14:03:00");
+  assert.equal(e1.sourceKey, "2026-09-15 14:03:00");
+  // No own stamp (a row from before per-store stamps): the crawl stamp stands in.
+  const legacy = entryFromRow(rowWith(bins, "2026-09-15T14:10:00"), { sourceUpdate: SU, capturedAt: "2026-09-15T14:10:00" });
+  assert.equal(legacy.sourceIso, SU.iso);
+
+  let h = { v: 1, days: {} };
+  h = addEntry(h, e1).history;
+  const e2 = entryFromRow({ ...rowWith(bins, "2026-09-15T15:31:00"), sourceUpdate: own }, { sourceUpdate: { raw: "2026-09-15 15:03:00", iso: "2026-09-15T15:03:00" }, capturedAt: "2026-09-15T15:31:00" });
+  const r = addEntry(h, e2);
+  assert.equal(r.added, false, "same own stamp = same update, whatever the crawl-level stamp did");
+  assert.equal(r.history.days["2026-09-15"].length, 1);
+  assert.equal(r.history.days["2026-09-15"][0].lastConfirmedAt, "2026-09-15T15:31:00");
+});
+
+// 2026-09-15, store 1458: the market crawl (before per-store stamps) filed the
+// 2:03 PM data under the crawl stamp 3:03 PM. The home poll then read the
+// store's own 2:03 PM stamp with identical bins, and later its own 3:03 PM
+// stamp with new bins, which folded into the mislabelled entry and was lost.
+const OWN_1403 = { raw: "2026-09-15 14:03:26", iso: "2026-09-15T18:03:26.000Z" };
+const OWN_1503 = { raw: "2026-09-15 15:03:26", iso: "2026-09-15T19:03:26.000Z" };
+const ownRow = (bins, capturedAt, su) => ({ ...rowWith(bins, capturedAt), sourceUpdate: su, stampVia: "summary" });
+
+test("entries record whether their stamp was the store's own or a crawl stand-in", () => {
+  const bins = [bin("002/003", 7, 0)];
+  const own = entryFromRow(ownRow(bins, "2026-09-15T19:43:00Z", OWN_1503), {});
+  const standIn = entryFromRow(rowWith(bins, "2026-09-15T19:43:00Z"), { sourceUpdate: OWN_1503 });
+  const fallback = entryFromRow({ ...ownRow(bins, "2026-09-15T19:43:00Z", OWN_1503), stampVia: "crawl" }, {});
+  assert.equal(own.stampVia, "summary");
+  assert.equal(HH.isStandInStamp(own), false);
+  assert.equal(HH.isStandInStamp(standIn), true);
+  assert.equal(HH.isStandInStamp(fallback), true);
+  assert.equal(HH.isStandInStamp({ sourceKey: "x" }), true, "entries kept before stampVia existed are stand-ins");
+});
+
+test("identical data under the store's own EARLIER stamp relabels a stand-in entry", () => {
+  const bins = [bin("002/003", 7, 0, "c0h04gq", "9/15/2026 10:13:52 AM")];
+  const mislabelled = entryFromRow(rowWith(bins, "2026-09-15T19:43:44Z"), { sourceUpdate: OWN_1503 });
+  let r = addEntry(null, mislabelled);
+  r = addEntry(r.history, entryFromRow(ownRow(bins, "2026-09-15T20:13:53Z", OWN_1403), {}));
+  const kept = r.history.days["2026-09-15"];
+  assert.equal(r.added, false);
+  assert.equal(r.revised, "relabeled");
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].sourceKey, OWN_1403.raw);
+  assert.equal(kept[0].relabeledFrom, OWN_1503.raw);
+  assert.equal(HH.isStandInStamp(kept[0]), false);
+
+  // The real 3:03 PM update now appends instead of folding.
+  const real = entryFromRow(ownRow([bin("002/003", 11, 7, "wdpetty", "9/15/2026 1:08:19 PM")], "2026-09-15T21:49:07Z", OWN_1503), {});
+  r = addEntry(r.history, real);
+  assert.equal(r.added, true);
+  assert.deepEqual(r.history.days["2026-09-15"].map((e) => e.sourceKey), [OWN_1403.raw, OWN_1503.raw]);
+});
+
+test("different data at a stand-in entry's stamp is kept, and the old entry is flagged unverified", () => {
+  const mislabelled = entryFromRow(rowWith([bin("002/003", 7, 0)], "2026-09-15T19:43:44Z"), { sourceUpdate: OWN_1503 });
+  let r = addEntry(null, mislabelled);
+  r = addEntry(r.history, entryFromRow(ownRow([bin("002/003", 11, 7)], "2026-09-15T21:49:07Z", OWN_1503), {}));
+  const kept = r.history.days["2026-09-15"];
+  assert.equal(r.added, true);
+  assert.equal(r.revised, "unverified");
+  assert.equal(kept.length, 2);
+  assert.equal(kept[0].stampUnverified, true);
+  assert.equal(kept[1].stampUnverified, undefined);
+});
+
+test("the same-stamp rule still holds when the kept stamp was the store's own", () => {
+  let r = addEntry(null, entryFromRow(ownRow([bin("002/003", 7, 0)], "2026-09-15T19:43:44Z", OWN_1503), {}));
+  r = addEntry(r.history, entryFromRow(ownRow([bin("002/003", 7, 1)], "2026-09-15T21:49:07Z", OWN_1503), {}));
+  assert.equal(r.added, false);
+  assert.equal(r.revised, undefined);
+  assert.equal(r.history.days["2026-09-15"].length, 1);
+  // Identical data at a NEWER own stamp only confirms; it never moves a label forward.
+  r = addEntry(null, entryFromRow(rowWith([bin("002/003", 7, 0)], "2026-09-15T18:10:00Z"), { sourceUpdate: OWN_1403 }));
+  r = addEntry(r.history, entryFromRow(ownRow([bin("002/003", 7, 0)], "2026-09-15T19:40:00Z", OWN_1503), {}));
+  assert.equal(r.revised, undefined);
+  assert.equal(r.history.days["2026-09-15"][0].sourceKey, OWN_1403.raw);
+});
+
+test("updateGaps names every stretch of Tableau data time longer than the threshold", () => {
+  const e = (iso) => ({ sourceIso: iso, capturedAt: iso });
+  const entries = [e("2026-09-15T16:03:03Z"), e("2026-09-15T17:03:46Z"), e("2026-09-15T19:03:26Z"), e("2026-09-15T19:40:00Z")];
+  assert.deepEqual(HH.updateGaps(entries), [{ index: 2, from: "2026-09-15T17:03:46Z", to: "2026-09-15T19:03:26Z", minutes: 120 }]);
+  assert.deepEqual(HH.updateGaps(entries, { gapMinutes: 150 }), []);
+});
+
+// A small day in the shape of 2026-09-15: Stocking scans in the morning, a
+// digital associate rescans later, one bin is never rescanned.
+const dayOf = (spec) => spec.map(([iso, bins]) => ({
+  capturedAt: iso, sourceIso: iso, store: "1458",
+  bins: bins.map(([location, seen, done, win, lastSeenAt, seenToday = true]) => ({ location, seen, done, win, lastSeenAt, seenToday })),
+}));
+const SEP15 = dayOf([
+  ["2026-09-15T14:03:00Z", [["040/005", 9, 9, "alyssa", "9/15/2026 10:28:00 AM"], ["002/003", 0, 0, "old", "9/14/2026 11:36:00 AM", false], ["091/009", 15, 15, "eric", "9/15/2026 8:14:00 AM"]]],
+  ["2026-09-15T17:03:00Z", [["040/005", 9, 9, "alyssa", "9/15/2026 10:28:00 AM"], ["002/003", 7, 0, "cody", "9/15/2026 10:10:00 AM"], ["091/009", 15, 15, "eric", "9/15/2026 8:14:00 AM"]]],
+  ["2026-09-15T22:03:00Z", [["040/005", 21, 9, "brendan", "9/15/2026 3:20:00 PM"], ["002/003", 11, 7, "michael", "9/15/2026 1:11:00 PM"], ["091/009", 15, 15, "eric", "9/15/2026 8:14:00 AM"]]],
+  ["2026-09-16T00:02:00Z", [["040/005", 25, 9, "brendan", "9/15/2026 6:51:00 PM"], ["002/003", 11, 7, "michael", "9/15/2026 1:11:00 PM"], ["091/009", 15, 15, "eric", "9/15/2026 8:14:00 AM"]]],
+  ["2026-09-16T03:02:00Z", [["040/005", 25, 17, "brendan", "9/15/2026 6:51:00 PM"], ["002/003", 11, 11, "michael", "9/15/2026 1:11:00 PM"], ["091/009", 15, 15, "eric", "9/15/2026 8:14:00 AM"]]],
+]);
+const GROUP = { alyssa: "Stocking 1", michael: "Stocking 1", eric: "Stocking 1", brendan: "Digital", cody: "AP", old: "Stocking 1" };
+
+test("scanLedger reads each bin as scans, scanless changes and handovers", () => {
+  const ledger = HH.scanLedger(SEP15);
+  assert.deepEqual(ledger.map((b) => b.location), ["002/003", "040/005", "091/009"]);
+  const bin = ledger.find((b) => b.location === "040/005");
+  assert.deepEqual(bin.rows.map((r) => [r.kind, r.win, r.done, r.due, r.dDue ?? null]), [
+    ["start", "alyssa", 9, 9, null],
+    ["scan", "brendan", 9, 21, 12],
+    ["scan", "brendan", 9, 25, 4],
+    ["noscan", "brendan", 17, 25, 0],
+  ]);
+  assert.equal(bin.rows[1].prevWin, "alyssa");
+  assert.equal(bin.rows[1].carriedOpen, 0);
+  assert.equal(bin.handedOver, false, "Alyssa left nothing open, so nothing was handed over");
+  const handed = ledger.find((b) => b.location === "002/003");
+  assert.equal(handed.handedOver, true);
+  assert.equal(handed.rows[1].firstToday, true, "002/003 had not been scanned today before Cody");
+  assert.equal(handed.rows[2].carriedOpen, 7);
+  assert.equal(ledger.find((b) => b.location === "091/009").scans, 0);
+});
+
+test("scanImpact compares rescans by group against bins nobody rescanned, and finds one-group windows", () => {
+  const impact = HH.scanImpact(SEP15, (win) => GROUP[win]);
+  const g = Object.fromEntries(impact.groups.map((r) => [r.group, r]));
+  assert.equal(g.Digital.rescans, 2);
+  assert.equal(g.Digital.rescansGained, 2);
+  assert.equal(g.Digital.rescanPicks, 16);
+  assert.equal(g.Digital.rescanRate, 100);
+  assert.equal(g.Digital.openAtClose, 8);
+  assert.equal(g.AP.firstScans, 1);
+  assert.equal(g.AP.firstScanPicks, 7);
+  assert.equal(g["Stocking 1"].rescans, 1);
+  assert.equal(g["Stocking 1"].rescansGained, 1);
+  assert.equal(impact.idle.bins, 8);
+  assert.equal(impact.idle.gained, 0);
+  // Update 4 (8:02 PM local) held one new scan, a digital one; update 2 held only AP's.
+  const digital = impact.windows.filter((w) => w.group === "Digital");
+  assert.equal(digital.length, 1);
+  assert.equal(digital[0].picksAdded, 4);
+  assert.equal(digital[0].otherBinsChanged, 0);
+  assert.equal(impact.windows.find((w) => w.group === "AP").picksAdded, 7);
+  assert.equal(impact.windows.some((w) => w.at === "2026-09-15T22:03:00Z"), false, "mixed Digital + Stocking scans are not a one-group window");
+});
+
+test("a merged day with a foreign capture and a repeat gives the same totals as the clean day, and they match the ledger", () => {
+  // 2026-09-16: the normal Edge showed +26 picks on digital scans above a list
+  // adding up to 78, because its merged day interleaved captures that broke
+  // the update-to-update chain.
+  const foreign = { capturedAt: "2026-09-15T20:00:00Z", sourceIso: "2026-09-15T19:30:00Z", store: "1458",
+    bins: Array.from({ length: 6 }, (_, i) => ({ location: `900/${i}`, seen: 3, done: 0, win: "x", lastSeenAt: "9/15/2026 3:00:00 PM", seenToday: true })) };
+  const repeat = { ...SEP15[2], capturedAt: "2026-09-15T23:30:00Z", lastConfirmedAt: "2026-09-15T23:30:00Z" };
+  const merged = [SEP15[0], SEP15[1], foreign, SEP15[2], repeat, SEP15[3], SEP15[4]];
+
+  const cleaned = HH.cleanDay(merged);
+  assert.deepEqual(cleaned.foreign, [foreign]);
+  assert.equal(cleaned.duplicates, 1);
+  assert.equal(cleaned.entries.length, 5);
+  assert.equal(cleaned.entries[2], repeat, "the most recently confirmed capture of an update is kept");
+
+  const clean = HH.scanImpact(SEP15, (w) => GROUP[w]);
+  const fromMerged = HH.scanImpact(cleaned.entries, (w) => GROUP[w]);
+  const digital = (r) => r.groups.find((g) => g.group === "Digital");
+  assert.deepEqual(digital(fromMerged), digital(clean));
+  assert.deepEqual(fromMerged.idle, clean.idle);
+
+  // Even without cleaning, a capture missing the store's bins no longer hides scans.
+  const raw = HH.scanImpact([SEP15[0], SEP15[1], foreign, SEP15[2], SEP15[3], SEP15[4]], (w) => GROUP[w] || "Other");
+  assert.equal(digital(raw).picksAdded, digital(clean).picksAdded);
+
+  // Totals agree with the ledger's own count of picks added on digital scans.
+  const ledgerDigital = HH.scanLedger(cleaned.entries).flatMap((b) => b.rows)
+    .filter((r) => r.kind === "scan" && GROUP[r.win] === "Digital").reduce((n, r) => n + Math.max(0, r.dDue), 0);
+  assert.equal(digital(fromMerged).picksAdded, ledgerDigital);
+});
+
+test("ledgerCsv writes one line per bin event with names from the resolver", () => {
+  const csv = HH.ledgerCsv(HH.scanLedger(SEP15), { person: (w) => ({ name: w.toUpperCase(), job: GROUP[w] }) }).split("\r\n");
+  assert.equal(csv[0].split(",")[0], "bin");
+  assert.equal(csv.length, 1 + HH.scanLedger(SEP15).reduce((n, b) => n + b.rows.length, 0));
+  assert.ok(csv.some((l) => l.startsWith("040/005,scan,2026-09-15T22:03:00Z,9/15/2026 3:20:00 PM,brendan,BRENDAN,Digital,alyssa,ALYSSA,9,21,12,0,0,no")));
+});
+
+test("history files: validated, merged without duplicating updates already kept", () => {
+  assert.match(HH.validateHistoryFile({ days: {} }), /not a VizPick pick history file/);
+  assert.match(HH.validateHistoryFile({ v: 1, days: { "2026-09-15": [{ store: "1458" }] } }), /no store, bins or capture time/);
+  const file = { v: 1, days: { "2026-09-15": SEP15 } };
+  assert.equal(HH.validateHistoryFile(file), null);
+
+  // This install caught only the 3:03 PM update itself; the file brings the rest.
+  const mine = { v: 1, days: { "2026-09-14": [SEP15[0]], "2026-09-15": [{ ...SEP15[2], fp: HH.fingerprint(SEP15[2].bins) }] } };
+  const { history, added } = HH.mergeHistories(mine, file);
+  assert.equal(added["2026-09-15"], 4);
+  assert.equal(history.days["2026-09-15"].length, 5);
+  assert.deepEqual(history.days["2026-09-15"].map((e) => e.capturedAt), SEP15.map((e) => e.capturedAt));
+  assert.ok(history.days["2026-09-15"].every((e) => e.fp && e.totals));
+  assert.equal(history.days["2026-09-14"].length, 1, "days not in the file are left alone");
+  // Loading the same file twice adds nothing.
+  assert.equal(HH.mergeHistories(history, file).added["2026-09-15"], 0);
+});
+
+test("addPoll keeps each day's checks in order and caps them", () => {
+  let log = null;
+  for (let i = 0; i < 5; i++) log = HH.addPoll(log, { at: `2026-09-15T1${i}:00:00`, ok: i !== 2, outcome: i === 2 ? "failed" : "unchanged" }, { maxPerDay: 3 });
+  const day = log.days["2026-09-15"];
+  assert.equal(day.length, 3);
+  assert.deepEqual(day.map((p) => p.at), ["2026-09-15T12:00:00", "2026-09-15T13:00:00", "2026-09-15T14:00:00"]);
+  assert.equal(HH.addPoll(log, { at: "not a date", ok: true }), log, "an undatable poll is ignored");
+});

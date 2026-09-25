@@ -133,6 +133,16 @@
   margin: 0;
 }
 .vizpick-panel-sub { font-size: var(--fs-sm); color: var(--apai-muted); margin-left: auto; }
+/* Each Today card's own Tableau stamp — stores update at different times, so
+   the header's stamp is only the newest store's. */
+.vizpick-store-card-stamp {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin-top: 2px;
+  cursor: help;
+  white-space: nowrap;
+}
+
 /* Tableau's own last-update stamp, sitting beside the panel title. */
 .vizpick-panel-stamp {
   font-size: var(--fs-sm);
@@ -856,3 +866,33 @@
   [data-layout="preview"] .module-vizpick .vizpick-store-card { transition: none; }
   [data-layout="preview"] .module-vizpick .vizpick-store-card:hover { transform: none; }
 }
+
+/* Pick progression: business case + bin-by-bin views (view.js §7b, 2026-09-16) */
+.module-vizpick .vizpick-hist-tabs { margin: 10px 0 4px; }
+.module-vizpick .vizpick-case-verdict { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--apai-blue); background: var(--apai-bg-soft); line-height: 1.55; font-size: 13px; max-width: 90ch; }
+.module-vizpick .vizpick-case-tallies { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 8px 0; }
+.module-vizpick .vizpick-case-tally { border: 1px solid var(--apai-border-soft); border-radius: 6px; padding: 8px 10px; display: grid; gap: 2px; align-content: start; }
+.module-vizpick .vizpick-case-tally strong { font-size: 20px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.module-vizpick .vizpick-case-tally strong small { font-size: 12px; font-weight: 500; color: var(--apai-muted); }
+.module-vizpick .vizpick-case-tally span { font-size: 11px; color: var(--apai-muted); line-height: 1.35; }
+.module-vizpick .vizpick-case-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
+.module-vizpick .vizpick-case-window { margin: 6px 0 12px; }
+.module-vizpick .vizpick-case-baseline td { font-style: italic; opacity: 0.85; }
+.module-vizpick .vizpick-case-digital td:first-child { font-weight: 600; }
+.module-vizpick .vizpick-ledger-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
+.module-vizpick .vizpick-ledger-tools input { min-width: 0; width: min(260px, 100%); }
+.module-vizpick .vizpick-ledger-list { display: grid; gap: 6px; }
+.module-vizpick .vizpick-ledger-bin { border: 1px solid var(--apai-border-soft); border-radius: 6px; }
+.module-vizpick .vizpick-ledger-bin > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 10px; font-size: 12px; }
+.module-vizpick .vizpick-ledger-bin > summary:focus-visible { outline: 2px solid var(--apai-blue); outline-offset: 2px; }
+.module-vizpick .vizpick-ledger-bin > summary .code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-weight: 600; }
+.module-vizpick .vizpick-ledger-bin > summary .end { margin-left: auto; font-variant-numeric: tabular-nums; }
+.module-vizpick .vizpick-ledger-bin[open] > summary { border-bottom: 1px solid var(--apai-border-soft); }
+.module-vizpick .vizpick-ledger-bin .vizpick-hist-scroll { padding: 2px 10px 8px; }
+.module-vizpick .vizpick-ledger-up { color: var(--apai-error); font-weight: 600; }
+.module-vizpick .vizpick-ledger-done { color: var(--apai-success); }
+.module-vizpick .vizpick-ledger-noscan td { opacity: 0.7; }
+.module-vizpick .vizpick-case-sub td { font-size: 11px; }
+.module-vizpick .vizpick-case-sub td:first-child { padding-left: 22px; white-space: normal; max-width: 420px; }
+.module-vizpick .vizpick-case-steps { margin: 4px 0 10px; padding-left: 20px; font-size: 12px; line-height: 1.55; max-width: 95ch; }
+.module-vizpick .vizpick-case-steps li + li { margin-top: 3px; }
