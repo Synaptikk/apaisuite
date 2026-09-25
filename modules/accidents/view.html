@@ -1,0 +1,45 @@
+<div class="acc">
+  <header class="acc-header">
+    <div>
+      <h1>Accident Details</h1>
+      <div class="acc-sub" id="acc-meta">–</div>
+    </div>
+    <div class="acc-actions">
+      <span id="acc-progress" class="acc-progress"></span>
+      <button id="acc-signin" class="acc-btn acc-btn-ghost" hidden>Sign in to Clearsight</button>
+      <button id="acc-pull" class="acc-btn">Pull</button>
+    </div>
+  </header>
+
+  <div id="acc-banner" class="acc-banner" hidden></div>
+
+  <section class="acc-tiles" id="acc-tiles" hidden>
+    <div class="acc-tile"><div class="acc-tile-n" id="acc-t-open">–</div><div class="acc-tile-l">claims in evidence window</div></div>
+    <div class="acc-tile"><div class="acc-tile-n" id="acc-t-missing">–</div><div class="acc-tile-l">with evidence missing</div></div>
+    <div class="acc-tile"><div class="acc-tile-n" id="acc-t-charged">–</div><div class="acc-tile-l">charged this FY</div></div>
+    <div class="acc-tile"><div class="acc-tile-n" id="acc-t-credit">–</div><div class="acc-tile-l">credited back this FY</div></div>
+  </section>
+
+  <nav class="acc-tabs" id="acc-tabs" hidden>
+    <button class="acc-tab is-active" data-tab="claims">Evidence window</button>
+    <button class="acc-tab" data-tab="pnl">Charges (P&amp;L)</button>
+  </nav>
+
+  <section id="acc-claims" class="acc-pane"></section>
+
+  <section id="acc-pnl" class="acc-pane" hidden>
+    <div class="acc-pnl-controls">
+      <label><input type="checkbox" id="acc-pnl-credits"> only refs with a credit back</label>
+      <select id="acc-pnl-fy"></select>
+    </div>
+    <table class="acc-table">
+      <thead><tr>
+        <th>Ref #</th><th>Claimant</th><th>Category</th><th>Status</th>
+        <th class="acc-num">Charged</th><th class="acc-num">Credited</th><th class="acc-num">Net</th><th></th>
+      </tr></thead>
+      <tbody id="acc-pnl-body"></tbody>
+    </table>
+  </section>
+
+  <div id="acc-empty" class="acc-empty">Pull to load the store's claims.</div>
+</div>
