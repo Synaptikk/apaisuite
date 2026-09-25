@@ -1,0 +1,80 @@
+<section class="ci">
+  <header class="ci-header">
+    <div class="ci-title">
+      <h1>Cost Inventory</h1>
+      <p class="ci-sub">Fresh monthly worksheet — Meat/Seafood, Deli, Produce, Bakery</p>
+    </div>
+    <div class="ci-toolbar">
+      <span class="ci-freshness" data-freshness>no pull yet</span>
+      <button class="btn" data-action="export" disabled>Export .xlsx</button>
+      <button class="btn btn-primary" data-action="pull">
+        <span class="btn-label">Pull numbers</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Store, and the window the ITR figures cover. The window is derived (the
+       count is the fourth Tuesday of the month) but editable, because a count
+       that runs off-cycle would otherwise have no way in. -->
+  <section class="ci-controls">
+    <label class="ci-field">
+      <span>Store</span>
+      <input type="text" inputmode="numeric" maxlength="5" data-store placeholder="1458">
+    </label>
+    <label class="ci-field">
+      <span>Window start <em>last count</em></span>
+      <input type="date" data-window-start>
+    </label>
+    <label class="ci-field">
+      <span>Window end <em>today</em></span>
+      <input type="date" data-window-end>
+    </label>
+    <label class="ci-field">
+      <span>Freight night <em>trailers</em></span>
+      <input type="date" data-night>
+    </label>
+  </section>
+
+  <!-- One line per source, so a half-failed pull is legible rather than
+       showing up as a suspiciously round number in the grid. -->
+  <section class="ci-sources" data-sources hidden></section>
+
+  <!-- The worksheet itself, in the sheet's own row order. -->
+  <section class="ci-grid-wrap">
+    <table class="ci-grid" data-grid>
+      <thead>
+        <tr>
+          <th class="ci-rowlabel">Division</th>
+          <th>24 — Meat</th>
+          <th>24 — Meat</th>
+          <th>25 — Produce</th>
+          <th>27 — Bakery</th>
+        </tr>
+        <tr>
+          <th class="ci-rowlabel"></th>
+          <th>Dept 93<em>Meat/Seafood</em></th>
+          <th>Dept 80<em>Deli</em></th>
+          <th>Dept 94<em>Produce</em></th>
+          <th>Dept 98<em>Bakery</em></th>
+        </tr>
+      </thead>
+      <tbody data-grid-body>
+        <tr class="ci-placeholder">
+          <td colspan="5">Enter a store number and pull.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Last night's freight that the counted number does not include yet. -->
+  <section class="ci-trailers" data-trailers hidden>
+    <h2>Unfinalized Trailer totals:</h2>
+    <div data-trailer-body></div>
+  </section>
+
+  <p class="ci-footnote">
+    Claims and Fuel Station/Convenience are no longer counted here — the Cost
+    Inventory App handles both — so they export as zero.
+  </p>
+</section>

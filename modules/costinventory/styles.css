@@ -1,0 +1,310 @@
+/* modules/costinventory/styles.css
+   The worksheet on screen. Deliberately grid-like rather than card-like: the
+   people using this have filled the xlsx by hand for years, and the row order,
+   the leading +/-/= operators and the four department columns are how they
+   already read it.
+
+   Uses APAISuite design tokens exclusively (var(--apai-*)). All selectors
+   scoped under .module-costinventory per MODULE_CONTRACT.md §8. */
+
+.module-costinventory .ci {
+  padding: var(--sp-5) var(--sp-6);
+  display: grid;
+  gap: var(--sp-5);
+  width: 100%;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+
+.module-costinventory .ci-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.module-costinventory .ci-title h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  color: var(--apai-heading);
+}
+
+.module-costinventory .ci-sub {
+  margin: var(--sp-1) 0 0;
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+
+.module-costinventory .ci-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.module-costinventory .ci-freshness {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+.module-costinventory .ci-freshness.ci-stale {
+  color: var(--apai-warn);
+}
+
+/* ── Controls ───────────────────────────────────────────────────── */
+
+.module-costinventory .ci-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border-soft);
+  border-radius: var(--radius-md, 8px);
+}
+
+.module-costinventory .ci-field {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink-soft);
+}
+
+.module-costinventory .ci-field em {
+  color: var(--apai-muted);
+  font-style: normal;
+  margin-left: var(--sp-1);
+}
+
+.module-costinventory .ci-field input {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--apai-bg);
+  color: var(--apai-ink);
+  font: inherit;
+  min-width: 9rem;
+}
+
+/* ── Source status ──────────────────────────────────────────────── */
+
+.module-costinventory .ci-sources {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.module-costinventory .ci-source {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--apai-ink-soft);
+}
+
+.module-costinventory .ci-source strong {
+  color: var(--apai-ink);
+  min-width: 11rem;
+}
+
+.module-costinventory .ci-source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--apai-success);
+}
+
+.module-costinventory .ci-source-bad .ci-source-dot { background: var(--apai-error); }
+.module-costinventory .ci-source-bad span:last-child { color: var(--apai-error); }
+
+/* ── The worksheet grid ─────────────────────────────────────────── */
+
+.module-costinventory .ci-grid-wrap {
+  overflow-x: auto;
+}
+
+.module-costinventory .ci-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.module-costinventory .ci-grid th,
+.module-costinventory .ci-grid td {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border-soft);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.module-costinventory .ci-grid thead th {
+  background: var(--apai-bg-soft);
+  color: var(--apai-heading);
+  font-size: var(--fs-sm);
+  text-align: right;
+}
+
+.module-costinventory .ci-grid thead th em {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+}
+
+.module-costinventory .ci-rowlabel {
+  text-align: left !important;
+  color: var(--apai-ink-soft);
+  width: 20rem;
+}
+
+.module-costinventory .ci-hint {
+  display: block;
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  padding-left: 1.2rem;
+}
+
+.module-costinventory .ci-op {
+  display: inline-block;
+  width: 1.2rem;
+  color: var(--apai-muted);
+  font-weight: 600;
+}
+
+/* Pulled figures sit quieter than the one number a human owns. */
+.module-costinventory .ci-row-pulled td {
+  color: var(--apai-ink-soft);
+}
+
+.module-costinventory .ci-row-computed td {
+  background: var(--apai-bg-soft);
+}
+
+.module-costinventory .ci-row-strong td {
+  font-weight: 600;
+  color: var(--apai-ink);
+}
+
+.module-costinventory .ci-empty {
+  color: var(--apai-muted);
+}
+
+.module-costinventory .ci-gap td {
+  border: none;
+  padding-top: var(--sp-4);
+  text-align: left;
+  font-weight: 600;
+  color: var(--apai-heading);
+}
+
+.module-costinventory .ci-placeholder td {
+  text-align: center;
+  color: var(--apai-muted);
+  padding: var(--sp-6);
+}
+
+.module-costinventory .ci-count-input {
+  width: 100%;
+  min-width: 8rem;
+  padding: var(--sp-2);
+  border: 1px solid var(--apai-blue);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--apai-bg);
+  color: var(--apai-ink);
+  font: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.module-costinventory .ci-count-input::placeholder {
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+}
+
+/* ── Unfinalized trailer totals ─────────────────────────────────── */
+
+.module-costinventory .ci-trailers h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-lg);
+  color: var(--apai-heading);
+}
+
+.module-costinventory .ci-trailer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.module-costinventory .ci-trailer-table th,
+.module-costinventory .ci-trailer-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--apai-border-soft);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.module-costinventory .ci-trailer-table thead th {
+  background: var(--apai-bg-soft);
+  color: var(--apai-heading);
+  font-size: var(--fs-sm);
+}
+
+.module-costinventory .ci-trailer-table thead th em {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+}
+
+.module-costinventory .ci-trailer-id {
+  text-align: left !important;
+}
+
+.module-costinventory .ci-trailer-id em {
+  display: block;
+  font-style: normal;
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+}
+
+.module-costinventory .ci-type {
+  display: inline-block;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--apai-blue);
+}
+
+.module-costinventory .ci-type-fdd { background: var(--apai-blue-dark); }
+
+.module-costinventory .ci-trailer-subtotal td {
+  background: var(--apai-bg-soft);
+  font-weight: 600;
+}
+
+.module-costinventory .ci-trailer-total td {
+  background: var(--apai-info-bg);
+  font-weight: 700;
+  color: var(--apai-ink);
+}
+
+.module-costinventory .ci-note {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+.module-costinventory .ci-note.ci-warn {
+  color: var(--apai-warn);
+}
+
+.module-costinventory .ci-footnote {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
