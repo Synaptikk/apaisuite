@@ -37,18 +37,13 @@ function headerRowIndex(rows) {
 }
 
 /**
- * Convert one sheet to an assignment document, or null if it isn't a day board.
+ * The associate rows under a sheet's "Associate" header, as
+ * [{ name, slots: { slotIndex: TASK } }], or null if the sheet has no such
+ * header. Names are returned as typed; tasks are upper-cased. Rows with no
+ * tasks at all are blank template rows and are dropped.
  */
-export function sheetToDay(rows) {
+export function sheetRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
-
-  // The date lives in the first few rows, above the summary block.
-  let date = null;
-  for (const row of rows.slice(0, 6)) {
-    date = parseDayHeader(row?.[0]);
-    if (date) break;
-  }
-  if (!date) return null;
 
   const headerIdx = headerRowIndex(rows);
   if (headerIdx === -1) return null;
@@ -63,23 +58,43 @@ export function sheetToDay(rows) {
   });
   if (!slotForColumn.size) return null;
 
-  const associates = [];
+  const out = [];
   for (const row of rows.slice(headerIdx + 1)) {
-    const name = String(row?.[0] || "").trim().toUpperCase();
+    const name = String(row?.[0] || "").trim();
     if (!name) continue;
 
     const slots = {};
     for (const [col, slot] of slotForColumn) {
-      const task = String(row[col] || "").trim().toUpperCase();
+      const task = String(row[col] ?? "").trim().toUpperCase();
       if (task) slots[slot] = task;
     }
     // A name with no tasks at all is a blank template row, not a person who
     // worked and did nothing.
-    if (!Object.keys(slots).length) continue;
+    if (Object.keys(slots).length) out.push({ name, slots });
+  }
+  return out;
+}
 
+/**
+ * Convert one sheet to an assignment document, or null if it isn't a dated
+ * day board. The live workbook's headers carry no date — that one goes
+ * through board_sync.js instead.
+ */
+export function sheetToDay(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+
+  // The date lives in the first few rows, above the summary block.
+  let date = null;
+  for (const row of rows.slice(0, 6)) {
+    date = parseDayHeader(row?.[0]);
+    if (date) break;
+  }
+  if (!date) return null;
+
+  const associates = (sheetRows(rows) || []).map(({ name, slots }) => {
     const filled = Object.keys(slots).map(Number).sort((a, b) => a - b);
-    associates.push({
-      name,
+    return {
+      name: name.toUpperCase(),
       slots,
       status: null,
       // The board records no shift times, so infer the worked span from the
@@ -88,8 +103,8 @@ export function sheetToDay(rows) {
       shiftStart: filled[0],
       shiftEnd:   filled.at(-1) + 1,
       shiftLabel: null,
-    });
-  }
+    };
+  });
 
   return associates.length ? { date, associates } : null;
 }

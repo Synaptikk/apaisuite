@@ -116,17 +116,92 @@ function reportView(ctx, name) {
   ].join("");
 }
 
+/**
+ * Daily Board names worth a second look (store 1458 — ctx.board is null
+ * elsewhere), one row per board name across every day the last sync covers:
+ *   ?  matched nobody — on the grid under the name as typed
+ *   ~  matched by shift hours only, never by the name
+ * The buttons pin a board name to a person, on every day, past and future.
+ */
+export function boardNameChecks(ctx) {
+  const dates = ctx.board?.state?.dates || [];
+  const byName = new Map();
+  const entry = (boardName) => byName.get(boardName) || byName.set(boardName, {
+    boardName, unresolved: 0, guessed: 0, days: [], names: new Set(), options: new Set(), how: new Set(),
+  }).get(boardName);
+
+  for (const d of dates) {
+    if (d.skipped) continue;
+    for (const u of d.unmatched || []) {
+      const e = entry(u.boardName);
+      e.unresolved++; e.days.push(d.date);
+      for (const c of u.candidates || []) e.options.add(c);
+    }
+    for (const m of d.matched || []) {
+      if (!String(m.how).startsWith("hours")) continue;
+      const e = entry(m.boardName);
+      e.guessed++; e.days.push(d.date); e.names.add(m.name); e.how.add(m.how);
+      for (const a of m.alt || []) e.options.add(a);
+    }
+  }
+  if (!byName.size) return "";
+
+  const day = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric" });
+  const btn = (boardName, name, label = name) =>
+    `<button class="btn btn-sm" data-dm-board-alias="${esc(boardName)}" data-dm-board-name="${esc(name)}">${esc(label)}</button>`;
+
+  const rows = [...byName.values()]
+    .sort((a, b) => (b.unresolved > 0) - (a.unresolved > 0) || b.days.length - a.days.length)
+    .map((e) => {
+      const names = [...e.names];
+      const options = [...e.options].filter((n) => !e.names.has(n));
+      return `<tr>
+        <td><strong>${esc(e.boardName)}</strong></td>
+        <td>${e.unresolved
+          ? `<span class="dm-board-flag" title="Matched nobody">?</span> not matched`
+          : `<span class="dm-board-flag is-guess" title="Matched by hours only">~</span> hours only`}</td>
+        <td>${esc([...new Set(e.days)].sort().map(day).join(", "))}</td>
+        <td>${names.length ? esc(names.join(" / ")) + `<div class="dm-stat-note">${esc([...e.how].join("; "))}</div>` : "—"}</td>
+        <td class="dm-board-actions">
+          ${names.length === 1 ? btn(e.boardName, names[0], `Yes, ${names[0]}`) : ""}
+          ${options.slice(0, 4).map((n) => btn(e.boardName, n)).join(" ")}
+          ${btn(e.boardName, "", "someone else…")}
+        </td>
+      </tr>`;
+    }).join("");
+
+  return section("Daily Board names to check", `
+    <p class="dm-stat-note">Board names that could not be tied to one scheduled associate by name.
+      Hours take precedence: a person only counts when their shift covers the hours the board gives them.
+      Picking a name here applies to every day, including ones already filled.</p>
+    <table class="dm-board-table dm-board-checks">
+      <thead><tr><th>Board name</th><th>Status</th><th>Days</th><th>Matched to</th><th>Who is it?</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`);
+}
+
 export function render(ctx) {
   const { associates = [], ui = {} } = ctx;
   if (!associates.length) return empty("Select a store to look up associates.");
 
   const selected = ui.assocSelected;
-  return section("Associates", searchBox(ctx)) +
+  return boardNameChecks(ctx) + section("Associates", searchBox(ctx)) +
          (selected ? reportView(ctx, selected) : empty("Search for an associate to see their report."));
 }
 
 export function wire(ctx, root) {
-  const { host, onUiChange, onSelectAssociate } = ctx;
+  const { host, onUiChange, onSelectAssociate, onBoardAlias } = ctx;
+
+  // Daily Board name fixes (same contract as the Assignments panel).
+  const offBoard = host.ui.delegate(root, "click", "[data-dm-board-alias]", (_e, el) => {
+    const boardName = el.dataset.dmBoardAlias;
+    let name = el.dataset.dmBoardName;
+    if (!name) {
+      name = prompt(`Full name (as on the schedule) for "${boardName}"`)?.trim().toUpperCase();
+      if (!name) return;
+    }
+    onBoardAlias?.(boardName, name);
+  });
 
   let timer = null;
   const input = root.querySelector("#dm-assoc-search");
@@ -145,5 +220,6 @@ export function wire(ctx, root) {
     clearTimeout(timer);
     input?.removeEventListener("input", onInput);
     offPick?.();
+    offBoard?.();
   };
 }

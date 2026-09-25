@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   dailyPicks, digitalTone, distribution,
-  scanHour, storeHelpPeakHours, formatHour, lateStarts,
+  scanHour, storeHelpPeakHours, formatHour, lateStarts, helpVsExpress,
 } from "../data/insights.js";
 import * as insightsPage from "../pages/insights.js";
 
@@ -23,6 +23,42 @@ test("daily picks split Digital, Exceptions and Store Help", () => {
   assert.equal(day.digitalTotal, 200, "Exceptions count as digital work");
   assert.equal(day.storeHelp, 100);
   assert.equal(day.digitalPct, 67);
+});
+
+test("store help hours sum only Store Help rows' Pick Hours", () => {
+  const [day] = dailyPicks(
+    [row({ Associate: "D", "Pick Hours": 5 }),
+     row({ Associate: "S", "Pick Hours": 2.25 }),
+     row({ Associate: "S", "Pick Hours": 1.5, "Pick Date": undefined })],
+    { D: "Digital", S: "Store Help" },
+  );
+  assert.equal(day.storeHelpHours, 3.8, "2.25 + 1.5 rounded to one decimal; Digital hours excluded");
+  const d = distribution([day]);
+  assert.equal(d.storeHelpHours, 3.8);
+});
+
+test("help vs express compares only pulled days and correlates hours", () => {
+  const day = (date, storeHelpHours, expressRateHours) =>
+    ({ date, storeHelpHours, storeHelp: 0, expressRateHours, expressRateUnits: 0 });
+  const none = helpVsExpress([day("12/01/25", 4, null)]);
+  assert.equal(none.days.length, 0, "days without an Express pull are excluded");
+  assert.equal(none.r, null);
+
+  const two = helpVsExpress([day("12/01/25", 1, 2), day("12/02/25", 3, 4)]);
+  assert.equal(two.r, null, "correlation needs 3+ days");
+  assert.equal(two.helpHours, 4);
+  assert.equal(two.expressHours, 6);
+
+  const three = helpVsExpress([
+    day("12/01/25", 1, 2), day("12/02/25", 2, 4), day("12/03/25", 3, 6),
+  ]);
+  assert.equal(three.r, 1, "perfectly proportional days correlate at 1");
+  assert.equal(three.days[0].date, "12/03/25", "most recent first");
+
+  const flat = helpVsExpress([
+    day("12/01/25", 2, 2), day("12/02/25", 2, 4), day("12/03/25", 2, 6),
+  ]);
+  assert.equal(flat.r, null, "no variance in help hours → no correlation");
 });
 
 test("days are listed most recent first", () => {

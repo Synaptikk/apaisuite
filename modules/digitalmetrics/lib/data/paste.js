@@ -13,7 +13,7 @@
 // Anything else is reported as unrecognised rather than silently written — a
 // paste that half-lands is worse than one that refuses.
 
-import { TASK_SHORTCUTS } from "./grid.js";
+import { TASK_SHORTCUTS, TASK_ALIASES } from "./grid.js";
 
 /** Every task the grid can hold, derived from the shortcut table. */
 export const TASKS = [...new Set(Object.values(TASK_SHORTCUTS).filter(Boolean))];
@@ -25,8 +25,9 @@ export function normaliseTask(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return "";
 
-  const upper = s.toUpperCase();
+  const upper = s.toUpperCase().replace(/\s+/g, " ");
   if (TASKS.includes(upper)) return upper;
+  if (TASK_ALIASES[upper]) return TASK_ALIASES[upper];   // "TRN" → "T"
 
   // Single-character shortcuts, so a column of "p" pastes as PICK.
   if (s.length === 1) {

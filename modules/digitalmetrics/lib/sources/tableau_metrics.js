@@ -35,17 +35,24 @@ const VIEW_BASE =
 // ("Select Pick Date First") are not accepted as URL keys.
 const FILTER_DATE  = "Pick Date";
 const FILTER_STORE = "Store #";
+// "Fulfillment Type" on the control. Unset = every type (the metrics pull).
+const FILTER_FULFMT = "FULFMT_TYPE";
 
 // Trailing space is real — the worksheet is named "Associate By Day ". The
 // driver compares trimmed.
 const WORKSHEET = "Associate By Day";
 
-/** Build the scoped view URL. Dates are ISO and comma-separated. */
-export function buildViewUrl(store, isoDates) {
+/**
+ * Build the scoped view URL. Dates are ISO and comma-separated.
+ * `fulfillmentType` (e.g. "Express Pickup") narrows every measure to that
+ * type — checked live 2026-09-23 against the view's own numbers.
+ */
+export function buildViewUrl(store, isoDates, { fulfillmentType = null } = {}) {
   const dates = (Array.isArray(isoDates) ? isoDates : [isoDates]).filter(Boolean);
   const qs =
     `${encodeURIComponent(FILTER_DATE)}=${dates.map(encodeURIComponent).join(",")}` +
-    `&${encodeURIComponent(FILTER_STORE)}=${encodeURIComponent(store)}`;
+    `&${encodeURIComponent(FILTER_STORE)}=${encodeURIComponent(store)}` +
+    (fulfillmentType ? `&${FILTER_FULFMT}=${encodeURIComponent(fulfillmentType)}` : "");
   return `${VIEW_BASE}?:iid=1&:linktarget=_self&${qs}`;
 }
 
@@ -53,17 +60,17 @@ export function buildViewUrl(store, isoDates) {
  * Pull one (store, dates) slice. Returns the RAW melted rows; pivoting and
  * splitting are the caller's job so this stays a transport concern.
  */
-export async function pullMetrics(store, isoDates, { onProgress = () => {} } = {}) {
+export async function pullMetrics(store, isoDates, { onProgress = () => {}, fulfillmentType = null, allowEmpty = false } = {}) {
   if (!store) throw new Error("pullMetrics: no store");
   const dates = (Array.isArray(isoDates) ? isoDates : [isoDates]).filter(Boolean);
   if (!dates.length) throw new Error("pullMetrics: no dates");
 
-  const url = buildViewUrl(store, dates);
+  const url = buildViewUrl(store, dates, { fulfillmentType });
   const { columns, rows } = await readWorksheetViaTab(url, WORKSHEET, {
-    onProgress, extra: { store, dates: dates.length },
+    onProgress, extra: { store, dates: dates.length, ...(fulfillmentType ? { source: "express-rate" } : {}) },
   });
 
-  if (!rows.length) {
+  if (!rows.length && !allowEmpty) {
     // Almost always an unscoped view rather than a broken read — say which.
     throw new Error(
       `the view returned 0 rows for store ${store}. Either that store has no ` +

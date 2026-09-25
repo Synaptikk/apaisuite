@@ -26,12 +26,31 @@ export const DAY_NAMES = [
 // print label[0], which was simply wrong — it showed P for Prep (the actual key
 // is R) and P again for Pick, so two entries claimed the same key and one of
 // them did nothing.
+//
+// The codes are the store's own, as typed on its Daily Board workbook (checked
+// 2026-09-23): "T" is training (this module used "TRN"), "IH" is In Home and
+// "IH PREP" In Home Prep. (GMD stays out: removed 2026-08-26; a GMD cell
+// synced from the board still shows, in the board's colour.)
 export const TASK_SHORTCUTS = {
   p: "PICK", d: "DISP", s: "STAGE", r: "PREP",
-  q: "QC", v: "DRV", n: "DS", t: "TRN",
+  h: "IH", k: "IH PREP", q: "QC", v: "DRV", n: "DS", t: "T",
   i: "IP", e: "EXC", l: "L", b: "B", 3: "30",
   x: "", Delete: "", Backspace: "",
 };
+
+/**
+ * Older spellings of a code, counted and coloured as the code itself. Days
+ * typed in the app before 2026-09-23 hold "TRN"; the board writes "L30" for a
+ * 30-minute lunch.
+ */
+export const TASK_ALIASES = { TRN: "T", L30: "L" };
+
+/** The one CSS class for a task, so "IH PREP" is not two classes. */
+export function taskClass(task) {
+  const t = String(task ?? "").trim().toUpperCase();
+  const code = TASK_ALIASES[t] || t;
+  return `task-${code.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
 
 /**
  * Display labels for the task codes, so the legend and the mobile panel read
@@ -39,21 +58,24 @@ export const TASK_SHORTCUTS = {
  */
 export const TASK_LABELS = {
   PICK: "Pick", DISP: "Disp", STAGE: "Stage", PREP: "Prep",
-  QC: "Quality", DRV: "Drivers", DS: "Downstack", TRN: "Training",
-  IP: "IP", EXC: "Exc", L: "Lunch", B: "Break", 30: "30",
+  IH: "In Home", "IH PREP": "In Home Prep",
+  QC: "Quality", DRV: "Drivers", DS: "Downstack", T: "Training", TRN: "Training",
+  IP: "IP", EXC: "Exc", GMD: "GMD", L: "Lunch", L30: "Lunch (30)", B: "Break", 30: "30",
 };
 
 /** Tasks that appear as their own summary row, in display order. */
 export const SUMMARY_TASKS = [
-  { key: "pickers", task: "PICK",  label: "Pickers" },
-  { key: "disp",    task: "DISP",  label: "Dispense" },
-  { key: "stage",   task: "STAGE", label: "Stage" },
-  { key: "prep",    task: "PREP",  label: "Prep" },
-  { key: "qc",      task: "QC",    label: "Quality" },
-  { key: "drv",     task: "DRV",   label: "Drivers" },
-  { key: "ds",      task: "DS",    label: "Downstack" },
-  { key: "trn",     task: "TRN",   label: "Training" },
-  { key: "exc",     task: "EXC",   label: "Exception" },
+  { key: "pickers", task: "PICK",    label: "Pickers" },
+  { key: "disp",    task: "DISP",    label: "Dispense" },
+  { key: "stage",   task: "STAGE",   label: "Stage" },
+  { key: "prep",    task: "PREP",    label: "Prep" },
+  { key: "ihprep",  task: "IH PREP", label: "IH Prep" },
+  { key: "ih",      task: "IH",      label: "In Home" },
+  { key: "qc",      task: "QC",      label: "Quality" },
+  { key: "drv",     task: "DRV",     label: "Drivers" },
+  { key: "ds",      task: "DS",      label: "Downstack" },
+  { key: "trn",     task: "T",       label: "Training" },
+  { key: "exc",     task: "EXC",     label: "Exception" },
 ];
 
 /**
@@ -99,7 +121,7 @@ const SLOT_START_HOUR = 5;
  * A split works today because formatTime never emits a hyphen, but it is one
  * format change away from silently returning nonsense.
  */
-function shiftMinutes(assoc) {
+export function shiftMinutes(assoc) {
   const label = assoc?.shiftLabel;
   if (typeof label !== "string") return null;
 
@@ -210,7 +232,8 @@ export function summarise(assignments, suggestions = {}) {
     for (let i = 0; i < TIME_SLOTS.length; i++) {
       const actual     = assoc.slots?.[i];
       const suggestion = !actual ? suggestions[assoc.name]?.[i]?.task : null;
-      const task       = (actual || suggestion || "").toUpperCase();
+      const raw        = String(actual || suggestion || "").trim().toUpperCase();
+      const task       = TASK_ALIASES[raw] || raw;
       if (!task) continue;
 
       const row = SUMMARY_TASKS.find((t) => t.task === task);
@@ -268,12 +291,13 @@ export function fillPercentage(assignments) {
  *
  * A past day that was substantially filled in is finished, and editing it
  * would corrupt the history that adherence is measured against — so it locks
- * itself. An explicit `finalized: false` always wins, so a genuine correction
- * is still possible.
+ * itself at midnight (the user's rule, 2026-09-23). `finalized: false` does
+ * NOT unlock it: the codec writes false on every ordinary save, so honouring
+ * it meant no day that had ever been edited could lock. A genuine correction
+ * unlocks for the session only (view.js setFinalized) and relocks on reload.
  */
 export function isFinalized(doc, { today = new Date() } = {}) {
   if (doc?.finalized === true)  return true;
-  if (doc?.finalized === false) return false;   // explicitly unfinalised
 
   const date = doc?.date;
   if (!date) return false;

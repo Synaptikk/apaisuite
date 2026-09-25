@@ -294,6 +294,43 @@ function diagnoseInPage() {
   } catch (e) { return { error: String(e?.message ?? e) }; }
 }
 
+/**
+ * Click the scheduler's week-forward control. Serialised into the page.
+ *
+ * The control is found by its accessible label, most specific first. A wrong
+ * click cannot corrupt anything: the caller only accepts the result when the
+ * DATA's own weekStart has advanced by exactly seven days.
+ */
+function clickNextWeekInPage() {
+  try {
+    const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const label = (el) => [
+      el.getAttribute("aria-label"), el.getAttribute("title"),
+      el.dataset ? el.dataset.testid : null, (el.textContent || "").slice(0, 60),
+    ].filter(Boolean).join(" ");
+    const all = [...document.querySelectorAll("button, [role='button'], a")].filter(visible);
+    const tests = [
+      (t) => /next\s*week/i.test(t),
+      (t) => /\bnext\b|forward|(?:arrow|chevron|caret)[-_ ]?right/i.test(t),
+    ];
+    for (const test of tests) {
+      const hit = all.find((el) => {
+        const t = label(el);
+        return test(t) && !/prev|back|left/i.test(t);
+      });
+      if (hit) { hit.click(); return { ok: true, clicked: label(hit).trim().slice(0, 80) }; }
+    }
+    return { ok: false, reason: "no next-week control found on the scheduler" };
+  } catch (e) { return { ok: false, reason: String(e?.message ?? e) }; }
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const localIso = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+function isoAddDays(iso, n) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return localIso(new Date(y, m - 1, d + n));
+}
+
 async function waitForTabLoad(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -302,6 +339,39 @@ async function waitForTabLoad(tabId, timeoutMs) {
     if (tab.status === "complete") return;
     await sleep(500);
   }
+}
+
+const NEXT_WEEK_MS = 45_000;
+
+/**
+ * Drive the scheduler one week forward and extract it.
+ *
+ * Trust the data, not the click: the result is accepted only when the
+ * extraction's own weekStart (derived from the shifts) has advanced exactly
+ * seven days. A misfired click or an unpublished week times out instead of
+ * storing anything.
+ */
+async function readNextWeek(tabId, fromWeekStart) {
+  const nav = (await chrome.scripting.executeScript({
+    target: { tabId }, world: "MAIN", func: clickNextWeekInPage,
+  }))?.[0]?.result;
+  if (!nav?.ok) throw new Error(nav?.reason || "could not navigate the scheduler forward");
+
+  const wanted = isoAddDays(fromWeekStart, 7);
+  const deadline = Date.now() + NEXT_WEEK_MS;
+  let last = null;
+  while (Date.now() < deadline) {
+    await sleep(2000);
+    const raw = (await chrome.scripting.executeScript({
+      target: { tabId }, world: "MAIN", func: extractWorkersInPage,
+    }).catch(() => null))?.[0]?.result;
+    if (raw?.ok && raw.weekStart === wanted) return raw;
+    last = raw;
+  }
+  throw new Error(
+    last?.ok && last.weekStart === fromWeekStart
+      ? `the scheduler stayed on the ${fromWeekStart} week after clicking "${nav.clicked}"`
+      : "next week never showed shifts (it may not be published yet)");
 }
 
 async function waitForReady(tabId, timeoutMs) {
@@ -317,11 +387,9 @@ async function waitForReady(tabId, timeoutMs) {
 }
 
 /**
- * Pull the currently-displayed week's schedule.
- *
- * Only the current week is reachable: the portal renders one week at a time and
- * this reads what is on screen. Backfill would mean driving its week navigation,
- * which is a separate job.
+ * Pull the currently-displayed week's schedule — plus, when tomorrow lies past
+ * that week's Friday, the following week (readNextWeek drives the portal's
+ * week-forward control). Backfill of past weeks is still a separate job.
  */
 export async function pullSchedule({ onProgress = () => {}, store: expectedStore = null } = {}) {
   onProgress({ phase: "opening" });
@@ -396,6 +464,31 @@ export async function pullSchedule({ onProgress = () => {}, store: expectedStore
     if (built.partial) {
       built.warnings = [...(built.warnings || []),
         `The scheduler is showing ${diag.workers} of ${diag.rosterLabel} associates — a filter is active there, so this week is INCOMPLETE.`];
+    }
+
+    // The portal's week runs Sat–Fri, so on a Friday "tomorrow" is next
+    // week's Saturday — a date the displayed week can never carry, which left
+    // the board sync with no schedule to resolve tomorrow's sheet against
+    // (2026-09-25). Read the following week too whenever tomorrow falls past
+    // the displayed week's end.
+    const tomorrow = isoAddDays(localIso(), 1);
+    if (built.weekStart && tomorrow > isoAddDays(built.weekStart, 6)) {
+      onProgress({ phase: "nextWeek" });
+      try {
+        const raw2 = await readNextWeek(tab.id, built.weekStart);
+        const next = buildSchedules(raw2);
+        if (!next.ok) throw new Error(next.reason);
+        if (next.store && built.store && String(next.store) !== String(built.store)) {
+          throw new Error(`the page switched to store ${next.store}`);
+        }
+        for (const [date, doc] of Object.entries(next.schedules)) built.schedules[date] = doc;
+        built.dates = Object.keys(built.schedules).sort();
+        built.nextWeekStart = next.weekStart;
+        built.warnings = [...(built.warnings || []), ...(next.warnings || [])];
+      } catch (e) {
+        built.warnings = [...(built.warnings || []),
+          `Tomorrow (${tomorrow}) is in the scheduler's NEXT week, which could not be read: ${String(e?.message ?? e)}`];
+      }
     }
 
     onProgress({ phase: "done", dates: built.dates.length, shifts: built.associateCount });

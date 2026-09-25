@@ -13,8 +13,9 @@
 import { esc } from "../_shared.js";
 import { inRange } from "../../data/paste.js";
 import { isWithinShift, lunchIssue } from "../../data/lunch.js";
+import { breakTimes } from "../../data/adherence.js";
 import {
-  TIME_SLOTS, SUMMARY_TASKS, summarise, fillPercentage, isHalfSlot, partialSide,
+  TIME_SLOTS, SUMMARY_TASKS, summarise, taskClass, fillPercentage, isHalfSlot, partialSide,
   isLeadership,
 } from "../../data/grid.js";
 
@@ -23,7 +24,7 @@ const STATUSES = [
   { key: "absent", label: "A", title: "Absent" },
 ];
 
-function cell(assoc, idx, suggestions, locked, selected) {
+function cell(assoc, idx, suggestions, locked, selected, breaks) {
   const task       = assoc.slots?.[idx] || "";
   // No suggestions on a leadership row — the role default occupies the cell,
   // and two greyed-out proposals in one cell is not a readable state.
@@ -42,11 +43,14 @@ function cell(assoc, idx, suggestions, locked, selected) {
 
   const classes = [
     "dm-cell",
-    roleDefault ? `task-${esc(roleDefault.toLowerCase())} is-role-default` : "",
+    roleDefault ? `${taskClass(roleDefault)} is-role-default` : "",
     inShift ? "in-shift" : "",
     selected ? "is-selected" : "",
-    task ? `task-${esc(task.toLowerCase())}` : "",
-    suggestion ? "is-suggested" : "",
+    task ? taskClass(task) : "",
+    // A suggestion carries its task's colour too — a grid where the proposals
+    // are the only colourless cells cannot be read at a glance. is-suggested
+    // washes the tint back so it still never reads as an assignment.
+    suggestion ? `${taskClass(suggestion.task)} is-suggested` : "",
     isHalfSlot(assoc, idx) ? "is-half" : "",
     // Which end is unworked, so the shading can sit on the right side of
     // the cell rather than being a generic "partial" marker.
@@ -68,13 +72,29 @@ function cell(assoc, idx, suggestions, locked, selected) {
   // cannot reach is a cell you cannot fix. index.js enforces "clear only".
   const editable = !locked;
 
-  return `<td class="${classes}" data-dm-row="${esc(assoc.name)}" data-dm-slot="${idx}"
+  // Where a 15-minute break is expected, staggered against the rest of the
+  // day's roster (adherence.js breakTimes) so the team is not all off at once.
+  // Marked on every in-shift hour so coverage can be read off the grid; only
+  // on a Pick hour does it cost anything — 15 minutes off assigned pick time.
+  const brk = inShift ? breaks.find((b) => b.slot === idx) : null;
+  const isPick = String(task).toLowerCase() === "pick";
+  const brkTitle = brk
+    ? `Expected 15-minute break at ${brk.label}${isPick ? ": counts as 45 minutes of pick time" : ""}`
+    : "";
+
+  return `<td class="${classes}${brk ? " has-break" : ""}" data-dm-row="${esc(assoc.name)}" data-dm-slot="${idx}"
              ${editable ? 'tabindex="0"' : ""} role="gridcell"
-             ${inShift ? "" : 'data-dm-offshift="1" aria-disabled="true"'}>${content}</td>`;
+             ${brk ? `title="${esc(brkTitle)}"` : ""}
+             ${inShift ? "" : 'data-dm-offshift="1" aria-disabled="true"'}>${content}${
+               brk ? `<span class="dm-break-mark" aria-hidden="true">:${String(brk.minute).padStart(2, "0")}</span>` : ""}</td>`;
 }
 
-function associateRow(assoc, suggestions, locked, isSelected) {
+function associateRow(assoc, suggestions, locked, isSelected, unresolved, roster) {
+  const breaks = breakTimes(assoc, roster);
   const status = assoc.status || "";
+  // A Daily Board name that matched nobody on the schedule is filed under the
+  // name as typed ("KJ"); flag it so it gets fixed rather than trusted.
+  const board = unresolved?.get(assoc.name);
   const lunch  = lunchIssue(assoc);
   const buttons = STATUSES.map((s) => `
     <button class="dm-status ${status === s.key ? "is-active" : ""}"
@@ -83,15 +103,18 @@ function associateRow(assoc, suggestions, locked, isSelected) {
 
   return `<tr class="${[status ? `is-${esc(status)}` : "",
     lunch ? "has-lunch-issue" : "",
-    isLeadership(assoc) ? "is-leadership" : ""].filter(Boolean).join(" ")}">
+    isLeadership(assoc) ? "is-leadership" : "",
+    board && !board.guess ? "is-unresolved" : ""].filter(Boolean).join(" ")}">
     <th scope="row" class="dm-name-cell">
       <span class="dm-name">${esc(assoc.name)}${
-        lunch ? `<span class="dm-lunch-flag" title="${esc(lunch.message)}" aria-label="${esc(lunch.message)}">!</span>` : ""}</span>
+        lunch ? `<span class="dm-lunch-flag" title="${esc(lunch.message)}" aria-label="${esc(lunch.message)}">!</span>` : ""}${
+        board ? `<span class="dm-board-flag ${board.guess ? "is-guess" : ""}" title="${esc(board.text)}"
+          aria-label="${esc(board.text)}">${board.guess ? "~" : "?"}</span>` : ""}</span>
       ${isLeadership(assoc) ? `<span class="badge badge-info dm-role">${esc(assoc.role)}</span>` : ""}
       ${assoc.shiftLabel ? `<span class="dm-stat-note">${esc(assoc.shiftLabel)}</span>` : ""}
       <span class="dm-status-group">${buttons}</span>
     </th>
-    ${TIME_SLOTS.map((_, i) => cell(assoc, i, suggestions, locked, isSelected(assoc.name, i))).join("")}
+    ${TIME_SLOTS.map((_, i) => cell(assoc, i, suggestions, locked, isSelected(assoc.name, i), breaks)).join("")}
   </tr>`;
 }
 
@@ -109,7 +132,7 @@ function summaryRows(assignments, suggestions) {
   // Same `task-*` class the cells and the legend swatches use, so the three
   // cannot drift apart.
   const rows = SUMMARY_TASKS.map(({ key, task, label }) => `
-    <tr class="dm-summary-row task-${esc(String(task).toLowerCase())}">
+    <tr class="dm-summary-row ${taskClass(task)}">
       <th scope="row">${esc(label)}</th>
       ${counts[key].map((n, i) =>
         `<td>${esc(fmt(n, suggested[key][i]))}</td>`).join("")}
@@ -139,7 +162,7 @@ function summaryRows(assignments, suggestions) {
 }
 
 export function render(ctx) {
-  const { assignments = [], suggestions = {}, locked = false, ui = {} } = ctx;
+  const { assignments = [], suggestions = {}, locked = false, ui = {}, boardUnresolved = null } = ctx;
 
   // Selection is two corners (see data/paste.js::inRange), resolved against the
   // CURRENT row order on every render so it survives the grid reloading.
@@ -196,7 +219,7 @@ export function render(ctx) {
           ${summaryRows(assignments, suggestions)}
         </thead>
         <tbody>
-          ${assignments.map((a) => associateRow(a, suggestions, locked, isSelected)).join("")}
+          ${assignments.map((a) => associateRow(a, suggestions, locked, isSelected, boardUnresolved, assignments)).join("")}
         </tbody>
       </table>
     </div>`;

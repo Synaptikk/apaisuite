@@ -46,6 +46,9 @@ const ASSIGNMENT_FIELDS = ["slots", "status", "shiftStart", "shiftEnd", "shiftLa
 // date. Numbers only — no associate is involved — but the allowlist still
 // applies: an unknown key is dropped, not copied (data/express.js).
 const EXPRESS_FIELDS = ["orders", "units", "sales", "pulledAt"];
+// The Express pick rate per day (data/express.js::expressPickRates): totals
+// over the day's pickers, never who they were.
+const EXPRESS_RATE_FIELDS = ["rate", "units", "hours", "pickers", "pulledAt"];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function pick(src, fields) {
@@ -54,11 +57,11 @@ function pick(src, fields) {
   return out;
 }
 
-function encodeExpress(map) {
+function encodeExpress(map, fields = EXPRESS_FIELDS) {
   if (!map || typeof map !== "object") return null;
   const out = {};
   for (const [date, entry] of Object.entries(map)) {
-    if (ISO_DATE.test(date) && entry && typeof entry === "object") out[date] = pick(entry, EXPRESS_FIELDS);
+    if (ISO_DATE.test(date) && entry && typeof entry === "object") out[date] = pick(entry, fields);
   }
   return Object.keys(out).length ? out : null;
 }
@@ -76,6 +79,7 @@ export async function encodeWeek(doc) {
   return stamp({
     rawData:    rows,
     express:    encodeExpress(doc.express),
+    expressRate: encodeExpress(doc.expressRate, EXPRESS_RATE_FIELDS),
     fileName:   doc.fileName ?? null,
     uploadDate: doc.uploadDate ?? null,
     store:      doc.store ?? null,

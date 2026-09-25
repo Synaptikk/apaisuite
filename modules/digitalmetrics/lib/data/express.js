@@ -6,6 +6,9 @@
 //
 // Storage shape (stores/{store}/weeks/{weekStart}.express):
 //   { "2026-09-14": { orders: 33, units: 589, sales: 3074.11, pulledAt: ISO } }
+// and, from the Associate By Day sheet filtered to Express Pickup
+// (stores/{store}/weeks/{weekStart}.expressRate):
+//   { "2026-09-20": { rate: 61.5, units: 1416, hours: 23.02, pickers: 36, pulledAt: ISO } }
 //
 // Keyed by ISO date, unlike rawData's "Pick Date" (M/D/YY) — the pull works in
 // ISO and the two are bridged by isoFromPickDate() at read time.
@@ -15,6 +18,9 @@ import { isoDay } from "../pull_schedule.js";
 
 /** The fields a per-day entry may carry. codec.js allowlists exactly these. */
 export const EXPRESS_FIELDS = ["orders", "units", "sales", "pulledAt"];
+
+/** The fields a per-day Express pick-rate entry may carry (codec.js too). */
+export const EXPRESS_RATE_FIELDS = ["rate", "units", "hours", "pickers", "pulledAt"];
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -50,6 +56,56 @@ export function parseOverview(rows, { store = null } = {}) {
   return out;
 }
 
+/**
+ * Associate By Day rows (melted, filtered to Express Pickup) → per-day
+ * Express pick rate, keyed by ISO date.
+ *
+ * The dashboard's own Pick Rate is (Picked As Req Qty + Substitution Qty) ÷
+ * Pick Hours per associate (checked 2026-09-23: 74 / 1.054 h = 70.2). The
+ * day's rate is the same ratio over everyone — total units ÷ total hours —
+ * not a mean of the associates' rates, which would let a 3-minute pick count
+ * as much as a 2-hour one.
+ *
+ * `dates` (ISO) that have no rows come back as a zero day (rate null), so a
+ * day with no Express Pickup is recorded rather than re-pulled forever. The
+ * caller only passes them when the read as a whole returned rows.
+ */
+export function expressPickRates(rows, { dates = [] } = {}) {
+  const days = new Map();
+  for (const row of rows || []) {
+    const iso = isoFromPickDate(row["Pick Date"]);
+    if (!iso) continue;
+    if (!days.has(iso)) days.set(iso, new Map());
+    const people = days.get(iso);
+    const who = String(row["Associate ID"] || row.Associate || "").trim();
+    if (!who) continue;
+    if (!people.has(who)) people.set(who, {});
+    const measure = String(row["Measure Names"] ?? "").trim();
+    const v = row["Measure Values"];
+    if (!isMissing(v)) people.get(who)[measure] = toNumber(v);
+  }
+
+  const out = {};
+  for (const d of dates) if (ISO_RE.test(d)) out[d] = { rate: null, units: 0, hours: 0, pickers: 0 };
+  for (const [iso, people] of days) {
+    let units = 0, hours = 0, pickers = 0;
+    for (const m of people.values()) {
+      const h = m["Pick Hours"] ?? 0;
+      if (!(h > 0)) continue;
+      units += (m["Picked As Req Qty"] ?? 0) + (m["Substitution Qty"] ?? 0);
+      hours += h;
+      pickers++;
+    }
+    out[iso] = {
+      rate: hours > 0 ? Math.round((units / hours) * 10) / 10 : null,
+      units: Math.round(units),
+      hours: Math.round(hours * 100) / 100,
+      pickers,
+    };
+  }
+  return out;
+}
+
 /** "9/14/26" or "9/14/2026" → "2026-09-14"; null when unparseable. */
 export function isoFromPickDate(label) {
   const d = parsePickDate(label);
@@ -74,6 +130,13 @@ function withExplicitDates(rows) {
     if (row["Pick Date"]) last = row["Pick Date"];
     return last && !row["Pick Date"] ? { ...row, "Pick Date": last } : row;
   });
+}
+
+/** Per-date maps merge by date: a pulled day replaces the stored one. */
+function mergeDayMap(stored, pulled) {
+  const out = { ...(stored || {}), ...(pulled || {}) };
+  for (const k of Object.keys(out)) if (!ISO_RE.test(k)) delete out[k];
+  return Object.keys(out).length ? out : null;
 }
 
 /**
@@ -106,14 +169,15 @@ export function mergeWeekDoc(existing, incoming, { dates = [] } = {}) {
     return iso && !replaced.has(iso);
   });
 
-  const express = { ...(existing?.express || {}), ...(incoming?.express || {}) };
-  for (const k of Object.keys(express)) if (!ISO_RE.test(k)) delete express[k];
+  const express     = mergeDayMap(existing?.express, incoming?.express);
+  const expressRate = mergeDayMap(existing?.expressRate, incoming?.expressRate);
 
   return {
     ...(existing || {}),
     ...(incoming || {}),
     rawData: [...kept, ...(incoming?.rawData || [])],
-    express: Object.keys(express).length ? express : null,
+    express,
+    expressRate,
     fileName:   incoming?.fileName   ?? existing?.fileName   ?? null,
     uploadDate: incoming?.uploadDate ?? existing?.uploadDate ?? null,
   };

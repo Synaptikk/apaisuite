@@ -13,6 +13,8 @@
 
 import { analyse } from "./lib/data/metrics.js";
 import { calculateAdherence, actualPickHoursByName } from "./lib/data/adherence.js";
+import { clockInCandidates } from "./lib/data/first_pick.js";
+import { suggestTasks } from "./lib/data/suggest.js";
 import * as dashboard    from "./lib/pages/dashboard.js";
 import * as classifyPage from "./lib/pages/classify.js";
 import * as comparison   from "./lib/pages/comparison.js";
@@ -25,7 +27,7 @@ import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
 import { editorText } from "./lib/audit.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
-import { leadershipForJob, byLeadershipFirst } from "./lib/data/job_classify.js";
+import { leadershipForJob, byLeadershipFirst, isDigitalJob } from "./lib/data/job_classify.js";
 import { weekLabel } from "../../shared/wmweek.js";
 
 const PAGES = {
@@ -81,11 +83,14 @@ export async function mount(host, container) {
     week: null,
     rawData: [],
     express: null,           // the week document's Express Pickup map (ISO date → totals)
+    expressRate: null,       // …and its Express pick-rate map (ISO date → { rate, units, hours })
     classifications: {},
     associates: [],
     benchmarks: {},
     dates: [],
     adherence: {},
+    clockIns: {},       // { iso: { NAME: { clockIn, clockOut } } } — this browser only
+    clockPull: null,    // last "Pull clock-ins" outcome
     // Assignments tab
     assignmentDate: defaultDate(),
     assignments: [],
@@ -169,6 +174,11 @@ export async function mount(host, container) {
       onAcceptAll:     acceptAllSuggestions,
       onDismissAll:    () => { state.suggestions = {}; renderPage(); },
       onPrint:         () => window.print(),
+      boardUnresolved: boardUnresolvedFor(state.assignmentDate),
+      onBoardSync:     syncBoard,
+      onBoardLink:     setBoardLink,
+      onBoardAlias:    setBoardAlias,
+      onPullClockIns:  pullClockIns,
     };
 
     // ── Remember which cell had focus ──────────────────────────────────
@@ -249,6 +259,8 @@ export async function mount(host, container) {
     // The grid is the only tab with its own date, so it loads on entry rather
     // than with the week.
     if (page === "assignments" && state.store) loadAssignments();
+    // The Associates tab lists Daily Board names to check (1458 only).
+    if (page === "associates") loadBoard().then(renderPage).catch(() => {});
   }
 
   // ── Derived state ────────────────────────────────────────────────────────
@@ -261,15 +273,25 @@ export async function mount(host, container) {
     if (!state.store || !state.associates.length) return;
 
     // Adherence needs one assignment document per date in the loaded week.
+    // Both sides join on ISO dates (adherence.js dateKey).
     const entries = await Promise.all(state.dates.map(async (iso) => {
       const doc = await call("get_assignments", { store: state.store, date: iso });
-      if (!doc) return null;
-      // Assignment docs are keyed by ISO date; metrics rows key by MM/DD/YY.
-      const [y, m, d] = iso.split("-");
-      return [`${m}/${d}/${y.slice(2)}`, doc];
+      return doc ? [iso, doc] : null;
     }));
 
+    // The WFM schedule is the PRE-call-out plan: TLs erase call-ins from the
+    // board live, so the shortfall ledger needs both sides (shortfall.js).
+    const schedEntries = await Promise.all(state.dates.map(async (iso) => {
+      const doc = await call("get_schedule", { store: state.store, date: iso }).catch(() => null);
+      return doc ? [iso, doc] : null;
+    }));
+    state.schedulesByDate = Object.fromEntries(schedEntries.filter(Boolean));
+
     const byDate = Object.fromEntries(entries.filter(Boolean));
+    state.assignmentsByDate = byDate;   // Insights' assigned-vs-actual breakdown
+    // Clock-ins live in this browser only (service.js get_clockins); cheap read.
+    state.clockIns = (await call("get_clockins", { store: state.store })) || {};
+    if (!state.clockPull?.running) state.clockPull = await call("get_clock_state");
     state.adherence = calculateAdherence(
       state.associates, byDate, actualPickHoursByName(state.rawData), state.classifications,
     );
@@ -397,6 +419,7 @@ export async function mount(host, container) {
     if (!state.store || !state.week) {
       state.rawData = [];
       state.express = null;
+      state.expressRate = null;
       recompute();
       renderPage();
       setStatus("no data");
@@ -410,7 +433,10 @@ export async function mount(host, container) {
     if (store !== state.store || week !== state.week) return;
     state.rawData = doc?.rawData || [];
     state.express = doc?.express || null;
+    state.expressRate = doc?.expressRate || null;
     state.adherence = {};
+    state.assignmentsByDate = null;
+    state.schedulesByDate = null;
     recompute();
     renderPage();
     setStatus(`${state.associates.length} associates`);
@@ -472,10 +498,17 @@ export async function mount(host, container) {
     if (!store || !state.assignmentDate) return;
 
     setStatus("loading assignments…");
-    const [doc, suggestions, schedule] = await Promise.all([
+    // Suggestions are learned from saved grids (data/suggest.js) — nothing
+    // writes the stored suggestions/{date} docs. History is cached per store.
+    const [doc, schedule, history] = await Promise.all([
       call("get_assignments", { store, date: state.assignmentDate }),
-      call("get_suggestions", { store, date: state.assignmentDate }),
       call("get_schedule",    { store, date: state.assignmentDate }),
+      state.suggestHistory?.store === store
+        ? state.suggestHistory.docs
+        : call("recent_assignments", { store, limit: 30 }).then((docs) => {
+            state.suggestHistory = { store, docs: docs || [] };
+            return state.suggestHistory.docs;
+          }),
     ]);
 
     // A day with no assignments yet starts from the imported schedule, so the
@@ -501,10 +534,122 @@ export async function mount(host, container) {
     state.scheduleEditor = schedule?.lastEditor || null;
     // Suggestions for cells that are already filled are noise; drop them here
     // rather than making every consumer re-check.
-    state.suggestions = pruneSuggestions(suggestions || {});
+    state.suggestions = pruneSuggestions(suggestTasks(state.assignments, history, state.assignmentDate));
     state.saveStatus  = "";
+    await loadBoard().catch(() => {});
     renderPage();
     setStatus("ready");
+  }
+
+  // ── Daily Board (store 1458 only — service.js BOARD_STORE) ───────────────
+  //
+  // The SW pulls the workbook on its own 30-minute alarm; the view shows the
+  // outcome, triggers a sync on demand and records name fixes.
+
+  async function loadBoard() {
+    if (assignmentStore() !== "1458") { state.board = null; return; }
+    const st = await call("board_status");
+    state.board = st ? { ...st, running: false } : null;
+  }
+
+  /**
+   * Grid rows to flag, → { text, guess }. Unmatched board names (on the grid
+   * as typed) get "?"; names matched only by shift hours get "~" until
+   * someone confirms them.
+   */
+  function boardUnresolvedFor(date) {
+    const day = state.board?.state?.dates?.find((d) => d.date === date);
+    const out = new Map();
+    for (const u of day?.unmatched || []) {
+      out.set(u.boardName, { guess: false, text:
+        `"${u.boardName}" on the Daily Board could not be matched to a full name on the schedule` +
+        (u.candidates.length ? ` (maybe ${u.candidates.join(", ")})` : "") + ". Fix it above the grid." });
+    }
+    for (const m of day?.matched || []) {
+      if (!String(m.how).startsWith("hours")) continue;
+      out.set(m.name, { guess: true, text:
+        `"${m.boardName}" on the Daily Board was matched by shift hours only. Confirm it above the grid.` });
+    }
+    return out.size ? out : null;
+  }
+
+  async function syncBoard() {
+    if (!state.board) return;
+    state.board = { ...state.board, running: true };
+    renderPage();
+    await call("board_sync_now");
+    // The board-synced broadcast reloads the grid; this covers a view that
+    // missed it.
+    await onBoardSynced();
+  }
+
+  /**
+   * Pull clock-ins from Global Time & Attendance for the whole digital
+   * roster of the loaded week: everyone on a board, everyone scheduled with
+   * a digital job (leadership excluded — salaried, they never punch), and
+   * the first-hour pick candidates. The shortfall ledger needs all of them:
+   * TLs erase call-ins from the board live, so only schedule-vs-punches can
+   * see an absence. Opens a background timesheet tab if none is open; needs
+   * the user signed in there.
+   */
+  async function pullClockIns() {
+    const byDate = state.assignmentsByDate || {};
+    const dates = Object.keys(byDate).sort();
+    const names = new Set(clockInCandidates(byDate));
+    for (const doc of Object.values(byDate)) {
+      for (const row of doc?.associates || []) if (row.name) names.add(row.name);
+    }
+    for (const doc of Object.values(state.schedulesByDate || {})) {
+      for (const a of doc?.associates || []) {
+        if (a.name && isDigitalJob(a.jobName) && !leadershipForJob(a.jobName)) names.add(a.name);
+      }
+    }
+    const people = [...names];
+    if (!dates.length || !people.length) {
+      state.clockPull = { error: "No assignments or schedules loaded for this week yet." };
+      renderPage(); return;
+    }
+    state.clockPull = { running: true };
+    renderPage();
+    const res = await call("pull_clockins", {
+      store: state.store, from: dates[0], to: dates.at(-1), people,
+    });
+    state.clockPull = res || { error: lastCallError || "the pull failed" };
+    state.clockIns = (await call("get_clockins", { store: state.store })) || {};
+    renderPage();
+  }
+
+  async function setBoardLink(link) {
+    const ok = await call("board_set_link", { link });
+    if (!ok) { alert(`Could not save the link: ${lastCallError || "unknown error"}`); return; }
+    await loadBoard();
+    if (ok.link) await syncBoard(); else renderPage();
+  }
+
+  async function setBoardAlias(boardName, name) {
+    const ok = await call("board_set_alias", { boardName, name });
+    if (!ok) { alert(`Could not save: ${lastCallError || "unknown error"}`); return; }
+    await syncBoard();
+  }
+
+  /**
+   * A sync landed. Reload the day so the grid shows it, unless there are
+   * unsaved edits on screen — autosave would then write the stale grid back
+   * over the board. Those edits save first, and the next sync catches up.
+   */
+  async function onBoardSynced() {
+    if (state.page === "associates") {
+      await loadBoard().catch(() => {});
+      renderPage();
+      return;
+    }
+    if (state.page !== "assignments") return;
+    if (state.saveStatus === "unsaved" || state.saveStatus === "saving…") {
+      await loadBoard().catch(() => {});
+      renderPage();
+      return;
+    }
+    await loadAssignments();
   }
 
   /**
@@ -880,12 +1025,22 @@ export async function mount(host, container) {
     if (run.timer) { clearInterval(run.timer); run.timer = null; }
   }
 
+  const offBoard = host.messaging.on("board-synced", () => { onBoardSynced(); });
+
   const offProgress = host.messaging.on("pull-progress", (msg) => {
-    if (!msg.progress) { stopRun(); refreshPullState(); return; }
+    if (!msg.progress) { stopRun(); refreshPullState(); refreshClockIns(); return; }
     if (!run.since) startRun({ since: msg.progress.at, staleMs: run.staleMs });
     run.text = msg.progress.text || msg.progress.phase || "";
     renderRun();
   });
+
+  /** A sync just ended; its last step may have updated clock-ins. */
+  async function refreshClockIns() {
+    if (!state.store || !state.assignmentsByDate) return;
+    state.clockIns = (await call("get_clockins", { store: state.store })) || {};
+    state.clockPull = await call("get_clock_state");
+    if (state.page === "insights") renderPage();
+  }
 
   async function refreshPullState() {
     const state = await call("get_pull_state");
@@ -998,6 +1153,7 @@ export async function mount(host, container) {
     link.remove();
     stopRun();
     offProgress?.();
+    offBoard?.();
     $("#dm-pull-now")?.removeEventListener("click", onPullClick);
     $("#dm-pull-enabled")?.removeEventListener("change", onPullToggle);
   };

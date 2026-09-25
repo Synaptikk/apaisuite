@@ -1,6 +1,9 @@
 // modules/digitalmetrics/module.js
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
-import { handlers as serviceHandlers, onPullAlarm, installPullAlarm, resetStaleRun } from "./service.js";
+import {
+  handlers as serviceHandlers, onPullAlarm, installPullAlarm, resetStaleRun,
+  BOARD_ALARM, onBoardAlarm, installBoardAlarm,
+} from "./service.js";
 
 // ── Automated-pull alarm ───────────────────────────────────────────────────
 //
@@ -19,7 +22,11 @@ import { handlers as serviceHandlers, onPullAlarm, installPullAlarm, resetStaleR
 if (IS_SERVICE_WORKER) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "digitalmetrics.pull") onPullAlarm();
+    if (alarm.name === BOARD_ALARM) onBoardAlarm();
   });
+  // Daily Board sync (store 1458 only); does nothing until a link is saved.
+  installBoardAlarm().catch((e) =>
+    console.warn("[digitalmetrics] installBoardAlarm failed:", e?.message ?? e));
   installPullAlarm().catch((e) =>
     console.warn("[digitalmetrics] installPullAlarm failed:", e?.message ?? e));
   // A boot means any pull the previous worker had in flight is dead; its
@@ -69,6 +76,7 @@ export default {
         "https://securetoken.googleapis.com/*",
         "https://stores.tableau.wal-mart.com/*",
         "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/*",
+        "https://my.wal-mart.com/*",   // the store's Daily Board workbook (OneDrive)
       ],
     },
 

@@ -4,8 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   classificationForJob, deriveClassifications, isValidClassification, MANUAL_ONLY,
-  leadershipForJob, byLeadershipFirst, isDigitalJob,
-} from "../data/job_classify.js";
+  leadershipForJob, byLeadershipFirst, isDigitalJob, deriveExceptions } from "../data/job_classify.js";
 
 // Real job titles from the store 1458 roster, 2026-08-25.
 const DIGITAL   = "Digital Personal Shopper 1-936-1451";
@@ -217,4 +216,25 @@ test("sorting floats coach above lead above everyone else", () => {
   const rows = [{ role: null }, { role: "TL" }, { role: "COACH" }, { role: null }];
   assert.deepEqual([...rows].sort(byLeadershipFirst).map((r) => r.role),
     ["COACH", "TL", null, null]);
+});
+
+test("Exceptions are derived from board hours or exception share, only for Digital", () => {
+  const { add, remove, evidence } = deriveExceptions({
+    board: {
+      "ANN LEE":  { exc: 12, pick: 4 },   // mostly EXC on the board
+      "BO KIM":   { exc: 3,  pick: 1 },   // too few hours to judge
+      "CY DOE":   { exc: 5,  pick: 9 },   // more picking than exceptions
+      "DI FOX":   { exc: 20, pick: 0 },   // but classified Store Help: untouched
+    },
+    items: {
+      "EL RAY":   { exc: 150, all: 300 }, // half exception items
+      "CY DOE":   { exc: 10,  all: 400 },
+    },
+    current: { "ANN LEE": "Digital", "BO KIM": "Digital", "CY DOE": "Digital",
+               "DI FOX": "Store Help", "EL RAY": "Digital", "GUS HALE": "Exceptions", "HAL IVES": "Exceptions" },
+    auto: ["HAL IVES"],                   // labelled by the rule before; GUS HALE was set by hand
+  });
+  assert.deepEqual(add, ["ANN LEE", "EL RAY"]);
+  assert.deepEqual(remove, ["HAL IVES"]);  // no longer qualifies; GUS HALE (manual) stays
+  assert.match(evidence["ANN LEE"], /12 EXC h vs 4 PICK h/);
 });

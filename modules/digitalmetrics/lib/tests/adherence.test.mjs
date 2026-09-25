@@ -4,8 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  findAssignmentMatch, assignedPickHours, breakAllowance,
-  effectiveAssignedHours, calculateAdherence, actualPickHoursByName,
+  findAssignmentMatch, assignedPickHours, breakSlots, breakPickHours, breakTimes,
+  effectiveAssignedHours, calculateAdherence, actualPickHoursByName, dateKey, weekPickBreakdown, exceptionSplit,
 } from "../data/adherence.js";
 
 const pickSlots = (n, from = 0) =>
@@ -85,22 +85,43 @@ test("an empty or missing assignment is zero, not a crash", () => {
   assert.equal(assignedPickHours({}), 0);
 });
 
-// ── break allowance ──────────────────────────────────────────────────────
-test("no break is charged when picking is a minority of the shift", () => {
-  // 1 pick hour in a 6-hour shift: the break happens on other work.
-  assert.equal(breakAllowance(1, 6), 0);
-  assert.equal(breakAllowance(3, 6), 0);   // exactly half still does not qualify
+// ── breaks ───────────────────────────────────────────────────────────────
+const row = (start, end, tasks) => ({
+  shiftStart: start, shiftEnd: end,
+  slots: Object.fromEntries(tasks.map((t, i) => [start + i, t]).filter(([, t]) => t)),
 });
 
-test("a long shift earns 30 minutes, a short one 15, prorated by pick share", () => {
-  assert.equal(breakAllowance(8, 8), 0.5);        // all-pick 8h shift
-  assert.equal(breakAllowance(6, 6), 0.25);       // all-pick 6h shift (not >6)
-  assert.equal(breakAllowance(6, 8), 0.5 * 0.75); // 75% picking
+test("a full shift: a 15 at the 2-hour mark, lunch, a 15 two hours after lunch", () => {
+  // 7am–4pm: 7-8 8-9 9-10 10-11 11-12(L) 12-1 1-2 2-3 3-4
+  const a = row(2, 11, ["PICK", "PICK", "PICK", "PICK", "L", "PICK", "PICK", "PICK", "PICK"]);
+  assert.deepEqual(breakSlots(a), [3, 8]);   // 8–9am and 1–2pm
+  assert.equal(effectiveAssignedHours(a), 8 - 0.5);
 });
 
-test("effective hours subtract the break but never fall to zero", () => {
-  assert.equal(effectiveAssignedHours({ slots: pickSlots(8), startSlot: 0, endSlot: 7 }), 7.5);
+test("a 6-hour shift takes one 15 in the middle", () => {
+  const a = row(0, 6, ["PICK", "PICK", "PICK", "PICK", "PICK", "PICK"]);
+  assert.deepEqual(breakSlots(a), [2]);
+  assert.equal(effectiveAssignedHours(a), 5.75);
+});
+
+test("a break during another task costs no pick time", () => {
+  const a = row(2, 11, ["DISP", "DISP", "PICK", "PICK", "L", "PICK", "DISP", "PICK", "PICK"]);
+  assert.deepEqual(breakSlots(a), [3, 8]);      // slot 3 is DISP, slot 8 is DISP
+  assert.equal(breakPickHours(a), 0);
+  assert.equal(effectiveAssignedHours(a), 5);
+});
+
+test("breaks the planner placed on the board replace the predicted ones", () => {
+  const a = row(0, 6, ["PICK", "PICK", "B", "PICK", "PICK", "PICK"]);
+  assert.deepEqual(breakSlots(a), []);
+  assert.equal(effectiveAssignedHours(a), 5);
+});
+
+test("a short shift takes no break; effective hours never fall to zero", () => {
+  assert.deepEqual(breakSlots(row(0, 2, ["PICK", "PICK"])), []);
   assert.equal(effectiveAssignedHours({ slots: {} }), 0);
+  // From three worked hours up, one 15 is expected.
+  assert.equal(effectiveAssignedHours(row(0, 3, ["PICK", "PICK", "PICK"])), 2.75);
 });
 
 // ── end to end ───────────────────────────────────────────────────────────
@@ -151,6 +172,71 @@ test("actual hours are keyed by name and date, forward-filling dates", () => {
     { Associate: "A", "Pick Date": "12/01/25", "Pick Hours": 5 },
     { Associate: "B", "Pick Hours": 3 },                          // inherits date
   ]);
-  assert.equal(out.A["12/01/25"], 5);
-  assert.equal(out.B["12/01/25"], 3);
+  assert.equal(out.A["2025-12-01"], 5);
+  assert.equal(out.B["2025-12-01"], 3);
+});
+
+test("metrics and assignment dates join whatever their padding", () => {
+  // Tableau writes "9/19/26"; the view used to look up "09/19/26".
+  assert.equal(dateKey("9/19/26"), "2026-09-19");
+  assert.equal(dateKey("09/19/2026"), "2026-09-19");
+  assert.equal(dateKey("2026-09-19"), "2026-09-19");
+  const actual = actualPickHoursByName([{ Associate: "JOHN SMITH", "Pick Date": "9/1/26", "Pick Hours": 6 }]);
+  const byDate = { "2026-09-01": { associates: [{ name: "JOHN SMITH", slots: pickSlots(6), shiftStart: 0, shiftEnd: 6 }] } };
+  const out = calculateAdherence([{ name: "JOHN SMITH" }], byDate, actual, { "JOHN SMITH": "Digital" });
+  assert.ok(out["JOHN SMITH"], "a single-digit-month day must produce adherence");
+});
+
+test("week breakdown keeps assigned-but-not-picked days and sums by day", () => {
+  const byDate = {
+    "2026-09-21": { associates: [
+      { name: "JOHN SMITH", shiftStart: 0, shiftEnd: 2, slots: { 0: "PICK", 1: "PICK" } },
+      { name: "MARY LAKE",  shiftStart: 0, shiftEnd: 2, slots: { 0: "PICK", 1: "PICK" } }] },
+  };
+  const actual = { "JOHN SMITH": { "2026-09-21": 1.5 } };
+  const cls = { "JOHN SMITH": "Digital", "MARY LAKE": "Digital" };
+  const { days, people } = weekPickBreakdown(byDate, actual, cls);
+  assert.deepEqual(days, [{ date: "2026-09-21", assigned: 4, actual: 1.5, people: 2 }]);
+  assert.equal(people.find((p) => p.name === "MARY LAKE").actual, 0);
+});
+
+test("exception work is split from picking: board EXC hours against exception items", () => {
+  const byDate = { "2026-09-21": { associates: [
+    { name: "JOHN SMITH", shiftStart: 0, shiftEnd: 3, slots: { 0: "EXC", 1: "EXC", 2: "PICK" } }] } };
+  const rawData = [{ Associate: "JOHN SMITH", "Pick Date": "9/21/26", "Pick Hours": 0.5,
+    "Picked As Req Qty": 60, "Exception Qty Req to Pick": 80, "Exception Picked As Req Qty": 70,
+    "Exception Nil Pick Qty": 4, "Exception Substitution Qty": 6 }];
+  const [r] = exceptionSplit(byDate, rawData);
+  assert.equal(r.excHours, 2);
+  assert.equal(r.excReq, 80);
+  assert.equal(r.pickAssigned, 1);
+  assert.equal(r.pickActual, 0.5);
+  assert.equal(r.regItems, 60);
+});
+
+test("breaks due together are staggered :45, :00, :15 in roster order", () => {
+  const shift = () => ["PICK", "PICK", "PICK", "PICK", "L", "PICK", "PICK", "PICK", "PICK"];
+  const roster = ["A", "B", "C", "D"].map((name) => ({ name, ...row(2, 11, shift()) }));
+  const [a, b, c, d] = roster.map((r) => breakTimes(r, roster));
+  // First break ends by 9am (slot 3 = 8–9am); second by 2pm (slot 8 = 1–2pm).
+  assert.deepEqual(a.map((t) => t.label), ["8:45", "1:45"]);
+  assert.deepEqual(b.map((t) => t.label), ["9:00", "2:00"]);
+  assert.deepEqual(c.map((t) => t.label), ["9:15", "2:15"]);
+  assert.deepEqual(d.map((t) => t.label), ["8:45", "1:45"]);
+  assert.deepEqual(b.map((t) => t.slot), [4, 9]);   // :00 costs the next hour
+});
+
+test("a staggered break costs pick time in the hour it actually falls in", () => {
+  // B's breaks move to 9–10am (DISP) and 2–3pm (PICK): only one costs pick.
+  const tasks = ["PICK", "PICK", "DISP", "PICK", "L", "PICK", "PICK", "PICK", "PICK"];
+  const roster = [{ name: "A", ...row(2, 11, tasks) }, { name: "B", ...row(2, 11, tasks) }];
+  assert.equal(breakPickHours(roster[0], roster), 0.5);
+  assert.equal(breakPickHours(roster[1], roster), 0.25);
+  assert.equal(effectiveAssignedHours(roster[1], roster), 7 - 0.25);
+});
+
+test("absent associates are not counted in the stagger", () => {
+  const tasks = ["PICK", "PICK", "PICK", "PICK", "PICK", "PICK"];
+  const roster = [{ name: "A", status: "absent", ...row(0, 6, tasks) }, { name: "B", ...row(0, 6, tasks) }];
+  assert.equal(breakTimes(roster[1], roster)[0].minute, 45);
 });

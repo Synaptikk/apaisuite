@@ -255,6 +255,7 @@
 
 .module-digitalmetrics .is-good { color: var(--apai-success); }
 .module-digitalmetrics .is-bad  { color: var(--apai-error); }
+.module-digitalmetrics .is-warn { color: var(--apai-warn); }
 
 /* ── Controls ────────────────────────────────────────────────────────── */
 
@@ -579,9 +580,26 @@
 }
 .module-digitalmetrics .dm-cell:focus    { outline: 2px solid var(--module-accent); outline-offset: -2px; }
 
-/* A suggestion is a proposal, not an assignment, and must not look like one. */
+/* A suggestion is a proposal, not an assignment, and must not look like one.
+   It does carry its task's colour — the proposals were the only colourless
+   cells on the grid, which made them invisible next to the plan rather than
+   subordinate to it — but the tint is washed back toward the empty in-shift
+   background by one overlay sitting over whatever `.dm-cell.task-*` set. One
+   overlay, so no task needs a hand-picked muted twin, and the pair stays in
+   step when a board colour changes. The hint is lifted above the wash; a
+   half-hour wedge underneath it is faded, which is the accepted cost. */
+.module-digitalmetrics .dm-cell.is-suggested { position: relative; }
+.module-digitalmetrics .dm-cell.is-suggested::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--dm-shift-bg);
+  opacity: .6;
+  pointer-events: none;
+}
 .module-digitalmetrics .dm-suggestion-hint {
-  opacity: .45;
+  position: relative;
+  opacity: .7;
   font-style: italic;
 }
 
@@ -590,23 +608,25 @@
    `.dm-cell.task-*`, which meant the legend swatch — not a cell — inherited
    nothing and rendered blank. */
 .module-digitalmetrics {
-  --dm-task-pick:  #DBEAFE;
-  --dm-task-disp:  #DCFCE7;
-  --dm-task-stage: #FEF3C7;
-  --dm-task-prep:  #F3E8FF;
-  --dm-task-exc:   #FFEDD5;
-  --dm-task-ip:    #E0F2FE;
-  /* The four added tasks. Picked to stay distinguishable from the four above
-     at the grid's 12px cell size, where hue separates far better than
-     lightness — these sit in the teal / rose / lime / indigo gaps between the
-     existing blue, green, amber and purple. */
-  --dm-task-qc:    #CCFBF1;
-  --dm-task-drv:   #FFE4E6;
-  --dm-task-ds:    #ECFCCB;
-  --dm-task-trn:   #E0E7FF;
+  /* The store's Daily Board colours, read from the workbook's conditional
+     formatting 2026-09-23, so a planner sees the same grid in both places.
+     T, DS, DRV and 30 are uncoloured on the board and keep a pale wash. */
+  --dm-task-pick:    #EFE1A7;
+  --dm-task-disp:    #FF33CC;
+  --dm-task-stage:   #E87331;
+  --dm-task-prep:    #FFCCCC;
+  --dm-task-exc:     #DCEAF7;
+  --dm-task-ip:      #7871FD;
+  --dm-task-qc:      #AEAEAE;
+  --dm-task-ih:      #B4E5A2;
+  --dm-task-ih-prep: #96DCF8;
+  --dm-task-gmd:     #00B050;
+  --dm-task-drv:     #FFE4E6;
+  --dm-task-ds:      #ECFCCB;
+  --dm-task-t:       #E0E7FF;
   --dm-task-tl:    #FDE68A;
   --dm-task-coach: #FBCFE8;
-  --dm-task-rest:  var(--apai-border-soft);
+  --dm-task-rest:  #7F7F7F;
 }
 
 .module-digitalmetrics .dm-cell.task-pick,
@@ -623,8 +643,14 @@
 .module-digitalmetrics .dm-legend-swatch.task-drv   { background-color: var(--dm-task-drv); }
 .module-digitalmetrics .dm-cell.task-ds,
 .module-digitalmetrics .dm-legend-swatch.task-ds    { background-color: var(--dm-task-ds); }
-.module-digitalmetrics .dm-cell.task-trn,
-.module-digitalmetrics .dm-legend-swatch.task-trn   { background-color: var(--dm-task-trn); }
+.module-digitalmetrics .dm-cell.task-t,
+.module-digitalmetrics .dm-legend-swatch.task-t     { background-color: var(--dm-task-t); }
+.module-digitalmetrics .dm-cell.task-ih,
+.module-digitalmetrics .dm-legend-swatch.task-ih    { background-color: var(--dm-task-ih); }
+.module-digitalmetrics .dm-cell.task-ih-prep,
+.module-digitalmetrics .dm-legend-swatch.task-ih-prep { background-color: var(--dm-task-ih-prep); }
+.module-digitalmetrics .dm-cell.task-gmd,
+.module-digitalmetrics .dm-legend-swatch.task-gmd   { background-color: var(--dm-task-gmd); }
 /* Leadership. Their rows sit above everyone and carry their role in every
    in-shift hour as a DISPLAY default — it is not in slots, and the totals
    ignore it. Muted on purpose: context, not an assignment competing for
@@ -650,7 +676,7 @@
 .module-digitalmetrics .dm-cell.task-ip,
 .module-digitalmetrics .dm-legend-swatch.task-ip    { background-color: var(--dm-task-ip); }
 .module-digitalmetrics .dm-cell.task-l,
-.module-digitalmetrics .dm-cell.task-b     { background-color: var(--dm-task-rest); color: var(--apai-muted); }
+.module-digitalmetrics .dm-cell.task-b     { background-color: var(--dm-task-rest); color: #FFFFFF; }
 .module-digitalmetrics .dm-legend-swatch.task-l,
 .module-digitalmetrics .dm-legend-swatch.task-b     { background-color: var(--dm-task-rest); }
 
@@ -683,8 +709,14 @@
 .module-digitalmetrics .dm-summary .dm-summary-row.task-drv td { background: var(--dm-task-drv); }
 .module-digitalmetrics .dm-summary .dm-summary-row.task-ds th,
 .module-digitalmetrics .dm-summary .dm-summary-row.task-ds td { background: var(--dm-task-ds); }
-.module-digitalmetrics .dm-summary .dm-summary-row.task-trn th,
-.module-digitalmetrics .dm-summary .dm-summary-row.task-trn td { background: var(--dm-task-trn); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-t th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-t td { background: var(--dm-task-t); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ih th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ih td { background: var(--dm-task-ih); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ih-prep th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-ih-prep td { background: var(--dm-task-ih-prep); }
+.module-digitalmetrics .dm-summary .dm-summary-row.task-gmd th,
+.module-digitalmetrics .dm-summary .dm-summary-row.task-gmd td { background: var(--dm-task-gmd); }
 .module-digitalmetrics .dm-summary .dm-summary-row.task-exc th,
 .module-digitalmetrics .dm-summary .dm-summary-row.task-exc td { background: var(--dm-task-exc); }
 
@@ -933,19 +965,22 @@
     print-color-adjust: exact;
   }
   .module-digitalmetrics {
-    --dm-task-pick:  #DBEAFE;
-    --dm-task-disp:  #DCFCE7;
-    --dm-task-stage: #FEF3C7;
-    --dm-task-prep:  #F3E8FF;
-    --dm-task-qc:    #CCFBF1;
-    --dm-task-drv:   #FFE4E6;
-    --dm-task-ds:    #ECFCCB;
-    --dm-task-trn:   #E0E7FF;
+    --dm-task-pick:    #EFE1A7;
+    --dm-task-disp:    #FF33CC;
+    --dm-task-stage:   #E87331;
+    --dm-task-prep:    #FFCCCC;
+    --dm-task-exc:     #DCEAF7;
+    --dm-task-ip:      #7871FD;
+    --dm-task-qc:      #AEAEAE;
+    --dm-task-ih:      #B4E5A2;
+    --dm-task-ih-prep: #96DCF8;
+    --dm-task-gmd:     #00B050;
+    --dm-task-drv:     #FFE4E6;
+    --dm-task-ds:      #ECFCCB;
+    --dm-task-t:       #E0E7FF;
     --dm-task-tl:    #FDE68A;
     --dm-task-coach: #FBCFE8;
-    --dm-task-exc:   #FFEDD5;
-    --dm-task-ip:    #E0F2FE;
-    --dm-task-rest:  #E5E7EB;
+    --dm-task-rest:  #7F7F7F;
     --dm-shift-bg:      #FFFFFF;
     --dm-shift-edge:    #BBBBBB;
     --dm-offshift-bg:   #D9D9D9;
@@ -975,6 +1010,12 @@
   .module-digitalmetrics .dm-cell.is-selected::after { display: none !important; }
   .module-digitalmetrics .dm-lunch-flag { display: none !important; }
   .module-digitalmetrics .dm-suggestion-hint { display: none !important; }
+  /* The tint goes with the label it belonged to: a printed sheet showing a
+     coloured cell with no code in it reads as an assignment nobody made. */
+  .module-digitalmetrics .dm-cell.is-suggested {
+    background-color: var(--dm-shift-bg) !important;
+  }
+  .module-digitalmetrics .dm-cell.is-suggested::before { display: none !important; }
 
   /* If it ever does spill, repeat the column header rather than orphan rows. */
   .module-digitalmetrics .dm-grid thead { display: table-header-group; }
@@ -1168,6 +1209,51 @@
 }
 
 
+/* Expected 15-minute break on a Pick hour (adherence.js breakSlots). */
+.module-digitalmetrics td.has-break { position: relative; }
+.module-digitalmetrics .dm-break-mark {
+  position: absolute; top: 1px; right: 2px;
+  font-size: 8px; font-weight: 700; line-height: 1;
+  opacity: .7; pointer-events: none;
+}
+@media print { .module-digitalmetrics .dm-break-mark { display: none; } }
+
+/* The board's stronger colours (hot pink Dispense, orange Stage, violet IP,
+   green GMD) need dark ink to stay readable at the grid's cell size. */
+.module-digitalmetrics .dm-cell.task-disp,
+.module-digitalmetrics .dm-cell.task-stage,
+.module-digitalmetrics .dm-cell.task-ip,
+.module-digitalmetrics .dm-cell.task-gmd { color: #000000; }
+[data-theme="dark"] .module-digitalmetrics .dm-cell.task-disp,
+[data-theme="dark"] .module-digitalmetrics .dm-cell.task-stage,
+[data-theme="dark"] .module-digitalmetrics .dm-cell.task-ip,
+[data-theme="dark"] .module-digitalmetrics .dm-cell.task-gmd { color: #FFFFFF; }
+
+/* ── Daily Board sync (store 1458) ─────────────────────────────────────── */
+.module-digitalmetrics .dm-board { margin: 4px 0 8px; }
+.module-digitalmetrics .dm-board-link { min-width: 320px; flex: 1; }
+.module-digitalmetrics .dm-board-fix { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.module-digitalmetrics .dm-board-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--apai-danger, #d33);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}
+.module-digitalmetrics .dm-board-flag.is-guess { background: var(--apai-warn); color: #000; }
+.module-digitalmetrics tr.is-unresolved .dm-name { text-decoration: underline dotted var(--apai-danger, #d33); }
+.module-digitalmetrics .dm-board-review summary { cursor: pointer; font-size: 12px; }
+.module-digitalmetrics .dm-board-table td { padding: 1px 8px 1px 0; font-size: 12px; }
+@media print { .module-digitalmetrics .dm-board, .module-digitalmetrics .dm-board-flag { display: none !important; } }
+
+
 /* ── Dark theme ───────────────────────────────────────────────────────────
    The scheduled hours must stay the BRIGHTER surface in both themes. Dark
    mode inverts the usual token order — --apai-bg-soft (86% black) is lighter
@@ -1185,19 +1271,22 @@
    glare and bury the label. Mixed back toward the surface, they read as tints
    again while the task text stays legible. */
 [data-theme="dark"] .module-digitalmetrics {
-  --dm-task-pick:  color-mix(in srgb, #DBEAFE 26%, var(--forge-black));
-  --dm-task-disp:  color-mix(in srgb, #DCFCE7 26%, var(--forge-black));
-  --dm-task-stage: color-mix(in srgb, #FEF3C7 26%, var(--forge-black));
-  --dm-task-prep:  color-mix(in srgb, #F3E8FF 26%, var(--forge-black));
-  --dm-task-qc:    color-mix(in srgb, #CCFBF1 26%, var(--forge-black));
-  --dm-task-drv:   color-mix(in srgb, #FFE4E6 26%, var(--forge-black));
-  --dm-task-ds:    color-mix(in srgb, #ECFCCB 26%, var(--forge-black));
-  --dm-task-trn:   color-mix(in srgb, #E0E7FF 26%, var(--forge-black));
+  --dm-task-pick:    color-mix(in srgb, #EFE1A7 45%, var(--forge-black));
+  --dm-task-disp:    color-mix(in srgb, #FF33CC 45%, var(--forge-black));
+  --dm-task-stage:   color-mix(in srgb, #E87331 45%, var(--forge-black));
+  --dm-task-prep:    color-mix(in srgb, #FFCCCC 45%, var(--forge-black));
+  --dm-task-exc:     color-mix(in srgb, #DCEAF7 45%, var(--forge-black));
+  --dm-task-ip:      color-mix(in srgb, #7871FD 45%, var(--forge-black));
+  --dm-task-qc:      color-mix(in srgb, #AEAEAE 45%, var(--forge-black));
+  --dm-task-ih:      color-mix(in srgb, #B4E5A2 45%, var(--forge-black));
+  --dm-task-ih-prep: color-mix(in srgb, #96DCF8 45%, var(--forge-black));
+  --dm-task-gmd:     color-mix(in srgb, #00B050 45%, var(--forge-black));
+  --dm-task-drv:     color-mix(in srgb, #FFE4E6 45%, var(--forge-black));
+  --dm-task-ds:      color-mix(in srgb, #ECFCCB 45%, var(--forge-black));
+  --dm-task-t:       color-mix(in srgb, #E0E7FF 45%, var(--forge-black));
   --dm-task-tl:    color-mix(in srgb, #FDE68A 26%, var(--forge-black));
   --dm-task-coach: color-mix(in srgb, #FBCFE8 26%, var(--forge-black));
-  --dm-task-exc:   color-mix(in srgb, #FFEDD5 26%, var(--forge-black));
-  --dm-task-ip:    color-mix(in srgb, #E0F2FE 26%, var(--forge-black));
-  --dm-task-rest:  color-mix(in srgb, var(--steel) 30%, var(--forge-black));
+  --dm-task-rest:  color-mix(in srgb, #7F7F7F 55%, var(--forge-black));
 }
 
 /* ── The scrolling sliver ─────────────────────────────────────────────────
@@ -1228,3 +1317,26 @@
   color: var(--apai-warn);
   border: 1px solid var(--apai-warn);
 }
+
+/* ── Insights drill-down folds ────────────────────────────────────────────
+   The glance table + shortfall ledger carry the Insights story; every other
+   view collapses behind a summary row styled like a section title, so the
+   closed page reads as a table of contents rather than a wall of tables. */
+.module-digitalmetrics .dm-fold {
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--apai-border, #e2e2e2);
+  border-radius: 8px;
+  background: var(--apai-bg-soft);
+}
+.module-digitalmetrics .dm-fold > summary {
+  cursor: pointer;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-md, 15px);
+  font-weight: var(--fw-semi, 600);
+  color: var(--apai-heading);
+  list-style-position: inside;
+  user-select: none;
+}
+.module-digitalmetrics .dm-fold > summary:hover { color: var(--apai-blue); }
+.module-digitalmetrics .dm-fold[open] > summary { border-bottom: 1px solid var(--apai-border, #e2e2e2); }
+.module-digitalmetrics .dm-fold-body { padding: var(--sp-4); }

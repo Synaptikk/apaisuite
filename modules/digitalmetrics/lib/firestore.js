@@ -222,7 +222,8 @@ export const assignments = {
   async recent(s, limit = 30) {
     const docs = await listDocs(`stores/${s}/dailyAssignments`);
     const newest = docs.sort((a, b) => b.id.localeCompare(a.id)).slice(0, limit);
-    return Promise.all(newest.map(decodeAssignments));
+    // The doc id IS the date; older docs can carry `date: null`.
+    return Promise.all(newest.map(async (d) => ({ ...(await decodeAssignments(d)), date: d.date || d.id })));
   },
 };
 

@@ -16,7 +16,7 @@ import { esc, empty } from "../_shared.js";
 import { editorText } from "../../audit.js";
 import * as grid from "./grid.js";
 import {
-  TIME_SLOTS, TASK_SHORTCUTS, TASK_LABELS, resolveShortcut, dayName, emptyAssociate,
+  TIME_SLOTS, TASK_SHORTCUTS, TASK_LABELS, resolveShortcut, dayName, emptyAssociate, taskClass,
 } from "../../data/grid.js";
 import { parsePastedTasks, applyPaste, tasksToClipboard, cellsInRange } from "../../data/paste.js";
 import { lunchSummary, isWithinShift } from "../../data/lunch.js";
@@ -78,6 +78,98 @@ function toolbar(ctx) {
 }
 
 /**
+ * Daily Board sync strip (store 1458 only; ctx.board is null elsewhere).
+ *
+ * Shows when the board was last pulled, what happened to the date on screen,
+ * and every board name that could not be matched to a scheduled associate,
+ * with one-click fixes. A fix is remembered on this device and applied on
+ * every later pull.
+ */
+function boardPanel(ctx) {
+  const b = ctx.board;
+  if (!b) return "";
+
+  if (!b.link) {
+    return `
+      <div class="dm-controls dm-board">
+        <strong>Daily Board</strong>
+        <input class="dm-input dm-board-link" id="dm-board-link" type="url"
+               placeholder="Paste the Daily Board OneDrive share link">
+        <button class="btn" id="dm-board-link-save">Save link</button>
+        <span class="dm-stat-note">Store ${esc(b.store)} only. Syncs every 30 minutes once saved.</span>
+      </div>`;
+  }
+
+  const s = b.state;
+  const when = (iso) => iso ? new Date(iso).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "—";
+  const day = s?.dates?.find((d) => d.date === ctx.date);
+  const matchedCount = day?.matched?.length ?? 0;
+  const unmatched = day?.unmatched || [];
+  const guesses = (day?.matched || []).filter((m) => String(m.how).startsWith("hours"));
+
+  let dayNote = "";
+  if (b.running) dayNote = "syncing…";
+  else if (s?.notRun) dayNote = s.notRun;
+  else if (day?.skipped) dayNote = `Not applied to this day: ${day.skipped}.`;
+  else if (day) dayNote = (day.mode === "backfill" || day.mode === "filled" ? "Filled from the board (past day, locked). " : "") +
+    `${matchedCount} of ${day.rows} board names matched to the schedule` +
+    (day.changedCells ? `, ${day.changedCells} cells updated` : ", no changes") +
+    (day.noSchedule ? " — no schedule pulled for this day yet, so names could not be checked" : "") + ".";
+  else if (s) dayNote = "The board fills the past six days (once each), today, and tomorrow once its sheet is updated.";
+
+  const fixes = unmatched.map((u) => `
+    <div class="dm-board-fix">
+      <span class="dm-board-flag" aria-hidden="true">?</span>
+      <strong>${esc(u.boardName)}</strong> is
+      ${u.candidates.map((n) => `<button class="btn btn-sm" data-dm-board-alias="${esc(u.boardName)}"
+          data-dm-board-name="${esc(n)}">${esc(n)}</button>`).join(" or ")}
+      <button class="btn btn-sm" data-dm-board-alias="${esc(u.boardName)}" data-dm-board-name="">
+        ${u.candidates.length ? "someone else…" : "who?"}</button>
+    </div>`).join("");
+
+  const review = day?.matched?.length ? `
+    <details class="dm-board-review">
+      <summary>How board names were matched</summary>
+      <table class="dm-board-table">
+        ${day.matched.map((m) => `<tr><td>${esc(m.boardName)}</td><td>→ ${esc(m.name)}</td>
+          <td class="dm-stat-note">${esc(m.how)}</td>
+          <td>${m.how === "alias" ? `<button class="btn btn-sm" data-dm-board-alias="${esc(m.boardName)}"
+            data-dm-board-clear="1">forget</button>` : ""}</td></tr>`).join("")}
+      </table>
+    </details>` : "";
+
+  return `
+    <div class="dm-board">
+      <div class="dm-controls">
+        <strong>Daily Board</strong>
+        <span class="dm-stat-note">Pulled ${esc(when(s?.at))}${s?.file ? ` · board saved ${esc(when(s.file.modifiedAt))}` : ""}</span>
+        <button class="btn" id="dm-board-sync" ${b.running ? "disabled" : ""}>Sync board</button>
+        <button class="btn btn-sm" id="dm-board-unlink">Change link</button>
+        <span class="dm-stat-note">${esc(dayNote)}</span>
+      </div>
+      ${s?.error ? `<div class="status-strip status-strip-error">${esc(s.error)}</div>` : ""}
+      ${unmatched.length ? `<div class="status-strip status-strip-warn">
+        ${unmatched.length} board name${unmatched.length === 1 ? "" : "s"} could not be matched to a
+        full name. They are on the grid as typed, marked <span class="dm-board-flag">?</span>. Pick who each one is:
+        ${fixes}</div>` : ""}
+      ${guesses.length ? `<div class="status-strip status-strip-info">
+        ${guesses.length} board name${guesses.length === 1 ? " was" : "s were"} matched only by shift hours
+        (the one digital associate whose schedule fits those hours, on every day the name appears), marked
+        <span class="dm-board-flag is-guess">~</span>. Confirm or correct:
+        ${guesses.map((g) => `
+          <div class="dm-board-fix">
+            <strong>${esc(g.boardName)}</strong> is ${esc(g.name)}?
+            <span class="dm-stat-note">${esc(g.how)}</span>
+            <button class="btn btn-sm" data-dm-board-alias="${esc(g.boardName)}" data-dm-board-name="${esc(g.name)}">Yes</button>
+            ${(g.alt || []).map((n) => `<button class="btn btn-sm" data-dm-board-alias="${esc(g.boardName)}"
+              data-dm-board-name="${esc(n)}" title="Named on the board, but scheduled for different hours">${esc(n)}</button>`).join("")}
+            <button class="btn btn-sm" data-dm-board-alias="${esc(g.boardName)}" data-dm-board-name="">No, someone else…</button>
+          </div>`).join("")}</div>` : ""}
+      ${review}
+    </div>`;
+}
+
+/**
  * Key legend, doubling as the colour key.
  *
  * The grid tints each task a different colour, but nothing said which was
@@ -88,7 +180,7 @@ function legend() {
   return `<div class="dm-legend dm-stat-note">
     Keys: ${TASK_BUTTONS.filter(([t]) => t).map(([task, label, key]) =>
       `<span class="dm-legend-item">` +
-        `<span class="dm-legend-swatch task-${esc(task.toLowerCase())}"></span>` +
+        `<span class="dm-legend-swatch ${taskClass(task)}"></span>` +
         // The REAL shortcut, not the label's first letter. That guess printed
         // P for Prep (the key is R) and P again for Pick, so the legend told
         // you to press a key that did something else.
@@ -152,7 +244,7 @@ const pageStore = (ctx) => ctx.homeStore || ctx.store;
 export function render(ctx) {
   if (!pageStore(ctx)) return empty("Select a store on the Dashboard first.");
 
-  return toolbar(ctx) + printTitle(ctx) + legend() + lunchBanner(ctx) +
+  return toolbar(ctx) + boardPanel(ctx) + printTitle(ctx) + legend() + lunchBanner(ctx) +
          grid.render(ctx) + mobilePanel(ctx);
 }
 
@@ -160,6 +252,7 @@ export function wire(ctx, root) {
   const {
     host, onUiChange, onSetTask, onSetTasks, onSetStatus, onDateChange,
     onAddAssociate, onFinalize, onAcceptAll, onDismissAll, onPrint,
+    onBoardSync, onBoardLink, onBoardAlias,
     locked, assignments = [], ui = {},
   } = ctx;
 
@@ -199,6 +292,30 @@ export function wire(ctx, root) {
   on("#dm-asg-finalize",    "click", () => onFinalize?.(!locked));
   on("#dm-asg-accept-all",  "click", () => onAcceptAll?.());
   on("#dm-asg-dismiss-all", "click", () => onDismissAll?.());
+
+  // ── Daily Board ──────────────────────────────────────────────────────────
+  // Wired before the locked early-return: fixing a name is not an edit to
+  // the day, and the fix carries forward to later pulls.
+  on("#dm-board-sync", "click", () => onBoardSync?.());
+  on("#dm-board-link-save", "click", () => onBoardLink?.(root.querySelector("#dm-board-link")?.value || ""));
+  on("#dm-board-unlink", "click", () => {
+    const link = prompt("Paste the Daily Board OneDrive share link (leave empty to stop syncing)");
+    if (link !== null) onBoardLink?.(link.trim());
+  });
+  for (const btn of root.querySelectorAll("[data-dm-board-alias]")) {
+    const fn = () => {
+      const boardName = btn.dataset.dmBoardAlias;
+      let name = btn.dataset.dmBoardName;
+      if (btn.dataset.dmBoardClear) name = "";
+      else if (!name) {
+        name = prompt(`Full name (as on the schedule) for "${boardName}"`)?.trim().toUpperCase();
+        if (!name) return;
+      }
+      onBoardAlias?.(boardName, name);
+    };
+    btn.addEventListener("click", fn);
+    offs.push(() => btn.removeEventListener("click", fn));
+  }
 
   if (locked) return () => offs.forEach((off) => off());
 

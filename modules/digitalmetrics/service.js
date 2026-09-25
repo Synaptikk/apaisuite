@@ -10,11 +10,11 @@
 import { store, weeks, classifications, schedules, assignments, suggestions } from "./lib/firestore.js";
 import { loadAliases, aliasCount } from "./lib/names.js";
 import { splitByStoreWeek } from "./lib/data/parse.js";
-import { dayName } from "./lib/data/grid.js";
+import { dayName, isFinalized } from "./lib/data/grid.js";
 import { pivotAssociateData } from "./lib/data/tableau.js";
 import { pullMetrics } from "./lib/sources/tableau_metrics.js";
 import { pullExpressDay } from "./lib/sources/tableau_express.js";
-import { mergeWeekDoc } from "./lib/data/express.js";
+import { mergeWeekDoc, expressPickRates } from "./lib/data/express.js";
 import { weekKey } from "./lib/data/weeks.js";
 import { pullSchedule } from "./lib/sources/wfm_schedule.js";
 import { datesToPull, isPullDue, isoDay } from "./lib/pull_schedule.js";
@@ -22,7 +22,15 @@ import { getUserHomeStore, getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster, listKnownMarkets } from "../../shared/marketRoster.js";
 import { ensureAlarm } from "../../shared/alarms.js";
 import { withTableauLock } from "../../shared/tableau_lock.js";
-import { deriveClassifications } from "./lib/data/job_classify.js";
+import { fetchDailyBoard } from "./lib/sources/daily_board_source.js";
+import { pullClockIns } from "./lib/sources/gta_timesheet.js";
+import { clockInCandidates } from "./lib/data/first_pick.js";
+import {
+  parseShareLink, weekdaySheets, planDates, resolveBoardNames, mergeBoard, scheduleFit, learnFromHistory,
+  localIsoDate, addDays, SNAPSHOT_KEEP_DAYS,
+} from "./lib/data/board_sync.js";
+import { deriveClassifications, deriveExceptions, isDigitalJob, leadershipForJob } from "./lib/data/job_classify.js";
+import { dateKey } from "./lib/data/adherence.js";
 
 const ALIAS_KEY = "digitalmetrics.aliases";
 
@@ -141,11 +149,12 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
   // Week documents hold rows, not a date index, so "what do we already have"
   // means reading the recent weeks and collecting their distinct dates.
   const have = force
-    ? { metrics: [], express: [] }
-    : await storedCoverage(storeId).catch(() => ({ metrics: [], express: [] }));
+    ? { metrics: [], express: [], expressRate: [], expressOrders: {} }
+    : await storedCoverage(storeId).catch(() => ({ metrics: [], express: [], expressRate: [], expressOrders: {} }));
   const dates        = datesToPull(now, have.metrics);
   const expressDates = datesToPull(now, have.express);
-  if (!dates.length && !expressDates.length) return { store: storeId, skipped: "up to date" };
+  const rateDates    = datesToPull(now, have.expressRate);
+  if (!dates.length && !expressDates.length && !rateDates.length) return { store: storeId, skipped: "up to date" };
 
   // Everything this run will write, keyed by store+week. Metrics groups come
   // from the splitter; Express days attach to the week that contains them.
@@ -192,11 +201,43 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
           const day = await pullExpressDay(storeId, market, d, { onProgress });
           const doc = groupFor(storeId, weekKey(d)).doc;
           doc.express = { ...(doc.express || {}), [d]: day };
+          have.expressOrders[d] = day.orders;
           express.pulled++;
         } catch (e) {
           express.failed.push({ date: d, error: String(e?.message ?? e) });
         }
       }
+    }
+  }
+
+  // ── Express pick rate: Associate By Day filtered to Express Pickup ─────
+  //
+  // One load for every missing day (the sheet has a Pick Date dimension,
+  // unlike the Overview). A day with no Express Pickup has no rows. When the
+  // load returned rows for SOME day, the missing ones are real quiet days;
+  // when it returned none at all, only days the Overview already recorded as
+  // 0 orders can be trusted as zeros — anything else is reported as failed
+  // and retried next run.
+  if (rateDates.length) {
+    try {
+      const pulled = await pullMetrics(storeId, rateDates, {
+        onProgress, fulfillmentType: "Express Pickup", allowEmpty: true,
+      });
+      const quiet = rateDates.filter((d) => have.expressOrders[d] === 0);
+      const rates = expressPickRates(pulled.rows, { dates: pulled.rows.length ? rateDates : quiet });
+      const pulledAt = new Date().toISOString();
+      for (const [d, r] of Object.entries(rates)) {
+        const doc = groupFor(storeId, weekKey(d)).doc;
+        doc.expressRate = { ...(doc.expressRate || {}), [d]: { ...r, pulledAt } };
+        express.ratePulled = (express.ratePulled || 0) + 1;
+      }
+      if (!pulled.rows.length && quiet.length < rateDates.length) {
+        express.failed.push({ date: "pick rate", error:
+          `Associate By Day (Express Pickup) returned no rows for ` +
+          rateDates.filter((d) => !quiet.includes(d)).join(", ") });
+      }
+    } catch (e) {
+      express.failed.push({ date: "pick rate", error: String(e?.message ?? e) });
     }
   }
 
@@ -214,6 +255,7 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
       store: g.store, weekKey: g.weekKey,
       rows: merged.rawData.length,
       expressDays: Object.keys(g.doc.express || {}).length,
+      expressRateDays: Object.keys(g.doc.expressRate || {}).length,
     });
   }
 
@@ -222,7 +264,7 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
   const added = [...new Set(written.map((w) => w.store))].filter((s) => !knownStores.has(s));
   if (added.length) await store.saveStores([...knownStores, ...added]);
 
-  return { store: storeId, dates, expressDates, rows, written, skippedRows: skipped, pickers, express };
+  return { store: storeId, dates, expressDates, rateDates, rows, written, skippedRows: skipped, pickers, express };
 }
 
 /**
@@ -250,13 +292,17 @@ async function resolveMarket(storeId) {
  *
  * Week documents store rows, not a date index, so this reads the week docs
  * that cover the lookback window and collects their distinct Pick Dates
- * (metrics) and Express map keys (express).
+ * (metrics), Express map keys (express), Express pick-rate keys (expressRate)
+ * and the stored Express order count per day (expressOrders, which tells a
+ * quiet Express day from an unread one).
  */
 async function storedCoverage(storeId) {
   const weekKeys = await store.listWeeks(storeId).catch(() => []);
   const recent = weekKeys.sort().slice(-3);
   const metrics = new Set();
   const express = new Set();
+  const expressRate = new Set();
+  const expressOrders = {};
   for (const wk of recent) {
     const doc = await weeks.get(storeId, wk).catch(() => null);
     for (const row of doc?.rawData || []) {
@@ -267,9 +313,10 @@ async function storedCoverage(storeId) {
       const yyyy = y < 100 ? 2000 + y : y;
       metrics.add(`${yyyy}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
     }
-    for (const k of Object.keys(doc?.express || {})) express.add(k);
+    for (const [k, v] of Object.entries(doc?.express || {})) { express.add(k); expressOrders[k] = v?.orders; }
+    for (const k of Object.keys(doc?.expressRate || {})) expressRate.add(k);
   }
-  return { metrics: [...metrics], express: [...express] };
+  return { metrics: [...metrics], express: [...express], expressRate: [...expressRate], expressOrders };
 }
 
 /**
@@ -362,10 +409,13 @@ async function runPullLocked({ force, stores }) {
     opening:   "opening the scheduler",
     rendering: "waiting for the scheduler to render",
     reading:   "reading the schedule",
+    nextWeek:  "reading next week's schedule",
   };
   const METRICS_PHASES = {
     opening:   (e) => e.source === "express"
       ? `opening Express Pickup for store ${e.store} (${e.date})`
+      : e.source === "express-rate"
+      ? `opening Express pick rate for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`
       : `opening Tableau for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`,
     rendering: (e) => e.source === "express"
       ? `waiting for the Express Pickup viz (${e.date})`
@@ -479,6 +529,18 @@ async function runPullLocked({ force, stores }) {
       }
     }
 
+    // ── clock-ins (Global Time & Attendance), home store only ───────────
+    //
+    // Last, because it reads the grids the schedule feeds. Only the home
+    // store: the timesheet lookup is scoped to the signed-in user's store.
+    // A few seconds; a signed-out timesheet is recorded, not fatal.
+    if (scheduleStore) {
+      await setProgress("clockins", { text: "reading clock-ins from the timesheet" });
+      const c = await autoClockIns(scheduleStore);
+      result.clockIns = c;
+      if (c.error) result.errors.push({ scope: "clock-ins", error: c.error });
+    }
+
     // A store we only learned about this run must reach the store list, or the
     // picker stays empty and the next run rediscovers it from scratch.
     if (list.length) {
@@ -527,6 +589,356 @@ export async function installPullAlarm() {
 export async function onPullAlarm() {
   if (!(await pullEnabled())) return;
   await runPull().catch(() => {});
+}
+
+// ── Daily Board live sync ─────────────────────────────────────────────────
+//
+// The store's hand-kept "Daily Board" workbook on OneDrive → today's (and,
+// once updated, tomorrow's) assignment documents. Rules and rationale live in
+// lib/data/board_sync.js; this is orchestration and device-local state.
+//
+// STORE 1458 ONLY (the user, 2026-09-23). The workbook is 1458's, so the sync
+// refuses to run for anyone whose home store is not 1458 and only ever writes
+// under stores/1458 — a second store's install never touches it.
+//
+// Cheap (two HTTP requests, no tab), so it runs on its own 30-minute alarm
+// rather than behind the tab-opening auto-pull opt-in. Pasting the link is the
+// opt-in: with no link saved the alarm does nothing.
+
+export const BOARD_STORE = "1458";
+export const BOARD_ALARM = "digitalmetrics.board";
+const BOARD_PERIOD_MIN = 30;
+const BOARD_LINK_KEY  = "digitalmetrics.boardLink";
+const BOARD_SNAP_KEY  = "digitalmetrics.boardSnapshots";   // { date: { fp, cells, appliedAt } } — PII, local only
+const BOARD_ALIAS_KEY = "digitalmetrics.boardAliases";     // { "KJ": "KIRA JUNE" } — PII, local only
+const BOARD_STATE_KEY = "digitalmetrics.boardState";
+const AUTO_EXC_KEY    = "digitalmetrics.autoExceptions";   // names deriveExceptions labelled
+
+const CLOCK_KEY       = "digitalmetrics.clockIns";         // { store: { iso: { NAME: { clockIn, clockOut, mealOut, mealIn } } } } — PII, local only
+const GTA_IDS_KEY     = "digitalmetrics.gtaIds";           // { NAME: { empId, win, gtaName } } — PII, local only
+const CLOCK_KEEP_DAYS = 60;
+const CLOCK_STATE_KEY = "digitalmetrics.clockPullState";
+/** The automatic pull re-reads this many days back (incl. today): catches punch edits. */
+const CLOCK_AUTO_DAYS = 7;
+
+/**
+ * Pull clock-ins for `names` over [from, to], merge them into local storage,
+ * and record the outcome for the view. Never throws — the error is the result.
+ * Measured 2026-09-23: ~0.1 s per surname lookup (first time only; matches are
+ * cached), ~0.15 s per person for a day or a whole week, ~1 s to open a tab.
+ */
+async function syncClockIns(storeId, from, to, names, { auto }) {
+  const t0 = Date.now();
+  const people = [...new Set(names || [])].map((name) => ({ name }));
+  let outcome;
+  if (!people.length) {
+    outcome = { matched: 0, unmatched: [], errors: [], days: 0 };
+  } else {
+    try {
+      const idCache = await localGet(GTA_IDS_KEY, {});
+      const res = await pullClockIns({ people, from, to, idCache });
+      await chrome.storage.local.set({ [GTA_IDS_KEY]: res.ids });
+
+      const all = await localGet(CLOCK_KEY, {});
+      const mine = (all[String(storeId)] ||= {});
+      let days = 0;
+      for (const [name, rec] of Object.entries(res.byName)) {
+        for (const [date, d] of Object.entries(rec.days)) {
+          if (date < from || date > to) continue;
+          // The meal window (MEAL switch → the punch after it) rides along:
+          // the Insights shortfall view uses it to keep lunches that land on
+          // assigned pick hours out of the blame buckets, and to flag meals
+          // over 70 minutes. Minutes since midnight, like clockIn/clockOut.
+          const mi = (d.punches || []).findIndex((p) => p.code === "MEAL");
+          const toMin = (at) => {
+            const m = /^(\d{2}):(\d{2})$/.exec(at || "");
+            return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+          };
+          (mine[date] ||= {})[name] = {
+            clockIn: d.clockIn, clockOut: d.clockOut,
+            mealOut: mi >= 0 ? toMin(d.punches[mi].at) : null,
+            mealIn:  mi >= 0 && d.punches[mi + 1] ? toMin(d.punches[mi + 1].at) : null,
+          };
+          days++;
+        }
+      }
+      const cutoff = new Date(Date.now() - CLOCK_KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
+      for (const date of Object.keys(mine)) if (date < cutoff) delete mine[date];
+      await chrome.storage.local.set({ [CLOCK_KEY]: all });
+      outcome = { matched: Object.keys(res.byName).length, unmatched: res.unmatched, errors: res.errors, days };
+    } catch (e) {
+      outcome = { error: String(e?.message ?? e) };
+    }
+  }
+  const state = { ...outcome, auto, store: String(storeId), from, to,
+                  at: new Date().toISOString(), ms: Date.now() - t0 };
+  await chrome.storage.local.set({ [CLOCK_STATE_KEY]: state });
+  return state;
+}
+
+/** The hourly pull's clock-in step: the home store's last CLOCK_AUTO_DAYS of grids. */
+async function autoClockIns(storeId) {
+  const today = new Date();
+  const dates = [];
+  for (let i = CLOCK_AUTO_DAYS - 1; i >= 0; i--) {
+    dates.push(isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)));
+  }
+  const byDate = {};
+  for (const date of dates) {
+    const doc = await assignments.get(storeId, date).catch(() => null);
+    if (doc) byDate[date] = doc;
+  }
+  // The whole digital roster, not just first-hour pick candidates: the
+  // Insights shortfall view needs presence for everyone the board or the
+  // schedule expected, because TLs erase call-ins from the board live and
+  // only the schedule-vs-punches diff can see them. Coaches/TLs are skipped —
+  // salaried, they never punch, and they are overseers, not task capacity.
+  const names = new Set(clockInCandidates(byDate));
+  for (const date of dates) {
+    for (const row of byDate[date]?.associates || []) if (row.name) names.add(row.name);
+    const sched = await schedules.get(storeId, date).catch(() => null);
+    for (const a of sched?.associates || []) {
+      if (a.name && isDigitalJob(a.jobName) && !leadershipForJob(a.jobName)) names.add(a.name);
+    }
+  }
+  if (!names.size) return { skipped: "no one on the board or schedule to pull" };
+  return syncClockIns(storeId, dates[0], dates.at(-1), [...names], { auto: true });
+}
+
+let boardRun = null;   // one sync at a time within a worker
+
+export async function installBoardAlarm() {
+  return ensureAlarm(BOARD_ALARM, { periodInMinutes: BOARD_PERIOD_MIN, delayInMinutes: 2 });
+}
+
+export async function onBoardAlarm() {
+  await syncDailyBoard().catch(() => {});
+}
+
+async function localGet(key, fallback) {
+  const got = await chrome.storage.local.get(key);
+  return got[key] ?? fallback;
+}
+
+/**
+ * Pull the board and apply it. Never throws: the outcome, including any
+ * error, is saved to BOARD_STATE_KEY for the view and returned.
+ */
+export function syncDailyBoard() {
+  boardRun ||= runBoardSync().finally(() => { boardRun = null; });
+  return boardRun;
+}
+
+async function runBoardSync() {
+  const result = { at: new Date().toISOString(), store: BOARD_STORE, dates: [], error: null };
+  try {
+    const home = await getUserHomeStore().catch(() => null);
+    if (String(home || "") !== BOARD_STORE) {
+      result.notRun = `the Daily Board sync is for store ${BOARD_STORE} only`;
+      return result;
+    }
+    const link = await localGet(BOARD_LINK_KEY, null);
+    if (!link?.site || !link?.uniqueId) { result.notRun = "no Daily Board link saved"; return result; }
+
+    await ensureAliases();
+    const board = await fetchDailyBoard(link);
+    result.file = { name: board.name, modifiedAt: board.modifiedAt };
+
+    const sheets = weekdaySheets(board.sheets);
+    const snaps  = await localGet(BOARD_SNAP_KEY, {});
+    const aliases = await localGet(BOARD_ALIAS_KEY, {});
+    const cls = (await classifications.get(BOARD_STORE)) || {};
+    const isDigital = (n) => ["Digital", "Exceptions"].includes(cls[String(n).toUpperCase()]);
+    const roster = Object.keys(cls).filter(isDigital);
+
+    const today = localIsoDate();
+    const scheduleCache = {};
+    const scheduleFor = async (d) =>
+      (scheduleCache[d] ??= (await schedules.get(BOARD_STORE, d).catch(() => null))?.associates || []);
+
+    // Tomorrow's weekday sheet is last week's plan until it is overwritten
+    // late the night before (the user, 2026-09-23). With no copy of our own to
+    // compare against, decide by which day's schedule the names and hours
+    // fit; unclear → last week's, so tomorrow stays blank rather than wrong.
+    const sixAgo = addDays(today, -6), tomorrow = addDays(today, 1);
+    const shared = sheets[new Date(`${tomorrow}T12:00:00Z`).getUTCDay()];
+    let ambiguous = sixAgo;
+    if (shared && !snaps[sixAgo] && !snaps[tomorrow]) {
+      const opts = { aliases, isDigital, roster };
+      const fitPast = scheduleFit(shared, await scheduleFor(sixAgo), opts);
+      const fitNext = scheduleFit(shared, await scheduleFor(tomorrow), opts);
+      if (fitNext > fitPast + 0.15) ambiguous = tomorrow;
+      result.sharedSheetFit = { [sixAgo]: fitPast, [tomorrow]: fitNext };
+    }
+
+    // Board names learned across the week the workbook holds: the one person
+    // whose hours fit a recurring name on (nearly) every day (board_sync.js
+    // learnFromHistory). Each day uses our own copy where we have one.
+    const week = [];
+    for (let k = 0; k <= 6; k++) {
+      const date = addDays(today, -k);
+      const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+      const cells = snaps[date]?.cells ||
+        (k === 6 && ambiguous !== sixAgo ? null : sheets[weekday]);
+      if (cells) week.push({ cells, schedule: await scheduleFor(date) });
+    }
+    const learned = learnFromHistory(week, { aliases, isDigital, roster });
+    result.learned = Object.fromEntries(Object.entries(learned).map(([k, l]) => [k, l.name]));
+
+    for (const plan of planDates(sheets, today, (d) => snaps[d] || null, () => ambiguous)) {
+      if (plan.skip) { result.dates.push({ date: plan.date, skipped: plan.skip }); continue; }
+
+      const doc = await assignments.get(BOARD_STORE, plan.date);
+      if (doc?.finalized === true) {
+        result.dates.push({ date: plan.date, skipped: "the day was finalized in the app" });
+        continue;
+      }
+      // A past day the grid already treats as done (mostly filled, locked at
+      // midnight) is history; the board only fills days left mostly empty.
+      if (plan.mode === "backfill" && doc && isFinalized(doc)) {
+        snaps[plan.date] = { fp: plan.fp, cells: plan.cells, names: {}, appliedAt: result.at, skipped: true };
+        result.dates.push({ date: plan.date, skipped: "that day was already filled in the app and is locked" });
+        continue;
+      }
+      const schedule = await scheduleFor(plan.date);
+      const { matched, unmatched } = resolveBoardNames(plan.cells, schedule, { aliases, isDigital, roster, learned });
+      const merged = mergeBoard(doc, {
+        cells: plan.cells, matched,
+        previous: snaps[plan.date]?.cells || null,
+        previousNames: snaps[plan.date]?.names || null,
+        // A past day's own edits were made after that day's plan, so the
+        // board only fills its gaps.
+        boardModifiedAt: plan.mode === "backfill" ? "0000" : board.modifiedAt,
+        schedule,
+      });
+
+      if (!merged.unchanged) {
+        await assignments.put(BOARD_STORE, plan.date, {
+          associates:  merged.associates,
+          date:        plan.date,
+          day:         dayName(plan.date),
+          store:       BOARD_STORE,
+          updatedAt:   new Date().toISOString(),
+          finalized:   false,
+          finalizedAt: null,
+        });
+      }
+      snaps[plan.date] = {
+        fp: plan.fp, cells: plan.cells, appliedAt: result.at,
+        names: Object.fromEntries(Object.keys(plan.cells).map((k) => [k, matched[k]?.name || k])),
+        // Rows tied to a person by hours alone, not yet confirmed. They are not
+        // evidence about that person (deriveExceptions below).
+        guessed: Object.keys(plan.cells).filter((k) => String(matched[k]?.how || "").startsWith("hours")),
+      };
+      result.dates.push({
+        date: plan.date,
+        mode: plan.mode,
+        rows: Object.keys(plan.cells).length,
+        matched: Object.entries(matched).map(([boardName, m]) => ({ boardName, name: m.name, how: m.how, alt: m.alt })),
+        unmatched,
+        changedCells: merged.changedCells, addedRows: merged.addedRows, renamedRows: merged.renamedRows,
+        noSchedule: !schedule.length,
+      });
+    }
+
+    // Name fixes reach days already filled. A past day is locked against new
+    // PLAN changes, but "KJ" turning out to be a particular person is not a
+    // plan change: re-resolve each recent filled day with today's fixes and
+    // move only the board's own cells to whoever the name now resolves to.
+    const touched = new Set(result.dates.filter((d) => !d.skipped).map((d) => d.date));
+    for (const [date, snap] of Object.entries(snaps)) {
+      if (touched.has(date) || snap.skipped || !snap.names || date < addDays(today, -6) || date > today) continue;
+      const schedule = await scheduleFor(date);
+      const { matched, unmatched } = resolveBoardNames(snap.cells, schedule, { aliases, isDigital, roster, learned });
+      // Keep the day's name status on screen: without this a filled day only
+      // reports "already filled" and its ? / ~ flags vanish after one sync.
+      const entry = result.dates.find((d) => d.date === date);
+      const status = {
+        date, mode: "filled", rows: Object.keys(snap.cells).length, unmatched,
+        matched: Object.entries(matched).map(([boardName, m]) => ({ boardName, name: m.name, how: m.how, alt: m.alt })),
+        changedCells: 0, addedRows: 0, renamedRows: 0, noSchedule: !schedule.length,
+      };
+      if (entry) Object.assign(entry, status, { skipped: undefined }); else result.dates.push(status);
+      const names = Object.fromEntries(Object.keys(snap.cells).map((k) => [k, matched[k]?.name || k]));
+      snap.guessed = Object.keys(snap.cells).filter((k) => String(matched[k]?.how || "").startsWith("hours"));
+      if (Object.keys(names).every((k) => names[k] === snap.names[k])) continue;
+      const doc = await assignments.get(BOARD_STORE, date);
+      if (!doc || doc.finalized === true) continue;
+      const merged = mergeBoard(doc, {
+        cells: snap.cells, matched, previous: snap.cells, previousNames: snap.names, schedule,
+      });
+      if (!merged.unchanged) {
+        await assignments.put(BOARD_STORE, date, {
+          ...doc, associates: merged.associates, updatedAt: new Date().toISOString(),
+        });
+      }
+      snap.names = names;
+      result.renamed = [...(result.renamed || []), { date, moved: merged.renamedRows }];
+    }
+
+    // Exceptions, from a week of evidence (job_classify.js deriveExceptions):
+    // the board's EXC vs PICK hours per resolved name, and the metrics'
+    // exception share. Only ever touches Digital <-> Exceptions, and only
+    // moves back the people this rule labelled (AUTO_EXC_KEY).
+    try {
+      const from = addDays(today, -6);
+      const board = {};
+      for (const [date, snap] of Object.entries(snaps)) {
+        if (date < from || date > today || snap.skipped) continue;
+        for (const [key, slots] of Object.entries(snap.cells || {})) {
+          if (snap.guessed?.includes(key)) continue;   // unconfirmed ~ match
+          const name = snap.names?.[key] || key;
+          const b = (board[name] ||= { exc: 0, pick: 0 });
+          for (const t of Object.values(slots)) {
+            if (/^EXC/i.test(t)) b.exc++;
+            else if (/^PICK$/i.test(t)) b.pick++;
+          }
+        }
+      }
+      const items = {};
+      const weekKeys = [...new Set([weekKey(from), weekKey(today)])];
+      for (const wk of weekKeys) {
+        const doc = await weeks.get(BOARD_STORE, wk).catch(() => null);
+        let last = null;
+        for (const row of doc?.rawData || []) {
+          const date = row["Pick Date"] ? dateKey(row["Pick Date"]) : last;
+          if (row["Pick Date"]) last = date;
+          if (!row.Associate || !date || date < from || date > today) continue;
+          const n = (v) => Number(v) || 0;
+          const i = (items[row.Associate] ||= { exc: 0, all: 0 });
+          const exc = n(row["Exception Qty Req to Pick"]);
+          i.exc += exc;
+          i.all += exc + n(row["Picked As Req Qty"]) + n(row["Nil Pick Qty"]) + n(row["Substitution Qty"]);
+        }
+      }
+      const auto = await localGet(AUTO_EXC_KEY, []);
+      const current = (await classifications.get(BOARD_STORE)) || {};
+      const { add, remove, evidence } = deriveExceptions({ board, items, current, auto });
+      if (add.length || remove.length) {
+        const next = { ...current };
+        for (const n of add) next[n] = "Exceptions";
+        for (const n of remove) next[n] = "Digital";
+        await classifications.put(BOARD_STORE, next);
+      }
+      const nowAuto = [...new Set([...auto.filter((n) => !remove.includes(n)), ...add])]
+        .filter((n) => (add.includes(n) || current[n] === "Exceptions"));
+      await chrome.storage.local.set({ [AUTO_EXC_KEY]: nowAuto });
+      result.exceptions = { added: add, removed: remove, flagged: nowAuto, evidence };
+    } catch (e) {
+      result.exceptionsError = String(e?.message ?? e);
+    }
+
+    // Only D-7 is ever compared against, so older snapshots are dead weight.
+    const cutoff = addDays(today, -SNAPSHOT_KEEP_DAYS);
+    for (const d of Object.keys(snaps)) if (d < cutoff) delete snaps[d];
+    await chrome.storage.local.set({ [BOARD_SNAP_KEY]: snaps });
+  } catch (e) {
+    result.error = String(e?.message ?? e);
+  } finally {
+    await chrome.storage.local.set({ [BOARD_STATE_KEY]: result });
+    chrome.runtime.sendMessage({ module: "digitalmetrics", type: "board-synced", result }).catch(() => {});
+  }
+  return result;
 }
 
 // The alias table is PII and lives only on this device. Rehydrate it into the
@@ -652,6 +1064,64 @@ export const handlers = {
     // can actually display. See the note above runPull.
     if (!m.store) throw new Error("no store given");
     return pullMetricsForStore(m.store, { force: !!m.force });
+  }),
+
+  // ── Daily Board (store 1458 only — see BOARD_STORE) ──────────────────────
+
+  "board_sync_now":   withAliases(() => syncDailyBoard()),
+  "board_status":     async () => ({
+    state:   await localGet(BOARD_STATE_KEY, null),
+    link:    await localGet(BOARD_LINK_KEY, null),
+    aliases: await localGet(BOARD_ALIAS_KEY, {}),
+    store:   BOARD_STORE,
+  }),
+  /** Save the share link (the opt-in). An empty link turns the sync off. */
+  "board_set_link":   async (m) => {
+    if (!m.link) { await chrome.storage.local.remove(BOARD_LINK_KEY); return { link: null }; }
+    const link = parseShareLink(m.link);
+    if (!link) throw new Error("that is not a OneDrive/SharePoint share link to a workbook");
+    await chrome.storage.local.set({ [BOARD_LINK_KEY]: link });
+    return { link };
+  },
+  /** Pin a typed board name to a full name ("KJ" → "KIRA JUNE"); empty clears it. */
+  "board_set_alias":  async (m) => {
+    const key = String(m.boardName || "").trim().replace(/\s+/g, " ").toUpperCase();
+    if (!key) throw new Error("no board name given");
+    const aliases = await localGet(BOARD_ALIAS_KEY, {});
+    if (m.name) aliases[key] = String(m.name).trim().toUpperCase(); else delete aliases[key];
+    await chrome.storage.local.set({ [BOARD_ALIAS_KEY]: aliases });
+    return { aliases };
+  },
+
+  // ── Clock-ins (Global Time & Attendance) ──────────────────────────────
+  //
+  // Punch times are PII and stay in this browser: never written to Firestore.
+  // Only clock-in/out minutes are kept (the page also carries each punch's
+  // device location — dropped in gta_parse), for CLOCK_KEEP_DAYS.
+
+  "get_clockins": async (m) => {
+    const all = await localGet(CLOCK_KEY, {});
+    return all[String(m.store)] || {};
+  },
+  /** The last clock-in pull, manual or automatic: { at, auto, matched, days, unmatched, errors, error, ms }. */
+  "get_clock_state": async () => localGet(CLOCK_STATE_KEY, null),
+  /** { store, from, to, people:[name] } → pull, merge, and report what matched. */
+  "pull_clockins": withAliases((m) => syncClockIns(m.store, m.from, m.to, m.people, { auto: false })),
+
+  /**
+   * { from, to, people:[name] } → the raw GTA result, full punch lists
+   * included (meal switches and all). Nothing is stored: this exists for
+   * ad-hoc day audits, where "back from lunch at 2:48" matters and the
+   * clockIn/clockOut summary that syncClockIns keeps is not enough.
+   */
+  "pull_punches": withAliases(async (m) => {
+    const idCache = await localGet(GTA_IDS_KEY, {});
+    const res = await pullClockIns({
+      people: (m.people || []).map((name) => ({ name })),
+      from: m.from, to: m.to, idCache,
+    });
+    await chrome.storage.local.set({ [GTA_IDS_KEY]: res.ids });
+    return { byName: res.byName, unmatched: res.unmatched, errors: res.errors };
   }),
 
   /** The schedule only — it is the cheaper and more fragile of the two. */

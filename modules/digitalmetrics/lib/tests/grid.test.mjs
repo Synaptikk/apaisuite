@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  TIME_SLOTS, resolveShortcut, isHalfSlot, summarise,
+  TIME_SLOTS, resolveShortcut, isHalfSlot, summarise, taskClass,
   fillPercentage, isFinalized, dayName, defaultDate, emptyAssociate, isAbsent,
   slotCoverage, partialSide, isLeadership,
   PICKS_PER_PICKER_HOUR,
@@ -27,7 +27,9 @@ test("keyboard shortcuts resolve in either case, and three keys clear", () => {
   assert.equal(resolveShortcut("q"), "QC");
   assert.equal(resolveShortcut("v"), "DRV");
   assert.equal(resolveShortcut("n"), "DS");
-  assert.equal(resolveShortcut("t"), "TRN");
+  assert.equal(resolveShortcut("t"), "T");        // the board's code for Training
+  assert.equal(resolveShortcut("h"), "IH");
+  assert.equal(resolveShortcut("k"), "IH PREP");
   assert.equal(resolveShortcut("g"), undefined, "GMD was removed from the vocabulary");
   assert.equal(resolveShortcut("x"), "");
   assert.equal(resolveShortcut("Delete"), "");
@@ -139,8 +141,9 @@ const full  = (date) => ({
   date, associates: [assoc({ shiftStart: 0, shiftEnd: 2, slots: { 0: "PICK", 1: "PICK" } })],
 });
 
-test("an explicit flag always wins in both directions", () => {
-  assert.equal(isFinalized({ ...full("2026-01-10"), finalized: false }, { today }), false);
+test("finalized:true locks; a saved false does not unlock a past day", () => {
+  // Every ordinary save writes finalized:false, so it cannot mean "unlocked".
+  assert.equal(isFinalized({ ...full("2026-01-10"), finalized: false }, { today }), true);
   assert.equal(isFinalized({ ...full("2026-01-20"), finalized: true }, { today }), true);
 });
 
@@ -334,4 +337,14 @@ test("isLeadership recognises both roles and nothing else", () => {
   assert.equal(isLeadership({ role: null }), false);
   assert.equal(isLeadership({}), false);
   assert.equal(isLeadership(undefined), false);
+});
+
+test("one class per task, and older spellings count as the code", () => {
+  assert.equal(taskClass("IH PREP"), "task-ih-prep");   // not "task-ih prep"
+  assert.equal(taskClass("TRN"), "task-t");
+  assert.equal(taskClass("L30"), "task-l");
+  const day = [{ name: "A", shiftStart: 0, shiftEnd: 2, slots: { 0: "TRN", 1: "IH PREP" } }];
+  const { counts } = summarise(day);
+  assert.equal(counts.trn[0], 1);
+  assert.equal(counts.ihprep[1], 1);
 });

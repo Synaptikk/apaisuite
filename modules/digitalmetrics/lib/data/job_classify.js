@@ -195,3 +195,55 @@ export function deriveClassifications(scheduled, { existing = {}, pickers = [] }
 export function isValidClassification(c) {
   return CLASSIFICATIONS.includes(c);
 }
+
+
+// ── Exceptions, from what people actually do ──────────────────────────────
+//
+// Exceptions has no job title (it is behavioural, see the header), so for
+// 2026-09-23 the only associate marked Exceptions at 1458 was one set by hand
+// who barely works exceptions, while the five doing most of the store's
+// exception work were plain Digital. It is now derived from a week of
+// evidence: the Daily Board's EXC hours, and the metrics' exception items.
+
+export const EXCEPTION_RULE = {
+  minExcHours: 4,     // board EXC hours in the window …
+  excVsPick:   1,     // … and at least as many as board PICK hours
+  minItems:    100,   // or, with at least this many items picked …
+  itemShare:   0.4,   // … 40%+ of them exception items
+};
+
+/**
+ * Who should be Exceptions now, and who the rule itself labelled earlier and
+ * no longer qualifies.
+ *
+ * Only moves Digital ↔ Exceptions. A label set by hand is never changed: the
+ * caller passes `auto`, the names THIS rule labelled, and only those can be
+ * moved back to Digital.
+ *
+ * @param board   { name: { exc, pick } }  board hours over the window
+ * @param items   { name: { exc, all } }   exception items / all items
+ * @param current { name: classification }
+ * @param auto    names this rule set to Exceptions before
+ * @returns {{ add: string[], remove: string[], evidence: {[name]: string} }}
+ */
+export function deriveExceptions({ board = {}, items = {}, current = {}, auto = [] }) {
+  const r = EXCEPTION_RULE;
+  const evidence = {};
+  const qualifies = (name) => {
+    const b = board[name], i = items[name];
+    const byBoard = b && b.exc >= r.minExcHours && b.exc >= r.excVsPick * b.pick;
+    const byItems = i && i.all >= r.minItems && i.exc / i.all >= r.itemShare;
+    if (byBoard || byItems) {
+      evidence[name] = [
+        b ? `${b.exc} EXC h vs ${b.pick} PICK h on the board` : null,
+        i && i.all ? `${Math.round((100 * i.exc) / i.all)}% exception items (${i.exc}/${i.all})` : null,
+      ].filter(Boolean).join("; ");
+    }
+    return byBoard || byItems;
+  };
+
+  const names = new Set([...Object.keys(board), ...Object.keys(items)]);
+  const add = [...names].filter((n) => current[n] === "Digital" && qualifies(n)).sort();
+  const remove = auto.filter((n) => current[n] === "Exceptions" && !qualifies(n)).sort();
+  return { add, remove, evidence };
+}

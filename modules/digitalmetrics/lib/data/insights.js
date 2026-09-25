@@ -19,8 +19,14 @@ const LATE_MAX_MINUTE   = 50;   // 5:51+ is an early 6am start, not a late 5am o
 // still excluded, just by the surviving rule rather than a second one.
 const LATE_START_EXCLUDED = new Set(["Store Help"]);
 
+// Every unit picked, substitutes included — the scorecard's TY Qty counts
+// them (9/20: 22,905 as-requested + 1,205 subs = its 24,114 within 4).
 const picksOf = (row) =>
-  (row["Picked As Req Qty"] || 0) + (row["Exception Picked As Req Qty"] || 0);
+  (row["Picked As Req Qty"] || 0) + (row["Exception Picked As Req Qty"] || 0) +
+  (row["Substitution Qty"] || 0) + (row["Exception Substitution Qty"] || 0);
+
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const round1 = (v) => Math.round(v * 10) / 10;
 
 /** Forward-fill the sparse Pick Date column, keeping the original label. */
 function filled(rawData) {
@@ -36,15 +42,16 @@ function filled(rawData) {
  *
  * `express` is the week document's Express Pickup map (ISO date → { orders,
  * units }). A day it does not cover reports null, not 0 — "not pulled yet" and
- * "no express orders" must stay distinguishable in the table.
+ * "no express orders" must stay distinguishable in the table. `expressRate`
+ * is the Express pick-rate map (ISO date → { rate, units, hours, pickers }).
  */
-export function dailyPicks(rawData, classifications = {}, express = null) {
+export function dailyPicks(rawData, classifications = {}, express = null, expressRate = null) {
   const byDate = new Map();
 
   for (const row of filled(rawData)) {
     if (!row._label) continue;
     if (!byDate.has(row._label)) {
-      byDate.set(row._label, { date: row._label, total: 0, digital: 0, exceptions: 0, storeHelp: 0 });
+      byDate.set(row._label, { date: row._label, total: 0, digital: 0, exceptions: 0, storeHelp: 0, storeHelpHours: 0 });
     }
     const day = byDate.get(row._label);
     const picks = picksOf(row);
@@ -53,7 +60,12 @@ export function dailyPicks(rawData, classifications = {}, express = null) {
     switch (classificationOf(row.Associate, classifications)) {
       case "Digital":    day.digital    += picks; break;
       case "Exceptions": day.exceptions += picks; break;
-      case "Store Help": day.storeHelp  += picks; break;
+      case "Store Help":
+        day.storeHelp      += picks;
+        // The hours the store spent covering digital: same Pick Hours column
+        // the per-associate table sums, restricted to borrowed help.
+        day.storeHelpHours += num(row["Pick Hours"]);
+        break;
     }
   }
 
@@ -63,13 +75,19 @@ export function dailyPicks(rawData, classifications = {}, express = null) {
       // "our team" vs "borrowed help".
       const digitalTotal = d.digital + d.exceptions;
       const ex = expressForLabel(express, d.date);
+      const er = expressForLabel(expressRate, d.date);
       return {
         ...d,
+        storeHelpHours: round1(d.storeHelpHours),
         digitalTotal,
         digitalPct: d.total > 0 ? Math.round((digitalTotal / d.total) * 100) : 0,
         // "Picks" is the dashboard's UNITS measure (SUM(ITEMS)).
         expressOrders: ex ? (ex.orders ?? 0) : null,
         expressPicks:  ex ? (ex.units  ?? 0) : null,
+        // Units ÷ pick hours on Associate By Day filtered to Express Pickup.
+        expressRate:      er?.rate ?? null,
+        expressRateUnits: er ? (er.units ?? 0) : null,
+        expressRateHours: er ? (er.hours ?? 0) : null,
       };
     })
     .sort((a, b) => (parsePickDate(b.date) ?? 0) - (parsePickDate(a.date) ?? 0));
@@ -88,20 +106,69 @@ export function distribution(daily) {
   const total = sum("total");
   const share = (v) => (total > 0 ? Math.round((v / total) * 100) : 0);
 
-  const digitalTotal = sum("digitalTotal");
-  const storeHelp    = sum("storeHelp");
+  const digitalTotal   = sum("digitalTotal");
+  const storeHelp      = sum("storeHelp");
+  const storeHelpHours = round1(sum("storeHelpHours"));
 
   // Express totals cover only the days that have been pulled; say how many.
   const withExpress = daily.filter((d) => d.expressOrders != null);
   const expressDays = withExpress.length;
   return {
-    total, digitalTotal, storeHelp,
+    total, digitalTotal, storeHelp, storeHelpHours,
     digitalPct:   share(digitalTotal),
     storeHelpPct: share(storeHelp),
     expressDays,
     expressOrders: expressDays ? withExpress.reduce((s, d) => s + d.expressOrders, 0) : null,
     expressPicks:  expressDays ? withExpress.reduce((s, d) => s + d.expressPicks, 0)  : null,
+    // Hours-weighted across the days that have one, like the daily figure.
+    ...expressRateSummary(daily),
   };
+}
+
+function expressRateSummary(daily) {
+  const days = daily.filter((d) => d.expressRateHours > 0);
+  const units = days.reduce((s, d) => s + d.expressRateUnits, 0);
+  const hours = days.reduce((s, d) => s + d.expressRateHours, 0);
+  return {
+    expressRateDays: days.length,
+    expressRate: hours > 0 ? Math.round((units / hours) * 10) / 10 : null,
+  };
+}
+
+/**
+ * Day-level overlap between borrowed-help hours and Express pick hours,
+ * for the "is Express why we keep pulling store help?" question. Only days
+ * whose Express pick-rate pull exists can be compared; r is Pearson across
+ * those days and null when there are fewer than 3 or no variance.
+ */
+export function helpVsExpress(daily) {
+  const days = daily
+    .filter((d) => d.expressRateHours != null)
+    .sort((a, b) => (parsePickDate(b.date) ?? 0) - (parsePickDate(a.date) ?? 0));
+
+  const helpHours    = round1(days.reduce((s, d) => s + d.storeHelpHours, 0));
+  const expressHours = round1(days.reduce((s, d) => s + d.expressRateHours, 0));
+  return {
+    days,
+    helpHours,
+    expressHours,
+    r: pearson(days.map((d) => d.storeHelpHours), days.map((d) => d.expressRateHours)),
+  };
+}
+
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return null;
+  const mx = xs.reduce((s, v) => s + v, 0) / n;
+  const my = ys.reduce((s, v) => s + v, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  if (sxx === 0 || syy === 0) return null;
+  return Math.round((sxy / Math.sqrt(sxx * syy)) * 100) / 100;
 }
 
 /**

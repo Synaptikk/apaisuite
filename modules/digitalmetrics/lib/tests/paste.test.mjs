@@ -8,7 +8,7 @@ import {
 import { TIME_SLOTS } from "../data/grid.js";
 
 test("the task vocabulary comes from the grid's own shortcut table", () => {
-  for (const t of ["PICK", "DISP", "STAGE", "PREP", "QC", "DRV", "DS", "TRN", "IP", "EXC", "L", "B", "30"]) {
+  for (const t of ["PICK", "DISP", "STAGE", "PREP", "IH", "IH PREP", "QC", "DRV", "DS", "T", "IP", "EXC", "L", "B", "30"]) {
     assert.ok(TASKS.includes(t), t);
   }
 });
@@ -17,6 +17,8 @@ test("task names are accepted in any case", () => {
   assert.equal(normaliseTask("PICK"), "PICK");
   assert.equal(normaliseTask("pick"), "PICK");
   assert.equal(normaliseTask("  Disp "), "DISP");
+  assert.equal(normaliseTask("ih  prep"), "IH PREP");
+  assert.equal(normaliseTask("TRN"), "T");      // the module's old code for Training
 });
 
 test("shortcut letters are accepted, so a column of 'p' pastes as PICK", () => {

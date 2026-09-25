@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseOverview, isoFromPickDate, expressForLabel, mergeWeekDoc,
+  parseOverview, isoFromPickDate, expressForLabel, mergeWeekDoc, expressPickRates,
 } from "../data/express.js";
 import { buildExpressUrl, FULFILLMENT_TYPE } from "../sources/tableau_express.js";
 import { dailyPicks, distribution } from "../data/insights.js";
@@ -181,4 +181,62 @@ test("the Insights page renders without an Express map at all", () => {
   const html = insightsPage.render({ rawData: [row("A", "9/13/26")], associates: [], classifications: {} });
   assert.match(html, /Express Orders/);
   assert.doesNotMatch(html, /of 1 days/);
+});
+
+// ── expressPickRates (Associate By Day filtered to Express Pickup) ───────
+
+const abd = (id, date, measure, value) => ({
+  "Store #": "1458", "Pick Date": date, Associate: id.toUpperCase(), "Associate ID": id,
+  "Measure Names": measure, "Measure Values": value,
+});
+
+test("expressPickRates is total units ÷ total hours per day, matching the dashboard", () => {
+  // Store 1458, 9/20/26: AIDEN 72 + 2 subs over 1.054 h shows 70.2 on the view.
+  const rows = [
+    abd("a0s1y4z", "9/20/2026", "Picked As Req Qty", "72.000"),
+    abd("a0s1y4z", "9/20/2026", "Substitution Qty", "2.000"),
+    abd("a0s1y4z", "9/20/2026", "Pick Hours", "1.054"),
+    abd("a0s1y4z", "9/20/2026", "Pick Rate", "70.179"),
+    abd("c0h084y", "9/20/2026", "Picked As Req Qty", "107.000"),
+    abd("c0h084y", "9/20/2026", "Substitution Qty", "14.000"),
+    abd("c0h084y", "9/20/2026", "Pick Hours", "1.699"),
+    abd("x", "9/20/2026", "Pick Hours", "Null"),            // no hours: not a picker
+    abd("a0s1y4z", "9/19/2026", "Picked As Req Qty", "9"),
+    abd("a0s1y4z", "9/19/2026", "Pick Hours", "0.265"),
+  ];
+  const out = expressPickRates(rows, { dates: ["2026-09-20", "2026-09-19", "2026-09-18"] });
+  assert.deepEqual(out["2026-09-20"], { rate: 70.8, units: 195, hours: 2.75, pickers: 2 });
+  assert.equal(out["2026-09-19"].rate, 34);
+  assert.deepEqual(out["2026-09-18"], { rate: null, units: 0, hours: 0, pickers: 0 }, "quiet day recorded");
+});
+
+test("mergeWeekDoc merges the expressRate map by date", () => {
+  const merged = mergeWeekDoc(
+    { rawData: [], expressRate: { "2026-09-19": { rate: 57.9 }, "2026-09-20": { rate: 1 } } },
+    { rawData: [], expressRate: { "2026-09-20": { rate: 61.5 } } });
+  assert.deepEqual(merged.expressRate, { "2026-09-19": { rate: 57.9 }, "2026-09-20": { rate: 61.5 } });
+});
+
+test("dailyPicks and distribution carry the Express pick rate, hours-weighted", () => {
+  const raw = [
+    { Associate: "A", "Pick Date": "9/19/26", "Picked As Req Qty": 10 },
+    { Associate: "A", "Pick Date": "9/20/26", "Picked As Req Qty": 10 },
+  ];
+  const rate = {
+    "2026-09-19": { rate: 50, units: 100, hours: 2 },
+    "2026-09-20": { rate: 80, units: 80, hours: 1 },
+  };
+  const daily = dailyPicks(raw, {}, null, rate);
+  assert.equal(daily.find((d) => d.date === "9/20/26").expressRate, 80);
+  const dist = distribution(daily);
+  assert.equal(dist.expressRate, 60, "180 units / 3 h, not the mean of 50 and 80");
+  assert.equal(dist.expressRateDays, 2);
+  const html = insightsPage.render({ rawData: raw, expressRate: rate });
+  assert.match(html, /Express Pick Rate/);
+});
+
+test("buildViewUrl adds FULFMT_TYPE only when asked", async () => {
+  const { buildViewUrl } = await import("../sources/tableau_metrics.js");
+  assert.doesNotMatch(buildViewUrl("1458", ["2026-09-20"]), /FULFMT_TYPE/);
+  assert.match(buildViewUrl("1458", ["2026-09-20"], { fulfillmentType: "Express Pickup" }), /&FULFMT_TYPE=Express%20Pickup$/);
 });
