@@ -222,6 +222,11 @@ find "$STAGED_EXT" -type f -name '*.test.mjs' -delete
 rm -f "$STAGED_EXT/firebase.json" "$STAGED_EXT/.firebaserc"
 find "$STAGED_EXT" \( -name '*.pem' -o -name '*.crx' -o -name '*.zip' -o -name '.DS_Store' \) -delete
 
+# Local prototypes must never enter a distributed build. Fail if a local
+# registry edit still imports one, or any runtime dependency was omitted.
+rm -rf "$STAGED_EXT/modules/incidentintake"
+node "$(to_node_path "$SCRIPT_DIR/validate-package.mjs")" "$(to_node_path "$STAGED_EXT")"
+
 # ─── 2b. Inject the digitalmetrics master key ───────────────────────
 #
 # The key that encrypts associate display names and derives their join tokens.
