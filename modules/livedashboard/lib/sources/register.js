@@ -532,6 +532,11 @@ const DEFAULTS = {
   // still sees same-day exact matches across wide deltas as "likely
   // flip (hidden)" rather than "unmatched (theft)".
   nearbyRegisterRangeDelta: 99,
+  // Registers that pair with ANY register regardless of the delta above —
+  // a service desk (store 1458: 92/93/94) is used to fix errors keyed on
+  // other manned registers, so its over/short is store-wide by nature.
+  // Register distance is not held against such a pair when scoring.
+  wideRegisters:            [],
   // Confidence band that determines display
   trustFlipAt:              0.70,   // >= this: high-confidence flip → HIDE
   suspectFlipBelow:         0.40,   // < this: low-confidence flip → SURFACE
@@ -585,7 +590,12 @@ function findCandidates(primary, all, cfg) {
   return out;
 }
 
+function isWideRegister(registerNbr, cfg) {
+  return (cfg.wideRegisters || []).some((r) => String(r) === String(registerNbr));
+}
+
 function registerWithinNearby(primary, c, cfg) {
+  if (isWideRegister(primary.registerNbr, cfg) || isWideRegister(c.registerNbr, cfg)) return true;
   const pn = Number(primary.registerNbr), cn = Number(c.registerNbr);
   if (!Number.isFinite(pn) || !Number.isFinite(cn)) return false;
   return Math.abs(pn - cn) <= cfg.nearbyRegisterRangeDelta;
@@ -634,6 +644,8 @@ export function computeFlipConfidence(primary, match, candidateCount, cfg, sameR
   let regF;
   if (sameRegister) {
     regF = 1.0;
+  } else if (isWideRegister(primary.registerNbr, cfg) || isWideRegister(match.registerNbr, cfg)) {
+    regF = 0.9;    // a service-desk fix reaches any register; distance means nothing
   } else {
     const delta = Math.abs(Number(match.registerNbr) - Number(primary.registerNbr)) || 0;
     if      (delta === 1)  regF = 1.0;

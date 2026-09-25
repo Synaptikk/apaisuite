@@ -31,6 +31,8 @@ import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
 import digitalrollup     from "./digitalrollup/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
+import costinventory     from "./costinventory/module.js";
+import accidents         from "./accidents/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -53,10 +55,12 @@ export default [
   sparkfraud,
   sparkrisk,         // Pre-checkout timing analysis
   sparkscango,       // Spark & Scan&Go exceptions/audits
+  accidents,         // Accident Details — CAS evidence + PNL charges × Clearsight claim summaries
   claimsdisposition,
   digitallocks,
   workvivo,
   closinglist,
   stockingplan,
+  costinventory,     // Cost Inventory — monthly Fresh worksheet from ITR / OneWalmart / CV / GDP
   // assocpurchases,
 ];

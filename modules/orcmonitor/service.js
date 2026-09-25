@@ -73,14 +73,12 @@ async function ensureAurorAuth() {
   try {
   await _waitLoad(tab.id);
   if (await _pollToken(AUROR_FAST_MS)) {
-    if (weOpened) chrome.tabs.remove(tab.id).catch(() => {});
     return { ok:true, reason:"captured" };
   }
 
   // SSO wasn't triggered by reload — click the SSO button
   const ssoResult = await _auth.clickSso(tab.id, AUROR_SSO_SELECTORS);
   if (await _pollToken(AUROR_SLOW_MS)) {
-    if (weOpened) chrome.tabs.remove(tab.id).catch(() => {});
     return { ok:true, reason: ssoResult ? `sso:${ssoResult}` : "manual" };
   }
 
@@ -93,7 +91,10 @@ async function ensureAurorAuth() {
       ? "Sign in to Auror in the background tab, then click Analyze."
       : "Could not establish Auror session automatically.",
   };
-  } finally { if (weOpened) await chrome.tabs.remove(tab.id).catch(() => {}); }
+  } finally {
+    // A fresh device may require MFA. Keep our tab until a token is captured.
+    if (weOpened && aurorJwt.get()) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────

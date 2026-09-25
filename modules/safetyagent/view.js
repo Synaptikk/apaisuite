@@ -163,7 +163,7 @@ export async function mount(host, container) {
 
   // Generic sortable table with a click-to-expand event list ---------------
   const tables = {};   // id → { groups, cols, sortState, detailLabel }
-  function renderTable(table, groups, cols, sortState, filterFn, countEl, detailLabel) {
+  function renderTable(table, groups, cols, sortState, filterFn, countEl, detailLabel, emptyText) {
     const list = groups.filter(filterFn);
     const c = cols.find((x) => x.k === sortState.sort) || cols[0];
     list.sort((a, b) => {
@@ -175,8 +175,9 @@ export async function mount(host, container) {
     const ctx = { maxNhf: Math.max(1, ...groups.map((g) => g.nhf)) };
     table.querySelector("thead").innerHTML = `<tr>${cols.map((col) =>
       `<th class="${col.r ? "r" : ""}" data-k="${col.k}"${col.title ? ` title="${esc(col.title)}"` : ""}${sortState.sort === col.k ? ` aria-sort="${sortState.dir}ending"` : ""}>${col.dot ? `<span class="sa-dot sa-fam-${col.dot}"></span>` : ""}${esc(col.h)}</th>`).join("")}</tr>`;
-    table.querySelector("tbody").innerHTML = list.map((g, i) =>
-      `<tr class="sa-row" tabindex="0" data-i="${i}" aria-expanded="false">${cols.map((col) => col.cell(g, ctx)).join("")}</tr>`).join("");
+    table.querySelector("tbody").innerHTML = list.length ? list.map((g, i) =>
+      `<tr class="sa-row" tabindex="0" data-i="${i}" aria-expanded="false">${cols.map((col) => col.cell(g, ctx)).join("")}</tr>`).join("")
+      : `<tr class="sa-empty"><td colspan="${cols.length}">${esc(emptyText || "No alerts in this window.")}</td></tr>`;
     countEl.textContent = `${list.length} of ${groups.length}`;
     tables[table.id] = { list, cols, sortState, detailLabel };
   }
@@ -264,7 +265,8 @@ export async function mount(host, container) {
     const cols = [...baseCols("Camera"), ...(ui.camMode === "fam" ? famCols : tagCols), ...timeCols];
     renderTable(els.cams, groups, cols, ui.cam,
       (g) => g.total >= min && (!dept || g.dept === dept) && (!q || g.key.toLowerCase().includes(q) || (g.dept || "").toLowerCase().includes(q)),
-      els.camCount, "Associate");
+      els.camCount, "Associate",
+      groups.length ? `None of the ${groups.length} cameras that alerted in this window have ${min} or more alerts${q || dept ? " and match the search / department filter" : ""}. Lower "Min alerts" to see them.` : "");
     els.colFam.setAttribute("aria-pressed", String(ui.camMode === "fam"));
     els.colAll.setAttribute("aria-pressed", String(ui.camMode === "all"));
   }
@@ -272,7 +274,8 @@ export async function mount(host, container) {
   function renderAss() {
     const groups = groupBy(rows, COL.assoc);
     const min = Number(els.amin.value) || 1;
-    renderTable(els.ass, groups, [...baseCols("Associate"), ...famCols, ...timeCols], ui.ass, (g) => g.total >= min, els.assCount, "Camera");
+    renderTable(els.ass, groups, [...baseCols("Associate"), ...famCols, ...timeCols], ui.ass, (g) => g.total >= min, els.assCount, "Camera",
+      groups.length ? `None of the ${groups.length} associates who responded in this window have ${min} or more alerts. Lower "Min alerts" to see them.` : "");
   }
 
   function renderHours() {

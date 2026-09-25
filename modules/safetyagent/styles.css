@@ -102,10 +102,13 @@
 .module-safetyagent .sa-lb-stage img { max-width: calc(100vw - 48px); max-height: calc(100vh - 110px); display: block; }
 
 .module-safetyagent .sa-hours {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; align-items: end;
+  /* Flex, not grid: a percentage bar height only resolves against a definite
+     container height, and an auto grid row is not one (bars rendered 0px). */
+  display: flex; align-items: flex-end; gap: 6px;
   height: 160px; background: var(--apai-bg-elev); border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: 12px 12px 30px;
 }
-.module-safetyagent .sa-h { display: grid; align-content: end; height: 100%; position: relative; }
+.module-safetyagent .sa-h { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; position: relative; }
+.module-safetyagent .sa-empty td { color: var(--apai-muted); font-size: var(--fs-sm); padding: 14px 10px; text-align: left; white-space: normal; }
 .module-safetyagent .sa-h b { display: block; background: var(--apai-muted); width: 100%; border-radius: var(--rad-sm) var(--rad-sm) 0 0; position: relative; }
 .module-safetyagent .sa-h b i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--sa-nhf); border-radius: var(--rad-sm) var(--rad-sm) 0 0; display: block; }
 .module-safetyagent .sa-h small { position: absolute; bottom: -22px; left: 0; right: 0; text-align: center; font: var(--fs-xs) var(--font-mono); color: var(--apai-muted); }

@@ -27,7 +27,7 @@ export const SEED_METRICS = [
     id: "vizpick-score",
     name: "VizPick Score",
     url: "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?:embed=y&:toolbar=n",
-    enabled: true,
+    enabled: false, // First-time users must opt in after checking destination and capture.
     timezone: "local",
     schedules: [
       { days: ["MON","TUE","WED","THU","FRI","SAT","SUN"], time: "10:00" },

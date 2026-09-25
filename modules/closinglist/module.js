@@ -16,7 +16,7 @@ export default {
     id:          "closinglist",
     name:        "ClosingList",
     description: "Closing-shift email draft from CaseVisibility schedule + IVR call-offs.",
-    version:     "0.2.0",
+    version:     "0.2.1",
     status:      "active",
     // Module uses the suite's default blue accent — no override.
 

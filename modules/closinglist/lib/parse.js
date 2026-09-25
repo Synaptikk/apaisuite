@@ -254,7 +254,7 @@ export function render(model, opts) {
     }
   }
   if (model.ivrUnmatched && model.ivrUnmatched.length) {
-    lines.push("IVR absences with no scheduled match in CaseVisibility:");
+    lines.push("Absences with no visible job code:");
     for (const u of model.ivrUnmatched) {
       lines.push(`  ${u.rawName}${u.reason && u.reason !== "None" ? " (" + u.reason + ")" : ""}`);
     }

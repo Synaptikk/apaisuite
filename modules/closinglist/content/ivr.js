@@ -18,6 +18,7 @@
   const FLOW_KEY        = "closinglist.ivrFlowState";
   const FLOW_TIMEOUT_MS = 180 * 1000;   // 3 min — accommodates MAC-error retries
   const MAX_MAC_RETRIES = 5;
+  const MAX_CRITERIA_RETRIES = 3;
   const IVR_ROOT_URL    = "https://ivrattcloud-prod.wal-mart.com/";
 
   function isFlowActive(s) {
@@ -62,7 +63,54 @@
     if (document.querySelector("#rdoMenu_0"))     return "menu";
     if (document.querySelector("#rdoCriteria_0")) return "criteria";
     if (document.querySelector("#ailTable_1"))    return "absence-table";
+    // The criteria form posted back with nothing selected. IVR answers with a
+    // bare page: one red line and a Back button, still on ailAbsence.aspx, and
+    // carrying none of the markers above — so without this case pageState()
+    // returned "unknown", the state machine did nothing, and the flow sat there
+    // until the 3-minute timeout with no explanation.
+    //
+    // Checked LAST on purpose: if that wording ever also appears as an
+    // instruction on the criteria form itself, the form's own markers win and
+    // we drive it, rather than mistaking it for a rejection and looping.
+    if (/at least one option for the report/i.test(document.body?.innerText || "")) return "criteria-rejected";
     return "unknown";
+  }
+
+  // Inventory of the criteria form's controls. Stashed on the flow state while
+  // we are on that page so that if the server still rejects the submit we can
+  // say what the page actually contained, instead of reporting "stuck" and
+  // leaving the next person to guess at the markup.
+  function criteriaInventory() {
+    return [...document.querySelectorAll("input, select")]
+      .filter((e) => !/^(hidden|submit|image)$/i.test(e.type || ""))
+      .slice(0, 40)
+      .map((e) => ({
+        id:      e.id || null,
+        name:    e.name || null,
+        type:    (e.type || e.tagName).toLowerCase(),
+        checked: e.checked === true,
+        label:   (e.labels?.[0]?.innerText || "").trim().slice(0, 40) || null,
+      }));
+  }
+
+  function describeInventory(inv) {
+    if (!Array.isArray(inv) || !inv.length) return "(no control inventory captured)";
+    return inv
+      .map((c) => `${c.type} ${c.id || c.name || "?"}${c.label ? " [" + c.label + "]" : ""}${c.checked ? " CHECKED" : ""}`)
+      .join("; ");
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Poll until the radio reports checked. Submitting on a fixed timer is what
+  // let an unselected form reach the server in the first place.
+  async function waitForChecked(selector, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (document.querySelector(selector)?.checked) return true;
+      await sleep(100);
+    }
+    return !!document.querySelector(selector)?.checked;
   }
 
   function scrapeAbsenceTable() {
@@ -135,6 +183,34 @@
       return;
     }
 
+    if (where === "criteria-rejected") {
+      const tries = state.criteriaRetries || 0;
+      if (tries >= MAX_CRITERIA_RETRIES) {
+        const inv = describeInventory(state.criteriaControls);
+        console.error("[closinglist] ivr: criteria rejected", MAX_CRITERIA_RETRIES, "times; page offered:", inv);
+        try {
+          await chrome.runtime.sendMessage({
+            module:    MODULE_ID,
+            type:      "ivr-absences-collected",
+            ok:        false,
+            error:
+              `IVR rejected the report criteria ${MAX_CRITERIA_RETRIES} times ("You select at least one option for the report"). ` +
+              `The criteria page offered: ${inv}. If the option we tick (#rdoCriteria_0) is not in that list, IVR has changed the form.`,
+            rows:      [],
+            sourceUrl: location.href,
+          });
+        } catch (_) {}
+        try { await chrome.storage.local.set({ [FLOW_KEY]: { active: false } }); } catch (_) {}
+        return;
+      }
+      console.warn(`[closinglist] ivr: criteria rejected, restarting from root (attempt ${tries + 1}/${MAX_CRITERIA_RETRIES})`);
+      try {
+        await chrome.storage.local.set({ [FLOW_KEY]: { ...state, criteriaRetries: tries + 1 } });
+      } catch (_) {}
+      location.href = IVR_ROOT_URL;
+      return;
+    }
+
     // Forward progress: we're on a real flow page, so the last submit's LB
     // roll succeeded. Reset the MAC-retry budget — otherwise scattered
     // transient blips across a single session accumulate and falsely trip
@@ -144,6 +220,14 @@
       try {
         await chrome.storage.local.set({ [FLOW_KEY]: { ...state, macErrorRetries: 0 } });
         state = { ...state, macErrorRetries: 0 };
+      } catch (_) {}
+    }
+    // Reaching the report clears the criteria budget too — it caps consecutive
+    // rejections, not lifetime ones.
+    if (where === "absence-table" && state.criteriaRetries) {
+      try {
+        await chrome.storage.local.set({ [FLOW_KEY]: { ...state, criteriaRetries: 0 } });
+        state = { ...state, criteriaRetries: 0 };
       } catch (_) {}
     }
 
@@ -166,17 +250,59 @@
         console.warn("[closinglist] ivr: menu radio #rdoMenu_0 not found");
       }
     } else if (where === "criteria") {
-      // Criteria page: plain .click() on #rdoCriteria_0 alone was leaving
-      // the radio unchecked from the server's perspective ("You select at
-      // least one option for the report" on submit). selectRadio() forces
-      // the checked state + fires change/input so any framework binding
-      // sees it. We post back via #btnDisplayReport, not via the radio's
-      // own AutoPostBack (this page doesn't AutoPostBack on the radio).
-      if (selectRadio("#rdoCriteria_0")) {
-        console.debug("[closinglist] ivr: selected criteria 'Current Day', clicking Display Report");
-        setTimeout(() => clickIfPresent("#btnDisplayReport"), 600);
+      // Criteria page. Two things used to go wrong here, both of which ended
+      // as "You select at least one option for the report":
+      //
+      //   1. We submitted on a fixed 600ms timer without ever checking that
+      //      the radio had actually taken. If it hadn't, the POST carried no
+      //      selection and the server rejected it — and the rejection page
+      //      wasn't a state we recognised, so the flow just stopped.
+      //   2. selectRadio() dispatches change + input unconditionally. On the
+      //      menu page that is exactly what fires AutoPostBack twice and gets
+      //      the second submit rejected for a stale __VIEWSTATE (see above).
+      //      If this radio is ever wired the same way, forcing the events is
+      //      the bug rather than the fix — so check before doing it.
+      //
+      // Stash the control inventory first: if this still fails, the error we
+      // report should name what the page offered.
+      try {
+        await chrome.storage.local.set({
+          [FLOW_KEY]: { ...state, criteriaControls: criteriaInventory() },
+        });
+      } catch (_) {}
+
+      const radio = document.querySelector("#rdoCriteria_0");
+      if (!radio) {
+        const seen = describeInventory(criteriaInventory());
+        console.warn("[closinglist] ivr: criteria radio #rdoCriteria_0 not found; page offered:", seen);
+      } else if (radio.checked) {
+        // Already selected — either we ticked it before an AutoPostBack round
+        // trip, or the page defaults to it. Just submit.
+        console.debug("[closinglist] ivr: criteria already selected, clicking Display Report");
+        clickIfPresent("#btnDisplayReport");
+      } else if (/__doPostBack/i.test(radio.getAttribute("onclick") || "")) {
+        // Let the page's own postback do the work; we come back round on the
+        // reload with radio.checked true and submit then.
+        console.debug("[closinglist] ivr: criteria radio has AutoPostBack, clicking and waiting for reload");
+        radio.click();
       } else {
-        console.warn("[closinglist] ivr: criteria radio #rdoCriteria_0 not found");
+        // Plain .click() first — that is all the donor extension ever did here
+        // (ClosingList/extension/content/ivr.js), and it worked. Forcing
+        // change + input on top of it is the thing that can double-fire a
+        // WebForms handler, so it is an escalation, not the default.
+        radio.click();
+        let took = await waitForChecked("#rdoCriteria_0", 1200);
+        if (!took) {
+          console.debug("[closinglist] ivr: plain click did not take, forcing checked + change/input");
+          selectRadio("#rdoCriteria_0");
+          took = await waitForChecked("#rdoCriteria_0", 1800);
+        }
+        if (!took) {
+          console.warn("[closinglist] ivr: criteria radio would not stay checked — not submitting a blank form");
+        } else {
+          console.debug("[closinglist] ivr: selected criteria 'Current Day', clicking Display Report");
+          clickIfPresent("#btnDisplayReport");
+        }
       }
     } else if (where === "absence-table") {
       const result = scrapeAbsenceTable();

@@ -27,6 +27,7 @@ import {
   UNLOCK_TAPS, UNLOCK_HINT_AT, FEED_MAX,
 } from "./shared/debug_feed.js";
 import { maybeRunOnboarding, needsOnboarding, resetOnboarding, runSetup, runTips } from "./shared/onboarding.js";
+import { showDeviceReadiness } from "./shared/device_readiness.js";
 import { getIdentity, enableProfileEmailIdentity } from "./shared/identity.js";
 import { LAYOUTS, resolveLayoutPref } from "./shared/layoutPref.js";
 import { SIDEBAR, resolveSidebarPref, toggledSidebarPref } from "./shared/sidebarPref.js";
@@ -1524,6 +1525,7 @@ try {
 if (showTips) {
   runTips().catch((e) => console.warn("[shell] onboarding tips:", e?.message ?? e));
 }
+showDeviceReadiness().catch((e) => console.warn("[shell] device setup:", e?.message));
 
 // ── "The suite was opened" ────────────────────────────────────────────────
 //

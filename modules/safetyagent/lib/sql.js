@@ -32,8 +32,10 @@ export function hazardSql({ store, from, to } = {}) {
   const nbr = Number(store);
   if (!Number.isInteger(nbr) || nbr <= 0) throw new Error(`hazardSql: bad store "${store}"`);
   const where = [`hzd.store_nbr = ${nbr}`];
-  if (from) { if (!DATE_RE.test(from)) throw new Error("hazardSql: bad from date"); where.push(`hzd.hzd_dt >= DATE '${from}'`); }
-  if (to)   { if (!DATE_RE.test(to))   throw new Error("hazardSql: bad to date");   where.push(`hzd.hzd_dt <= DATE '${to}'`); }
+  // Filter on the store-local date: hzd_dt is the UTC date, and every other
+  // column the module shows (and the view's own date filter) is store-local.
+  if (from) { if (!DATE_RE.test(from)) throw new Error("hazardSql: bad from date"); where.push(`hzd.hzd_dt_lcl >= DATE '${from}'`); }
+  if (to)   { if (!DATE_RE.test(to))   throw new Error("hazardSql: bad to date");   where.push(`hzd.hzd_dt_lcl <= DATE '${to}'`); }
   return [
     "SELECT hzd.hzd_id, hzd.hzd_dt, hzd.hzd_dt_lcl, hzd.hzd_ts_lcl, hzd.action_ts_lcl, hzd.task_complete_ts_lcl,",
     "  hzd.note_hzd_type_desc, hzd.aisle_nm, hzd.dept_nm, hzd.camera_name, hzd.action_category,",

@@ -44,6 +44,7 @@
     "identity"
   ],
   "host_permissions": [
+    "https://my.wal-mart.com/*",
     "https://radapps3.wal-mart.com/Protected/CaseVisibility/*",
     "https://ivrattcloud-prod.wal-mart.com/*",
     "https://app.us.auror.co/*",
@@ -55,6 +56,8 @@
     "https://sf-reports-ui.walmart.com/*",
     "https://sf-reports-api.walmart.com/*",
     "https://hoops.wal-mart.com/*",
+    "https://gdp-connect.walmart.com/*",
+    "https://api-manager-next.gdp.api.walmart.com/*",
     "https://api.hoops.wal-mart.com/*",
     "https://pfedprod.wal-mart.com/*",
     "https://prod.liveaccess.invue.walmart.com/*",
@@ -83,7 +86,11 @@
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
     "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/*",
+    "https://timesheet.cloud.wal-mart.com/*",
     "https://wismo-dashboard.walmart.com/*",
+    "https://uat.riskonnectclearsight.com/*",
+    "https://www.riskonnectclearsight.com/*",
+    "http://127.0.0.1/*",
     "https://wismo.walmart.com/*",
     "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*"
   ],
