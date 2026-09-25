@@ -5,8 +5,8 @@ export default {
   manifest: {
     id:          "stockingplan",
     name:        "StockingPlan",
-    description: "Overnight stocking plan: freight from CaseVisibility → labour hours → associate assignments.",
-    version:     "0.1.0",
+    description: "Overnight stocking plan: CaseVisibility freight by area/dept/aisle, sized against Stock 2 + Overnight hours and tomorrow's Stock 1 crew, and drafted in the four-block shape the store sends.",
+    version:     "0.3.2",
     status:      "active",
 
     ui: {

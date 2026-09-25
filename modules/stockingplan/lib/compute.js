@@ -1,10 +1,28 @@
 // modules/stockingplan/lib/compute.js
 // Pure functions — no DOM, no chrome.*.
 
+import { rollUpShifts, capacityReport, GROUP_META } from "./shifts.js";
+
 const FOOD_CONS_DEPTS = new Set([4, 8, 13, 2, 46, 40, 92, 95, 90, 91]);
 const FOOD_CONS_RATE  = 55;   // cases per hour
 const GM_RATE         = 45;   // cases per hour
 const BP_RATE         = 80;   // breakpacks per hour (all depts)
+
+// Which shift an area's freight normally lands on, taken from the plans store
+// 1458 actually sent: GM/Seasonal/Fashion are Stock 2's list ("stock toys",
+// "stock sporting goods", "stock automotive", "stock hardware"), the food and
+// consumables areas are the overnight list ("stock 90/91/97", "stock grocery",
+// "stock 4/8/13/79", "stock 2/40/46", "stock 82").
+const AREA_DEFAULT_SHIFT = {
+  "General Merchandise": "stock2",
+  "Fashion":             "stock2",
+  "Seasonal":            "stock2",
+  "Frozen/Dairy/Deli":   "stock3",
+  "Meat/Produce/Fresh":  "stock3",
+  "Food (Non-FDD)":      "stock3",
+  "Food":                "stock3",
+  "Consumables":         "stock3",
+};
 
 // Round a raw hour value up to the nearest 30-minute mark.
 function roundUpHalf(raw) {
@@ -27,6 +45,12 @@ export function formatHours(h) {
   return h % 1 === 0 ? `${h}h` : `${h}h`;
 }
 
+// CaseVisibility reports stocking time in minutes; plans are written in hours
+// to one decimal ("stock home-12.5 hours").
+export function minsToHours(min) {
+  return Math.round((Number(min) || 0) / 6) / 10;
+}
+
 // Pair aisle rows where adjacent numbers differ by exactly 1 (8+9, 10+11, …).
 // Non-A-labelled aisles (FT1, GR1, Z1 etc.) and unpaired aisles are singletons.
 export function pairAisles(aisleRows) {
@@ -44,52 +68,54 @@ export function pairAisles(aisleRows) {
     const b  = standard[i + 1];
     const na = a.aisle_nbr;
     const nb = b?.aisle_nbr ?? null;
-    const dept = a.dept_nbr ?? 92;
 
     if (nb !== null && nb === na + 1) {
-      // Consecutive pair — two sides of the same physical aisle.
-      const cases = (a.case_qty || 0) + (b.case_qty || 0);
-      const bps   = (a.bp_qty   || 0) + (b.bp_qty   || 0);
-      pairs.push({
-        label:      `${na}/${nb}`,
-        aisles:     [a, b],
-        deptNbr:    dept,
-        totalCases: cases,
-        totalBps:   bps,
-        hours:      hoursForTask(cases, bps, dept),
-      });
+      pairs.push(makePair(`${na}/${nb}`, [a, b]));
       i += 2;
     } else {
-      const cases = a.case_qty || 0;
-      const bps   = a.bp_qty   || 0;
-      pairs.push({
-        label:      `${na}`,
-        aisles:     [a],
-        deptNbr:    dept,
-        totalCases: cases,
-        totalBps:   bps,
-        hours:      hoursForTask(cases, bps, dept),
-      });
+      pairs.push(makePair(`${na}`, [a]));
       i += 1;
     }
   }
 
-  // Append special-label aisles (FT, GR, Z, etc.) as singletons.
-  for (const r of special) {
-    const dept  = r.dept_nbr ?? 92;
-    const cases = r.case_qty || 0;
-    const bps   = r.bp_qty   || 0;
-    pairs.push({
-      label:      r.aisle_label,
-      aisles:     [r],
-      deptNbr:    dept,
-      totalCases: cases,
-      totalBps:   bps,
-      hours:      hoursForTask(cases, bps, dept),
-    });
-  }
+  // Append special-label aisles (FT, GR, Z, Unknown) as singletons.
+  for (const r of special) pairs.push(makePair(r.aisle_label, [r]));
 
   return pairs;
+}
+
+function makePair(label, rows) {
+  const dept  = rows[0].dept_nbr ?? 92;
+  const cases = rows.reduce((s, r) => s + (r.case_qty || 0), 0);
+  const bps   = rows.reduce((s, r) => s + (r.bp_qty   || 0), 0);
+  // Prefer CaseVisibility's own estimate; fall back to our case rates when the
+  // aisle view didn't carry a time column.
+  const cvMin = rows.reduce((s, r) => s + (r.total_min || 0), 0);
+  const byTrailer = mergeTrailers(rows);
+  return {
+    label,
+    aisles:     rows,
+    deptNbr:    dept,
+    totalCases: cases,
+    totalBps:   bps,
+    hours:      cvMin ? minsToHours(cvMin) : hoursForTask(cases, bps, dept),
+    cvMinutes:  cvMin,
+    unknown:    rows.every((r) => r.unknown),
+    byTrailer,
+  };
+}
+
+function mergeTrailers(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    for (const t of r.by_trailer || []) {
+      const cur = m.get(t.trailer) || { trailer: t.trailer, case_qty: 0, min: 0 };
+      cur.case_qty += t.case_qty || 0;
+      cur.min      += t.min || 0;
+      m.set(t.trailer, cur);
+    }
+  }
+  return [...m.values()].sort((a, b) => b.case_qty - a.case_qty);
 }
 
 // Detect call-out from a schedule row. CV's exact field name is unverified —
@@ -151,93 +177,186 @@ export function formatShiftRange(start, end) {
   return `${s.hm}${s.ampm}–${e.hm}${e.ampm}`;
 }
 
+// The business date after `iso` — the morning crew a plan hands work to.
+export function nextIsoDate(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function weekdayLabel(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+}
+
+// Trucks for the business day, straight off the schedule payload's `sdl` block.
+export function buildTrucks(scheduleJson) {
+  const sdl = Array.isArray(scheduleJson?.sdl) ? scheduleJson.sdl : [];
+  return sdl
+    .map((s) => ({
+      type:       s.shipment_type || "?",
+      trailer:    String(s.trailer_id ?? ""),
+      loadId:     String(s.load_id ?? ""),
+      eta:        s.actual_delivery_ts || s.est_delivery_ts || s.sched_delivery_ts || "",
+      arrived:    !!s.actual_delivery_ts,
+      grocCases:  Number(s.groc_cases || 0),
+      gmCases:    Number(s.gm_cases || 0),
+      bpCases:    Number(s.breakpack_boxes || 0),
+      totalCases: Number(s.total_cases || 0),
+      status:     s.actual_delivery_ts ? "Delivered" : "Scheduled",
+    }))
+    .sort((a, b) => String(a.eta).localeCompare(String(b.eta)));
+}
+
 // Build the full plan model from raw CV data.
-// scheduleJson: response from Main.ashx?func=init
-// freightData:  { byDept: [{dept_nbr, case_qty, bp_qty, ...}],
-//                 byAisle: [{dept_nbr, aisle_nbr, case_qty, bp_qty, ...}] }
-//               Either key may be null/undefined if capture failed.
-// opts: { storeNbr, businessDate, startHour? }
+//
+// scheduleJson:     response from Main.ashx?func=init for the business date
+// nextScheduleJson: the same for businessDate + 1 (may be null) — the Stock 1
+//                   crew that inherits whatever tonight doesn't finish
+// freightData:      { areas, depts, areaTimes, aisles, trailers } from the
+//                   collect-freight handler. Any key may be missing.
+// opts: { storeNbr, businessDate }
 export function buildPlan(scheduleJson, freightData, opts = {}) {
   const sched = (scheduleJson && scheduleJson.schedule) || {};
   const rows  = Array.isArray(sched.scheduled_associates) ? sched.scheduled_associates : [];
+  const deps  = { displayName, parseTimestamp, isCallOut };
 
-  // startHour: include shifts that start at or after this hour (24h clock).
-  // Midnight-crossing shifts (start 0 or 1) are also included to catch
-  // associates who came in at midnight as part of the overnight crew.
-  const startH = opts.startHour ?? 22;
+  const businessDate = opts.businessDate || sched.business_date || "";
+  const nextDate     = nextIsoDate(businessDate);
 
+  // --- labour ---------------------------------------------------------------
+  const tonight = rollUpShifts(rows, deps);
+
+  const nextRows = Array.isArray(opts.nextScheduleJson?.schedule?.scheduled_associates)
+    ? opts.nextScheduleJson.schedule.scheduled_associates
+    : null;
+  const tomorrow = nextRows ? rollUpShifts(nextRows, deps) : null;
+
+  // Flat associate list for the assignment autocomplete. Stocking shifts only
+  // (plus the mod team and overnight maintenance, who show on the plan) —
+  // the full store schedule is 250+ rows and none of the rest stock freight.
+  const PLAN_GROUPS = ["stock2", "stock3", "modteam", "maintenance"];
   const associates = [];
-  for (const row of rows) {
-    const name  = displayName(row);
-    if (!name) continue;
-    const start = parseTimestamp(row.shift_start_ts);
-    const end   = parseTimestamp(row.shift_end_ts);
-    if (!start || !end) continue;
-
-    const sh = start.getHours();
-    // Stocking shift: started at or after startH (e.g. 22 = 10pm),
-    // OR started at/near midnight (hour 0 or 1) as part of the same overnight run.
-    if (sh < startH && sh > 1) continue;
-
-    associates.push({
-      name,
-      start,
-      end,
-      calledOut: isCallOut(row),
-    });
+  for (const key of PLAN_GROUPS) {
+    for (const m of tonight.groups[key].members) {
+      associates.push({
+        name:      m.name,
+        start:     m.start,
+        end:       m.end,
+        hours:     m.hours,
+        calledOut: m.calledOut,
+        jobDesc:   m.jobDesc,
+        rank:      m.rank,
+        role:      key,                  // view.js groups the name list on this
+        group:     key,
+        groupLabel: GROUP_META[key].label,
+      });
+    }
   }
-  associates.sort((a, b) => a.start - b.start);
+  associates.sort((a, b) => a.start - b.start || a.name.localeCompare(b.name));
 
-  // Build dept tasks. Supports two row shapes from the scraper:
-  //   category-name format: { category_name, is_fc, case_qty, bp_qty }
-  //   dept-number format:   { dept_nbr, case_qty, bp_qty }  (legacy / fallback)
-  const rawDeptRows = (freightData && freightData.byDept) || [];
-  const deptTasks = rawDeptRows
-    .map((r) => {
-      const cases      = Number(r.case_qty ?? r.cases ?? r.caseQty ?? 0);
-      const breakpacks = Number(r.bp_qty ?? r.breakpacks ?? r.bpQty ?? 0);
-      if (r.category_name) {
-        const isFC = !!r.is_fc;
-        return {
-          key:        r.category_name,
-          label:      r.category_name,
-          isFC,
-          cases,
-          breakpacks,
-          hours:      hoursForTask(cases, breakpacks, isFC ? 4 : 1),
-        };
-      }
-      const deptNbr = Number(r.dept_nbr ?? r.deptNbr ?? r.dept ?? 0);
-      if (!deptNbr) return null;
-      return {
-        key:        `D${deptNbr}`,
-        label:      `Dept ${deptNbr}`,
-        isFC:       isFoodCons(deptNbr),
-        cases,
-        breakpacks,
-        hours:      hoursForTask(cases, breakpacks, deptNbr),
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => {
-      // F&C first, then alphabetical within each group.
-      if (a.isFC !== b.isFC) return a.isFC ? -1 : 1;
-      return a.label.localeCompare(b.label);
-    });
+  // --- freight --------------------------------------------------------------
+  const rawAreas  = (freightData && freightData.areas)  || [];
+  const rawDepts  = (freightData && freightData.depts)  || [];
+  const rawTimes  = (freightData && freightData.areaTimes) || [];
+  const rawAisles = (freightData && freightData.aisles) || [];
 
-  // Build aisle tasks. The aisle page is always D92/95 combined; all rows
-  // have dept_nbr:92 set by the scraper. Show as one section labelled D92/95.
-  const rawAisleRows = (freightData && freightData.byAisle) || [];
-  const aisleSections = rawAisleRows.length
-    ? [{ deptNbr: 9295, label: "D92/95", isFC: true, pairs: pairAisles(rawAisleRows) }]
+  const timeByArea = new Map(rawTimes.map((t) => [t.area_name, t]));
+
+  // Department rows, grouped under their area. This is the breakdown the plan
+  // is written in — "stock 4/8/13/79", "stock 3/19/67", "stock 90/91/97".
+  const deptTasks = rawDepts.map((d) => ({
+    key:        `D${d.dept_nbr}`,
+    label:      `D${d.dept_nbr}${d.dept_name ? ` (${d.dept_name})` : ""}`,
+    area:       d.area_name,
+    deptNbr:    d.dept_nbr,
+    deptName:   d.dept_name,
+    isFC:       !!d.is_fc,
+    cases:      d.case_qty,
+    breakpacks: d.bp_qty,
+    // CaseVisibility computes this itself, per department, and the store plans
+    // against those numbers — prefer them over our own case rates.
+    hours:      d.total_min ? minsToHours(d.total_min) : hoursForTask(d.case_qty, d.bp_qty, d.dept_nbr),
+    caseHours:  minsToHours(d.case_min),
+    bpHours:    minsToHours(d.bp_min),
+    cvMinutes:  d.total_min || 0,
+    defaultShift: AREA_DEFAULT_SHIFT[d.area_name] || null,
+  }));
+
+  // Areas, in the order CaseVisibility lists them, each carrying its dept rows.
+  const areaOrder = [];
+  for (const d of deptTasks) if (!areaOrder.includes(d.area)) areaOrder.push(d.area);
+  for (const a of rawAreas) if (!areaOrder.includes(a.area_name)) areaOrder.push(a.area_name);
+
+  const areaSections = areaOrder.map((name) => {
+    const rollUp = rawAreas.find((a) => a.area_name === name);
+    const times  = timeByArea.get(name);
+    const own    = deptTasks.filter((d) => d.area === name);
+    const cases  = times?.case_qty ?? rollUp?.case_qty ?? own.reduce((s, d) => s + d.cases, 0);
+    const bps    = times?.bp_qty   ?? rollUp?.bp_qty   ?? own.reduce((s, d) => s + d.breakpacks, 0);
+    const mins   = times?.total_min ?? 0;
+    return {
+      name,
+      isFC:       rollUp ? !!rollUp.is_fc : (own[0]?.isFC ?? false),
+      cases,
+      breakpacks: bps,
+      hours:      mins ? minsToHours(mins) : own.reduce((s, d) => s + d.hours, 0),
+      cvMinutes:  mins,
+      defaultShift: AREA_DEFAULT_SHIFT[name] || null,
+      depts:      own,
+    };
+  });
+
+  // D92/95 by aisle — a breakdown of two departments already counted above,
+  // never an addition to the store total.
+  const aisleSections = rawAisles.length
+    ? [{
+        deptNbr: 9295,
+        label:   "D92/95 by aisle",
+        isFC:    true,
+        pairs:   pairAisles(rawAisles),
+        trailers: (freightData && freightData.trailers) || [],
+      }]
     : [];
 
+  // Required stocking hours = the area totals. Aisles and departments are both
+  // breakdowns of the same freight, so only one level may be summed.
+  const requiredMinutes = rawTimes.reduce((s, t) => s + (t.total_min || 0), 0);
+  const requiredHours = requiredMinutes
+    ? minsToHours(requiredMinutes)
+    : Math.round(areaSections.reduce((s, a) => s + a.hours, 0) * 10) / 10;
+  const requiredBasis = requiredMinutes ? "cv" : (areaSections.length ? "rates" : "none");
+
+  const capacity = capacityReport(
+    tonight.groups,
+    tomorrow ? tomorrow.groups : null,
+    requiredHours,
+    { requiredBasis },
+  );
+
   return {
-    storeNbr:      opts.storeNbr      || sched.store_nbr    || "",
-    businessDate:  opts.businessDate  || sched.business_date || "",
+    storeNbr:     opts.storeNbr     || sched.store_nbr     || "",
+    businessDate,
+    nextDate,
+    dateLabel:     weekdayLabel(businessDate),
+    nextDateLabel: weekdayLabel(nextDate),
+
     associates,
+    shifts:      tonight.groups,
+    nextShifts:  tomorrow ? tomorrow.groups : null,
+    capacity,
+
+    areaSections,
     deptTasks,
     aisleSections,
-    freightCaptured: !!(rawDeptRows.length || rawAisleRows.length),
+    trucks:      buildTrucks(scheduleJson),
+
+    requiredHours,
+    requiredBasis,
+    freightCaptured: !!(rawAreas.length || rawDepts.length || rawAisles.length),
   };
 }

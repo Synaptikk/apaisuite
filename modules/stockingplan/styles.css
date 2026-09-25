@@ -239,3 +239,446 @@
 .module-stockingplan .sp-recipient-field .input {
   width: 16rem;
 }
+
+/* ── Labour card ─────────────────────────────────────────────────────────── */
+
+.module-stockingplan .sp-verdict {
+  border-left: 4px solid var(--sp-accent);
+  background: rgba(26, 35, 126, 0.06);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 4px 4px 0;
+  font-size: 0.88rem;
+  margin-bottom: 0.8rem;
+}
+
+.module-stockingplan .sp-verdict-tight {
+  border-left-color: #e65100;
+  background: rgba(230, 81, 0, 0.09);
+}
+
+.module-stockingplan .sp-verdict-short {
+  border-left-color: var(--sp-callout);
+  background: rgba(183, 28, 28, 0.09);
+}
+
+.module-stockingplan .sp-labour-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem;
+}
+
+.module-stockingplan .sp-tile {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+}
+
+.module-stockingplan .sp-tile-freight {
+  border-color: var(--sp-accent);
+}
+
+.module-stockingplan .sp-tile-tomorrow {
+  border-style: dashed;
+}
+
+.module-stockingplan .sp-tile-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--apai-muted, #666);
+}
+
+.module-stockingplan .sp-tile-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.module-stockingplan .sp-tile-note {
+  min-height: 1em;
+}
+
+/* Next-day backup pool — only rendered when tonight is tight or short */
+.module-stockingplan .sp-backup {
+  margin-top: 0.9rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  padding-top: 0.7rem;
+}
+
+.module-stockingplan .sp-backup-head {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.module-stockingplan .sp-backup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.module-stockingplan .sp-backup-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.35);
+}
+
+.module-stockingplan .sp-backup-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+/* ── Trucks ──────────────────────────────────────────────────────────────── */
+
+.module-stockingplan .sp-trucks-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.6rem;
+}
+
+.module-stockingplan .sp-truck-card {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-left: 4px solid var(--sp-gm-tag);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.83rem;
+}
+
+.module-stockingplan .sp-truck-rdc   { border-left-color: #1565c0; }
+.module-stockingplan .sp-truck-hvdc  { border-left-color: #00838f; }
+.module-stockingplan .sp-truck-fdd   { border-left-color: #2e7d32; }
+.module-stockingplan .sp-truck-milk  { border-left-color: #6d4c41; }
+.module-stockingplan .sp-truck-mp    { border-left-color: #ad1457; }
+
+.module-stockingplan .sp-truck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.module-stockingplan .sp-truck-type {
+  font-weight: 700;
+}
+
+.module-stockingplan .sp-truck-eta {
+  color: var(--apai-muted, #666);
+  font-size: 0.78rem;
+}
+
+.module-stockingplan .sp-truck-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.module-stockingplan .sp-truck-label {
+  color: var(--apai-muted, #666);
+}
+
+.module-stockingplan .sp-truck-loadid {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--sp-gm-tag);
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.module-stockingplan .sp-truck-status {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--apai-muted, #666);
+}
+
+.module-stockingplan .sp-truck-status.is-arrived {
+  color: var(--sp-fc-tag);
+  font-weight: 600;
+}
+
+/* ── Associates by shift ─────────────────────────────────────────────────── */
+
+.module-stockingplan .sp-assoc-list {
+  columns: auto;                 /* groups own their own column flow now */
+}
+
+.module-stockingplan .sp-assoc-group-header {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sp-accent);
+  margin: 0.7rem 0 0.25rem;
+}
+
+.module-stockingplan .sp-assoc-group-header:first-child {
+  margin-top: 0;
+}
+
+.module-stockingplan .sp-assoc-names {
+  columns: 3;
+  column-gap: 1.5rem;
+}
+
+.module-stockingplan .sp-name-lead {
+  font-weight: 600;
+}
+
+/* ── Breakdown level toggle ──────────────────────────────────────────────── */
+
+.module-stockingplan .sp-view-toggle {
+  display: inline-flex;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 0.7rem;
+}
+
+.module-stockingplan .sp-toggle-btn {
+  background: none;
+  border: none;
+  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.module-stockingplan .sp-toggle-btn:last-child { border-right: none; }
+
+.module-stockingplan .sp-toggle-btn.is-active {
+  background: var(--sp-accent);
+  color: #fff;
+}
+
+.module-stockingplan .sp-trailer-note {
+  margin-left: 0.4rem;
+}
+
+.module-stockingplan .sp-tag.warn {
+  background: var(--sp-callout-bg);
+  color: var(--sp-callout);
+}
+
+.module-stockingplan .sp-total-row td {
+  border-top: 2px solid var(--sp-accent);
+  font-weight: 700;
+}
+
+/* ── Suggested plan ──────────────────────────────────────────────────────── */
+
+.module-stockingplan .sp-suggest-draft {
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin: 0 0 0.5rem;
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+.module-stockingplan .sp-moves {
+  list-style: none;
+  margin: 0 0 0.8rem;
+  padding: 0;
+}
+
+.module-stockingplan .sp-move {
+  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  padding: 0.25rem 0 0.25rem 0.6rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.86rem;
+}
+
+/* Work handed to the morning crew — the decision worth double-checking */
+.module-stockingplan .sp-move-push { border-left-color: #e65100; }
+/* Work the night has room to take back */
+.module-stockingplan .sp-move-pull { border-left-color: var(--sp-fc-tag); }
+.module-stockingplan .sp-move-note { border-left-color: var(--sp-accent); }
+
+.module-stockingplan .sp-move span {
+  display: block;
+}
+
+/* Available vs planned, per team */
+.module-stockingplan .sp-blocks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  margin-bottom: 0.8rem;
+}
+
+.module-stockingplan .sp-blocks-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.35);
+  white-space: nowrap;
+}
+
+.module-stockingplan .sp-blocks-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.module-stockingplan .sp-blocks-table .sp-th-num,
+.module-stockingplan .sp-blocks-table .sp-td-num { text-align: right; }
+
+/* Nothing left over — the shift is fully committed to freight */
+.module-stockingplan .sp-left-tight { color: #e65100; }
+/* More freight planned than there are hours to work it */
+.module-stockingplan .sp-left-over  { color: var(--sp-callout); }
+
+.module-stockingplan .sp-block-none td { color: var(--apai-muted, #666); }
+
+/* ── Help dialog ─────────────────────────────────────────────────────────── */
+
+.module-stockingplan .sp-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.module-stockingplan .sp-help-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: none;
+  color: var(--apai-muted, #666);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.module-stockingplan .sp-help-btn:hover,
+.module-stockingplan .sp-help-btn:focus-visible {
+  opacity: 1;
+  color: var(--sp-accent);
+}
+
+/* The dialog is top-layer, so it sits outside .module-stockingplan in the
+   rendering order but still matches these selectors via the DOM tree. */
+.module-stockingplan .sp-help {
+  max-width: 44rem;
+  width: calc(100vw - 3rem);
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 10px;
+  padding: 1.2rem 1.5rem 1.6rem;
+  color: inherit;
+  background: var(--apai-card-bg, #fff);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.module-stockingplan .sp-help::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.module-stockingplan .sp-help h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.2rem;
+}
+
+.module-stockingplan .sp-help h3 {
+  font-size: 0.92rem;
+  margin: 1.1rem 0 0.35rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.module-stockingplan .sp-help h3.sp-help-warn {
+  color: #e65100;
+  border-bottom-color: rgba(230, 81, 0, 0.4);
+}
+
+.module-stockingplan .sp-help p,
+.module-stockingplan .sp-help li {
+  font-size: 0.87rem;
+  line-height: 1.5;
+}
+
+.module-stockingplan .sp-help ul {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+}
+
+.module-stockingplan .sp-help code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.85em;
+  background: rgba(128, 128, 128, 0.14);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.module-stockingplan .sp-help-code {
+  background: rgba(128, 128, 128, 0.1);
+  border-left: 3px solid var(--sp-accent);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  margin: 0.4rem 0;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.module-stockingplan .sp-help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.module-stockingplan .sp-help-table td,
+.module-stockingplan .sp-help-table th {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+  vertical-align: top;
+  text-align: left;
+}
+
+.module-stockingplan .sp-help-table td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}
+
+/* The derived rate table is long — keep it scrollable inside the dialog */
+.module-stockingplan .sp-help-rate-table {
+  display: block;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.module-stockingplan .sp-help-rate-table td:first-child { width: auto; }
+.module-stockingplan .sp-help-rate-table .sp-th-num,
+.module-stockingplan .sp-help-rate-table .sp-td-num { text-align: right; }
+
+.module-stockingplan .sp-help-close-form {
+  float: right;
+  margin: -0.4rem -0.6rem 0 0.6rem;
+}
+
+.module-stockingplan .sp-help-close {
+  background: none;
+  border: none;
+  color: var(--apai-muted, #666);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.3rem;
+}
+
+.module-stockingplan .sp-help-close:hover { color: inherit; }
