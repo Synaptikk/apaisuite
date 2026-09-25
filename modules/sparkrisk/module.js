@@ -1,9 +1,12 @@
 // modules/sparkrisk/module.js
 //
-// SparkRisk - Pre-checkout timing analysis for Spark Shop & Deliver
+// SparkRisk - recorded-trip timing review for Spark Shop & Deliver
 //
-// Identifies high-risk Spark driver sessions using order-level timing anomalies,
-// driver deviation from personal baselines, and context-matched peer comparisons.
+// Ranks Spark trips for human review using order-level elapsed time against a
+// fixed reference and each driver's own earlier recorded trips at the same
+// store. Peer comparison is NOT implemented. Nothing here is calibrated
+// against confirmed outcomes - see dev/SPARKRISK_FOUNDATIONS.md before
+// describing this module as fraud detection anywhere user-facing.
 
 // Service handlers must be imported STATICALLY (MV3 requirement)
 import { handlers as serviceHandlers } from "./service.js";
@@ -12,7 +15,7 @@ export default {
   manifest: {
     id:          "sparkrisk",
     name:        "SparkRisk",
-    description: "Pre-checkout timing analysis for Spark Shop & Deliver fraud detection",
+    description: "Timing review queue for recorded Spark Shop & Deliver trips",
     version:     "2.0.0",
     status:      "active",
 

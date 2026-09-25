@@ -2,8 +2,12 @@
 //
 // Frontend logic for SparkRisk module
 // Converted from standalone app.js to APAI Suite module format
-
-import { db } from "./models/index.js";
+//
+// Every value that originates in an imported file, an OMS response or a
+// reviewer note is escaped before it reaches innerHTML. Session ids are JSON
+// arrays and contain double quotes, so they MUST be escaped inside attributes
+// too or the data-session attribute terminates early and the row stops
+// opening. Use esc() for anything that is not a number this file computed.
 
 // Module-level state
 let $ = null;
@@ -51,6 +55,8 @@ export async function mount(host, container) {
     return host.messaging.sendRaw(type, payload);
   };
 
+  const esc = (v) => host.ui.escapeHtml(v == null ? "" : String(v));
+
   // ── Utilities ──────────────────────────────────────────────────────────
   const fmt = {
   num: (n) => (n != null ? n.toLocaleString() : "—"),
@@ -74,6 +80,12 @@ function scoreClass(score) {
   return "none";
 }
 
+// History coverage is a description of the imported data, not a judgement.
+function historyLabel(coverage) {
+  const map = { recorded: "recorded", limited: "limited", none: "none" };
+  return `<span class="badge badge-gray">${map[coverage] || "none"}</span>`;
+}
+
 function statusPill(status) {
   const map = {
     new: "badge-blue",
@@ -85,7 +97,7 @@ function statusPill(status) {
     escalated: "badge-red"
   };
   const cls = map[status] || "badge-gray";
-  return `<span class="badge ${cls}">${status || "new"}</span>`;
+  return `<span class="badge ${cls}">${esc(status || "new")}</span>`;
 }
 
 
@@ -123,6 +135,8 @@ async function loadOverview() {
 
     // Update context chips
     $("sr-session-count").textContent = fmt.num(stats.total);
+    // Stores present in the imported data, not a hard-coded home store.
+    $("sr-store-val").textContent = (stats.stores || []).join(", ") || "—";
     if (stats.daily.length > 0) {
       const first = stats.daily[0].extraction_date;
       const last = stats.daily[stats.daily.length - 1].extraction_date;
@@ -153,6 +167,11 @@ async function loadOverview() {
         <div class="kpi-value">${stats.daily.length}</div>
         <div class="kpi-label">Days of Data</div>
       </div>
+      <div class="kpi-card">
+        <div class="kpi-value">${fmt.num(stats.ineligibleOrders)}</div>
+        <div class="kpi-label">Orders not scored</div>
+        <div class="kpi-note">Retained, outside any trip</div>
+      </div>
     `;
 
     // Render charts (simplified - would use Chart.js in production)
@@ -164,14 +183,47 @@ async function loadOverview() {
   }
 }
 
+// Minimal canvas bar chart. Deliberately dependency-free: the shell does
+// not ship Chart.js, and the previous console.log() placeholders left two
+// titled-but-empty chart cards on screen.
+function drawBars(canvasId, values, labelAt) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext && canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width = canvas.clientWidth || 600;
+  const h = canvas.height;
+  const style = getComputedStyle(canvas);
+  ctx.clearRect(0, 0, w, h);
+  const max = Math.max(1, ...values);
+  if (!values.length) return;
+  const pad = 18;
+  const bw = (w - pad) / values.length;
+  ctx.fillStyle = style.getPropertyValue("color") || "#0071dc";
+  values.forEach((v, i) => {
+    const bh = Math.round(((h - pad) * v) / max);
+    ctx.globalAlpha = v ? 0.85 : 0.15;
+    ctx.fillRect(i * bw + 1, h - pad - bh, Math.max(1, bw - 2), Math.max(v ? 1 : 0, bh));
+  });
+  ctx.globalAlpha = 1;
+  ctx.font = "10px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  values.forEach((_, i) => {
+    const label = labelAt(i, values.length);
+    if (label) ctx.fillText(label, i * bw + bw / 2, h - 5);
+  });
+}
+
+// Buckets are 2-minute wide and centred on 0: index 10 is "on reference".
 function renderExcessChart(buckets) {
-  // Placeholder - would render Chart.js histogram
-  console.log("Excess distribution:", buckets);
+  drawBars("sr-excess-chart", buckets || [], (i, n) =>
+    (i === 0 || i === n - 1 || i === 10) ? `${(i - 10) * 2}m` : "");
 }
 
 function renderDailyChart(daily) {
-  // Placeholder - would render Chart.js line chart
-  console.log("Daily volume:", daily);
+  const rows = daily || [];
+  drawBars("sr-daily-chart", rows.map(d => d.sessions), (i, n) =>
+    (i === 0 || i === n - 1) ? String(rows[i].extraction_date || "").slice(5) : "");
 }
 
 // ── Queue Tab ────────────────────────────────────────────────────────
@@ -205,42 +257,44 @@ function renderQueue(rows) {
   const tbody = $("sr-queue-body");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="13" class="empty-row">No sessions match filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">No sessions match filters.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map(r => {
-    const sc = r.priority_score || 0;
+    // Coerced: these land in class names and inline widths, and a legacy row
+    // could still carry a string.
+    const sc = Number(r.priority_score) || 0;
+    const pri = Number(r.priority) || 3;
     const scC = scoreClass(sc);
-    const excessMin = r.excess_minutes;
+    const excessMin = r.excess_minutes == null ? null : Number(r.excess_minutes);
     const excessStr = excessMin == null ? "—" : (excessMin > 0 ? "+" : "") + excessMin.toFixed(0) + "m";
     const excessCls = excessMin > 20 ? "high" : excessMin > 5 ? "medium" : excessMin < -20 ? "low" : "";
     const regTime = r.register_time_ms != null ? fmt.dur(r.register_time_ms) : "—";
     
-    // Driver experience badge
+    // Recorded-history counters. These describe coverage of the imported
+    // data only, never seniority or standing.
     const totalSessions = r.driver_total_sessions || 0;
     const totalOrders = r.driver_total_orders || 0;
-    const expBadge = totalSessions < 10 ? "🆕" : totalSessions < 50 ? "" : "👑";
-    const expTitle = `${totalSessions} sessions, ${totalOrders} orders total`;
+    const expTitle = `${totalSessions} recorded trips, ${totalOrders} orders at this store`;
 
-    return `<tr class="queue-row" data-session="${r.session_id}" tabindex="0">
-      <td class="col-pri"><span class="pri-badge pri-${r.priority || 3}">${r.priority || 3}</span></td>
+    return `<tr class="queue-row" data-session="${esc(r.session_id)}" tabindex="0">
+      <td class="col-pri"><span class="pri-badge pri-${pri}">${pri}</span></td>
       <td class="col-score">
         <div class="score-cell score-${scC}">
           <span class="score-num">${fmt.score(sc)}</span>
           <div class="score-bar-wrap"><div class="score-bar" style="width:${sc}%"></div></div>
         </div>
       </td>
-      <td class="col-conf">${r.confidence || "low"}</td>
-      <td class="col-driver">${r.driver_name || r.driver_id || "—"}</td>
-      <td class="col-num" title="${expTitle}"><span style="font-size:16px">${expBadge}</span> ${totalSessions}</td>
-      <td class="col-date">${fmt.date(r.extraction_date)}</td>
-      <td class="col-num">${fmt.num(r.combined_items)} <small>×${r.order_count}</small></td>
+      <td class="col-conf">${historyLabel(r.history_coverage)}</td>
+      <td class="col-driver">${esc(r.driver_name || r.driver_id || "—")}</td>
+      <td class="col-num" title="${esc(expTitle)}">${totalSessions}</td>
+      <td class="col-date">${esc(fmt.date(r.extraction_date))}</td>
+      <td class="col-num">${fmt.num(r.combined_items)} <small>×${Number(r.order_count) || 0}</small></td>
       <td class="col-dur">${fmt.dur(r.session_duration_ms)}</td>
       <td class="col-spi ${excessCls}">${excessStr}</td>
       <td class="col-dur">${regTime}</td>
-      <td class="col-pct">${r.peer_percentile != null ? r.peer_percentile + "th" : "—"}</td>
-      <td class="col-pct">${r.driver_prior_count != null ? r.driver_prior_count : "—"}</td>
+      <td class="col-pct">${r.driver_prior_count != null ? Number(r.driver_prior_count) : "—"}</td>
       <td class="col-status">${statusPill(r.review_status)}</td>
     </tr>`;
   }).join("");
@@ -289,7 +343,7 @@ async function openSessionDetail(sessionId) {
     const { session, review, orders, driverSessions, driverStats } = data;
 
     $("sr-panel-title").textContent = "Session Detail";
-    $("sr-panel-subtitle").textContent = 
+    $("sr-panel-subtitle").textContent =
       `${session.order_count} order(s) · ${session.combined_items} items · ${fmt.date(session.extraction_date)}`;
 
     const sc = session.priority_score || 0;
@@ -297,11 +351,12 @@ async function openSessionDetail(sessionId) {
     const exMin = session.excess_minutes;
     const exStr = exMin == null ? "—" : (exMin > 0 ? "+" : "") + exMin.toFixed(1) + " min";
     
-    // Calculate register window for camera review
+    // Video review window. Both endpoints are SOURCE STATUS timestamps, not
+    // observed physical events, so the copy must not imply a store exit.
     let registerWindow = "";
-    if (session.exited_store_time && session.register_time_ms) {
-      const exitedTime = new Date(session.exited_store_time);
-      const arrivedTime = new Date(exitedTime.getTime() - session.register_time_ms);
+    if (session.dispatched_time && session.review_window_start) {
+      const exitedTime = new Date(session.dispatched_time);
+      const arrivedTime = new Date(session.review_window_start);
       
       const formatTime = (d) => d.toLocaleString('en-US', { 
         month: '2-digit', day: '2-digit', year: 'numeric',
@@ -312,28 +367,31 @@ async function openSessionDetail(sessionId) {
         <div class="notice-bar notice-blue">
           <span class="notice-icon">📹</span>
           <div style="flex:1">
-            <strong>Camera Review Window (Register Activity):</strong>
+            <strong>Source status window (nothing here is observed — verify on video):</strong>
             <div style="margin-top:8px;font-family:monospace;font-size:14px">
-              <div><strong>🛒 Arrived at Register:</strong> ${formatTime(arrivedTime)}</div>
-              <div style="margin-top:4px"><strong>🚪 Left Register:</strong> ${formatTime(exitedTime)}</div>
-              <div style="margin-top:4px;color:var(--apai-blue-100)"><strong>⏱️ Duration:</strong> ${fmt.dur(session.register_time_ms)}</div>
+              <div><strong>Picked status recorded:</strong> ${esc(formatTime(arrivedTime))}</div>
+              <div style="margin-top:4px"><strong>Dispatched status recorded:</strong> ${esc(formatTime(exitedTime))}</div>
+              <div style="margin-top:4px;color:var(--apai-blue-100)"><strong>Elapsed between them:</strong> ${fmt.dur(exitedTime - arrivedTime)}</div>
             </div>
             <div style="margin-top:8px;font-size:13px;opacity:0.85">
-              💡 Review security footage from <strong>${arrivedTime.toLocaleTimeString()}</strong> to <strong>${exitedTime.toLocaleTimeString()}</strong>
+              Suggested footage window: <strong>${esc(arrivedTime.toLocaleTimeString())}</strong> to <strong>${esc(exitedTime.toLocaleTimeString())}</strong>. The driver may have reached or left a register outside it.
             </div>
           </div>
         </div>
       `;
     }
     
-    // Driver experience badge
+    // Coverage of the IMPORTED data for this driver at this store. A small
+    // number means "we have not imported much", not "new driver".
     const dStats = driverStats || {};
     const totalSessions = dStats.total_sessions || 0;
     const totalOrders = dStats.total_orders || 0;
     const firstSeen = dStats.first_seen;
     const lastSeen = dStats.last_seen;
-    const expBadge = totalSessions < 10 ? "🆕 NEW DRIVER" : totalSessions < 50 ? "📊 LEARNING" : "👑 VETERAN";
-    const expClass = totalSessions < 10 ? "high" : totalSessions < 50 ? "medium" : "low";
+    const expBadge = totalSessions < 10 ? "LIMITED HISTORY" : "RECORDED HISTORY";
+    // notice-high / notice-medium / notice-low are not defined in styles.css;
+    // use the palette classes that exist.
+    const expClass = totalSessions < 10 ? "amber" : "blue";
     
     // Calculate days active
     let daysActive = "—";
@@ -351,7 +409,7 @@ async function openSessionDetail(sessionId) {
           <div class="score-label-sm">Priority Score</div>
         </div>
         <div class="score-hero-body">
-          <div class="score-why">${session.explanation || "No explanation generated."}</div>
+          <div class="score-why">${esc(session.explanation || "No explanation generated.")}</div>
         </div>
       </div>
 
@@ -360,27 +418,26 @@ async function openSessionDetail(sessionId) {
         <div class="stat-grid">
           <div class="stat-item"><span class="stat-label">Duration</span><span class="stat-value">${fmt.dur(session.session_duration_ms)}</span></div>
           <div class="stat-item"><span class="stat-label">Excess</span><span class="stat-value">${exStr}</span></div>
-          <div class="stat-item"><span class="stat-label">Register Time</span><span class="stat-value">${fmt.dur(session.register_time_ms)}</span></div>
+          <div class="stat-item"><span class="stat-label">Picked-to-dispatch</span><span class="stat-value">${fmt.dur(session.register_time_ms)}</span></div>
           <div class="stat-item"><span class="stat-label">Items</span><span class="stat-value">${fmt.num(session.combined_items)}</span></div>
         </div>
       </div>
       
       <div class="detail-section">
-        <div class="detail-section-title">Driver Experience</div>
+        <div class="detail-section-title">Recorded Driver History</div>
         <div class="notice-bar notice-${expClass}" style="margin-bottom:var(--sp-3)">
-          <span class="notice-icon" style="font-size:20px">${expBadge.split(' ')[0]}</span>
           <div style="flex:1">
             <strong>${expBadge}</strong>
             <div style="margin-top:4px;font-size:14px;opacity:0.9">
-              ${totalSessions} total sessions · ${totalOrders} total orders · Active ${daysActive}
+              ${totalSessions} recorded trip(s) · ${totalOrders} order(s) · imported range spans ${esc(daysActive)}
             </div>
           </div>
         </div>
         <div class="stat-grid">
-          <div class="stat-item"><span class="stat-label">Total Sessions</span><span class="stat-value">${fmt.num(totalSessions)}</span></div>
+          <div class="stat-item"><span class="stat-label">Recorded Trips</span><span class="stat-value">${fmt.num(totalSessions)}</span></div>
           <div class="stat-item"><span class="stat-label">Total Orders</span><span class="stat-value">${fmt.num(totalOrders)}</span></div>
-          <div class="stat-item"><span class="stat-label">First Seen</span><span class="stat-value">${fmt.date(firstSeen)}</span></div>
-          <div class="stat-item"><span class="stat-label">Last Seen</span><span class="stat-value">${fmt.date(lastSeen)}</span></div>
+          <div class="stat-item"><span class="stat-label">First Seen</span><span class="stat-value">${esc(fmt.date(firstSeen))}</span></div>
+          <div class="stat-item"><span class="stat-label">Last Seen</span><span class="stat-value">${esc(fmt.date(lastSeen))}</span></div>
         </div>
       </div>
 
@@ -409,9 +466,10 @@ async function openSessionDetail(sessionId) {
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
-          <textarea class="form-control" id="sr-review-notes" rows="3">${review?.notes || ""}</textarea>
+          <textarea class="form-control" id="sr-review-notes" rows="3">${esc(review?.notes || "")}</textarea>
         </div>
         <button class="btn btn-primary" id="sr-save-review">Save Review</button>
+        ${review?.merged_reviews?.length ? `<details><summary>Earlier merged reviews (${review.merged_reviews.length})</summary>${review.merged_reviews.map(r => `<p>${esc(r.status || "new")}: ${esc(r.notes || "No notes")}</p>`).join("")}</details>` : ""}
       </div>
     `;
 
@@ -421,7 +479,7 @@ async function openSessionDetail(sessionId) {
       if (result.ok) {
         $("sr-resolved").innerHTML = `
           <div class="notice-bar notice-green" style="margin-top:var(--space-3)">
-            <strong>Order IDs:</strong> ${result.real_order_ids.join(", ")}
+            <strong>Order IDs:</strong> ${esc(result.real_order_ids.join(", "))}
           </div>
         `;
         $("sr-resolved").classList.remove("hidden");
@@ -452,7 +510,7 @@ async function openSessionDetail(sessionId) {
             html += `
               <div style="margin-bottom:var(--sp-3); padding:var(--sp-3); background:var(--apai-bg-soft); border:1px solid var(--apai-border); border-radius:var(--rad-md);">
                 <div style="font-weight:var(--fw-semi); margin-bottom:var(--sp-2); color:var(--apai-ink);">
-                  Order: ${orderId} (${items.length} items)
+                  Order: ${esc(orderId)} (${items.length} items)
                 </div>
                 <table class="data-table" style="width:100%;">
                   <thead>
@@ -470,11 +528,11 @@ async function openSessionDetail(sessionId) {
             items.forEach(item => {
               html += `
                 <tr>
-                  <td>${item.itemName || item.itemId || '—'}</td>
-                  <td><code>${item.upc || '—'}</code></td>
-                  <td>${item.quantity || '—'}</td>
-                  <td>$${item.unitPrice || '—'}</td>
-                  <td>${item.lineStatus || '—'}</td>
+                  <td>${esc(item.itemName || item.itemId || '—')}</td>
+                  <td><code>${esc(item.upc || '—')}</code></td>
+                  <td>${esc(item.quantity ?? '—')}</td>
+                  <td>${esc(item.unitPrice == null ? '—' : "$" + item.unitPrice)}</td>
+                  <td>${esc(item.lineStatus || '—')}</td>
                 </tr>
               `;
             });
@@ -505,14 +563,17 @@ async function openSessionDetail(sessionId) {
 
     // Wire up save review button
     $("sr-save-review").addEventListener("click", async () => {
-      if (!review?.id) return;
+      
       host.usage.record("save_review");
-      await send("updateReview", {
-        reviewId: review.id,
+      const saved = await send("updateReview", {
+        reviewId: review?.id,
+        sessionId: session.session_id,
         status: $("sr-review-status").value,
         notes: $("sr-review-notes").value
       });
-      alert("Review saved!");
+      if (!saved.ok) { alert(saved.error || "Review could not be saved"); return; }
+      host.ui.toast ? host.ui.toast("Review saved") : alert("Review saved");
+      await Promise.all([loadQueue(), loadOverview()]);
     });
 
     $("sr-detail-overlay").classList.remove("hidden");
@@ -525,26 +586,54 @@ async function openSessionDetail(sessionId) {
 
 // ── Data Extraction ──────────────────────────────────────────────────
 async function startExtraction() {
-  const startDate = $("sr-extract-start").value;
-  const endDate = $("sr-extract-end").value;
-  
-  if (!startDate || !endDate) {
-    alert("Please select start and end dates");
-    return;
-  }
-
+  const input = $("sr-import-file");
+  const file = input?.files?.[0];
+  if (!file) { alert("Choose an order JSON file first"); return; }
+  const button = $("sr-extract-start-btn");
+  const statusEl = $("sr-extract-status");
+  const bar = $("sr-extract-progress-bar");
+  button.disabled = true;
+  bar.style.width = "35%";
   $("sr-extract-progress").classList.remove("hidden");
-  $("sr-extract-status").textContent = "Finding WISMO tab...";
-
+  $("sr-extract-results").classList.add("hidden");
+  statusEl.textContent = "Reading file…";
   try {
-    // TODO: Implement WISMO extraction using Chrome DevTools Protocol
-    // This would be similar to sparkfraud's approach
-    
-    $("sr-extract-status").textContent = "Extraction not yet implemented - see sparkfraud module for CDP approach";
-    
-  } catch (error) {
-    console.error("Extraction error:", error);
-    $("sr-extract-status").textContent = "Error: " + error.message;
+    const parsed = JSON.parse(await file.text());
+    const orders = Array.isArray(parsed) ? parsed : parsed?.orders;
+    if (!Array.isArray(orders) || !orders.length) {
+      throw new Error("Expected an array of normalized orders, or an object with an `orders` array");
+    }
+    // Only the whole file has to be unusable to fail. Individual records with
+    // no order_id are counted as `rejected` by the rebuild and reported below
+    // - blocking a 10,000-row export because one row is malformed would just
+    // push the analyst into hand-editing the source.
+    const usable = orders.filter(o => o && typeof o === "object" && String(o.order_id ?? "").trim());
+    if (!usable.length) {
+      throw new Error(`None of the ${orders.length} record(s) carry an order_id`);
+    }
+    statusEl.textContent = `Rebuilding trips from ${orders.length} imported order(s)…`;
+    const result = await send("ingestData", { orders });
+    if (!result.ok) throw new Error(result.error || "Import failed");
+    statusEl.textContent = "Import complete.";
+    // Every count here is reported by the rebuild, not estimated.
+    $("sr-extract-results").innerHTML = [
+      `<p><strong>${result.sessions}</strong> scoreable trip(s) after rebuilding the full order history.</p>`,
+      `<p><strong>${result.reviews}</strong> review record(s) available, including low-score trips.</p>`,
+      `<p><strong>${result.ineligibleOrders}</strong> order(s) retained but not scored (cancelled, zero quantity, or missing/inverted timestamps).</p>`,
+      result.rejected ? `<p><strong>${result.rejected}</strong> record(s) rejected for having no order_id.</p>` : "",
+      `<p class="muted tiny">Saved review decisions were carried across. Reimporting the same file again changes nothing.</p>`,
+    ].join("");
+    $("sr-extract-results").classList.remove("hidden");
+    State.queue.offset = 0;
+    await Promise.all([loadOverview(), loadQueue()]);
+    bar.style.width = "100%";
+  } catch (e) {
+    statusEl.textContent = `Import failed: ${e?.message || String(e)}`;
+    bar.style.width = "0%";
+  } finally {
+    // The progress block stays visible: #sr-extract-status lives inside it and
+    // is the only place the outcome (or the failure reason) is shown.
+    button.disabled = false;
   }
 }
 
@@ -552,11 +641,6 @@ async function startExtraction() {
   function init() {
   console.log("[SparkRisk] Initializing module...");
 
-  // Set default dates
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  $("sr-extract-start").value = weekAgo;
-  $("sr-extract-end").value = today;
 
   // Wire up event listeners
   $$(".sr-tab").forEach(btn => {
@@ -592,6 +676,10 @@ async function startExtraction() {
   });
 
   $("sr-extract-start-btn")?.addEventListener("click", startExtraction);
+
+  // Context-bar shortcut. Previously unwired, so the primary-looking
+  // "Import Order Data" button did nothing at all.
+  $("sr-extract-btn")?.addEventListener("click", () => switchTab("extraction"));
 
   // Load initial view
   loadOverview();

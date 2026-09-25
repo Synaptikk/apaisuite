@@ -4,7 +4,7 @@
 
 <div class="sr-header">
   <h1>SparkRisk</h1>
-  <span class="sr-subtitle">Pre-checkout timing analysis for Spark Shop & Deliver</span>
+  <span class="sr-subtitle">Recorded trip timing review for Spark Shop & Deliver</span>
   <button id="sr-help" class="btn btn-secondary btn-sm" title="How SparkRisk works">? Help</button>
   <span id="sr-status" class="badge"></span>
 </div>
@@ -17,32 +17,35 @@
   </header>
   <div class="modal-body">
     <h3>What it does</h3>
-    <p>
-      SparkRisk identifies Spark delivery driver sessions with unusual pre-checkout timing patterns,
-      flagging potential fraud or operational issues before items leave the store.
-    </p>
-
-    <h3>Scoring Model (v2)</h3>
-    <p>Priority score based on three factors:</p>
+    <p>Orders recorded Spark trips into a review queue by how far their elapsed time sits from a fixed reference. It is a triage aid, not a detector: timing alone does not establish fraud, a scam, or even a process problem. <strong>Picked</strong> and <strong>dispatched</strong> are statuses recorded by the source system, not verified register arrival or store exit.</p>
+    <h3>What the score is (model v3.1)</h3>
     <ul>
-      <li><strong>Excess Time</strong> — How much slower than expected for the basket size</li>
-      <li><strong>Driver Deviation</strong> — Compared to this driver's personal baseline</li>
-      <li><strong>Peer Percentile</strong> — Compared to context-matched peers (congestion, peak hours, batch size)</li>
+      <li><strong>Excess time</strong> compares trip duration against a fixed <strong>60&nbsp;seconds per item</strong>. That figure is an arbitrary reference constant. It has never been fitted to this store, these drivers, or any confirmed outcome.</li>
+      <li><strong>Driver deviation</strong> compares the trip against the same driver&rsquo;s <em>earlier</em> recorded trips <em>at the same store</em>, and needs at least 3 of them before it contributes anything.</li>
+      <li>Whichever components are available are normalised to 0&ndash;100. A session with no driver history is scored on excess time alone.</li>
+      <li><strong>Peer comparison is not implemented.</strong> No peer source has been mapped, so the queue has no peer column and no peer term in the score.</li>
+      <li><strong>History</strong> (none / limited / recorded) reports how many prior trips back the baseline. It is not a confidence that anything is wrong.</li>
     </ul>
-
+    <h3>What it cannot tell you</h3>
+    <p>Nothing here is calibrated against confirmed outcomes, because no shortage or audit-outcome source has been mapped yet. A high score means &ldquo;look at this one first&rdquo;, nothing more. Every finding still has to be established from video, order detail and the audit record.</p>
     <h3>Workflow</h3>
     <ol>
-      <li>Extract WISMO data using the "Data Extraction" tool below</li>
-      <li>Review high-priority sessions in the queue (score ≥ 45)</li>
-      <li>Click a session to see register timestamp (for camera review) and order details</li>
+      <li>Import normalized order records on the Import Data tab</li>
+      <li>Work the queue from the top; the score only sets the order</li>
+      <li>Click a session to inspect source timestamps, order details and review notes</li>
       <li>Resolve real order numbers when needed for investigation</li>
-      <li>Mark sessions as cleared, confirmed, or escalated</li>
+      <li>Record the outcome: cleared, confirmed, or escalated &mdash; with notes</li>
     </ol>
+    <h3>Coverage</h3>
+    <p>Baselines only see trips that have been imported. A driver active for months but imported for one day has one day of history, and the badge will say so.</p>
 
-    <h3>Privacy & Security</h3>
+    <h3>Privacy &amp; Security</h3>
     <p>
-      All data stored locally in browser IndexedDB. Real order IDs and driver names are visible
-      but audit-logged. Never share extracted data outside authorized systems.
+      All data stays in this browser's IndexedDB. Real order IDs and driver names are
+      visible in the detail panel. <strong>There is no durable audit log</strong> &mdash;
+      &ldquo;Resolve real order numbers&rdquo; only writes a line to the browser console, which is
+      lost when the service worker sleeps. Treat everything here as unlogged access and
+      never move extracted data outside authorized systems.
     </p>
   </div>
   <footer class="modal-foot">
@@ -53,13 +56,13 @@
 <!-- Context bar -->
 <section class="sr-context">
   <div class="sr-context-chips">
-    <div class="chip"><span class="chip-label">Store</span><span id="sr-store-val" class="chip-value">1458</span></div>
+    <div class="chip"><span class="chip-label">Store</span><span id="sr-store-val" class="chip-value">&mdash;</span></div>
     <div class="chip"><span class="chip-label">Date Range</span><span id="sr-date-range" class="chip-value">—</span></div>
     <div class="chip"><span class="chip-label">Sessions</span><span id="sr-session-count" class="chip-value">—</span></div>
   </div>
   <div class="sr-context-actions">
     <button id="sr-refresh-btn" class="btn btn-secondary btn-sm">↻ Refresh</button>
-    <button id="sr-extract-btn" class="btn btn-primary btn-sm">↓ Extract WISMO Data</button>
+    <button id="sr-extract-btn" class="btn btn-primary btn-sm">↓ Import Order Data</button>
   </div>
 </section>
 
@@ -67,7 +70,7 @@
 <nav class="sr-tabs">
   <button class="sr-tab active" data-tab="overview">Overview</button>
   <button class="sr-tab" data-tab="queue">Review Queue</button>
-  <button class="sr-tab" data-tab="extraction">Data Extraction</button>
+  <button class="sr-tab" data-tab="extraction">Import Data</button>
 </nav>
 
 <!-- OVERVIEW TAB -->
@@ -80,7 +83,7 @@
     <div class="chart-card chart-wide">
       <div class="chart-header">
         <span class="chart-title">Excess Time Distribution</span>
-        <span class="chart-note">Click bar to filter queue</span>
+        <span class="chart-note">Minutes vs the 60s/item reference</span>
       </div>
       <div class="chart-body">
         <canvas id="sr-excess-chart" height="180"></canvas>
@@ -136,21 +139,20 @@
         <tr>
           <th>Pri</th>
           <th>Score</th>
-          <th>Conf</th>
+          <th title="How much prior recorded activity backs this driver's baseline">History</th>
           <th>Driver</th>
-          <th>Exp</th>
+          <th title="Recorded trips for this driver at this store">Trips</th>
           <th>Date</th>
           <th>Items / Orders</th>
           <th>Duration</th>
-          <th>Excess</th>
-          <th>Register</th>
-          <th>Peer Pct</th>
-          <th>Prior N</th>
+          <th title="Elapsed time minus the 60s/item reference">Excess</th>
+          <th title="Longest picked-to-dispatch gap in the trip. Source statuses, not register events.">Picked&rarr;Disp</th>
+          <th title="Prior trips backing the baseline">Prior N</th>
           <th>Status</th>
         </tr>
       </thead>
       <tbody id="sr-queue-body">
-        <tr><td colspan="13" class="empty-row">Loading queue…</td></tr>
+        <tr><td colspan="12" class="empty-row">Loading queue…</td></tr>
       </tbody>
     </table>
   </div>
@@ -161,29 +163,11 @@
 <!-- EXTRACTION TAB -->
 <section class="sr-tab-content" id="sr-extraction">
   <div class="sr-extraction-panel">
-    <h2>WISMO Data Extraction</h2>
-    <p class="muted">Extract Spark Shop & Deliver orders from WISMO dashboard</p>
-
-    <div class="field-group">
-      <label class="field">
-        <span class="field-label">Start Date</span>
-        <input type="date" id="sr-extract-start" class="input" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">End Date</span>
-        <input type="date" id="sr-extract-end" class="input" value="">
-      </label>
-    </div>
-
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="sr-extract-auto-ingest" checked>
-        <span>Automatically ingest and score sessions after extraction</span>
-      </label>
-    </div>
-
-    <button id="sr-extract-start-btn" class="btn btn-primary">Start Extraction</button>
-
+    <h2>Import Order Data</h2>
+    <p class="muted">Automatic WISMO extraction is not connected. Import a JSON array of normalized orders, or an object containing an <code>orders</code> array. Reimporting the same source updates those orders in place and rebuilds every trip &mdash; it never duplicates them, and saved review decisions are carried across.</p>
+    <p class="muted">Required: order_id, total_order_qty, pick_started_time and dispatched_time (ISO timestamps). Include store_nbr, driver_uuid or driver_id, trip_id, extraction_date, and picked_time when available. Raw API responses must first be normalized to these fields.</p>
+    <label class="field"><span class="field-label">Order JSON file</span><input id="sr-import-file" type="file" accept=".json,application/json"></label>
+    <button id="sr-extract-start-btn" class="btn btn-primary">Import and analyze</button>
     <div id="sr-extract-progress" class="extraction-progress hidden">
       <div class="progress-bar">
         <div id="sr-extract-progress-bar" class="progress-fill" style="width: 0%"></div>
@@ -197,7 +181,7 @@
 
     <div class="notice-bar notice-amber" style="margin-top: var(--space-4)">
       <span class="notice-icon">⚠️</span>
-      <span><strong>Requires WISMO authentication.</strong> You must be logged into WISMO in another tab. The extension will capture network responses via Chrome DevTools Protocol.</span>
+      <span>Imports are processed locally. Keep the original source export for reference.</span>
     </div>
   </div>
 </section>

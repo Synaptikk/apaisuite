@@ -4,6 +4,7 @@
 // Converts server.mjs Express routes to chrome.runtime.onMessage handlers
 
 import { db } from "./models/index.js";
+import { rebuild, orderKey } from "./lib/rebuild.js";
 
 const MODULE_ID = "sparkrisk";
 
@@ -13,216 +14,12 @@ const STORAGE_LAST_SYNC = `${MODULE_ID}.last_sync`;
 const STORAGE_OMS_HEADERS_KEY = `${MODULE_ID}.omsHeaders`;
 const CAPTURE_GLOBAL_NAME = "__APAISUITE_SPARKRISK_CAP";
 
+// Bumped from v3 when the unsupported context multipliers were removed from
+// lib/sessions.js - scores produced before that change are not comparable.
+const MODEL_VERSION = "v3.1-timing-review";
+const REVIEW_STATUSES = ["new", "in_review", "cleared", "confirmed", "monitoring", "inconclusive", "escalated"];
+
 // ── Helpers ────────────────────────────────────────────────────────
-
-// Statistical helpers
-function median(arr) {
-  if (!arr.length) return null;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function mad(arr) {
-  if (!arr.length) return null;
-  const med = median(arr);
-  if (med === null) return null;
-  const devs = arr.map(x => Math.abs(x - med));
-  return median(devs);
-}
-
-function calculateDriverBaselines(sessions) {
-  // Sort by session start time for chronological processing
-  const sorted = [...sessions].sort((a, b) => 
-    new Date(a.session_start) - new Date(b.session_start)
-  );
-  
-  const driverHistory = new Map();  // driver_key → [session_spi, ...]
-  const baselines = new Map();      // session_id → { count, median, mad }
-  
-  for (const s of sorted) {
-    const driverKey = s.driver_key;
-    if (!driverKey) continue;
-    
-    // Get prior sessions for this driver
-    const priorSessions = driverHistory.get(driverKey) || [];
-    
-    // Calculate baseline from prior sessions
-    baselines.set(s.session_id, {
-      count: priorSessions.length,
-      median: median(priorSessions),
-      mad: mad(priorSessions)
-    });
-    
-    // Add this session to driver history for future sessions
-    if (!driverHistory.has(driverKey)) {
-      driverHistory.set(driverKey, []);
-    }
-    if (s.session_spi) {
-      driverHistory.get(driverKey).push(s.session_spi);
-    }
-  }
-  
-  return baselines;
-}
-
-function scoreSessions(sessions, context) {
-  // Calculate driver baselines first (FIX: use driver_key instead of driver_pseudonym)
-  const baselines = calculateDriverBaselines(sessions);
-  
-  return sessions.map(session => {
-    const baseline = baselines.get(session.session_id) || { count: 0, median: null, mad: null };
-    
-    // Calculate driver deviation (z-score using MAD)
-    let driverDeviation = null;
-    if (baseline.count >= 3 && baseline.median !== null && baseline.mad !== null && baseline.mad > 0) {
-      driverDeviation = (session.session_spi - baseline.median) / (baseline.mad * 1.4826);
-    } else if (baseline.count >= 3 && baseline.median !== null && baseline.median > 0) {
-      driverDeviation = ((session.session_spi - baseline.median) / baseline.median) * 3;
-    }
-    
-    // Calculate expected duration and excess
-    const baseSpi = 60;  // Default base SPI (60 sec/item)
-    const expectedMs = baseSpi * (session.combined_items || 0) * 1000;
-    const excessMs = (session.session_duration_ms || 0) - expectedMs;
-    const excessMinutes = excessMs / 60000;
-    
-    // Calculate priority score
-    const baseScore = calculateBaseScore({
-      ...session,
-      excess_minutes: excessMinutes,
-      driver_deviation: driverDeviation
-    });
-    const contextScore = applyContextAdjustments(baseScore, session, context);
-    
-    // Determine confidence
-    let confidence = 'low';
-    if (baseline.count >= 10) {
-      confidence = 'high';
-    } else if (baseline.count >= 3) {
-      confidence = 'medium';
-    }
-    
-    return { 
-      ...session, 
-      driver_prior_count: baseline.count,
-      driver_prior_median_spi: baseline.median ? Math.round(baseline.median * 10) / 10 : null,
-      driver_deviation: driverDeviation ? Math.round(driverDeviation * 100) / 100 : null,
-      expected_duration_ms: Math.round(expectedMs),
-      excess_minutes: Math.round(excessMinutes * 10) / 10,
-      priority_score: contextScore,
-      confidence
-    };
-  });
-}
-
-function calculateBaseScore(session) {
-  // Priority score = excess time + driver deviation + peer percentile
-  const excessWeight = 0.4;
-  const deviationWeight = 0.3;
-  const peerWeight = 0.3;
-  
-  const excessScore = Math.min((session.excess_minutes || 0) * 2, 100);
-  const deviationScore = Math.min((session.driver_deviation || 0) * 5, 100);
-  const peerScore = session.peer_percentile || 0;
-  
-  return (excessScore * excessWeight) + 
-         (deviationScore * deviationWeight) + 
-         (peerScore * peerWeight);
-}
-
-function applyContextAdjustments(score, session, context) {
-  // Adjust for congestion, peak hours, etc.
-  let adjusted = score;
-  
-  if (session.is_peak_1to4) adjusted *= 0.9;  // Less suspicious during peak
-  if (session.is_weekend) adjusted *= 0.95;    // Slightly less suspicious on weekends
-  if (session.order_count > 3) adjusted *= 1.1; // More suspicious for large batches
-  
-  return Math.min(adjusted, 100);
-}
-
-async function buildSessionsFromOrders(orders) {
-  // Group orders by trip_id and driver
-  const tripMap = new Map();
-  
-  for (const order of orders) {
-    const tripKey = order.trip_id || `${order.driver_id}_${order.extraction_date}`;
-    if (!tripMap.has(tripKey)) {
-      tripMap.set(tripKey, []);
-    }
-    tripMap.get(tripKey).push(order);
-  }
-  
-  // Build sessions
-  const sessions = [];
-  for (const [tripKey, tripOrders] of tripMap) {
-    const session = buildSessionFromOrders(tripOrders);
-    if (session) sessions.push(session);
-  }
-  
-  return sessions;
-}
-
-function buildSessionFromOrders(orders) {
-  if (!orders.length) return null;
-  
-  const firstOrder = orders[0];
-  const pickTimes = orders.map(o => new Date(o.pick_started_time)).filter(t => !isNaN(t));
-  const dispatchTimes = orders.map(o => new Date(o.dispatched_time)).filter(t => !isNaN(t));
-  
-  if (!pickTimes.length || !dispatchTimes.length) return null;
-  
-  const sessionStart = new Date(Math.min(...pickTimes));
-  const sessionEnd = new Date(Math.max(...dispatchTimes));
-  const durationMs = sessionEnd - sessionStart;
-  
-  const totalItems = orders.reduce((sum, o) => sum + (o.total_order_qty || 0), 0);
-  const spi = totalItems > 0 ? durationMs / 1000 / totalItems : null;
-  
-  // Calculate register time (last PICKED → DISPATCHED)
-  const registerTimeMs = orders.reduce((max, o) => {
-    if (o.picked_time && o.dispatched_time) {
-      const rt = new Date(o.dispatched_time) - new Date(o.picked_time);
-      return Math.max(max, rt);
-    }
-    return max;
-  }, 0);
-  
-  // Create driver_key with proper fallback chain (FIX: driver grouping bug)
-  const driverKey = firstOrder.driver_pseudonym || 
-                     firstOrder.driver_uuid || 
-                     firstOrder.driver_id || 
-                     `${firstOrder.driver_first_name || ''} ${firstOrder.driver_last_name || ''}`.trim() || 
-                     'unknown';
-  
-  return {
-    session_id: crypto.randomUUID(),
-    trip_id: firstOrder.trip_id,
-    driver_id: firstOrder.driver_id,
-    driver_uuid: firstOrder.driver_uuid,
-    driver_key: driverKey,  // NEW: unified driver identifier
-    driver_name: `${firstOrder.driver_first_name || ''} ${firstOrder.driver_last_name || ''}`.trim(),
-    order_ids: JSON.stringify(orders.map(o => o.order_id)),
-    order_count: orders.length,
-    combined_items: totalItems,
-    extraction_date: firstOrder.extraction_date,
-    session_start: sessionStart.toISOString(),
-    session_duration_ms: durationMs,
-    session_spi: spi,
-    register_time_ms: registerTimeMs,
-    exited_store_time: sessionEnd.toISOString(),
-    has_cancelled: orders.some(o => o.status === 'CANCELLED'),
-    // Placeholders for scoring
-    driver_prior_count: null,  // Will be filled by scoring
-    driver_prior_median_spi: null,
-    driver_deviation: null,
-    excess_minutes: null,
-    expected_duration_ms: null,
-    priority_score: 0,
-    confidence: 'low'
-  };
-}
 
 // ── Message Handlers ────────────────────────────────────────────────
 
@@ -233,11 +30,20 @@ handlers.getStats = async (message) => {
   try {
     const sessions = await db.getAll("sessions");
     const reviews = await db.getAll("session_reviews");
-    
+    const orders = await db.getAll("orders");
+
     const totalSessions = sessions.length;
+    // Orders retained but not part of any scoreable trip (cancelled, reversed,
+    // zero-quantity, or missing/inverted timestamps). They stay in the DB as
+    // lineage; they are simply not scored.
+    const sessionOrderIds = new Set(sessions.flatMap(x => {
+      try { return JSON.parse(x.order_ids || "[]").map(id => JSON.stringify([x.store, String(id)])); }
+      catch { return []; }
+    }));
+    const ineligibleOrders = orders.filter(o => !sessionOrderIds.has(orderKey(o))).length;
     const highPri = sessions.filter(s => s.priority_score >= 75).length;
-    const cleared = reviews.filter(r => r.status === "cleared").length;
-    const confirmed = reviews.filter(r => r.status === "confirmed").length;
+    const cleared = reviews.filter(r => !r.archived && r.status === "cleared").length;
+    const confirmed = reviews.filter(r => !r.archived && r.status === "confirmed").length;
     
     // Calculate daily volumes
     const dateMap = new Map();
@@ -272,7 +78,9 @@ handlers.getStats = async (message) => {
     return {
       ok: true,
       total: totalSessions,
-      eligible: totalSessions,
+      storedOrders: orders.length,
+      ineligibleOrders,
+      stores: [...new Set(sessions.map(x => x.store).filter(Boolean))].sort(),
       highPri,
       cleared,
       confirmed,
@@ -290,29 +98,31 @@ handlers.getQueue = async (message) => {
   try {
     const { limit = 50, offset = 0, minScore = 0, maxScore = 100, status = '', date = '', sort = 'priority_score', dir = 'DESC' } = message;
     
-    let sessions = await db.getAll("sessions");
-    
+    const allSessions = await db.getAll("sessions");
+
     // Filters
-    sessions = sessions.filter(s => {
+    const sessions = allSessions.filter(s => {
       if (s.priority_score < minScore || s.priority_score > maxScore) return false;
       if (date && s.extraction_date !== date) return false;
       return true;
     });
-    
-    // Join with reviews
+
+    // Join with reviews. Archived legacy reviews are excluded: they belong to
+    // sessions that no longer exist and must never decorate a live row.
     const reviews = await db.getAll("session_reviews");
-    const reviewMap = new Map(reviews.map(r => [r.session_id, r]));
-    
-    // Calculate driver stats (total sessions and orders per driver)
-    const allSessions = await db.getAll("sessions");
+    const reviewMap = new Map(reviews.filter(r => !r.archived).map(r => [r.session_id, r]));
+
+    // Driver stats are scoped by store, matching the baseline scope in
+    // lib/sessions.js. The same driver at two stores is two histories.
     const driverStats = new Map();
-    
+    const driverScope = s => JSON.stringify([s.store || "", s.driver_key]);
+
     for (const s of allSessions) {
       const driverKey = s.driver_key;  // FIX: use driver_key instead of fallback
       if (!driverKey) continue;
-      
-      if (!driverStats.has(driverKey)) {
-        driverStats.set(driverKey, {
+
+      if (!driverStats.has(driverScope(s))) {
+        driverStats.set(driverScope(s), {
           total_sessions: 0,
           total_orders: 0,
           first_seen: s.extraction_date,
@@ -320,7 +130,7 @@ handlers.getQueue = async (message) => {
         });
       }
       
-      const stats = driverStats.get(driverKey);
+      const stats = driverStats.get(driverScope(s));
       stats.total_sessions++;
       stats.total_orders += (s.order_count || 0);
       
@@ -330,8 +140,7 @@ handlers.getQueue = async (message) => {
     
     const rows = sessions.map(s => {
       const review = reviewMap.get(s.session_id);
-      const driverKey = s.driver_key;  // FIX: use driver_key
-      const dStats = driverStats.get(driverKey) || { total_sessions: 1, total_orders: s.order_count || 0, first_seen: s.extraction_date, last_seen: s.extraction_date };
+      const dStats = driverStats.get(driverScope(s)) || { total_sessions: 1, total_orders: s.order_count || 0, first_seen: s.extraction_date, last_seen: s.extraction_date };
       
       return {
         ...s,
@@ -349,10 +158,14 @@ handlers.getQueue = async (message) => {
     const filteredRows = status ? rows.filter(r => r.review_status === status) : rows;
     
     // Sort
+    // extraction_date sorts as a string; priority_score / excess_minutes as
+    // numbers. Subtracting strings yielded NaN and silently disabled sorting.
     filteredRows.sort((a, b) => {
-      const aVal = a[sort] ?? 0;
-      const bVal = b[sort] ?? 0;
-      return dir === 'DESC' ? bVal - aVal : aVal - bVal;
+      const aVal = a[sort], bVal = b[sort];
+      const cmp = (typeof aVal === "string" || typeof bVal === "string")
+        ? String(aVal ?? "").localeCompare(String(bVal ?? ""))
+        : (aVal ?? 0) - (bVal ?? 0);
+      return dir === 'DESC' ? -cmp : cmp;
     });
     
     // Paginate
@@ -364,7 +177,7 @@ handlers.getQueue = async (message) => {
       total: filteredRows.length,
       limit,
       offset,
-      modelVersion: "v2"
+      modelVersion: MODEL_VERSION
     };
   } catch (error) {
     console.error("[SparkRisk] getQueue error:", error);
@@ -382,23 +195,27 @@ handlers.getSession = async (message) => {
       return { ok: false, error: "Session not found" };
     }
     
-    const review = await db.getAll("session_reviews", "session_id", sessionId);
-    const orderIds = JSON.parse(session.order_ids || "[]");
-    
-    // Get orders
+    const review = (await db.getAll("session_reviews", "session_id", sessionId)).find(r => !r.archived) || null;
+    const orderIds = JSON.parse(session.order_ids || "[]").map(String);
+
+    // Orders are keyed by (store, order_id). Matching on order_id alone would
+    // pull another store's order with a colliding number into this trip.
+    const wanted = new Set(orderIds.map(id => JSON.stringify([session.store || "", id])));
     const allOrders = await db.getAll("orders");
-    const orders = allOrders.filter(o => orderIds.includes(o.order_id));
-    
-    // Get driver session history (prior only)
+    const orders = allOrders.filter(o => wanted.has(orderKey(o)));
+
+    // Driver history is scoped to (store, driver), matching the baseline scope
+    // in lib/sessions.js.
     const allSessions = await db.getAll("sessions");
+    const sameDriver = s => s.driver_key === session.driver_key && (s.store || "") === (session.store || "");
     const driverSessions = allSessions.filter(s =>
-      s.driver_key === session.driver_key &&  // FIX: use driver_key
+      sameDriver(s) &&
       new Date(s.session_start) < new Date(session.session_start)
     );
     driverSessions.sort((a, b) => new Date(b.session_start) - new Date(a.session_start));
-    
+
     // Calculate driver totals (all time, not just prior)
-    const driverAllSessions = allSessions.filter(s => s.driver_key === session.driver_key);  // FIX: use driver_key
+    const driverAllSessions = allSessions.filter(sameDriver);
     const driverTotalSessions = driverAllSessions.length;
     const driverTotalOrders = driverAllSessions.reduce((sum, s) => sum + (s.order_count || 0), 0);
     const driverFirstSeen = driverAllSessions.reduce((min, s) => 
@@ -413,7 +230,7 @@ handlers.getSession = async (message) => {
     return {
       ok: true,
       session,
-      review: review[0] || null,
+      review,
       orders,
       driverSessions: driverSessions.slice(0, 20),
       driverStats: {
@@ -441,8 +258,10 @@ handlers.resolveIdentity = async (message) => {
     
     const orderIds = JSON.parse(session.order_ids || "[]");
     
-    // Audit log (would store in IndexedDB in production)
-    console.log("[SparkRisk] Identity resolution:", {
+    // NOT an audit log. This line goes to the SW console and is lost when the
+    // worker sleeps. The help text says so; do not describe this as audited
+    // access until it writes to a durable store.
+    console.log("[SparkRisk] Identity resolution (not persisted):", {
       session_id: sessionId,
       order_ids: orderIds,
       timestamp: new Date().toISOString()
@@ -467,17 +286,24 @@ handlers.resolveIdentity = async (message) => {
 // PATCH /api/review/:id
 handlers.updateReview = async (message) => {
   try {
-    const { reviewId, status, reviewer, notes } = message;
+    const { reviewId, sessionId, status, reviewer, notes } = message;
     
-    const reviews = await db.getAll("session_reviews");
-    const review = reviews.find(r => r.id === reviewId);
-    
+    if (status && !REVIEW_STATUSES.includes(status)) return { ok: false, error: "Invalid review status" };
+
+    const reviews = (await db.getAll("session_reviews")).filter(r => !r.archived);
+    const session = sessionId ? await db.get("sessions", sessionId) : null;
+    let review = reviewId ? reviews.find(r => r.id === reviewId) : null;
+    if (!review && sessionId) review = reviews.find(r => r.session_id === sessionId);
+    // A session with no review row yet is still reviewable - create one.
+    if (!review && session) review = { id: `review:${sessionId}`, session_id: sessionId, status: "new", notes: "", created_at: new Date().toISOString() };
+
     if (!review) {
-      return { ok: false, error: "Review not found" };
+      return { ok: false, error: sessionId ? "Session not found" : "Review not found" };
     }
-    
+
     const updated = {
       ...review,
+      archived: false,
       status: status || review.status,
       reviewer: reviewer || review.reviewer,
       notes: notes !== undefined ? notes : review.notes,
@@ -502,41 +328,11 @@ handlers.ingestData = async (message) => {
       return { ok: false, error: "No orders provided" };
     }
     
-    // Store orders
-    await db.putMany("orders", rawOrders);
-    
-    // Build sessions
-    const sessions = await buildSessionsFromOrders(rawOrders);
-    
-    // Score sessions (simplified for now)
-    const scoredSessions = scoreSessions(sessions, {});
-    
-    // Store sessions
-    await db.putMany("sessions", scoredSessions);
-    
-    // Create reviews for high-priority sessions
-    const reviews = scoredSessions
-      .filter(s => s.priority_score >= 45)
-      .map(s => ({
-        id: crypto.randomUUID(),
-        session_id: s.session_id,
-        status: "new",
-        priority: s.priority_score >= 75 ? 1 : s.priority_score >= 60 ? 2 : 3,
-        reviewer: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        notes: "",
-        history: "[]"
-      }));
-    
-    await db.putMany("session_reviews", reviews);
-    
-    return {
-      ok: true,
-      ingested: rawOrders.length,
-      sessions: sessions.length,
-      reviews: reviews.length
-    };
+    const [orders, sessions, reviews] = await Promise.all(['orders', 'sessions', 'session_reviews'].map(name => db.getAll(name)));
+    const result = await rebuild(orders, rawOrders, sessions, reviews);
+    await db.replaceAnalysis(result);
+    return { ok: true, ingested: rawOrders.length, sessions: result.sessions.length, reviews: result.reviews.filter(r => !r.archived).length, rejected: result.rejected, ineligibleOrders: result.ineligibleOrders };
+
   } catch (error) {
     console.error("[SparkRisk] ingestData error:", error);
     return { ok: false, error: error.message };
@@ -765,4 +561,36 @@ handlers.fetchOrderItems = async (message) => {
 };
 
 // Export handlers (named export required for APAI Suite)
+// Serialize reads with rebuilds and reviews so concurrent imports cannot lose work.
+let analysisQueue = Promise.resolve();
+
+// First-access migration: rebuild whatever is already in the DB so that
+// sessions, ids and baselines match the current model before anything is read.
+// `deferred` is an in-process latch for the one case we refuse to migrate,
+// so we do not re-read all three stores on every single handler call.
+let foundationState = null;   // null | "done" | "deferred"
+async function ensureFoundation() {
+  if (foundationState === "done" || foundationState === "deferred") return;
+  if (await db.get('backups', 'foundation-v3-ready')) { foundationState = "done"; return; }
+  const [orders, sessions, reviews] = await Promise.all(['orders', 'sessions', 'session_reviews'].map(name => db.getAll(name)));
+  // A DB holding sessions but no orders cannot be rebuilt - the orders are the
+  // only lineage there is. Rebuilding would silently delete the analyst's
+  // existing queue and archive every review, so leave it alone. The next
+  // successful import supplies orders and takes over from there.
+  if (!orders.length && sessions.length) {
+    console.warn("[SparkRisk] Legacy sessions present with no stored orders; skipping migration. Import order data to rebuild.");
+    foundationState = "deferred";
+    return;
+  }
+  await db.replaceAnalysis(await rebuild(orders, [], sessions, reviews));
+  foundationState = "done";
+}
+for (const name of ['getStats', 'getQueue', 'getSession', 'resolveIdentity', 'updateReview', 'ingestData']) {
+  const handler = handlers[name];
+  handlers[name] = (message) => {
+    const job = analysisQueue.then(async () => { await ensureFoundation(); return handler(message); });
+    analysisQueue = job.catch(() => {});
+    return job;
+  };
+}
 export { handlers };
