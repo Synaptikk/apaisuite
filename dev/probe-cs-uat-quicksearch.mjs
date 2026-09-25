@@ -1,0 +1,43 @@
+// UAT: Quick Search for the submitted incident number from the intake list tab, open its folder, dump the Evidence Collection page.
+import puppeteer from "puppeteer-core";
+import { writeFileSync } from "node:fs";
+const OUT = "C:/Users/SES008~1.S01/AppData/Local/Temp/claude/C--Users-ses008s-s01458-Desktop-APAISuite/040c3438-1536-48d3-9351-7c26de274ae3/scratchpad";
+const CLAIM = "26005842";
+const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", protocolTimeout: 60000 });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const known = new Set((await browser.pages()).filter(p => /riskonnect/.test(p.url())).map(p => p.url()));
+const findNew = async () => (await browser.pages()).find(p => /riskonnect/.test(p.url()) && !known.has(p.url()));
+let page = (await browser.pages()).find(x => /uat\.riskonnectclearsight\.com.*intakenotice$/.test(x.url()));
+await page.bringToFront();
+const reqs = [];
+const hook = (pg) => pg.on("request", r => { const t = r.resourceType(); if ((t === "xhr" || t === "fetch") && /riskonnect/.test(r.url()) && !/CheckForceLogOut|nr-data/.test(r.url())) reqs.push({ m: r.method(), u: r.url().replace("https://uat.riskonnectclearsight.com/Enterprise/", "").slice(0, 240), body: (r.postData() || "").slice(0, 400) }); });
+hook(page);
+const txt = (pg) => pg.evaluate(() => document.body.innerText);
+const qs = await page.$("#quick-search-input-text");
+await qs.click({ clickCount: 3 }); await qs.type(CLAIM, { delay: 30 }); await page.keyboard.press("Enter"); await sleep(10000);
+let np = await findNew(); if (np) { page = np; hook(page); await page.bringToFront(); await sleep(2000); }
+console.log("SEARCH URL:", page.url());
+console.log("TEXT:", (await txt(page)).replace(/\n+/g, " | ").slice(0, 2500));
+await page.screenshot({ path: `${OUT}/qs-1.png`, fullPage: true });
+const rowInfo = await page.evaluate((CLAIM) => { const rows = [...document.querySelectorAll("tr, [role=row]")].filter(r => (r.innerText || "").includes(CLAIM)); return rows.map(r => ({ text: r.innerText.replace(/\s+/g, " ").slice(0, 300), links: [...r.querySelectorAll("a, button")].map(a => ({ t: (a.innerText || a.title || a.getAttribute("aria-label") || "").trim().slice(0, 40), h: a.href || "" })) })); }, CLAIM);
+console.log("ROWS:", JSON.stringify(rowInfo, null, 1).slice(0, 2000));
+const opened = await page.evaluate((CLAIM) => { const row = [...document.querySelectorAll("tr, [role=row]")].find(r => (r.innerText || "").includes(CLAIM)); if (!row) return null; const a = [...row.querySelectorAll("a, button")].find(x => /open/i.test((x.innerText || x.title || x.getAttribute("aria-label") || "")) && !/new window/i.test(x.innerText || x.title || "")) || row.querySelector("a, button"); if (a) { a.click(); return (a.innerText || a.title || a.getAttribute("aria-label") || "").trim(); } return null; }, CLAIM);
+console.log("clicked in row:", opened); await sleep(12000);
+np = await findNew(); if (np && np !== page) { page = np; hook(page); await page.bringToFront(); await sleep(3000); }
+console.log("FOLDER URL:", page.url());
+const menu = await page.evaluate(() => [...new Set([...document.querySelectorAll("nav li, aside li, [class*=sub-menu] li, [role=tab], [class*=nav] a, [class*=menu] a, li a")].filter(e => e.getBoundingClientRect().width > 0).map(e => (e.innerText || "").replace(/\s+/g, " ").trim()).filter(x => x && x.length < 70))]);
+console.log("MENU:", JSON.stringify(menu));
+console.log("TEXT:", (await txt(page)).replace(/\n+/g, " | ").slice(0, 2500));
+await page.screenshot({ path: `${OUT}/qs-2.png`, fullPage: true });
+const ev = await page.evaluate(() => { const c = [...document.querySelectorAll("a, li, button, span, div")].find(x => /evidence collection/i.test(x.innerText || "") && x.getBoundingClientRect().width > 0 && x.getBoundingClientRect().width < 500 && (x.innerText || "").length < 80); if (c) { c.click(); return (c.innerText || "").trim(); } return null; });
+console.log("evidence page click:", ev); await sleep(12000);
+console.log("EVIDENCE URL:", page.url());
+const dump = await page.evaluate(() => { const t = el => ((el && (el.innerText ?? el.textContent)) || "").toString().replace(/\s+/g, " ").trim(); const v = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const rows = []; document.querySelectorAll("input:not([type=hidden]), select, textarea").forEach(el => { if (!v(el)) return; let label = ""; if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) label = t(l); } if (!label) { let n = el; for (let d = 0; d < 6 && n && !label; d++) { n = n.parentElement; if (!n) break; const l = n.querySelector("label, .slds-form-element__label, legend"); if (l && v(l)) label = t(l); } } rows.push({ id: el.id, name: el.name, type: el.type || el.tagName, label: label.slice(0, 100), val: (el.value || "").slice(0, 40) }); }); const sections = [...document.querySelectorAll("h1,h2,h3,h4,legend,.slds-section__title,[class*=section-title],[class*=header-title]")].filter(v).map(t).filter(x => x && x.length < 90); return { rows, sections: [...new Set(sections)], text: document.body.innerText }; });
+console.log("SECTIONS:", JSON.stringify(dump.sections));
+console.log("CONTROLS:", dump.rows.length); for (const r of dump.rows) console.log(`  ${(r.id || r.name || "").padEnd(40)} ${String(r.type).padEnd(10)} ${r.label}${r.val ? " = " + r.val : ""}`);
+console.log("TEXT:", dump.text.replace(/\n+/g, " | ").slice(0, 4000));
+writeFileSync(`${OUT}/evidence-page.html`, await page.content()); writeFileSync(`${OUT}/evidence-page.txt`, dump.text);
+await page.screenshot({ path: `${OUT}/qs-3.png`, fullPage: true });
+writeFileSync(`${OUT}/quicksearch-xhr.json`, JSON.stringify(reqs, null, 1));
+console.log("XHR paths:", JSON.stringify([...new Set(reqs.map(r => r.m + " " + r.u.split("?")[0]))], null, 1));
+await browser.disconnect();

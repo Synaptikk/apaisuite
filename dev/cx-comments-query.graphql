@@ -1,0 +1,30 @@
+query cxComments($filters: Filter, $limit: Int!, $offset: ID, $dataView: DataView!,
+  $dateField: ID!, $commentFieldIds: [ID!]!, $scoreFieldIds: [ID!]!, $journeyFieldId: ID!,
+  $subjectFieldId: ID!, $taFilter: [TaggingFilter!]!) {
+  feedback(filter: $filters, after: $offset, first: $limit, dataView: $dataView,
+           orderBy: [{fieldId: $dateField, direction: DESC}]) {
+    totalCount
+    nodes {
+      id
+      timestamp: fieldValue(fieldId: $dateField)
+      journey: fieldLabels(fieldId: $journeyFieldId)
+      subject: fieldLabels(fieldId: $subjectFieldId)
+      scoreFieldData: fieldDataList(fieldIds: $scoreFieldIds, filterUnanswered: true) {
+        field { id }
+        values
+      }
+      commentData: fieldDataList(fieldIds: $commentFieldIds, filterUnanswered: true) {
+        field { id name }
+        ... on CommentFieldData {
+          textsWithLanguage { text }
+          matchingTaggings(filters: $taFilter) {
+            sentimentRegions { startIndex endIndex sentiment }
+            topicRegions { startIndex endIndex topics { id name } }
+          }
+          sentimentTaggings { sentiment regions { startIndex endIndex } }
+        }
+      }
+    }
+    nextPages(n: 1) { hasNextPage endCursor }
+  }
+}

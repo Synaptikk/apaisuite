@@ -1,0 +1,28 @@
+import puppeteer from "puppeteer-core";
+import { writeFileSync } from "node:fs";
+const OUT = "C:/Users/SES008~1.S01/AppData/Local/Temp/claude/C--Users-ses008s-s01458-Desktop-APAISuite/040c3438-1536-48d3-9351-7c26de274ae3/scratchpad";
+const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", protocolTimeout: 300000 });
+const page = (await browser.pages()).find(x => /intakenotice\/19060/.test(x.url()));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const res = await page.evaluate(() => performance.getEntriesByType("resource").map(e => e.name.replace("https://uat.riskonnectclearsight.com/Enterprise/", "")).filter(n => /\.mvc/.test(n) && !/InterviewLookup|CheckForceLogOut|nr-data/.test(n)));
+console.log("RESOURCES since load:"); for (const r of res.slice(-30)) console.log("  ", r.slice(0, 170));
+const link = await page.evaluate(() => [...document.querySelectorAll("a")].filter(a => /open the incident|lead incident/i.test(a.innerText || "")).map(a => ({ t: a.innerText.trim(), h: a.href, target: a.target })));
+console.log("LINKS:", JSON.stringify(link));
+const before = new Set((await browser.pages()).map(p => p.url()));
+await page.evaluate(() => { const a = [...document.querySelectorAll("a")].find(a => /open the incident/i.test(a.innerText || "")); a && a.click(); });
+await sleep(10000);
+const newPage = (await browser.pages()).find(p => !before.has(p.url())) || page;
+console.log("INCIDENT URL:", newPage.url());
+await newPage.bringToFront(); await sleep(5000);
+const dump = await newPage.evaluate(() => {
+  const txt = el => ((el && (el.innerText ?? el.textContent)) || "").toString().replace(/\s+/g, " ").trim();
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const nav = [...document.querySelectorAll("nav li, aside li, [class*='sub-menu'] li, [role='tab'], .slds-nav-vertical__item, [class*='menu'] a")].filter(vis).map(txt).filter(t => t && t.length < 80);
+  return { title: document.title, nav: [...new Set(nav)], text: document.body.innerText, res: performance.getEntriesByType("resource").map(e => e.name.replace("https://uat.riskonnectclearsight.com/Enterprise/", "")).filter(n => /\.mvc/.test(n) && !/CheckForceLogOut/.test(n)).slice(0, 40) };
+});
+console.log("TITLE:", dump.title); console.log("NAV:", JSON.stringify(dump.nav));
+console.log("TEXT:", dump.text.replace(/\n+/g, " | ").slice(0, 2500));
+console.log("RES:", JSON.stringify(dump.res, null, 1).slice(0, 3000));
+writeFileSync(`${OUT}/incident-page.txt`, dump.text); writeFileSync(`${OUT}/incident-page.html`, await newPage.content());
+await newPage.screenshot({ path: `${OUT}/incident-page.png`, fullPage: true });
+await browser.disconnect();

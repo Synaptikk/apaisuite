@@ -102,6 +102,17 @@ a 40+ item manned order" are what separate real misses.
   the server pads 30 s before / 120 s after). `lib/video.js` builds it from
   the receipt's trailing timestamp. The Open Drawer route (id per TR#) only
   covers drawer-opens, i.e. cash, so it was dropped from this module.
+- **APPRISS signs itself back in (2026-09-25).** `link_video` and
+  `lookup_names` go through `apprissAuthGate({ moduleId: "boblisa" })`
+  (`shared/appriss.js`): an `AUTH` / `AUTH_OR_HTTP` result drives ONE
+  background SAML tab (`APPRISS_HOME`, adopted if the analyst already has
+  Secure open, closed again if we opened it) and then retries the same call.
+  One reauth per gate, so an 80-drawer name run costs at most one tab, and a
+  non-auth failure (HTTP 500, empty search) never opens one. Before this the
+  module had no reauth at all — every first lookup after the browser started
+  came back "APPRISS session expired" and the analyst opened Secure by hand.
+  The mechanics were lifted out of `registerls/lib/workview.js`, which now
+  delegates to the shared helper.
 - **Storage.** `boblisa.day.<store>.<date>` = the per-day analysis only
   (pairs, trainings, stats). Raw records are never stored. `boblisa.range`
   remembers the last date range; `boblisa.storeOverride` the manual store.

@@ -298,3 +298,29 @@ construction and carry no personal data.
 Note the `.gitignore` pattern is `*-probe.json`, so a dump must be named with
 the suffix LAST. `probe-tableau-view.mjs` originally wrote
 `tableau-probe-<workbook>.json`, which that pattern does not match; fixed.
+
+## Express pick rate: Associate By Day filtered to Express Pickup (added 2026-09-23)
+
+The Insights "Express Pick Rate" column comes from the SAME AssociatePerformance
+view as the metrics pull, with one extra URL filter:
+
+```
+…/AssociatePerformance?:iid=1&:linktarget=_self
+  &Pick Date=2026-09-20,2026-09-19 &Store #=1458 &FULFMT_TYPE=Express%20Pickup
+```
+
+`FULFMT_TYPE` is the field behind the "Fulfillment Type" control (values:
+Drone Delivery, Express Delivery, Express Pickup, GMD, In-Home Delivery, N/A).
+Unlike the Overview, this sheet has a Pick Date dimension, so one load
+covers every missing day. Probe: `VIEW=AssociatePerformance node
+dev/probe-tableau-express.mjs "<query string>"`.
+
+The view's per-associate Pick Rate is (Picked As Req Qty + Substitution Qty)
+÷ Pick Hours (AIDEN SIFUENTES 9/20: 74 / 1.054 = 70.2, as on screen). The
+day's rate is stored the same way over everyone, total units ÷ total hours:
+9/20 = 1,416 / 23.02 = 61.5; the plain mean of associate rates would be 61.0.
+Stored as `expressRate` in the week document (ISO date → rate, units, hours,
+pickers), with its own coverage ledger, so it backfills days whose orders
+are already stored. A day with no Express Pickup has no rows and is recorded
+as `rate: null` once the load shows rows for another day, or the Overview
+already recorded 0 orders for it.

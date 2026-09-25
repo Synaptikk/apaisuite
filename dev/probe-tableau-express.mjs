@@ -19,9 +19,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const QS = process.argv[2] || "STORE=1458";
 
 
-const URL_ = `https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/MetricOverviewandHourly` +
+// VIEW=AssociatePerformance node … to probe another view of the same workbook.
+const VIEW = process.env.VIEW || "MetricOverviewandHourly";
+const URL_ = `https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/${VIEW}` +
   `?:iid=1&:linktarget=_self&${QS}`;
-const OUT = resolve(HERE, `tableau-MetricOverviewandHourly-probe.json`);
+const OUT = resolve(HERE, `tableau-${VIEW}-probe.json`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null, protocolTimeout: 300_000 });

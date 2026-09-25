@@ -4,11 +4,140 @@ Active work only. Nothing finished, nothing speculative. When work lands,
 remove the entry — don't leave it as a "shipped" trophy. Long-form release
 notes live in `QRCallBox/public/extension/releases.json`.
 
-**Last reviewed:** 2026-09-14.
+**Last reviewed:** 2026-09-17.
 
 ---
 
 ## In-flight
+
+### 0-. Daily Board live sync → Digital Metrics assignments (2026-09-23)
+
+**Why:** Store 1458 plans each day's digital tasks in a hand-kept OneDrive
+workbook ("Daily Board 2.xlsx"): one sheet per weekday, no dates, overwritten
+the night before, names typed as first names or nicknames. The Assignments
+grid, and the pick-adherence measure built on it, were empty unless someone
+re-typed it.
+
+**Where it stands:** `modules/digitalmetrics` pulls the workbook every 30 min
+from the SW (plain credentialed fetch, no tab; `lib/sources/daily_board_source.js`)
+and merges it into `stores/1458/dailyAssignments/{date}` (`lib/data/board_sync.js`).
+**Store 1458 only**: it refuses to run for any other home store. Rules from the
+user: the newest edit wins per cell until midnight, then the day locks (fixed
+`grid.js::isFinalized`, which never locked a day that had ever been saved).
+Board names resolve against that day's WFM schedule to full names. Anything
+unresolved goes on the grid as typed, marked `?`, with one-click fixes
+(device-local aliases). Verified live 2026-09-23: 51/55 names resolved, 409
+cells, the Pickers row matches the board's own totals, a re-sync is a no-op.
+
+Each sheet is overwritten only the night before its day, so the workbook also
+holds the last six days: those are backfilled once each (fill-gaps only,
+never over a day the grid already locked). Tomorrow's sheet stays last week's
+until it is overwritten late the night before; it fills tomorrow only once it
+differs from the copy we applied six days ago (first run: decided by which
+day's schedule the names and hours fit). Name fixes carry into already-filled
+days (cells move to the resolved person, the plan itself is not re-applied).
+Board names that match nobody fall back to the one unassigned digital
+associate scheduled for exactly those hours ("hours match", flagged `~` to
+confirm). Backfilled 2026-09-17..22 live: 1–3 flagged names per day.
+
+Hours take precedence over names (user rule): a person counts for a board row
+only when their shift covers >= 95% of its hours (`HOURS_FIT`; a shift ending
+on :30 covers the board's "30" cell). Recurring names are learned across the
+week (`learnFromHistory`: the one person whose hours fit on every day).
+Hours-only matches show `~` with the named-but-wrong-shift person offered.
+Also fixed 2026-09-23: Pick Adherence on Opportunities was blank all
+September — the view looked up "09/19/26" against metrics' "9/19/26"
+(`adherence.js::dateKey` now joins on ISO).
+
+Same day, also in digitalmetrics: breaks are placed, not prorated
+(`adherence.js::breakSlots` — a 15 in the 2nd hour and 2 h after lunch on a
+7+ worked-hour shift, one mid-shift from 3 h; 15 min off only when that hour
+is PICK; board "B" cells override), marked "15" on the grid. Insights gained
+"Pick Hours — Assigned vs Actual" (by day and associate) and "Exceptions vs
+Picking" (board EXC hours vs exception items: the metrics' Pick Hours exclude
+exception time). Associates lists "Daily Board names to check".
+Task codes and colours now follow the board: `T` (was `TRN`, still read), `IH`, `IH PREP`
+(keys H / K, own summary rows), palette from the workbook's conditional formats
+(`taskClass()` keeps "IH PREP" one class). GMD stays out of the vocabulary.
+
+**Open:**
+- Exceptions classification is still manual-only and stale (only TERRY
+  MORRIS, who barely works EXC; REBEKAH SNYDER, JAMES KITTLE etc. are
+  Digital). The user chose the split view over relabelling; Opportunities
+  benchmarks still pool exception workers with Digital.
+- Confirm the `~` matches in the panel (confirmed so far: BRYCE, ANNIE).
+  Still `?` on 2026-09-23's sync: ANN + RHONDA (9/17), NICK (9/20),
+  JOSIAH (9/21), ABBI (9/22).
+- "On pace so far today" (assigned pick hours up to now vs live picks) was
+  deferred until the name matching has been checked over a few days.
+- The link, snapshots and aliases are per browser profile (`chrome.storage.local`):
+  paste the link in the normal Edge as well if it should sync from there.
+
+### 0a. Cost Inventory worksheet automation (2026-09-22)
+
+**Why:** The monthly Fresh cost inventory worksheet
+(`Cost-Inventory-Calculator-Worksheet.xlsx`) is filled by hand from four
+systems — a OneWalmart lookup tool, the Ops Portal ITR, CaseVisibility and the
+GDP Connect warehouse dashboard — including adding up a `Cost Amt` column down
+dozens of line items per department, per trailer.
+
+**Where it stands:** module `costinventory` 0.1.0 (alpha) pulls all of it and
+renders the worksheet in the sheet's own row order, plus an "Unfinalized
+Trailer totals" panel (last night's MP and FDD trailers, each broken down by
+department, subtotalled by type). Export patches the store's own workbook so
+formatting and formulas survive. Verified live against store 1458 on
+2026-09-22: freight $27,017.21 across MP 322594 and FDD 309178, and the
+aggregate reproduces the store's manual line-item add to within a rounding
+cent. Contracts and gotchas: `dev/COST_INVENTORY_FINDINGS.md`.
+
+**Open:**
+- Row 7 (Cost Inventory App total) is typed by hand — it lives in a phone app
+  and only exists on the day. Rows 8 (Warehouse Truck Invoices), 9 (Claims) and
+  10 (Fuel Station) always export as zero: the trailer money is reported in its
+  own panel, not added into the count.
+- Exercise it on a second store, and on the month roll-over when the
+  OneWalmart lookup tool gets a new toolId (the module discovers the id by
+  column headers rather than hard-coding it, but that path is untested across
+  an actual roll-over).
+- Run it for real on the next count (fourth Tuesday: 2026-10-27) and check the
+  exported workbook against what the store would have typed.
+
+### 0. QRCallBox ↔ Workvivo autonomy (2026-09-17)
+
+**Why:** QRCallBox's Workvivo posts depended on a Puppeteer/password login
+that SAML killed, and the `workvivo` module was a blind hourly courier that
+went quiet whenever the Workvivo tab was closed. The store chat only gets
+scan alerts if a fresh Sendbird token is always on the server and the
+server does the posting itself.
+
+**Where it stands:** module `workvivo` 0.3.0 (beta) opens a background
+Workvivo tab when the last delivery is >6 h old or the server says the
+token died, retries failures (10 min ×3), raises one desktop notification
+after two "no token" misses (12 h rate limit), handles the server's
+`workvivo-refresh` Web Push through `manifest.service.onPush` with an
+immediate heartbeat, and gained a three-step panel (API key → Refresh now
+→ pick channel via `set-channel`, plus "Send server test"). QRCallBox side
+deployed 2026-09-17 by name: current `workvivoTokenHeartbeat`, the
+`postScanToWorkvivo` Firestore trigger (first time ever), `set-channel`,
+`api-keys`, `admin-overview`, `connection-info`, `test-post`. Cutover is
+by status vocabulary (`ready` etc., never `active`) so the legacy poster
+inside the April `s` build stays deployed but inert. Runbook:
+`QRCallBox/docs/setup/WORKVIVO_SETUP.md`; decision record:
+`QRCallBox/docs/architecture/WORKVIVO_CUTOVER.md`.
+
+**Open:**
+- Reload the extension on the analyst PC and run through the three panel
+  steps (save key, Refresh now, channel).
+- Watch store 1458 for the first server-posted scan: the scan doc gains
+  `workvivoPostedAt`; Admin → Workvivo shows `lastServerPostAt`.
+- Delete the legacy Workvivo functions (`workvivoConnect`,
+  `connectWithToken`, `workvivoConfig`, `workvivoDisconnect`,
+  `workvivoCheckCompletion`, `testReauthEmail`, `checkWorkvivoTokens`,
+  `pollWorkvivoReply`) after ~2 weeks of clean server posts, by name only.
+- Enrol stores 1215, 5151, 669, 695 (two people each) using the runbook.
+- Record the observed Sendbird token lifetime from `tokenFirstSeenAt` /
+  `lastProvenTokenAgeMs` / `tokenDiedAtAgeMs` on `workvivo_config`.
+- Release the suite (`RELEASING.md`) so other stores get module 0.3.0.
 
 ### 1. AurorBuddy backend migration (shanesmith → suite)
 
@@ -230,7 +359,247 @@ both lines in `modules/_registry.js`.
 
 ---
 
+### 5b. Accident module — Clearsight incident intake (discovery done 2026-09-16)
+
+**Why:** expand the Live Dashboard "Accident Details" widget into its own
+module: print the WCS incident packets, OCR the completed paper forms, file
+the incident in Clearsight (Riskonnect) and attach the scans.
+
+**Where it stands:** discovery complete on the UAT site, nothing built.
+`dev/CLEARSIGHT_INTAKE_FINDINGS.md` has the whole picture; the field
+catalogue (`dev/CLEARSIGHT_INTAKE_FIELDS.md`, `dev/clearsight-intake-catalog.json`,
+`dev/clearsight-intake-lookups.json`) was pulled from the template metadata
+(`CsNoticeView` + `Lookup`), not scraped. Customer, associate and company
+property damage paths were walked live on UAT (notices 19060 submitted →
+incident 26005842; 19059 associate, past the WIN lookup; 19064 CPD, at its
+summary); the auto path is documented from the template only. Filing by
+replaying `SaveInterview` from `fetch()` with the `custheader` anti-forgery
+token works.
+
+**Module built 2026-09-16, LOCAL ONLY:** `modules/incidentintake/` exists in
+the working tree but is **gitignored and not in the repo's `_registry.js`**;
+it is registered (plus the riskonnect + `http://127.0.0.1/*` host
+permissions) only in the `APAISuite-dev` mirror the debug Edge loads. A
+local helper, `dev/intake-helper.py` (run with the code-puppy venv python),
+owns the flatbed (WIA), Windows OCR and the Walmart AI gateway token; the
+module calls it on `127.0.0.1:47831`. First end-to-end run: scan → detected
+Customer Incident Report → all 16 handwritten fields transcribed → UAT
+notice 19069 created with StartPage / Customer Statement / Incident Summary
+filled, the scan attached, and the notice opened for the manager. Scans
+stay under `dev/.intake/`. Handwriting goes to `puppy-backend.walmart.com`
+only (the analyst's rule: nothing stored outside Walmart).
+
+**Next concrete step:** scan the rest of the test packet (Evidence
+Collection is the required one still missing) to tune the zone specs for
+WITS / ECST / associate forms; add the manager's dropdown picks (area,
+cause, injury cascade) to the review screen so Submit can pass; associate
+path (WIN prompt) and PDF uploads; decide native-messaging packaging for the
+helper before anything ships.
+
+### 5c. Accident Details module (`accidents`) — built 2026-09-22, verified in the debug Edge
+
+**Why:** the user asked for the Live Dashboard "Accident Details" card as a
+full module: every claim and charge for the store, a "what happened" summary
+per claim, and which Evidence Collection items are still missing.
+
+**Data paths (all verified live):**
+
+- **CAS static HTML** (`cas_storage/cas_static_html/<store>.html`, no auth)
+  has FOUR sections: the two evidence reports the livedashboard card already
+  parses (its parser `modules/livedashboard/lib/sources/accident.js` is now
+  imported by `accidents/service.js` — second consumer) plus **FY27/FY26 PNL
+  Summary** charge tables (`accidents/lib/cas.js`; columns PNL Month / Ref # /
+  Status / Claimant / Category / Charge Div. / Total Charges; a **negative
+  amount is a credit back** = charge reversed / dispute won; skip the
+  ref-less totals row).
+- **Clearsight PROD is readable with plain GETs** — session cookie only, no
+  `custheader` (that is POST-only). Recorded in `dev/.claim-probe/` +
+  `dev/probe-clearsight-claim.mjs`:
+  - Quick search: `GET RMIS/STARS.Claim.mvc/metadata/StormsQuickSearchResult?pageNumber=0&quickSearchCriteria=<ref>&SessionMode=ReadOnly`
+    → `Rows[0].Key` = ClaimID, `CoverageCode` (GL 20, WC 10, GK 22 — groupKeys
+    are `1,<CoverageCode>`). Resolves legacy C…/L… PNL refs too (their
+    Clearsight ClaimNumber differs from the CAS ref).
+  - Claim: `GET RMIS/STARS.Claim.mvc/FormData?id=<ClaimID>&groupKeys=1,<cov>`
+    → `ClaimDescription`, lookup decodes (Cause, SpecialAnalysis#294 detail,
+    #2 body part, #4 injury, #79 area, #356 spot, #14 time), case manager
+    (MiscUser#1 + MiscDescription#46-48), `HyperLink2` = ClaimEasy Pro, and
+    the **Evidence Collection page fields live on the claim FormData**
+    (SpecialAnalysis#369-372, MiscDescription#283-289, MiscDate#142 =
+    completion date; all-null = not completed). $$ fields come back masked.
+  - Statements: `Supplemental.Information.mvc/GridSearch` with
+    `searchParms=ParentEntityID : 41>ParentID : <ClaimID>>ParentKey : <ClaimID>`,
+    `groupKeys=1,CST|WIT`, viewId 8496 (CST) / 8497 (WIT), then per-row
+    `FormData?id=<Key>&groupKeys=1,<type>` → MiscDescription#24 is the
+    statement text, #10/#11 first/last, #23 completed-by.
+  - Attachments: `Orion.File.mvc/AttachmentListClearSight?attachedEntityKey=<ClaimID>&attachedEntityDomain=STARS.Claim`.
+  - Sign-in: login page → click the **Single Sign On** link (pingfed
+    completes silently). `service.js::ensureClearsight` does this in a
+    background tab via `auth.clickSso`; probe `Favorite.mvc` to test the
+    session. Retired lookup codes decode as `! Invalid Code ( NN: label )` —
+    `clearsight_read.js::cleanCode` strips them.
+- **SW dispatcher gotcha (cost a debugging round):** handlers returning
+  `{ ok, ... }` are passed through **unwrapped**; bare values get wrapped as
+  `{ ok: true, data }`. And `host.messaging.send` REJECTS on `ok: false` —
+  error handling in the view belongs in try/catch, not `if (!res.ok)`.
+
+**Shape:** pull = CAS fetch + enrich the ~6 evidence-window claims
+(quick search → FormData → statements → attachments → composed summary,
+`lib/summary.js`, deterministic — no AI). The ~70 PNL refs resolve lazily
+per row (`resolve_ref`). Cache `accidents.data.<store>`; `refDetails`
+survives re-pulls. Two tabs: claim cards (summary, statements, checklist
+with missing items listed) and the P&L table (credit-back filter, FY
+filter). Check: `node dev/accidents-check.mjs` (12 checks, live CAS file +
+the probe's saved claim FormData).
+
+**Open:** the "Incident Intake Successful Submission" emails (statement
+PDFs, photo links) are NOT wired in — they go to the store's Walmart
+mailboxes (wcs@walmart.com → st-mgr/AP distro), not the connected Gmail, so
+they'd need Outlook access; Clearsight covers the same content for now.
+Reload the normal Edge to pick the module up there. The livedashboard card
+could deep-link into the module (not done). Consider a scheduled alarm
+(none yet — pull is manual).
+
 ### 6. VizPick Market Rollup — remaining UI + caching work
+
+**Closed-day tabs show department + associate detail — built 2026-09-19,
+verified in the debug Edge.** The day tabs come from the summary export, which
+has no department or location dimension, so they said "current-day only".
+`lib/day_details.js` now keeps each store's detail (depts, deptGroups,
+`locations.gaps`) as of the day's LAST current-day capture, one storage key per
+day (`vizpick.dayDetails.v1.<day>` + `.index`, 14 days), filed under the row's
+own Tableau stamp day. Every Today write in `lib/snapshots.js` feeds it, and
+the snapshot about to be overwritten is archived first (`archiveReplaced`), so
+the first crawl of a morning files last night's rows. A later reading that lost
+a section never replaces a fuller one. `read()` falls back to the home-store
+pick history's last entry, which is why 1458 already shows 2026-09-14 → 09-18;
+other stores fill in from 2026-09-19 on. `get_state.dayDetails` carries it;
+`view.js::dayRows` joins it by store and each card says "As of the day's last
+Tableau update: …" (the rings stay the closed-day summary, so they can differ).
+Print / email stamps name the detail's time too. Check:
+`node dev/vizpick-daydetails-check.mjs`. 211 VizPick tests pass. Open: reload
+the normal Edge; confirm the other nine stores appear on the 09-19 tab tomorrow.
+
+**Pick progression: Business case + Bin by bin views — built 2026-09-16,
+verified in the debug Edge on 2026-09-15 data.** The analyst is arguing with the
+VizPick report owner that a digital associate's exception-filter scan still
+adds suggested picks. The dialog now opens on a **Business case** tab
+(`lib/home_history.js::scanImpact`): rescans of already-scanned bins by
+Digital / Stocking 1 / other jobs vs bins nobody rescanned, updates where every
+new scan was a digital associate's, every digital scan that added picks, open
+at the last update by group, "Copy summary" plain text and a bin-history CSV
+(`ledgerCsv`). **Bin by bin** (`scanLedger`) is every bin's scans with
+done/due, change and handover, searchable and filterable. The old content is the
+**Day timeline** tab. Sep 15 reads: digital rescans added picks 51.4% of the
+time vs 50.6% Stocking 1 and 0.7% for bins nobody rescanned; the 7:02→8:02 PM
+update was digital-only (5 scans, 5 bins, +12). Each Edge profile keeps its own
+history, so the header also has **Save history file / Load history file**
+(`home_history_export` / `home_history_import`, `mergeHistories` dedupes by
+store + stamp + fingerprint). The debug Edge's 2026-09-15 day was saved to
+`Downloads/vizpick-pick-history-1458-2026-09-15.json` for the normal Edge.
+Fixed 2026-09-16 after the normal Edge showed "+26 picks on 33 digital
+scans" above a list totalling 78: on its merged Sep 15, `scanImpact` compared
+each update only with the one before, so interleaved/foreign captures broke
+the chain. It now compares each bin with its own previous appearance, and the
+Business case and Bin by bin run on `cleanDay()` (drops foreign-bin updates,
+folds repeat captures of one stamp, orders by Tableau data time) with a
+"Set aside" note. "Other jobs" has a show-jobs breakdown. The analyst later had
+the "nobody rescanned" baseline, the digital-only update windows and non-digital
+open picks removed from the case (irrelevant to them).
+
+**Generate PDF report (2026-09-16).** `lib/case_report.js` turns the view's
+`histCaseModel` (the exact values the tab renders) into a pdfmake document and
+embeds 7 data files via pdfkit `file()` (pdfmake 0.2 has no attachment API, so
+`createPdf(dd)._createDoc({})` is taken before `end()`): summary.txt, digital
+scans that added picks, scan comparison by job, bin history, every bin at
+every update, associates and jobs (CSVs), and the raw updates JSON (loadable as
+a history file). pdfmake is vendored under `modules/vizpick/vendor/pdfmake/`
+(copy of claimsdisposition's). Verified live on 2026-09-15: 4 pages, 142 KB,
+7 attachments decoded with the right sizes and row counts. Chromium/Edge's PDF
+viewer has no attachments panel; Acrobat Reader does. 205 VizPick tests pass.
+Open: confirm the normal Edge now matches; a multi-day comparison was not built.
+
+**Pick progression: stand-in stamps, gaps and a poll log — built 2026-09-15
+18:00, verified in the debug Edge.** The user saw fewer updates than Tableau
+published. Findings for 1458 that day: Tableau served no 4 PM/5 PM update (every
+poll 16:18-18:03 read 15:03); the 14:03 stamp was read once (16:13) with bins
+identical to the kept 15:03 entry, so no distinct 2 PM data exists to recover;
+one poll failed (15:44, "Captured no current-day data"). Risk fixed in
+`lib/home_history.js::addEntry`: an entry kept under a crawl-level stand-in stamp
+(no `stampVia`, or `"crawl"`) no longer swallows the store's OWN stamp —
+different data at the same instant is appended and the old entry flagged
+`stampUnverified`; identical data under an own EARLIER stamp moves the label
+back (`relabeledFrom`); identical data at the same own stamp upgrades the
+entry's `stampVia`. The same-stamp rule is unchanged for own stamps. Every home
+poll is logged per day in `vizpick.homeHistory.polls.v1` (`recordPoll`), returned
+by the `home_history` handler; the view shows gap rows (`updateGaps`, >75 min of
+data time), "time unverified" / "moved from" flags and a "Last checked" line
+with failed checks. Forced poll after reload confirmed 15:03 and upgraded it to
+`via summary`. 197 VizPick tests pass. Open: reload the normal Edge; the other
+asks from that conversation (per-bin carry-over timeline, extra per-bin fields
+from Location Details, Picks/Overstock/Locations donut breakdowns, unbinned
+picks = dept total − bin total per update) are not built.
+
+**Stores that do not answer no longer vanish — built 2026-09-15 16:10, needs
+a live run.** The first live run of the per-store stamps (normal Edge,
+auto-check 15:53) captured 8 of 10 Market 120 stores: Tableau dropped the
+Store-parameter Enter for 1089 and 1215 (guard 0, "Store parameter never
+committed", both retries). Nothing was known to check against (`topUp: false`
+in `vizpick.debug.today`; cause not established — the 15:45 crawl was cut off
+by the extension reload), so the run was a full read whose first write
+REPLACED the snapshot, and the two stores disappeared from the Today tab
+(the user saw "partial data"). Fix: `service.js::_pullTodayLocked` now always
+`snapshots.mergeToday` (only another market empties the snapshot; the crawl
+no longer calls `recordToday`), so a store that fails keeps its previous row
+under its own older Updated stamp; the source runs one retry pass over the
+stores that produced neither a row nor a confirmation (`retried` /
+`recovered` / `retriedFailures` in debug); the Today bar names stores that
+are showing previous numbers, and the diagnostics section renders an ok
+run's per-store failures instead of going blank. Reload the extension in
+the normal Edge to pick this up. The debug Edge's SW was still on the
+pre-stamp code at 15:58 (its auto-check visited 1 of 10 and wrote rows
+without stamps) — reload there too before trusting it. Open: why
+`knownStoreStamps` came back empty at 15:53 — watch `topUp` on the next
+runs; false again with 10 complete stamped rows stored means something
+drops the rows' stamps. 191 VizPick tests pass.
+
+**Per-store Updated stamps — built 2026-09-15, needs a live run.** The user
+pointed out that stores update at different times. The Today crawl read
+Tableau's "Updated" stamp once, on the primary tab, before any Store parameter
+was set — i.e. whichever store the view opened on — compared it with the
+stored snapshot and skipped the whole market when it matched; every row was
+then filed under that one stamp. A store that had republished was skipped
+whenever the default store had not. Now every requested store is visited;
+`captureStore` reads the store's own stamp off the dashboard once its
+parameter has committed (cheap: DOM text, else one summary command, never the
+export fallback) and `lib/store_stamp.js::decideStoreExports` decides per store
+whether the four exports run: only when the stamp moved, the stored row is
+incomplete, or the row is older than `MAX_TODAY_AGE_MS` (90 min). Each row
+carries `sourceUpdate` / `stampVia` / `capturedAt`; a store confirmed unchanged
+gets `confirmedAt` (`snapshots.confirmTodayRow`) and its row survives —
+`mergeToday` now keeps rows across a changed crawl-level stamp and only a
+different market empties the snapshot. The snapshot-level stamp is the newest
+row's; the Today header shows it and says "(newest store)" when stores differ;
+each Today card shows its own "Updated <time>" line (tooltip: when it was read
+and last confirmed). Home history entries take the row's own stamp
+(`entryFromRow`), so the same-stamp dedupe is per store. The service no longer
+passes `knownSourceKey` / `coveredStores` / `knownCapturedAt`; it passes
+`knownStoreStamps` (complete rows of the same market). Cost: an unchanged
+check now pays one parameter round trip per store instead of one stamp read,
+still no exports. **Confirmed live 2026-09-15** with
+`node dev/probe-vizpick-store-stamps.mjs 1458 3660 669 5151 1089` (raw CDP
+against the debug Edge; sets the Store parameter and reads the Last-update
+sheet through the worksheet-summary command, whose column is
+`max:data_last_updated`): at one moment 1089 reported `2026-09-15 14:03:26`
+while 1458 / 3660 / 669 / 5151 reported `15:03:26` — and 1089 was the store
+the view opened on, so the old market-wide check would have skipped the four
+that had republished. Two things the probe also settled: the dashboard's
+"Updated" text is drawn on canvas (no date text node in any frame), so the
+DOM read in `readSourceStampFromDom` never hits here and every stamp comes
+from the summary command (~100 ms, `stampReadVia: "summary"`); and
+`puppeteer.connect` hangs against Edge 153, so the probe speaks CDP over
+Node's built-in WebSocket. Remaining: reload the extension in the normal
+Edge and watch a Today refresh show per-card "Updated" times that differ.
+190 VizPick tests pass.
 
 **Wrong-store associate names — reproduced and fixed 2026-09-15, verify in
 the normal Edge.** The user's exported home history for 1458 (2026-09-14) held

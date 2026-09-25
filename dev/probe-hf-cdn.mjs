@@ -1,0 +1,11 @@
+import puppeteer from "puppeteer-core";
+const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", protocolTimeout: 60000 });
+const page = await browser.newPage();
+await page.goto("https://huggingface.co/Xenova/trocr-base-handwritten/tree/main/onnx", { waitUntil: "domcontentloaded", timeout: 60000 });
+await new Promise(r => setTimeout(r, 4000));
+console.log("page:", page.url(), "|", (await page.title()).slice(0, 60));
+const sizes = await page.evaluate(() => [...document.querySelectorAll("a")].filter(a => /\.onnx$/.test(a.href)).map(a => a.innerText.trim().replace(/\s+/g, " ").slice(0, 80)));
+console.log("files listed:", JSON.stringify(sizes));
+const r = await page.evaluate(async () => { try { const r = await fetch("https://huggingface.co/Xenova/trocr-base-handwritten/resolve/main/onnx/encoder_model_quantized.onnx", { method: "HEAD", redirect: "follow" }); return { ok: r.ok, status: r.status, url: r.url.slice(0, 80), len: r.headers.get("content-length") }; } catch (e) { return { err: String(e) }; } });
+console.log("HEAD via Edge:", JSON.stringify(r));
+await page.close(); await browser.disconnect();

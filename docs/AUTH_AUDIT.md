@@ -641,3 +641,29 @@ re-validates. The pathological case where the user is genuinely
 signed out across all their cookies for an extended period is
 unrecoverable without their input — but that's a real-world constraint,
 not something the suite can paper over.
+
+---
+
+## Pass 3 change shipped (2026-09-25) — APPRISS reauth is shared
+
+`apprissReauthInBackground(probe, opts)` and `apprissAuthGate(opts)` now live
+in `shared/appriss.js`, beside the host constants. They are the fourth home of
+the same flow (aurorbuddy's `ensureApprissAuth`, assocpurchases'
+`ensureApprissAuth`, registerls' `workview.reauthInBackground`) — and the
+reason to extract them was `boblisa`, which shipped APPRISS calls with *no*
+reauth, so its first Open Drawer / journal-event call after a browser start
+always failed and the analyst signed in to Secure by hand.
+
+| File | Change |
+|---|---|
+| `shared/appriss.js` | Added `isApprissAuthFailure`, `apprissReauthInBackground`, `apprissAuthGate` |
+| `modules/boblisa/service.js` | `link_video` + `lookup_names` route every `fetchOpenDrawer` / `fetchEmployee` call through one gate |
+| `modules/registerls/lib/workview.js` | `reauthInBackground` is now a thin delegate; dropped its local `createAuth`/selector imports |
+
+Gate contract: one reauth per gate instance (one per handler invocation), the
+caller's own request is the readiness probe, a non-auth failure short-circuits
+the wait, and a failed reauth returns the ORIGINAL error so the existing
+`loginUrl` messaging still renders. `aurorbuddy` and `assocpurchases` keep
+their own copies for now — aurorbuddy's two-attempt reload cycle is a superset
+of the shared helper and folding it in is its own change.
+

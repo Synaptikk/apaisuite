@@ -54,7 +54,7 @@ shortages. The module pulls both views, all pages, two years back.
 | `subjects[]` | `{key:"vision_mel_master_unique_id", value:"1458\|63\|2026-08-16\|30"}` | **store \| register \| business date \| abs amount** — the join key to Power BI and EJ |
 | `cardSections[]` | `Date 8/16/2026`, `Store 1458`, `Item Amount -30.00` | signed amount; negative = short |
 | `potentialValue` | `"$30.00"` | |
-| `statusID` / `statusType` | `0` | unassigned |
+| `statusID` / `statusType` | `0` | unassigned. `3` = dispositioned (detail carries `abandonReasonID` + `abandonReasonNotes`); such items drop out of BOTH list views, so a stale local queue is the only way one keeps showing (probed 2026-09-17, item 14663686) |
 | `priorityID` | `3` | High |
 | `isOverDue`, `targetResolutionDateTime` | | SLA |
 | `createdDateTime` | | items generate **up to 11 days** after the L/S (banner on the page) |
@@ -417,3 +417,17 @@ identified: …") instead of silently omitting the names.
 Ledger: grid-only flip pairs (no WorkView item) now feed the cashier ledger
 for the double check-in rule only (`cashiers.js` gridOnly, `sync_ledger`
 synthesises `grid:<reg>|<date>` items, promoted to the real id later).
+
+## Register types per store (2026-09-17)
+
+The Cash Recycler till log's `Register_Desc` is the per-store register-type
+source: at 1458 it labels every register the Power BI grid knows — SCO (1–8,
+27–34), FRONT END (9–26), CUSTOMER SERVICE (92/93/94 = the service desk),
+PHARMACY (40/79/80), and department names (ELECTRONICS 67/68, GARDEN CENTER
+73/74, JEWELRY 59, SPORTING GOODS 78, LUBE EXPRESS 90/95, VISION 98). It does
+NOT know the money center: 62 is `UNKNOWN`, 63 is `COSMETIC` (a stale
+department label — the analyst says 61–64 are the money center), and 61/64
+have no rows. `lib/registers.js` builds the map (analyst override > specific
+log label > number-range default > department label), `registerls.registers.<store>`
+holds the overrides, and the service desk list the matcher uses comes from it.
+Probe: `dev/register-desc-probe.mjs`.

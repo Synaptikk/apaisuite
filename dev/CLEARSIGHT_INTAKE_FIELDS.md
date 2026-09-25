@@ -1,0 +1,2188 @@
+# Clearsight Incident Intake — field catalogue (UAT, template WalmartIntake_v27.5.2 / id 2383)
+
+Source: `Orion.InterviewAnswers.mvc/MetaData/CsNoticeView?templateId=2383` + `Lookup?fieldname=…&templateId=2383` (UAT, 2026-09-16).
+Field ids are `STARS_n`; `→` maps to the STARS domain field the answer is written to. Rules are the AccessRules criteria (Negate 2 = NOT).
+
+
+## StartPage  (`Page_STARS_0`)
+
+- _text_: Before starting, take photos of the incident location to upload during the intake and submission process. For guidance on which types of photos to include, or other questions related to the incident intake, refer to the WCS Toolkit.
+- `STARS_74` **This is a TEST site only. Incidents entered here will not be moved to production.** (HiddenSetID) type=lookup HIDDEN default=`1` → STARS.Incident.SetID
+- `STARS_1` **** (HiddenIncidentID) type=lookup HIDDEN
+- `STARS_2` **** (HiddenGL1IncidentID) type=lookup HIDDEN
+- `STARS_570` **** (GLCI1.1_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_492` **** (GLCI2_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_493` **** (GLCI2.1_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_488` **** (GLCI3_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_489` **** (GLCI3.1_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_490` **** (GLCI4_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_491` **** (GLCI4.1_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_495` **** (GLCI5_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_559` **** (GLCI5.1_HiddenIncidentID) type=lookup HIDDEN
+- `STARS_461` **** (HiddenLossDate) type=lookup HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.LossDate
+- `STARS_465` **** (HiddenOccurID) type=lookup HIDDEN
+- `STARS_565` **** (Hidden_MiscUser10_IntakeFlag) type=lookup HIDDEN default=`999999999` → STARS.Incident.MiscUser#10
+- `STARS_1070` **** (Hidden_OccurSpecial13Intake) type=lookup HIDDEN default=`INTAKE` → STARS.Occurrence.SpecialAnalysis#13
+- `STARS_1100` **** (Hidden_LocationLevel) type=lookup HIDDEN default=`8`
+- `STARS_3` **<ClaimSequence_Misc29_nm>** (ClaimSequence1) type=text HIDDEN default=`1` → STARS.Incident.Miscnumber#29
+- `STARS_4` **** (ClaimSequence2) type=text HIDDEN default=`2` → STARS.Incident.Miscnumber#29
+- `STARS_182` **** (ClaimSequence3) type=text HIDDEN default=`3` → STARS.Incident.Miscnumber#29
+- `STARS_298` **** (ClaimSequence4) type=text HIDDEN default=`4` → STARS.Incident.Miscnumber#29
+- `STARS_311` **** (ClaimSequence5) type=text HIDDEN default=`5` → STARS.Incident.Miscnumber#29
+- `STARS_377` **** (ClaimSequence1.1) type=text HIDDEN default=`1.1` → STARS.Incident.Miscnumber#29
+- `STARS_455` **** (ClaimSequence2.1) type=text HIDDEN default=`2.1` → STARS.Incident.Miscnumber#29
+- `STARS_769` **** (ClaimSequence3.1) type=text HIDDEN default=`3.1` → STARS.Incident.Miscnumber#29
+- `STARS_793` **** (ClaimSequence4.1) type=text HIDDEN default=`4.1` → STARS.Incident.Miscnumber#29
+- `STARS_794` **** (ClaimSequence5.1) type=text HIDDEN default=`5.1` → STARS.Incident.Miscnumber#29
+- `STARS_458` **Date and time of Incident** (SP_Date of Incident) type=5 → STARS.Incident.LossDate
+- **REQ** `STARS_464` **** (SP_Time of Incident) type=lookup → STARS.Incident.SpecialAnalysis#14
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_792` **Reporting Facility #** (SP_Reporting Facility #) type=lookup → STARS.Incident.LocationID
+  - options: 1 options: 1458=1458 - FORT OGLETHORPE BATTLEFIELD PARKWAY
+- `STARS_56` **** (Hidden_LocationDependentField1) type=lookup HIDDEN default=`{Dynamic.STARS_792}` → STARS.Incident.LocationDependentField1
+- **REQ** `STARS_184` **When was the facility first notified about the incident?** (SP_When was the facility first notified about the incident?) type=5 → STARS.Incident.MiscDate#7
+- **REQ** `STARS_454` **Select the Type of Incident You Are Reporting** (SP_Type of Incident) type=radio → STARS.Incident.SpecialAnalysis#373
+  - options: ASSOC=Associate Incident | CUST=Customer Incident | AUTO=Tractor, Trailer, Fleet Incident | CPD=Walmart Owned Company Property Damage
+- **REQ** `STARS_7` **Select specific type of incident** (SPGL_Select specific type of incident) type=radio → STARS.Incident.SpecialAnalysis#19
+  - options: AP=Asset Protection | CC=Cart Damaged Vehicle | GK=ACC/Sam's Garage Service | HD=InHome/Spark Delivery | GL=Customer Injury or Property Damage | PL=Product Sold at Store/Club | OPR=Product Prepared/Assembled by Store/Club
+  - rule: [vis=4] NOT STARS_454='CUST' ; row:[vis=4] NOT STARS_454='CUST'
+- **REQ** `STARS_312` **Did a non-Walmart 3rd party cause or contribute to the loss?** (PRGI_Did a non-Walmart 3rd party cause or contribute to the loss?) type=radio → STARS.Incident.SpecialAnalysis#11
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_454='CPD'
+- **REQ** `STARS_590` **What type of 3rd party was involved?** (PRGI_What type of 3rd party was involved?) type=radio → STARS.Incident.SpecialAnalysis#334
+  - options: 3PRTYDRV=3rd Party Delivery Driver | CUSTOMER=Customer/Member | VENDOR=Vendor/Supplier/Contractor
+  - rule: row:[vis=4] NOT STARS_312='Y'
+- `STARS_378` **What type of claim is being reported?** (ALFI_What type of claim is being reported?) type=radio → STARS.Incident.SpecialAnalysis#19
+  - options: AL=Auto Liability | APD=APD (Auto Property Damage)
+  - rule: [vis=4] NOT STARS_454='AUTO' ; row:[vis=5] STARS_454='AUTO'
+- **REQ** `STARS_322` **Is this a Facility Services Associate? (If yes, the facility # will automatically be changed to 9301.)** (SP_Is this a Facility Service Technician?) type=radio → STARS.Incident.SpecialAnalysis#388
+  - options: Y=Yes | N=No
+  - rule: [vis=4] NOT STARS_454='ASSOC' ; row:[vis=4] NOT STARS_454='ASSOC'
+- **REQ** `STARS_950` **Did this incident involve a Facility Services vehicle?** (SP_Did this incident involved a Facility Services vehicle?) type=radio → STARS.Incident.SpecialAnalysis#388
+  - options: Y=Yes | N=No
+  - rule: [vis=4] NOT STARS_454='AUTO' ; row:[vis=4] NOT STARS_454='AUTO'
+  - help: Damages resulting from auto service up to $800, may be settled by the facility. This option should not be used for customer/member satisfaction.
+- **REQ** `STARS_10` **Was this claim resolved at the facility (952/1084 payment)?** (SPGL_Was this claim resolved at the facility (952/1084 payment)?) type=radio → STARS.Incident.SpecialAnalysis#360
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- `STARS_742` **Does the incident involve Property Damage?** (SPGL_BI/PD) type=lookup default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - options: 6 options: BI=Bodily Injury | BOTH=Both | 03=Cumulative Injury | 02=Occupational Disease | PD=Property Damage | 01=Trauma
+  - rule: [vis=5] STARS_10='Y' ; row:[vis=4] NOT STARS_7='GK' OR NOT STARS_10='Y'
+  - help: If the amount entered exceeds $800, a claim will be created and sent to WCS and no settlement release will be provided.
+- **REQ** `STARS_54` **Settlement Amount** (SPGL_Settlement Amount) type=text max=12 → STARS.Incident.MiscNumber#215
+  - rule: row:[vis=4] NOT STARS_10='Y'
+- _text_: Amounts over $800 cannot be processed at the facility and must be submitted as a claim to WCS. If the amount entered is incorrect, please update it to proceed. Otherwise, for resolutions over $800, please select “No” for the question “Was this claim resolved at the facility?” to continue submitting the claim to WCS.
+- **REQ** `STARS_26` **Associate Entering Incident (First and Last Name)** (SP_Associate Entering Incident (First and Last Name)) type=lookup default=`{SSO.NAME}` max=254 → STARS.Incident.MiscDescription#12
+- **REQ** `STARS_11` **Associate Entering Direct Contact #** (SP_Associate Entering Direct Contact #) type=lookup default=`{SSO.PHONE_NUMBER}` max=254 → STARS.Incident.MiscDescription#13
+- NAV **Next** (`SPGL_Next`, cmd=Next) → Page_STARS_20 when [vis=5] STARS_7='GK' AND STARS_10='Y' AND STARS_454='CUST'
+  - shown when: [vis=5] NOT STARS_7='' AND STARS_454='CUST' AND STARS_454='Dummy'
+- NAV **Next** (`AUTO_CPD_Next`, cmd=Next) → Page_STARS_22 when [vis=5] STARS_454='CPD', Page_STARS_26 when [vis=5] STARS_454='AUTO'
+  - shown when: [vis=4] 
+- NAV **Next** (`GL_TempNext1`, cmd=Next) → 
+  - shown when: [vis=5] STARS_454='CUST' AND NOT STARS_7=''
+- NAV **Next** (`AUTO_CPD_Tmp_Next`, cmd=Next) → 
+  - shown when: [vis=5] STARS_454='AUTO' OR STARS_454='CPD'
+- _text_: *If the associate requests medical treatment at a later date, please notify WCS either by contacting your case manager or escalate the incident through the Alignment Identifier.
+- _text_: If one of the following occurs while an associate is at work (or off the premises but related to an on-site incident), it needs to be reported to the EOC immediately (See SA-01 or Death and Serious Injury Reporting for guidance):
+- _text_: *Associate transported to hospital via EMS or personal vehicle for any other reason, including but not limited to: apparent heart attack, stroke, heat stroke, seizure, or concussion
+- _text_: Refer to the State Specific Information and Forms page, in the WCS Toolkit, to verify your state law regarding choice of physician. If your state law specifies that the employer has choice of physician, direct the associate to the designated provider(s).
+- _text_: In states where the associate has the choice of physician, the associate should provide the name, address, and phone number of his/her physician of choice. If the associate requests a recommendation, the following provider(s) have been identified near this location. A poster with the provider(s) information should be located in your facility break room and on the safety bulletin board.
+- `STARS_153` **Nurse First Response/Provider(s)** (SPW_ShowLookup) type=radio
+  - options: NFR=Show Nurse First Response | PP=Show Provider(s)
+  - rule: row:[vis=4] NOT STARS_454='ASSOC'
+- `STARS_560` **** (HiddenLocationID) type=lookup HIDDEN default=`{Dynamic.STARS_792}` → STARS.Location.LocationID
+  - rule: row:[vis=4] NOT STARS_454='ASSOC'
+- TABLE-LOOKUP **Nurse Triage Vendors** maps→STARS_560 param=STARS.Location/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=73&lookup_instructions=Nurse Triage Vendor Lookup&maxrec=50&objId=STARS_4&sourceType=T
+- TABLE-LOOKUP **Provider(s)** maps→STARS_560 param=STARS.Location/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=72&lookup_instructions=Provider(s) Lookup&maxrec=50&objId=STARS_4&sourceType=T
+- `STARS_296` **Was Nurse First Response contacted?** (SPW_Was Nurse First Response contacted?) type=radio → STARS.Incident.SpecialAnalysis#361
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_454='ASSOC'
+- NAV **Next** (`SPWC_Next`, cmd=Next) → Page_STARS_16 when [vis=5] STARS_454='ASSOC'
+  - shown when: [vis=4] 
+- NAV **Next** (`SPWC_Next1`, cmd=Next) → 
+- **REQ** `STARS_462` **--Remove-- Select the Specific Type of Incident** (DNU--SP2_Incident Type) type=lookup
+  - options: 4 options: ASSOC=Associate | CUST=Customer/Member | AUTO=Tractor, Trailer, Fleet Incident | CPD=Walmart Owned Company Property Damage
+  - rule: row:[vis=4]
+
+## Photo Evidence  (`Page_STARS_1`)
+
+- LINK **Attach Photos** cmd=Attach param={ Binding [PE_Photo1_LINK], Mode=TwoWay} required=True requiredAttachments=3
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`Next`, cmd=Next) → Page_STARS_20 when [vis=5] STARS_454='CUST' AND STARS_10='Y' AND STARS_7='GK', Page_STARS_2 when [vis=5] STARS_454='CUST' AND NOT STARS_10='Y', Page_STARS_16 when [vis=5] STARS_454='ASSOC', Page_STARS_26 when [vis=5] STARS_454='AUTO', Page_STARS_22 when [vis=5] STARS_454='CPD'
+
+## GL_Customer Statement  (`Page_STARS_2`)
+
+- `STARS_101` **Customer Statement** (GLCS1_HiddenSimID) type=lookup HIDDEN
+- `STARS_571` **** (GLCS1.1_HiddenSimID) type=lookup HIDDEN
+- `STARS_127` **** (GLCS1_HiddenInfoTypeCS) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_299` **** (GLCS1_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_100` **** (HiddenReportDate) type=5 HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.ReportDate
+- `STARS_105` **** (HiddenCoverageGL20) type=lookup HIDDEN default=`20` → STARS.Incident.CoverageCode
+  - rule: [vis=5] NOT STARS_7='GK' AND NOT STARS_7='OPT' AND NOT STARS_7='PHAR'
+- `STARS_73` **** (HiddenCoverageGL22) type=lookup HIDDEN default=`22` → STARS.Incident.CoverageCode
+  - rule: [vis=5] STARS_7='GK'
+- `STARS_79` **** (HiddenCoverageGL21) type=lookup HIDDEN default=`21` → STARS.Incident.CoverageCode
+  - rule: [vis=5] STARS_7='OPT' OR STARS_7='PHAR'
+- **REQ** `STARS_75` **Who is completing this statement?** (GLCS_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: CUSTOMER=Customer/Member | FACILITY=Management or HR entering incident | PARENT=Parent/Guardian | OTHER=Other
+- **REQ** `STARS_76` **Is the customer/member present?** (GLCS_Is the customer/member present?) type=radio → Supplemental.Information.SpecialAnalysis#20
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_75='CUSTOMER' OR STARS_23='M' OR STARS_23='UI' OR STARS_75='PARENT' OR STARS_75=''
+- **REQ** `STARS_77` **Name of person completing this statement (First and Last Name)** (GLCS_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] STARS_75='CUSTOMER' OR STARS_75='' OR STARS_76='' AND NOT STARS_75='PARENT'
+- **REQ** `STARS_78` **Provide a detailed explanation as to why the customer/member is unable to complete the statement** (GLCS_Provide a detailed explanation as to why the customer/member is unable to complete the statement) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] STARS_75='' OR STARS_75='CUSTOMER' OR STARS_75='PARENT'
+- _text_: Please give the customer the device to complete the Customer Statement. After the statement is filled out, ensure that both the customer and you have signed it.
+- **REQ** `STARS_12` **First Name** (GLCI_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=4] STARS_75=''
+- **REQ** `STARS_13` **Last Name** (GLCI_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_19` **Phone #** (GLCI_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_20` **Email Address** (GLCI_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_90` **Would you like to opt in to receive texts and emails about your incident?** (GLCS_If this is a mobile number, may we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- `STARS_91` **** (GLCS_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- **REQ** `STARS_94` **Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.** (GLCS_Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- `STARS_324` **Addiitonal details of incident** (GLCS_Addiitonal details of incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- `STARS_21` **Date of Birth** (GLCI_Date of Birth) type=5 → STARS.Incident.MiscDate#4
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- `STARS_23` **Was claimant a minor?** (GLCI_Was claimant a minor?) type=radio → STARS.Incident.SpecialAnalysis#129
+  - options: A=Adult | M=Minor | UI=Unborn Infant
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_24` **Parent/Guardian Name** (GLCI_Parent/Guardian Name) type=lookup max=254 → STARS.Incident.MiscDescription#89
+  - rule: row:[vis=4] STARS_23='' OR STARS_23='A'
+- `STARS_25` **What is the customer's preferred language?** (GLCI_What is the customer's preferred language?) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- `STARS_14` **Address** (GLCI_Address) type=lookup max=254 → STARS.Incident.Address11
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_15` **City** (GLCI_City) type=lookup max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_16` **State** (GLCI_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_17` **Zip Code** (GLCI_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_18` **Country** (GLCI_Country) type=lookup default=`US` → STARS.Incident.AddrCountry1
+  - options: 256 options (e.g. "Various", Afghanistan, Aland Islands, Albania, Algeria, American Samoa …)
+  - rule: row:[vis=4] STARS_75=''
+- `STARS_22` **<Removed> Gender** (GLCI_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+  - rule: row:[vis=4]
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_96` **Signature Name** (GLCS_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- **REQ** `STARS_97` **** (GLCS_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] NOT STARS_75='CUSTOMER' AND NOT STARS_75='PARENT' AND NOT STARS_76='Y'
+- **REQ** `STARS_98` **Associate Entering Incident Signature Name** (GLCS_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_75=''
+- **REQ** `STARS_99` **** (GLCS_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_75=''
+- **REQ** `STARS_38` **Does the incident involve Bodily Injury, Property Damage or both?** (GLCI_Does the incident involve Bodily Injury, Property Damage or both?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_99='Y'
+- `STARS_583` **** (GLCI_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_38='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_99='Y'
+- `STARS_584` **** (GLCI_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_38='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_99='Y'
+- `STARS_585` **** (GLCI_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_38}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_38='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_99='Y'
+- **REQ** `STARS_44` **What injury or illness was reported?** (GLCI_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y' OR STARS_38=''
+- **REQ** `STARS_125` **What body part was affected?** (GLCI_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y' OR STARS_38=''
+- **REQ** `STARS_45` **Which specific body part was affected?** (GLCI_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y' OR STARS_38=''
+- **REQ** `STARS_46` **Which side was affected?** (GLCI_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y' OR STARS_38=''
+- **REQ** `STARS_47` **Did the claimant mention seeking medical attention?** (GLCI_Did the claimant mention seeking medical attention?) type=radio → STARS.Incident.SpecialAnalysis#206
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y'
+  - help: This includes compensation or something in return for resolving the claim.
+- **REQ** `STARS_48` **Did the claimant mention wanting something from the facility?** (GLCI_Did the claimant mention wanting something from the facility?) type=radio → STARS.Incident.SpecialAnalysis#209
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_99='Y'
+- **REQ** `STARS_49` **Did an ambulance respond to the incident?** (GLCI_Did an ambulance respond to the incident?) type=radio → STARS.Incident.SpecialAnalysis#207
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y' OR NOT STARS_99='Y'
+- **REQ** `STARS_50` **Does claimant have an attorney or was an attorney mentioned?** (GLCI_Does claimant have an attorney or was an attorney mentioned?) type=radio → STARS.Incident.SpecialAnalysis#208
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_99='Y'
+  - help: By selecting Yes, you understand that the claim will be resolved with the customer, which may include a payment.
+- **REQ** `STARS_51` **Does the facility manager request resolution?** (GLII_Does the facility manager request resolution?) type=radio → STARS.Incident.SpecialAnalysis#222
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='CC' OR NOT STARS_99='Y' OR NOT STARS_38='PD'
+- **REQ** `STARS_303` **Do you need to add another incident/claim for this event** (GLCS_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+  - rule: [vis=4] STARS_98='' AND NOT STARS_76='N' ; row:[vis=4] STARS_75='' OR STARS_10='Y' OR NOT STARS_99='Y' OR STARS_7='GK'
+- `STARS_981` **<Hidden for sim mappings>** (HGLCI_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_12}` → Supplemental.Information.MiscDescription#10
+- `STARS_1104` **** (HGLCI_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_13}` → Supplemental.Information.MiscDescription#11
+- `STARS_1105` **** (HGLCI_City) type=lookup HIDDEN default=`{Dynamic.STARS_15}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCI_Next`, cmd=Next) → Page_STARS_30 when [vis=5] STARS_303='Y'
+
+## GL2_Customer Statement  (`Page_STARS_30`)
+
+- `STARS_586` **Customer Statement** (GLCS2.1_HiddenSimID) type=lookup HIDDEN
+- `STARS_573` **** (GLCS2_HiddenSimID) type=lookup HIDDEN
+- `STARS_572` **** (GLCS2_HiddenSimInfoType) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_494` **** (GLCS2_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- **REQ** `STARS_496` **Who is completing this statement?** (GLCS2_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: CUSTOMER=Customer/Member | FACILITY=Facility Member of Management | PARENT=Parent/Guardian | OTHER=Other
+- **REQ** `STARS_497` **Is the customer/member present?** (GLCS2_Is the customer/member present?) type=radio → Supplemental.Information.SpecialAnalysis#20
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_496='CUSTOMER' OR STARS_477='M' OR STARS_477='UI' OR STARS_496='PARENT' OR STARS_496=''
+- **REQ** `STARS_498` **Name of person completing this statement (First and Last Name)** (GLCS2_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] STARS_496='CUSTOMER' OR STARS_496='' OR STARS_497='' AND NOT STARS_496='PARENT'
+- **REQ** `STARS_499` **Provide a detailed explanation as to why the customer/member is unable to complete the statement** (GLCS2_Provide a detailed explanation as to why the customer/member is unable to complete the statement) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] STARS_496='' OR STARS_496='CUSTOMER' OR STARS_496='PARENT'
+- _text_: Please give the customer the device to complete the Customer Statement. After the statement is filled out, ensure that both the customer and you have signed it.
+- **REQ** `STARS_466` **First Name** (GLCI2_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=4] STARS_496=''
+- **REQ** `STARS_467` **Last Name** (GLCI2_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_473` **Phone #** (GLCI2_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_474` **Email Address** (GLCI2_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_548` **Would you like to opt in to receive texts and emails about your incident?** (GLCS2_If this is a mobile number, may we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- `STARS_549` **** (GLCS2_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- **REQ** `STARS_552` **Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.** (GLCS2_Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- `STARS_362` **Addiitonal details of incident** (GLCS2_Addiitonal details of incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- `STARS_475` **Date of Birth** (GLCI2_Date of Birth) type=5 → STARS.Incident.MiscDate#4
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- `STARS_477` **Was claimant a minor?** (GLCI2_Was claimant a minor?) type=radio → STARS.Incident.SpecialAnalysis#129
+  - options: A=Adult | M=Minor | UI=Unborn Infant
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_478` **Parent/Guardian Name** (GLCI2_Parent/Guardian Name) type=lookup max=254 → STARS.Incident.MiscDescription#89
+  - rule: row:[vis=4] STARS_477='' OR STARS_477='A'
+- `STARS_479` **What is the customer's preferred language?** (GLCI2_What is the customer's preferred language?) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- `STARS_468` **Address** (GLCI2_Address) type=lookup max=254 → STARS.Incident.Address11
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_469` **City** (GLCI2_City) type=lookup max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_470` **State** (GLCI2_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_471` **Zip Code** (GLCI2_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_472` **Country** (GLCI2_Country) type=lookup default=`US` → STARS.Incident.AddrCountry1
+  - options: 256 options (e.g. "Various", Afghanistan, Aland Islands, Albania, Algeria, American Samoa …)
+  - rule: row:[vis=4] STARS_496=''
+- `STARS_476` **<Removed> Gender** (GLCI2_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+  - rule: row:[vis=4]
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_554` **Signature Name** (GLCS2_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- **REQ** `STARS_555` **** (GLCS2_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] NOT STARS_496='CUSTOMER' AND NOT STARS_496='PARENT' AND NOT STARS_497='Y'
+- **REQ** `STARS_556` **Associate Entering Incident Signature Name** (GLCS2_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_496=''
+- **REQ** `STARS_557` **** (GLCS2_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_496=''
+- **REQ** `STARS_480` **Does the incident involve Bodily Injury, Property Damage or both?** (GLCI2_Does the incident involve Bodily Injury, Property Damage or both?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_557='Y'
+- `STARS_481` **** (GLCI2_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_480='BOTH' ; row:[vis=4] NOT STARS_557='Y'
+- `STARS_482` **** (GLCI2_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_480='BOTH' ; row:[vis=4] NOT STARS_557='Y'
+- `STARS_483` **** (GLCI2_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_480}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_480='BOTH' ; row:[vis=4] NOT STARS_557='Y'
+- **REQ** `STARS_484` **What injury or illness was reported?** (GLCI2_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_480='PD' OR STARS_10='Y' OR STARS_480='' OR NOT STARS_557='Y'
+- **REQ** `STARS_485` **What body part was affected?** (GLCI2_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_480='PD' OR STARS_10='Y' OR STARS_480='' OR NOT STARS_557='Y'
+- **REQ** `STARS_486` **Which specific body part was affected?** (GLCI2_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_480='PD' OR STARS_10='Y' OR STARS_480='' OR NOT STARS_557='Y'
+- **REQ** `STARS_487` **Which side was affected?** (GLCI2_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_480='PD' OR STARS_10='Y' OR NOT STARS_557='Y' OR STARS_480=''
+- **REQ** `STARS_1072` **Did the claimant mention seeking medical attention?** (GLCI2_Did the claimant mention seeking medical attention?) type=radio → STARS.Incident.SpecialAnalysis#206
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_480='PD' OR STARS_480='' OR NOT STARS_557='Y'
+  - help: This includes compensation or something in return for resolving the claim.
+- **REQ** `STARS_1073` **Did the claimant mention wanting something from the facility?** (GLCI2_Did the claimant mention wanting something from the facility?) type=radio → STARS.Incident.SpecialAnalysis#209
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_557='Y'
+- **REQ** `STARS_1074` **Did an ambulance respond to the incident?** (GLCI2_Did an ambulance respond to the incident?) type=radio → STARS.Incident.SpecialAnalysis#207
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_480='PD' OR NOT STARS_557='Y' OR STARS_10='Y' OR STARS_480=''
+- **REQ** `STARS_1075` **Does claimant have an attorney or was an attorney mentioned?** (GLCI2_Does claimant have an attorney or was an attorney mentioned?) type=radio → STARS.Incident.SpecialAnalysis#208
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_557='Y'
+  - help: By selecting Yes, you understand that the claim will be resolved with the customer, which may include a payment.
+- **REQ** `STARS_356` **Does the facility manager request resolution?** (GLCI2_Does the facility manager request resolution?) type=radio → STARS.Incident.SpecialAnalysis#222
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_557='Y' OR NOT STARS_480='PD' OR NOT STARS_7='CC'
+- **REQ** `STARS_558` **Do you need to add another incident/claim for this event** (GLCS2_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+  - rule: [vis=4] STARS_556='' AND NOT STARS_497='N' ; row:[vis=4] NOT STARS_557='Y' OR STARS_10='Y' OR STARS_496=''
+- `STARS_1106` **<Hidden for sim mappings>** (HGLCI2_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_466}` → Supplemental.Information.MiscDescription#10
+- `STARS_1107` **** (HGLCI2_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_467}` → Supplemental.Information.MiscDescription#11
+- `STARS_1108` **** (HGLCI2_City) type=lookup HIDDEN default=`{Dynamic.STARS_469}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCI2_Next`, cmd=Next) → Page_STARS_33 when [vis=5] STARS_558='Y'
+
+## GL3_Customer Statement  (`Page_STARS_33`)
+
+- `STARS_814` **Customer Statement** (GLCS3_HiddenSimID) type=lookup HIDDEN
+- `STARS_815` **** (GLCS3.1_HiddenSimID) type=lookup HIDDEN
+- `STARS_813` **** (GLCS3_HiddenSimInfoType) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_812` **** (GLCS3_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- **REQ** `STARS_816` **Who is completing this statement?** (GLCS3_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: CUSTOMER=Customer/Member | FACILITY=Management or HR entering incident | PARENT=Parent/Guardian | OTHER=Other
+- **REQ** `STARS_817` **Is the customer/member present?** (GLCS3_Is the customer/member present?) type=radio → Supplemental.Information.SpecialAnalysis#20
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_816='CUSTOMER' OR STARS_801='M' OR STARS_801='UI' OR STARS_816='PARENT' OR STARS_816=''
+- **REQ** `STARS_818` **Name of person completing this statement (First and Last Name)** (GLCS3_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] STARS_816='CUSTOMER' OR STARS_816='' OR STARS_817='' AND NOT STARS_816='PARENT'
+- **REQ** `STARS_819` **Provide a detailed explanation as to why the customer/member is unable to complete the statement** (GLCS3_Provide a detailed explanation as to why the customer/member is unable to complete the statement) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] STARS_816='' OR STARS_816='CUSTOMER' OR STARS_816='PARENT'
+- _text_: Please give the customer the device to complete the Customer Statement. After the statement is filled out, ensure that both the customer and you have signed it.
+- **REQ** `STARS_759` **First Name** (GLCI3_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=4] STARS_816=''
+- **REQ** `STARS_781` **Last Name** (GLCI3_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_797` **Phone #** (GLCI3_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_798` **Email Address** (GLCI3_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_831` **Would you like to opt in to receive texts and emails about your incident?** (GLCS3_If this is a mobile number, may we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- `STARS_832` **** (GLCS3_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- **REQ** `STARS_835` **Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.** (GLCS3_Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- `STARS_363` **Addiitonal details of incident** (GLCS3_Addiitonal details of incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- `STARS_799` **Date of Birth** (GLCI3_Date of Birth) type=5 → STARS.Incident.MiscDate#4
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- `STARS_801` **Was claimant a minor?** (GLCI3_Was claimant a minor?) type=radio → STARS.Incident.SpecialAnalysis#129
+  - options: A=Adult | M=Minor | UI=Unborn Infant
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_802` **Parent/Guardian Name** (GLCI3_Parent/Guardian Name) type=lookup max=254 → STARS.Incident.MiscDescription#89
+  - rule: row:[vis=4] STARS_801='' OR STARS_801='A'
+- `STARS_803` **What is the customer's preferred language?** (GLCI3_What is the customer's preferred language?) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- `STARS_782` **Address** (GLCI3_Address) type=lookup max=254 → STARS.Incident.Address11
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_783` **City** (GLCI3_City) type=lookup max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_789` **State** (GLCI3_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_795` **Zip Code** (GLCI3_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_796` **Country** (GLCI3_Country) type=lookup default=`US` → STARS.Incident.AddrCountry1
+  - options: 256 options (e.g. "Various", Afghanistan, Aland Islands, Albania, Algeria, American Samoa …)
+  - rule: row:[vis=4] STARS_816=''
+- `STARS_800` **<Removed> Gender** (GLCI3_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+  - rule: row:[vis=4]
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_837` **Signature Name** (GLCS3_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- **REQ** `STARS_838` **** (GLCS3_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] NOT STARS_816='CUSTOMER' AND NOT STARS_816='PARENT' AND NOT STARS_817='Y'
+- **REQ** `STARS_839` **Associate Entering Incident Signature Name** (GLCS3_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_816=''
+- **REQ** `STARS_840` **** (GLCS3_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_816=''
+- **REQ** `STARS_804` **Does the incident involve Bodily Injury, Property Damage or both?** (GLCI3_Does the incident involve Bodily Injury, Property Damage or both?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_840='Y'
+- `STARS_805` **** (GLCI3_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_804='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_840='Y'
+- `STARS_806` **** (GLCI3_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_804='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_840='Y'
+- `STARS_807` **** (GLCI3_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_804}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_804='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_840='Y'
+- **REQ** `STARS_808` **What injury or illness was reported?** (GLCI3_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y' OR STARS_804=''
+- **REQ** `STARS_809` **What body part was affected?** (GLCI3_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y' OR STARS_804=''
+- **REQ** `STARS_810` **Which specific body part was affected?** (GLCI3_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y' OR STARS_804=''
+- **REQ** `STARS_811` **Which side was affected?** (GLCI3_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y' OR STARS_804=''
+- **REQ** `STARS_1076` **Did the claimant mention seeking medical attention?** (GLCI3_Did the claimant mention seeking medical attention?) type=radio → STARS.Incident.SpecialAnalysis#206
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y'
+  - help: This includes compensation or something in return for resolving the claim.
+- **REQ** `STARS_1077` **Did the claimant mention wanting something from the facility?** (GLCI3_Did the claimant mention wanting something from the facility?) type=radio → STARS.Incident.SpecialAnalysis#209
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_840='Y'
+- **REQ** `STARS_1078` **Did an ambulance respond to the incident?** (GLCI3_Did an ambulance respond to the incident?) type=radio → STARS.Incident.SpecialAnalysis#207
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_804='PD' OR STARS_10='Y' OR NOT STARS_840='Y'
+- **REQ** `STARS_1079` **Does claimant have an attorney or was an attorney mentioned?** (GLCI3_Does claimant have an attorney or was an attorney mentioned?) type=radio → STARS.Incident.SpecialAnalysis#208
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_840='Y'
+  - help: By selecting Yes, you understand that the claim will be resolved with the customer, which may include a payment.
+- **REQ** `STARS_359` **Does the facility manager request resolution?** (GLCI3_Does the facility manager request resolution?) type=radio → STARS.Incident.SpecialAnalysis#222
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='CC' OR NOT STARS_840='Y' OR NOT STARS_804='PD'
+- **REQ** `STARS_841` **Do you need to add another incident/claim for this event** (GLCS3_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+  - rule: [vis=4] STARS_839='' AND NOT STARS_817='N' ; row:[vis=4] STARS_816='' OR STARS_10='Y' OR NOT STARS_840='Y'
+- `STARS_1109` **<Hidden for sim mappings>** (HGLCI3_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_759}` → Supplemental.Information.MiscDescription#10
+- `STARS_1110` **** (HGLCI3_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_781}` → Supplemental.Information.MiscDescription#11
+- `STARS_1111` **** (HGLCI3_City) type=lookup HIDDEN default=`{Dynamic.STARS_783}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCI3_Next`, cmd=Next) → Page_STARS_39 when [vis=5] STARS_841='Y'
+
+## GL4_Customer Statement  (`Page_STARS_39`)
+
+- `STARS_874` **Customer Statement** (GLCS4_HiddenSimID) type=lookup HIDDEN
+- `STARS_875` **** (GLCS4.1_HiddenSimID) type=lookup HIDDEN
+- `STARS_873` **** (GLCS4_HiddenSimInfoType) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_872` **** (GLCS4_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- **REQ** `STARS_876` **Who is completing this statement?** (GLCS4_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: CUSTOMER=Customer/Member | FACILITY=Management or HR entering incident | PARENT=Parent/Guardian | OTHER=Other
+- **REQ** `STARS_877` **Is the customer/member present?** (GLCS4_Is the customer/member present?) type=radio → Supplemental.Information.SpecialAnalysis#20
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_876='CUSTOMER' OR STARS_861='M' OR STARS_861='UI' OR STARS_876='PARENT' OR STARS_876=''
+- **REQ** `STARS_878` **Name of person completing this statement (First and Last Name)** (GLCS4_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] STARS_876='CUSTOMER' OR STARS_876='' OR STARS_877='' AND NOT STARS_876='PARENT'
+- **REQ** `STARS_879` **Provide a detailed explanation as to why the customer/member is unable to complete the statement** (GLCS4_Provide a detailed explanation as to why the customer/member is unable to complete the statement) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] STARS_876='' OR STARS_876='CUSTOMER' OR STARS_876='PARENT'
+- _text_: Please give the customer the device to complete the Customer Statement. After the statement is filled out, ensure that both the customer and you have signed it.
+- **REQ** `STARS_850` **First Name** (GLCI4_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=4] STARS_876=''
+- **REQ** `STARS_851` **Last Name** (GLCI4_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_857` **Phone #** (GLCI4_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_858` **Email Address** (GLCI4_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_891` **Would you like to opt in to receive texts and emails about your incident?** (GLCS4_If this is a mobile number, may we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- `STARS_892` **** (GLCS4_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- **REQ** `STARS_895` **Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.** (GLCS4_Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- `STARS_365` **Addiitonal details of incident** (GLCS4_Addiitonal details of incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- `STARS_859` **Date of Birth** (GLCI4_Date of Birth) type=5 → STARS.Incident.MiscDate#4
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- `STARS_861` **Was claimant a minor?** (GLCI4_Was claimant a minor?) type=radio → STARS.Incident.SpecialAnalysis#129
+  - options: A=Adult | M=Minor | UI=Unborn Infant
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_862` **Parent/Guardian Name** (GLCI4_Parent/Guardian Name) type=lookup max=254 → STARS.Incident.MiscDescription#89
+  - rule: row:[vis=4] STARS_861='' OR STARS_861='A'
+- `STARS_863` **What is the customer's preferred language?** (GLCI4_What is the customer's preferred language?) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- `STARS_852` **Address** (GLCI4_Address) type=lookup max=254 → STARS.Incident.Address11
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_853` **City** (GLCI4_City) type=lookup max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_854` **State** (GLCI4_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_855` **Zip Code** (GLCI4_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_856` **Country** (GLCI4_Country) type=lookup default=`US` → STARS.Incident.AddrCountry1
+  - options: 256 options (e.g. "Various", Afghanistan, Aland Islands, Albania, Algeria, American Samoa …)
+  - rule: row:[vis=4] STARS_876=''
+- `STARS_860` **<Removed> Gender** (GLCI4_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+  - rule: row:[vis=4]
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_897` **Signature Name** (GLCS4_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- **REQ** `STARS_898` **** (GLCS4_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] NOT STARS_876='CUSTOMER' AND NOT STARS_876='PARENT' AND NOT STARS_877='Y'
+- **REQ** `STARS_899` **Associate Entering Incident Signature Name** (GLCS4_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_876=''
+- **REQ** `STARS_900` **** (GLCS4_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_876=''
+- **REQ** `STARS_864` **Does the incident involve Bodily Injury, Property Damage or both?** (GLCI4_Does the incident involve Bodily Injury, Property Damage or both?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_900='Y'
+- `STARS_865` **** (GLCI4_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_864='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_900='Y'
+- `STARS_866` **** (GLCI4_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_864='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_900='Y'
+- `STARS_867` **** (GLCI4_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_864}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_864='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_900='Y'
+- **REQ** `STARS_868` **What injury or illness was reported?** (GLCI4_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y' OR STARS_864=''
+- **REQ** `STARS_869` **What body part was affected?** (GLCI4_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y' OR STARS_864=''
+- **REQ** `STARS_870` **Which specific body part was affected?** (GLCI4_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y' OR STARS_864=''
+- **REQ** `STARS_871` **Which side was affected?** (GLCI4_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y' OR STARS_864=''
+- **REQ** `STARS_1080` **Did the claimant mention seeking medical attention?** (GLCI4_Did the claimant mention seeking medical attention?) type=radio → STARS.Incident.SpecialAnalysis#206
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y'
+  - help: This includes compensation or something in return for resolving the claim.
+- **REQ** `STARS_1081` **Did the claimant mention wanting something from the facility?** (GLCI4_Did the claimant mention wanting something from the facility?) type=radio → STARS.Incident.SpecialAnalysis#209
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_900='Y'
+- **REQ** `STARS_1082` **Did an ambulance respond to the incident?** (GLCI4_Did an ambulance respond to the incident?) type=radio → STARS.Incident.SpecialAnalysis#207
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_864='PD' OR STARS_10='Y' OR NOT STARS_900='Y'
+- **REQ** `STARS_1083` **Does claimant have an attorney or was an attorney mentioned?** (GLCI4_Does claimant have an attorney or was an attorney mentioned?) type=radio → STARS.Incident.SpecialAnalysis#208
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_900='Y'
+  - help: By selecting Yes, you understand that the claim will be resolved with the customer, which may include a payment.
+- **REQ** `STARS_357` **Does the facility manager request resolution?** (GLCI4_Does the facility manager request resolution?) type=radio → STARS.Incident.SpecialAnalysis#222
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='CC' OR NOT STARS_900='Y' OR NOT STARS_864='PD'
+- **REQ** `STARS_901` **Do you need to add another incident/claim for this event** (GLCS4_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+  - rule: [vis=4] STARS_899='' AND NOT STARS_877='N' ; row:[vis=4] STARS_876='' OR STARS_10='Y' OR NOT STARS_900='Y'
+- `STARS_1112` **<Hidden for sim mappings>** (HGLCI4_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_850}` → Supplemental.Information.MiscDescription#10
+- `STARS_1113` **** (HGLCI4_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_851}` → Supplemental.Information.MiscDescription#11
+- `STARS_1114` **** (HGLCI4_City) type=lookup HIDDEN default=`{Dynamic.STARS_853}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCI4_Next`, cmd=Next) → Page_STARS_41 when [vis=5] STARS_901='Y'
+
+## GL5_Customer Statement  (`Page_STARS_41`)
+
+- `STARS_934` **Customer Statement** (GLCS5_HiddenSimID) type=lookup HIDDEN
+- `STARS_935` **** (GLCS5.1_HiddenSimID) type=lookup HIDDEN
+- `STARS_933` **** (GLCS5_HiddenSimInfoType) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_932` **** (GLCS5_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- **REQ** `STARS_936` **Who is completing this statement?** (GLCS5_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: CUSTOMER=Customer/Member | FACILITY=Management or HR entering incident | PARENT=Parent/Guardian | OTHER=Other
+- **REQ** `STARS_937` **Is the customer/member present?** (GLCS5_Is the customer/member present?) type=radio → Supplemental.Information.SpecialAnalysis#20
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_936='CUSTOMER' OR STARS_921='M' OR STARS_921='UI' OR STARS_936='PARENT' OR STARS_936=''
+- **REQ** `STARS_938` **Name of person completing this statement (First and Last Name)** (GLCS5_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] STARS_936='CUSTOMER' OR STARS_936='' OR STARS_937='' AND NOT STARS_936='PARENT'
+- **REQ** `STARS_939` **Provide a detailed explanation as to why the customer/member is unable to complete the statement** (GLCS5_Provide a detailed explanation as to why the customer/member is unable to complete the statement) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] STARS_936='' OR STARS_936='CUSTOMER' OR STARS_936='PARENT'
+- _text_: Please give the customer the device to complete the Customer Statement. After the statement is filled out, ensure that both the customer and you have signed it.
+- **REQ** `STARS_910` **First Name** (GLCI5_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=4] STARS_936=''
+- **REQ** `STARS_911` **Last Name** (GLCI5_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_917` **Phone #** (GLCI5_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_918` **Email Address** (GLCI5_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_951` **Would you like to opt in to receive texts and emails about your incident?** (GLCS5_If this is a mobile number, may we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- `STARS_952` **** (GLCS5_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- **REQ** `STARS_955` **Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.** (GLCS5_Provide a detailed description of the incident, including what happened, and include any resulting injuries or damages.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- `STARS_366` **Addiitonal details of incident** (GLCS5_Addiitonal details of incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- `STARS_919` **Date of Birth** (GLCI5_Date of Birth) type=5 → STARS.Incident.MiscDate#4
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- `STARS_921` **Was claimant a minor?** (GLCI5_Was claimant a minor?) type=radio → STARS.Incident.SpecialAnalysis#129
+  - options: A=Adult | M=Minor | UI=Unborn Infant
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_922` **Parent/Guardian Name** (GLCI5_Parent/Guardian Name) type=lookup max=254 → STARS.Incident.MiscDescription#89
+  - rule: row:[vis=4] STARS_921='' OR STARS_921='A'
+- `STARS_923` **What is the customer's preferred language?** (GLCI5_What is the customer's preferred language?) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- `STARS_912` **Address** (GLCI5_Address) type=lookup max=254 → STARS.Incident.Address11
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_913` **City** (GLCI5_City) type=lookup max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_914` **State** (GLCI5_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_915` **Zip Code** (GLCI5_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_916` **Country** (GLCI5_Country) type=lookup default=`US` → STARS.Incident.AddrCountry1
+  - options: 256 options (e.g. "Various", Afghanistan, Aland Islands, Albania, Algeria, American Samoa …)
+  - rule: row:[vis=4] STARS_936=''
+- `STARS_920` **<Removed> Gender** (GLCI5_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+  - rule: row:[vis=4]
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_957` **Signature Name** (GLCS5_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- **REQ** `STARS_958` **** (GLCS5_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] NOT STARS_936='CUSTOMER' AND NOT STARS_936='PARENT' AND NOT STARS_937='Y'
+- **REQ** `STARS_959` **Associate Entering Incident Signature Name** (GLCS5_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_936=''
+- **REQ** `STARS_960` **** (GLCS5_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_936=''
+- **REQ** `STARS_924` **Does the incident involve Bodily Injury, Property Damage or both?** (GLCI5_Does the incident involve Bodily Injury, Property Damage or both?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_960='Y'
+- `STARS_925` **** (GLCI5_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_924='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_960='Y'
+- `STARS_926` **** (GLCI5_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_924='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_960='Y'
+- `STARS_927` **** (GLCI5_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_924}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_924='BOTH' AND NOT STARS_10='Y' ; row:[vis=4] NOT STARS_960='Y'
+- **REQ** `STARS_928` **What injury or illness was reported?** (GLCI5_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y' OR STARS_924=''
+- **REQ** `STARS_929` **What body part was affected?** (GLCI5_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y' OR STARS_924=''
+- **REQ** `STARS_930` **Which specific body part was affected?** (GLCI5_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y' OR STARS_924=''
+- **REQ** `STARS_931` **Which side was affected?** (GLCI5_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y' OR STARS_924=''
+- **REQ** `STARS_1084` **Did the claimant mention seeking medical attention?** (GLCI5_Did the claimant mention seeking medical attention?) type=radio → STARS.Incident.SpecialAnalysis#206
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y'
+  - help: This includes compensation or something in return for resolving the claim.
+- **REQ** `STARS_1085` **Did the claimant mention wanting something from the facility?** (GLCI5_Did the claimant mention wanting something from the facility?) type=radio → STARS.Incident.SpecialAnalysis#209
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_960='Y'
+- **REQ** `STARS_1086` **Did an ambulance respond to the incident?** (GLCI5_Did an ambulance respond to the incident?) type=radio → STARS.Incident.SpecialAnalysis#207
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_924='PD' OR STARS_10='Y' OR NOT STARS_960='Y'
+- **REQ** `STARS_1087` **Does claimant have an attorney or was an attorney mentioned?** (GLCI5_Does claimant have an attorney or was an attorney mentioned?) type=radio → STARS.Incident.SpecialAnalysis#208
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_10='Y' OR NOT STARS_960='Y'
+  - help: By selecting Yes, you understand that the claim will be resolved with the customer, which may include a payment.
+- **REQ** `STARS_360` **Does the facility manager request resolution?** (GLCI5_Does the facility manager request resolution?) type=radio → STARS.Incident.SpecialAnalysis#222
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='CC' OR NOT STARS_960='Y' OR NOT STARS_924='PD'
+- `STARS_1115` **<Hidden for sim mappings>** (HGLCI5_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_910}` → Supplemental.Information.MiscDescription#10
+- `STARS_1116` **** (HGLCI5_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_911}` → Supplemental.Information.MiscDescription#11
+- `STARS_1117` **** (HGLCI5_City) type=lookup HIDDEN default=`{Dynamic.STARS_913}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCI5_Next`, cmd=Next) → 
+
+## GL GK Settlement  (`Page_STARS_20`)
+
+- `STARS_1118` **<Hidden mappings>** (GLGK_HiddenSimID) type=lookup HIDDEN
+- `STARS_1120` **** (GLGK_HiddenInfoTypeCST) type=lookup HIDDEN default=`CST` → Supplemental.Information.InfoType
+- `STARS_1121` **** (GLGK_HiddenStatementType) type=lookup HIDDEN default=`CUSTOMER` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_1149` **** (GLGK_Coverage) type=lookup HIDDEN default=`22` → STARS.Incident.CoverageCode
+- `STARS_1150` **** (GLGK_ReportDate) type=lookup HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.IncidentReportDate
+- **REQ** `STARS_1119` **First Name** (GLGK_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_1125` **Last Name** (GLGK_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+- `STARS_1126` **Address** (GLGK_Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_1127` **City** (GLGK_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_1128` **State** (GLGK_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_1129` **Zip** (GLGK_Zip) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_1130` **Phone number** (GLGK_Phone number) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- **REQ** `STARS_1131` **Incident description** (GLGK_Incident description) type=16 max=254 → STARS.Incident.ClaimDescription
+- **REQ** `STARS_1132` **What caused the incident?** (GLGK_What caused the incident?) type=lookup → STARS.Incident.Cause
+  - options: 32 options (e.g. Cargo, Caught In/Under/Between, Crime/Theft/Vandalism (AL/PR), Crime/Theft/Vandalism (GL), Crime/Theft/Vandalism (WC), Cut/Puncture/Scrape By …)
+- **REQ** `STARS_1133` **What is the specific cause of the incident?** (GLGK_What is the specific cause of the incident?) type=lookup → STARS.Incident.SpecialAnalysis#294
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_1134` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (GLGK_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#355
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- `STARS_1135` **What specific item was involved with this incident?** (GLGK_What specific item was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#85
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- **REQ** `STARS_1136` **Does the incident involve Bodily Injury, Property Damage or Both?** (GLGK_Does the incident involve Bodily Injury, Property Damage or Both?) type=lookup default=`{Dynamic.STARS_742}` → STARS.Incident.SpecialAnalysis#290
+  - options: 6 options: BI=Bodily Injury | BOTH=Both | 03=Cumulative Injury | 02=Occupational Disease | PD=Property Damage | 01=Trauma
+- **REQ** `STARS_1137` **Mileage of vehicle at time of incident?** (GLGK_Mileage of vehicle at time of incident?) type=text max=12 → STARS.Incident.MiscNumber#111
+- **REQ** `STARS_1138` **Mileage of vehicle when serviced?** (GLGK_Mileage of vehicle when serviced?) type=text max=12 → STARS.Incident.MiscNumber#110
+- **REQ** `STARS_1139` **Service date** (Service date) type=5 → STARS.Incident.MiscDate#100
+- **REQ** `STARS_1140` **Key Tag #** (GLGK_Key Tag #) type=lookup max=254 → STARS.Incident.MiscDescription#118
+- **REQ** `STARS_1141` **Description of damage to customer’s vehicle** (GLGK_Description of damage to customer’s vehicle) type=16 max=254 → STARS.Incident.MiscDescription#177
+- **REQ** `STARS_1142` **Vehicle make** (GLGK_Vehicle make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- **REQ** `STARS_1143` **Vehicle model** (GLGK_Vehicle model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- **REQ** `STARS_1144` **Vehicle year** (GLGK_Vehicle year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- **REQ** `STARS_1145` **Vehicle color** (GLGK_Vehicle color) type=lookup → STARS.Incident.SpecialAnalysis#349
+  - options: 14 options: BEIGE=Beige | BLACK=Black | BLUE=Blue | BROWN=Brown | GREEN=Green | GREY=Grey | ORANGE=Orange | OTHER=Other | PINK=Pink | PURPLE=Purple | RED=Red | SILVER=Silver | WHITE=White | YELLOW=Yellow
+- **REQ** `STARS_1146` **Did the incident happen on the premises?** (GLGK_Did the incident happen on the premises?) type=radio default=`Y` → STARS.Incident.SpecialAnalysis#24
+  - options: Y=Yes | N=No
+- **REQ** `STARS_1147` **Where did the incident occur?** (GLGK_Where did the incident occur?) type=lookup default=`AUTO/TIR` → STARS.Incident.SpecialAnalysis#356
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_1148` **Provide specific location** (GLGK_Provide specific location) type=lookup default=`1` → STARS.Incident.SpecialAnalysis#79
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+- `STARS_1122` **<Hidden for sim mappings>** (HGLGK_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_1119}` → Supplemental.Information.MiscDescription#10
+- `STARS_1123` **** (HGLGK_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_1125}` → Supplemental.Information.MiscDescription#11
+- `STARS_1124` **** (HGLGK_City) type=lookup HIDDEN default=`{Dynamic.STARS_1127}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`GK_Submit`, cmd=Submit) → 
+
+## GL_Incident Summary  (`Page_STARS_4`)
+
+- **REQ** `STARS_28` **Did the incident happen on the premises?** (GLIL_Did the incident happen on the premises?) type=radio → STARS.Incident.SpecialAnalysis#24
+  - options: Y=Yes | N=No
+- **REQ** `STARS_34` **Where did the incident occur?** (GLIL_Where did the incident occur?) type=lookup → STARS.Incident.SpecialAnalysis#356
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_35` **Provide specific location** (GLIL_Provide specific location ) type=lookup → STARS.Incident.SpecialAnalysis#79
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+  - help: Provide the nearest aisle#, register #, parking lot row, cooler#, etc.
+- `STARS_36` **Provide the nearest specific location** (GLIL_Provide the nearest specific location) type=lookup max=254 → STARS.Incident.MiscDescription#269
+  - rule: row:[vis=4] STARS_28=''
+- `STARS_29` **Business Name/Additional Location Information** (GLIL_Business Name/Additional Location Information) type=lookup max=254 → STARS.Incident.MiscDescription#93
+  - rule: row:[vis=4] NOT STARS_28='N'
+- **REQ** `STARS_30` **Street Address Where the Incident Occurred** (GLIL_Street Address Where the Incident Occurred) type=lookup max=254 → STARS.Incident.MiscDescription#2
+  - rule: row:[vis=4] NOT STARS_28='N'
+- **REQ** `STARS_31` **City** (GLIL_City) type=lookup max=254 → STARS.Incident.MiscDescription#4
+  - rule: row:[vis=4] NOT STARS_28='N'
+- **REQ** `STARS_32` **State** (GLIL_State) type=lookup → STARS.Incident.State
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_28='N'
+- **REQ** `STARS_33` **Zip Code** (GLIL_Zip Code) type=lookup max=254 → STARS.Incident.MiscDescription#5
+  - rule: row:[vis=4] NOT STARS_28='N'
+- **REQ** `STARS_37` **Incident Description** (GLII_Incident Description) type=16 max=254 → STARS.Incident.ClaimDescription
+- **REQ** `STARS_39` **Type of Incident** (GLIIAP_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 15 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 16=Z. Other Type of Incident
+  - rule: [vis=5] STARS_7='AP' ; row:[vis=5] STARS_7='AP'
+- **REQ** `STARS_372` **Type of Incident** (GLIICC_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 2 options: 21=B. Customer's Property Damaged | 26=K. Vehicle Collision
+  - rule: [vis=5] STARS_7='CC' ; row:[vis=5] STARS_7='CC'
+- **REQ** `STARS_1151` **Type of Incident** (GLIIGK_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 4 options: 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire
+  - rule: [vis=5] STARS_7='GK' ; row:[vis=5] STARS_7='GK'
+- **REQ** `STARS_1152` **Type of Incident** (GLIIGL_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 15 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 16=Z. Other Type of Incident
+  - rule: [vis=5] STARS_7='GL' ; row:[vis=5] STARS_7='GL'
+- **REQ** `STARS_1153` **Type of Incident** (GLIIHD_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 15 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 16=Z. Other Type of Incident
+  - rule: [vis=5] STARS_7='HD' ; row:[vis=5] STARS_7='HD'
+- **REQ** `STARS_1154` **Type of Incident** (GLIIOPR_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 15 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 16=Z. Other Type of Incident
+  - rule: [vis=5] STARS_7='OPR' ; row:[vis=5] STARS_7='OPR'
+- **REQ** `STARS_1155` **Type of Incident** (GLIIPL_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 6 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 3=D. Cut/Puncture/Scrape | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 19=I. Product Sold Caused Injury/Damage/Illness
+  - rule: [vis=5] STARS_7='PL' ; row:[vis=5] STARS_7='PL'
+- **REQ** `STARS_40` **What is the specific cause of the incident?** (GLII_What is the specific cause of the incident?) type=lookup → STARS.Incident.SpecialAnalysis#294
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_41` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (GLII_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#355
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_42` **What specific item was involved with this incident?** (GLII_What specific item was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#85
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+  - help: Provide vendor name and contact information, UPC, weight of product, serial number, asset number, etc.
+- `STARS_43` **Provide additional information of item or individual involved** (GLII_Provide additional information of item or individual involved) type=16 max=254 → STARS.Incident.MiscDescription#264
+  - help: Was any party, other than the claimant, involved in the incident (e.g., vendors, contractors, other customers)?
+- `STARS_53` **Was a 3rd party involved in the incident?** (GLII_Was a 3rd party involved in the incident?) type=radio → STARS.Incident.SpecialAnalysis#205
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] STARS_10='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLIL_Next`, cmd=Next) → Page_STARS_6 when [vis=5] STARS_7='GK' OR STARS_7='AP' OR STARS_7='HD' OR STARS_7='PL'
+  - shown when: [vis=4] STARS_28=''
+
+## GL_Claim Type Specialty Info  (`Page_STARS_6`)
+
+- **REQ** `STARS_55` **Mileage of vehicle at time of incident?** (GLCTSI_Mileage of vehicle at time of incident?) type=text max=12 → STARS.Incident.MiscNumber#111
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_5611` **Mileage of vehicle when serviced?** (GLCTSI_Mileage of vehicle when serviced?) type=text max=12 → STARS.Incident.MiscNumber#110
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_57` **Service Date** (GLCTSI_Service Date) type=5 → STARS.Incident.MiscDate#100
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_58` **Key Tag #** (GLCTSI_Key Tag #) type=lookup max=254 → STARS.Incident.MiscDescription#118
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_59` **Description of Damage to Customer’s Vehicle** (GLCTSI_Description of Damage to Customer’s Vehicle) type=16 max=254 → STARS.Incident.MiscDescription#177
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_60` **Vehicle Make** (GLCTSI_Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_61` **Vehicle Model** (GLCTSI_Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_62` **Vehicle Year** (GLCTSI_Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_63` **Vehicle Color** (GLCTSI_Vehicle Color) type=lookup → STARS.Incident.SpecialAnalysis#349
+  - options: 14 options: BEIGE=Beige | BLACK=Black | BLUE=Blue | BROWN=Brown | GREEN=Green | GREY=Grey | ORANGE=Orange | OTHER=Other | PINK=Pink | PURPLE=Purple | RED=Red | SILVER=Silver | WHITE=White | YELLOW=Yellow
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_64` **Product Name** (GLCTSI_Product Name) type=lookup max=254 → STARS.Incident.MiscDescription#44
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_65` **Item #** (GLCTSI_Item #) type=lookup max=254 → STARS.Incident.MiscDescription#124
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_66` **UPC #** (GLCTSI_UPC #) type=lookup max=254 → STARS.Incident.MiscDescription#123
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_67` **Lot #** (GLCTSI_Lot #) type=lookup max=254 → STARS.Incident.MiscDescription#125
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_68` **Expiration Date** (GLCTSI_Expiration Date) type=5 → STARS.Incident.MiscDate#101
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_69` **Were the police called?** (GLCTSI_Were the police called?) type=radio → STARS.Incident.SpecialAnalysis#226
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='AP'
+- **REQ** `STARS_70` **Who called the police?** (GLCTSI_Who called the police?) type=lookup max=254 → STARS.Incident.MiscDescription#150
+  - rule: row:[vis=4] NOT STARS_7='AP' OR NOT STARS_69='Y'
+- **REQ** `STARS_71` **Reason police were called** (GLCTSI_Reason police were called) type=lookup max=254 → STARS.Incident.MiscDescription#152
+  - rule: row:[vis=4] NOT STARS_7='AP' OR NOT STARS_69='Y'
+- **REQ** `STARS_690` **Delivery provider involved** (GLCTSI_Delivery provider involved) type=lookup → STARS.Incident.SpecialAnalysis#124
+  - options: 16 options: 1= WM Associate-InHome | 26=DaaS GoLocal | 11=DaaS Sams  | 30=DaaS Walmart | 13=Drone-Drone-Up | 14=Drone-Flytrex  | 15=Drone-Zipline  | 28=FedEx | 2=InHome | 17=InstaCart  | 27=NASH | 20=Roadie | 3=Spark Delivery | 22=Spark Shopper | 23=Uber | 29=UPS
+  - rule: row:[vis=4] NOT STARS_7='HD'
+- **REQ** `STARS_266` **Online Order #** (GLCTSI_Online Order #) type=lookup max=254 → STARS.Incident.MiscDescription#158
+  - rule: row:[vis=4] NOT STARS_7='HD'
+- **REQ** `STARS_451` **Delivery Driver Name** (GLCTSI_Delivery Driver Name) type=lookup max=254 → STARS.Incident.MiscDescription#279
+  - rule: row:[vis=4] NOT STARS_7='HD'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`GLCTSI_Next`, cmd=Next) → 
+
+## WC_Associate Statement  (`Page_STARS_16`)
+
+- `STARS_176` **<Hidden Mappings>** (HiddenWC1IncidentID) type=lookup HIDDEN
+- `STARS_177` **** (HiddenWC1ClaimID) type=lookup HIDDEN
+- `STARS_178` **** (HiddenWCReportDate) type=5 HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.ReportDate
+- `STARS_179` **** (HiddenCoverageWC) type=lookup HIDDEN default=`10` → STARS.Incident.CoverageCode
+- `STARS_221` **<HiddenMapping>** (WCA_Job Title) type=lookup HIDDEN → STARS.Incident.MiscDescription#17
+- `STARS_222` **** (WCA_Address) type=lookup HIDDEN → STARS.Incident.Address11
+- `STARS_223` **** (WCA_City) type=lookup HIDDEN → STARS.Incident.AddrCity1
+- `STARS_224` **** (WCA_State) type=lookup HIDDEN → STARS.Incident.AddrState1
+- `STARS_225` **** (WCA_Zip Code) type=lookup HIDDEN → STARS.Incident.AddrPostal1
+- `STARS_226` **** (WCA_Phone #) type=lookup HIDDEN → STARS.Incident.MiscDescription#131
+- `STARS_234` **** (WCA_Email) type=lookup HIDDEN → STARS.Incident.MiscDescription#15
+- `STARS_235` **** (WCA_DOB) type=5 HIDDEN → STARS.Incident.MiscDate#4
+- `STARS_236` **** (WCA_Gender) type=lookup HIDDEN → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+- `STARS_237` **** (WCA_Marital Status) type=lookup HIDDEN → STARS.Incident.MiscDescription#217
+  - options: 4 options: M=Married | S=Separated | K=Unknown | U=Unmarried, Widowed, Divorced, Single
+- `STARS_238` **** (WCA_What facility number is associate payrolled from? ) type=lookup HIDDEN → STARS.Incident.MiscDescription#190
+- `STARS_239` **** (WCA_Hire date) type=5 HIDDEN → STARS.Incident.MiscDate#27
+- `STARS_240` **** (WCA_Hire State) type=lookup HIDDEN → STARS.Incident.SpecialAnalysis#41
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_242` **** (WCA_Termination date) type=5 HIDDEN → STARS.Incident.MiscDate#26
+- `STARS_243` **** (WCA_What is the associate's preferred language?) type=lookup HIDDEN → STARS.Incident.MiscDescription#221
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- `STARS_264` **** (WCA_Wage) type=text HIDDEN → STARS.Incident.MiscNumber#11
+- `STARS_773` **** (WCA_SSN_Hidden) type=lookup HIDDEN → STARS.Incident.SocialSecurity
+- `STARS_1063` **** (WCAT_Hire Date) type=lookup HIDDEN default=`{Dynamic.STARS_239}`
+- `STARS_1064` **** (WCAT_Termination Date) type=lookup HIDDEN default=`{Dynamic.STARS_242}`
+- `STARS_1088` **** (WCA_Base pay frequency) type=lookup HIDDEN → STARS.Incident.MiscDescription#310
+- `STARS_1093` **** (WCA_CHARGEFACILITYDIVNUMBER) type=lookup HIDDEN → STARS.Incident.SpecialAnalysis#367
+- `STARS_1094` **** (WCA_CENTRALIZEDJOBCODE ) type=lookup HIDDEN → STARS.Incident.MiscDescription#277
+- `STARS_1096` **** (WCAT_DOB) type=lookup HIDDEN default=`{Dynamic.STARS_235}`
+- `STARS_241` **** (WCA_Employment Status) type=lookup HIDDEN → STARS.Incident.MiscDescription#218
+- `STARS_265` **** (HiddenIncASSupp1ID) type=lookup HIDDEN
+- `STARS_267` **** (HiddenInfoTypeAS) type=lookup HIDDEN default=`ASC` → Supplemental.Information.InfoType
+- `STARS_27` **** (HiddenStatementType) type=lookup HIDDEN default=`ASSOCIATE` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_510` **** (WCA0_First_Name) type=lookup HIDDEN → STARS.Incident.FirstName1
+- `STARS_515` **** (WCA0_Last_Name) type=lookup HIDDEN → STARS.Incident.LastName1
+- `STARS_538` **** (WCA0_MidInit) type=lookup HIDDEN → STARS.Incident.MiddleInitial1
+- **REQ** `STARS_1101` **Is this a Walmart Associate or OSHA Recordable Non-Associate?** (WC_Associate Type) type=radio HIDDEN default=`WA`
+  - options: WA=Walmart Associate | IC=OSHA Recordable Non-Associate
+- TABLE-LOOKUP **HR Lookup - Inc** maps→ param=STARS.Incident/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=70&lookup_instructions=HR Lookup - Inc&maxrec=50&objId=STARS_1&sourceType=S
+- **REQ** `STARS_268` **Who is completing this statement?** (WCAS_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: ASSOCIATE=Associate reporting injury or illness | FACILITY=Management or HR entering incident
+  - rule: row:[vis=4] STARS_228=''
+- **REQ** `STARS_269` **Is the associate/partner present?** (WCAS_Is the associate/partner present?) type=lookup → Supplemental.Information.SpecialAnalysis#20
+  - options: 2 options: N=No | Y=Yes
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- **REQ** `STARS_270` **Name of person completing this statement (First and Last Name)** (WCAS_Name of person completing this statement (First and Last Name)) type=lookup max=254 → Supplemental.Information.MiscDescription#23
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- **REQ** `STARS_271` **Provide a detailed explanation as to why the associate is unable to complete the statement** (WCAS_Provide a detailed explanation as to why the associate is unable to complete the statement.) type=16 max=254 → Supplemental.Information.MiscDescription#24
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- _text_: Please give the associate the device to complete the Associate Statement. After the statement is filled out, ensure that both the associate and you have signed it.
+- `STARS_228` **WIN** (WCA_WIN) type=lookup HIDDEN → STARS.Incident.MiscDescription#21
+- **REQ** `STARS_229` **SSN** (WCA_SSN) type=lookup HIDDEN default=`{Dynamic.STARS_773}` max=9 → STARS.Incident.SocialSecurity
+- **REQ** `STARS_230` **First Name** (WCA_First Name) type=lookup default=`{Dynamic.STARS_510}` max=50 → STARS.Incident.FirstName1
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND NOT STARS_228=''
+- `STARS_231` **** (WCA_Middle Initial) type=lookup HIDDEN default=`{Dynamic.STARS_538}` max=1 → STARS.Incident.MiddleInitial1
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND NOT STARS_228=''
+- **REQ** `STARS_232` **Last Name** (WCA_Last Name) type=lookup default=`{Dynamic.STARS_515}` max=50 → STARS.Incident.LastName1
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND NOT STARS_228=''
+  - help: Provide the best phone # to contact the associate about their claim.
+- **REQ** `STARS_227` **Phone #** (WCA1_Phone #) type=lookup default=`{Dynamic.STARS_226}` max=254 → STARS.Incident.MiscDescription#131
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_226='' AND NOT STARS_228=''
+  - help: Provide the best email address to contact the associate about their claim.
+- `STARS_233` **Email** (WCA1_Email) type=lookup default=`{Dynamic.STARS_234}` max=254 → STARS.Incident.MiscDescription#15
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_234='' AND NOT STARS_228=''
+- `STARS_190` **Would you like to opt in to receive texts and emails about your incident?** (WCAS_May we contact you through text messages?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#10
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- `STARS_284` **** (WCAS_May we contact you through email?) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#12
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- _text_: Provide a detailed description of the incident, including where it occurred, what happened, why it happened, and any resulting injuries or damage.
+- **REQ** `STARS_287` ***** (WCAS_Provide a detailed description of the incident, including where it occurred, what happened, why it happened, and any resulting injuries or damage.) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- `STARS_323` **Use this field to continue the description of the incident** (WCAS_Use this field to continue the description of the incident) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] STARS_287='' OR STARS_1101='IC'
+- **REQ** `STARS_369` **Have you received medical treatment for this body part or similar injury in the past?** (WCAS_Have you received medical treatment for this body part or similar injury in the past?) type=radio → Supplemental.Information.SpecialAnalysis#15
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_249` **Job Title** (WCA1_Job Title) type=lookup default=`{Dynamic.STARS_221}` max=254 → STARS.Incident.MiscDescription#17
+  - rule: row:[vis=5] STARS_1101='WA' AND STARS_221='' AND NOT STARS_228=''
+- **REQ** `STARS_250` **Address** (WCA1_Address) type=lookup default=`{Dynamic.STARS_222}` max=254 → STARS.Incident.Address11
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_222='' AND NOT STARS_228=''
+- **REQ** `STARS_251` **City** (WCA1_City) type=lookup default=`{Dynamic.STARS_223}` max=25 → STARS.Incident.AddrCity1
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_223='' AND NOT STARS_228=''
+- **REQ** `STARS_252` **State** (WCA1_State) type=lookup default=`{Dynamic.STARS_224}` → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_223='' AND NOT STARS_228=''
+- **REQ** `STARS_253` **Zip** (WCA1_Zip Code) type=lookup default=`{Dynamic.STARS_225}` max=10 → STARS.Incident.AddrPostal1
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_223='' AND NOT STARS_228=''
+- **REQ** `STARS_254` **Date of Birth** (WCA1_DOB) type=5 default=`{Dynamic.STARS_235}` → STARS.Incident.MiscDate#4
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_235='' AND NOT STARS_228=''
+- **REQ** `STARS_255` **Gender** (WCA1_Gender) type=radio default=`{Dynamic.STARS_236}` → STARS.Incident.SpecialAnalysis#6
+  - options: M=Male | F=Female | U=Unknown/Other
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_236='' AND NOT STARS_228=''
+- **REQ** `STARS_256` **Marital Status** (WCA1_Marital Status) type=lookup default=`{Dynamic.STARS_237}` → STARS.Incident.SpecialAnalysis#7
+  - options: 4 options: M=Married | S=Separated | K=Unknown | U=Unmarried, Widowed, Divorced, Single
+  - rule: row:[vis=5] STARS_1101='IC' OR STARS_1101='WA' AND STARS_237='' AND NOT STARS_228=''
+- **REQ** `STARS_258` **Hire date** (WCA1_Hire date) type=5 default=`{Dynamic.STARS_239}` → STARS.Incident.MiscDate#27
+  - rule: row:[vis=5] STARS_1101='WA' AND STARS_239='' AND NOT STARS_228=''
+- `STARS_259` **Hire State** (WCA1_Hire State) type=lookup default=`{Dynamic.STARS_240}` → STARS.Incident.SpecialAnalysis#41
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=5] STARS_1101='WA' AND STARS_240='' AND NOT STARS_228=''
+- **REQ** `STARS_260` **Employment Status** (WCA1_Employment Status) type=lookup default=`{Dynamic.STARS_241}` → STARS.Incident.SpecialAnalysis#26
+  - options: 12 options: A=Apprentice-Full Time | B=Apprentice-Part Time | 3=Disabled | 1=Employed-Perm | 6=Employed-Temp | 7=Ind Contractor | 9=Other | 2=Part-time Employee | C=Piece Worker | 4=Retired | 8=Seasonal Worker | 5=Unknown
+  - rule: row:[vis=4] STARS_228='' OR NOT STARS_228='' AND NOT STARS_241=''
+- `STARS_354` **Employment Status** (WCIC_Employment Status) type=lookup default=`7` → STARS.Incident.SpecialAnalysis#26
+  - options: 12 options: A=Apprentice-Full Time | B=Apprentice-Part Time | 3=Disabled | 1=Employed-Perm | 6=Employed-Temp | 7=Ind Contractor | 9=Other | 2=Part-time Employee | C=Piece Worker | 4=Retired | 8=Seasonal Worker | 5=Unknown
+  - rule: row:[vis=4] STARS_1101='' OR STARS_1101='WA'
+- `STARS_261` **Termination date** (WCA1_Termination date) type=5 default=`{Dynamic.STARS_242}` → STARS.Incident.MiscDate#26
+  - rule: row:[vis=4]
+- `STARS_262` **What is the associate's preferred language?** (WCA1_What is the associate's preferred language?) type=lookup default=`{Dynamic.STARS_243}` → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+  - rule: row:[vis=4]
+- `STARS_244` **Hours Worked Per Week** (WCA_Hours Worked Per Week) type=text max=12 → STARS.Incident.MiscNumber#13
+  - rule: row:[vis=4]
+- `STARS_245` **Wage Type** (WCA1_Wage Type) type=lookup → STARS.Incident.SpecialAnalysis#27
+  - options: 5 options: 02=Bi-Weekly | 06=Daily | 07=Hourly | 04=Monthly | 01=Weekly
+  - rule: row:[vis=4]
+- **REQ** `STARS_246` **Wage** (WCA1_Wage) type=text
+  - rule: row:[vis=4]
+- **REQ** `STARS_274` **<Hidden_SIMRecordMappings>** (WCAS_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_230}` → Supplemental.Information.MiscDescription#10
+- **REQ** `STARS_275` **** (WCAS_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_232}` → Supplemental.Information.MiscDescription#11
+- `STARS_280` **** (WCAS_Date of Birth) type=5 HIDDEN default=`{Dynamic.STARS_254}` → Supplemental.Information.MiscDate#13
+- `STARS_276` **** (WCAS_Mailing Address) type=lookup HIDDEN default=`{Dynamic.STARS_250}` → Supplemental.Information.MiscDescription#12
+- `STARS_277` **** (WCAS_City) type=lookup HIDDEN default=`{Dynamic.STARS_251}` → Supplemental.Information.MiscDescription#27
+- `STARS_278` **** (WCAS_State) type=lookup HIDDEN default=`{Dynamic.STARS_252}` → Supplemental.Information.SpecialAnalysis#16
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_279` **** (WCAS_Zip Code) type=lookup HIDDEN default=`{Dynamic.STARS_253}` → Supplemental.Information.MiscDescription#29
+- `STARS_282` **** (WCAS_Cell Phone #) type=lookup HIDDEN default=`{Dynamic.STARS_227}` → Supplemental.Information.MiscDescription#13
+- **REQ** `STARS_272` **** (WCAS_Date of Incident) type=5 HIDDEN default=`{Dynamic.STARS_458}` → Supplemental.Information.MiscDate#10
+- **REQ** `STARS_273` **** (WCAS_Time of Incident) type=lookup HIDDEN default=`{Dynamic.STARS_464}` → Supplemental.Information.SpecialAnalysis#13
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_191` **** (WCAS_Date Reported) type=5 HIDDEN default=`{Dynamic.STARS_184}` → Supplemental.Information.MiscDate#11
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_289` **Associate/Partner Signature Name** (WCAS_Associate Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_290` **** (WCAS_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_291` **Associate Entering Incident Signature Name** (WCAS_Associate Entering Incident Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#26
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_292` **** (WCAS_I confirm that by checking this box, I am providing my electronic signature.) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#23
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- `STARS_257` **What facility number is associate payrolled from?** (WCA1_What facility number is associate payrolled from? ) type=lookup default=`{Dynamic.STARS_238}` max=254 → STARS.Incident.MiscDescription#190
+  - rule: row:[vis=4] STARS_268='' OR STARS_1101='IC' OR STARS_292='N'
+- **REQ** `STARS_247` **Was the associate paid for their full shift on the date of the incident?** (WCA_Was the associate paid for their full shift on the date of the incident?) type=radio → STARS.Incident.SpecialAnalysis#29
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] STARS_268='' OR STARS_1101='IC' OR STARS_292='N'
+- `STARS_428` **<Hidden for sim mappings>** (HWCA_First Name) type=lookup HIDDEN default=`{Dynamic.STARS_230}` → Supplemental.Information.MiscDescription#10
+- `STARS_698` **** (HWCA_Last Name) type=lookup HIDDEN default=`{Dynamic.STARS_232}` → Supplemental.Information.MiscDescription#11
+- `STARS_703` **** (HWCA1_City) type=lookup HIDDEN default=`{Dynamic.STARS_251}` → Supplemental.Information.MiscDescription#27
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`WCAS_Next1`, cmd=Next) → 
+  - shown when: [vis=4] STARS_268='ASSOCIATE' OR STARS_269='Y' OR STARS_1101='IC'
+- NAV **Next** (`WCAS_Next`, cmd=Next) → 
+  - shown when: [vis=4] STARS_289='' OR STARS_290='N' OR STARS_291='' OR STARS_292='N'
+- NAV **Next** (`WCAS_NEXT2`, cmd=Next) → 
+  - shown when: [vis=4] NOT STARS_1101='IC'
+- _text_: <Removed> Click the "Walmart Associate" button below to search and auto-populate assoicate information, or select "OSHA Recordable Non-Associate" to manually enter the required fields below.
+
+## WC_Incident Summary  (`Page_STARS_19`)
+
+- **REQ** `STARS_212` **Did the incident happen on the premises?** (WCIL_Did the incident happen on the premises?) type=radio → STARS.Incident.SpecialAnalysis#24
+  - options: Y=Yes | N=No
+- **REQ** `STARS_218` **Where did the incident occur?** (WCIL_Where did the incident occur?) type=lookup → STARS.Incident.SpecialAnalysis#356
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_219` **Provide specific location** (WCIL_Provide specific location) type=lookup → STARS.Incident.SpecialAnalysis#79
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+  - help: Provide the nearest aisle#, register #, parking lot row, cooler#, etc.
+- `STARS_220` **Provide the nearest specific location** (WCIL_Provide the nearest specific location) type=lookup max=254 → STARS.Incident.MiscDescription#269
+  - rule: row:[vis=4] STARS_212=''
+- `STARS_213` **Business Name/Additional Location Information** (WCIL_Business Name/Additional Location Information) type=lookup max=254 → STARS.Incident.MiscDescription#93
+  - rule: row:[vis=4] NOT STARS_212='N'
+- **REQ** `STARS_214` **Street address where the incident occurred** (WCIL_Street address where the incident occurred) type=lookup max=254 → STARS.Incident.MiscDescription#2
+  - rule: row:[vis=4] NOT STARS_212='N'
+- **REQ** `STARS_215` **City** (WCIL_City) type=lookup max=254 → STARS.Incident.MiscDescription#4
+  - rule: row:[vis=4] NOT STARS_212='N'
+- **REQ** `STARS_216` **State** (WCIL_State) type=lookup → STARS.Incident.State
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_212='N'
+- **REQ** `STARS_217` **Zip Code** (WCIL_Zip Code) type=lookup max=10 → STARS.Incident.MiscDescription#5
+  - rule: row:[vis=4] NOT STARS_212='N'
+- `STARS_564` **Incident Information** (WCII_ClaimType) type=lookup HIDDEN default=`N` → STARS.Incident.SpecialAnalysis#19
+- **REQ** `STARS_193` **Time associate started work?** (WCII_Time associate started work?) type=lookup → STARS.Incident.SpecialAnalysis#28
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_204` **Incident Description** (WCII_Incident Description) type=16 max=254 → STARS.Incident.ClaimDescription
+- **REQ** `STARS_206` **Type of Incident** (WCII_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 13 options: 7=A. Slip, Trip, or Fall | 23=B. Hit by Cart, Equip, Merch | 3=C. Cut/Puncture/Scrape | 13=D. Injured By Facility Equipment or Person | 15=E. Personal Medical Issue | 6=F. Exposure/Contact With Substance | 2=G. Caught Between Fixtures or Equipment | 22=H. Rubbed or Injured By | 31=I. Crime, Theft or Vandalism | 4=J. Equal Rights/Accessibility Complaint | 28=K. Weather-Related Incident | 26=L. Vehicle Collision | 16=Z. Other Type of Incident
+- **REQ** `STARS_207` **What is the specific cause of the incident?** (WCII_What is the specific cause of the incident?) type=lookup → STARS.Incident.SpecialAnalysis#294
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_208` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (WCII_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#355
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_209` **What specific item was involved with this incident?** (WCII_What specific item was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#85
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- **REQ** `STARS_210` **What injury or illness did the associate report?** (WCII_What injury or illness did the associate report?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+- **REQ** `STARS_211` **What body part was affected?** (WCII_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+- **REQ** `STARS_283` **Which specific body part was affected?** (WCII_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+- **REQ** `STARS_295` **Which side was affected?** (WCII_Which side was affected?) type=radio → STARS.Incident.SpecialAnalysis#3
+  - options: B=Bilateral | L=Left | R=Right
+- **REQ** `STARS_294` **Was the incident a direct result of?** (WCII_Was the incident a direct result of?) type=lookup → STARS.Incident.MultiValue#4
+  - options: 10 options: NONE= None of these apply, incident occurred while performing job duties. | VEHACC= Vehicle accident in the parking lot/access road coming and going from work? | PERSTASK=Associate conducting personal tasks outside of assigned work hours? | PERSCONSUM=Associate ingesting food or drink for personal consumption? | GENPUB=Associate onsite as a member of the general public? (Ex. personal shopping) | COLDFLU=Associate suffering from a common cold or flu? | WLNSPRG=Associates voluntary participation in a wellness program.(Ex.Giving blood) | OTR=OTR Driver on Layover | PERSGROOM=Personal grooming, medicating for a personal condition or self-inflicted injury? | PERSONEVEN=Symptoms being solely due to non-work related event/exposure?
+- `STARS_1091` **Did a "Serious Injury" occur as defined by EP-21? (Supply Chain user)** (WCII_Serious Injury) type=radio → STARS.Incident.SpecialAnalysis#385
+  - options: Y=Yes | N=No
+- `STARS_456` **Workstream (Supply Chain users only)** (WCII_Workstream) type=lookup → STARS.Incident.SpecialAnalysis#375
+  - options: 17 options: AUTOMATION=Automation | CHEMICAL=Chemical / Biologics | EXPOSURE=Exposure - Climate | FALL OBJ=Falling Object | FIRE/EMERG=Fire or other emergency | TOOL/EQUIP=Hand Tools/Equipment | LOTO=LOTO | MACHINE=Machine Safeguarding | MATERIAL=Manual Material Handling | VEHICLE=Motor Vehicle | OTHER=Other | PALLET=Pallet Handling | PPE=Personal Protective Equipment | PITO=Powered Industrial Truck Operation | SLIP/TRIP=Slip/Trip/Fall | WALK/WORK=Walking/Working Surface | YARD=Yard Operations
+- `STARS_457` **Equipment Manufacturer/Model** (WCII_Equipment Manufacturer/Model) type=lookup → STARS.Incident.SpecialAnalysis#376
+  - options: 26 options (e.g. Crown:MSeries, Crown:PC4500, Crown:PE4500, Crown:PR3000/4500, Crown:RC3000, Crown:RC5500s …)
+  - rule: row:[vis=4] NOT STARS_456='PITO'
+  - help: Make sure the treatment options are presented to the injured Associate, including the Nurse First Response, Concentra Telemed and the Providers listed.
+- **REQ** `STARS_293` **Has the associate sought, or requested to seek treatment with a medical provider?** (WCII_Has the associate sought, or requested to seek treatment with a medical provider?) type=radio → STARS.Incident.SpecialAnalysis#180
+  - options: Y=Yes | N=No
+- `STARS_566` **** (WCII_ClaimTypeM) type=lookup HIDDEN default=`M` → STARS.Incident.SpecialAnalysis#19
+  - rule: [vis=5] STARS_293='Y'
+- `STARS_567` **** (WCII_ClaimTypeN) type=lookup HIDDEN default=`N` → STARS.Incident.SpecialAnalysis#19
+  - rule: [vis=5] STARS_293='N'
+- `STARS_1071` **** (WCII_InitialTreatment) type=lookup HIDDEN default=`0` → STARS.Incident.SpecialAnalysis#25
+  - rule: [vis=5] STARS_293='N'
+- `STARS_1095` **<Hidden> - Asault or Privacy** (WCII_AssaultPrivacy) type=lookup default=`Y` max=14 → Supplemental.Information.SpecialAnalysis#25
+  - rule: [vis=5] STARS_40='234' OR STARS_40='235' OR STARS_40='236' OR STARS_40='237' OR STARS_40='232' OR STARS_40='93' OR STARS_40='176' OR STARS_40='171' OR STARS_40='172' ; row:[vis=4]
+- **REQ** `STARS_192` **Type of initial treatment for this incident?** (WCMT_Type of initial treatment for this incident?) type=lookup → STARS.Incident.SpecialAnalysis#25
+  - options: 6 options: 3=Emergency Evaluation, Diagnostic Testing, and Medical | 5=Future Major Med/Lost Time Anticipated | 4=Hospitalization > 24 Hours | 2=Minor Clinic/Hospital Medical Remedies and Diagnosis | 1=Minor On-Site Remedies by Employer | 0=No Medical Treatment
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_194` **Date treatment was sought** (WCMT1_Date treatment was sought) type=5 → STARS.Incident.MiscDate#72
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_195` **Date management was informed that medical treatment was requested, or sought, for work injury:** (WCMT_Date management was informed that medical treatment was requested, or sought, for work injury:) type=5 → STARS.Incident.MiscDate#69
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_196` **Name of medical provider or clinic that provided treatment** (WCMT_Name of medical provider or clinic that provided treatment) type=lookup max=254 → STARS.Incident.MiscDescription#174
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_197` **Address:** (WCMT_Address:) type=lookup max=254 → STARS.Incident.MiscDescription#175
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_198` **City** (WCMT_City) type=lookup max=254 → STARS.Incident.MiscDescription#176
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_199` **State** (WCMT_State) type=lookup → STARS.Incident.SpecialAnalysis#181
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_200` **ZipCode** (WCMT_Zip Code) type=lookup max=254 → STARS.Incident.MiscDescription#293
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_201` **Phone** (WCMT_Phone) type=lookup max=254 → STARS.Incident.MiscDescription#129
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- `STARS_202` **Fax #** (WCTM_Fax #) type=lookup max=254 → STARS.Incident.MiscDescription#265
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`WCII_Next`, cmd=Next) → 
+- `STARS_1092` **<Removed> Work Order # (Facility Services)** (WCII_Work Order #) type=lookup max=254 → STARS.Incident.MiscDescription#214
+  - rule: row:[vis=4]
+  - help: Provide vendor name and contact information, UPC, weight of product, serial number, asset number, etc.
+- `STARS_791` **<Removed> Provide additional information of item or individual involved** (WCII_Provide additional information of item or individual involved) type=lookup max=254 → STARS.Incident.MiscDescription#264
+  - rule: row:[vis=4]
+- `STARS_203` **<Removed>Is it known if the associate had a similar injury in the past?** (WCMT_Is it known if the associate had a similar injury in the past?) type=lookup → STARS.Incident.SpecialAnalysis#362
+  - options: 2 options: N=No | Y=Yes
+  - rule: row:[vis=4]
+- **REQ** `STARS_297` **<Removed> - Describe what the associate was doing before the incident?** (WCII_Describe what the associate was doing before the incident?) type=lookup max=254 → STARS.Incident.MiscDescription#266
+  - rule: row:[vis=4]
+- `STARS_205` **<Removed> Delivery provider involved, if applicable** (WCII_Delivery provider involved, if applicable) type=lookup → STARS.Incident.SpecialAnalysis#124
+  - options: 3 options: 3=Spark Delivery | 22=Spark Shopper | 1=WM Associate-InHome
+  - rule: row:[vis=4]
+
+## PR_Incident Summary  (`Page_STARS_22`)
+
+- `STARS_305` **** (HiddenPR1IncidentID) type=lookup HIDDEN
+- `STARS_307` **** (HiddenPRReportDate) type=5 HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.ReportDate
+- `STARS_308` **** (HiddenCoveragePR) type=lookup HIDDEN default=`50` → STARS.Incident.CoverageCode
+- `STARS_80` **** (HiddenClaimTypePROP) type=lookup HIDDEN default=`PROP` → STARS.Incident.SpecialAnalysis#19
+- **REQ** `STARS_304` **Did the incident happen on the premises?** (PRIL_Did the incident happen on the premises?) type=radio → STARS.Incident.SpecialAnalysis#24
+  - options: Y=Yes | N=No
+- `STARS_306` **Removed - Business Name/Additional Location Information** (PRIL_Business Name/Additional Location Information) type=lookup max=254 → STARS.Incident.MiscDescription#93
+  - rule: row:[vis=4]
+- `STARS_318` **Street address where the incident occurred** (PRIL_Street address where the incident occurred) type=lookup max=254 → STARS.Incident.MiscDescription#2
+  - rule: row:[vis=4] NOT STARS_304='N'
+- `STARS_319` **City** (PRIL_City) type=lookup max=254 → STARS.Incident.MiscDescription#4
+  - rule: row:[vis=4] NOT STARS_304=' N'
+- `STARS_320` **State** (PRIL_State) type=lookup → STARS.Incident.State
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_304='N'
+- `STARS_321` **Zip Code** (PRIL_Zip Code) type=lookup max=254 → STARS.Incident.MiscDescription#5
+  - rule: row:[vis=4] NOT STARS_304='N'
+- **REQ** `STARS_314` **Incident Description** (PRII_Incident Description) type=16 max=254 → STARS.Incident.ClaimDescription
+- **REQ** `STARS_325` **Type of Incident** (PRII_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 8 options: 1=Cargo | 24=Crime/Theft/Vandalism | 5      2=Equipment Failure | 8=Fire | 29=Property Damage (PR) | 25=Vehicle | 27=Vendor Damage | 28=Weather-Related Incident
+- **REQ** `STARS_326` **What is the specific cause of the incident?** (PRII_What is the specific cause of the incident?) type=lookup → STARS.Incident.SpecialAnalysis#294
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_327` **Name of Hurricane** (PRII_Name of Hurricane) type=lookup max=254 → STARS.Incident.MiscDescription#234
+  - rule: row:[vis=4] NOT STARS_326='309' AND NOT STARS_326='310' AND NOT STARS_326='311'
+- `STARS_328` **Was there merchandise loss?** (PRII_Was there merchandise loss?) type=radio → STARS.Incident.SpecialAnalysis#352
+  - options: Y=Yes | N=No
+- `STARS_339` **What is the estimated merchandise loss at cost?** (PRII_What is the estimated merchandise loss at cost?) type=text max=12 → STARS.Incident.MiscNumber#118
+  - rule: row:[vis=4] NOT STARS_328='Y'
+  - help: For more information about the "Product and Property Loss" app, refer to the Product and Property Loss Training Document on oneWalmart.
+- `STARS_329` **Prod/Prop Loss app claim ID#** (PRII_Prod/Prop Loss app claim ID#) type=lookup max=254 → STARS.Incident.MiscDescription#258
+- `STARS_330` **Provide work order #'s (Facility Services)** (PRII_Provide work order #'s) type=lookup max=254 → STARS.Incident.MiscDescription#214
+- `STARS_331` **Was EOC notified?** (PRII_Was EOC notified?) type=radio → STARS.Incident.SpecialAnalysis#351
+  - options: Y=Yes | N=No
+- `STARS_332` **List impacted departments** (PRII_List impacted departments) type=lookup max=254 → STARS.Incident.MiscDescription#235
+- `STARS_333` **Was pharmacy impacted?** (PRII_Was pharmacy impacted?) type=radio → STARS.Incident.SpecialAnalysis#353
+  - options: Y=Yes | N=No | U=Unkown
+- `STARS_334` **If refrigerated trucks were used, how many?** (PRII_If refrigerated trucks were used, how many?) type=lookup max=254 → STARS.Incident.MiscDescription#262
+- `STARS_335` **If open tops were used, how many?** (PRII_If open tops were used, how many?) type=lookup max=254 → STARS.Incident.MiscDescription#263
+- `STARS_336` **Was a generator used?** (PRII_Was a generator used?) type=radio → STARS.Incident.SpecialAnalysis#359
+  - options: Y=Yes | N=No | U=Unknown
+- **REQ** `STARS_337` **Were authorities involved?** (PRII_Were authorities involved?) type=radio → STARS.Incident.SpecialAnalysis#58
+  - options: Y=Yes | N=No | NA=N/A
+- **REQ** `STARS_338` **Name of authorities involved** (PRII_Name of authorities involved) type=lookup max=254 → STARS.Incident.MiscDescription#30
+  - rule: row:[vis=4] NOT STARS_337='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`PRII_Next`, cmd=Next) → Page_STARS_23 when [vis=5] STARS_312='Y'
+
+## PR_3rd Party Involved Information  (`Page_STARS_23`)
+
+- `STARS_340` **What type of 3rd party was involved?** (PR3_What type of 3rd party was involved?) type=lookup → STARS.Incident.SpecialAnalysis#334
+  - options: 3 options: 3PRTYDRV=3rd Party Delivery Driver | CUSTOMER=Customer/Member | VENDOR=Vendor/Supplier/Contractor
+  - rule: row:[vis=4]
+- `STARS_341` **What is the name of the 3rd party involved?** (PR3_What is the name of the 3rd party involved?) type=lookup max=254 → STARS.Incident.MiscDescription#230
+- `STARS_342` **3rd Party Involved Address, City, State, Zip Code** (PR3_3rd Party Involved Address, City, State, Zip Code) type=lookup max=254 → STARS.Incident.MiscDescription#267
+- `STARS_343` **3rd Party Involved Phone #** (PR3_3rd Party Involved Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#268
+- `STARS_344` **How did the 3rd party cause or contribute to the loss?** (PR3_How did the 3rd party cause or contribute to the loss?) type=lookup max=254 → STARS.Incident.MiscDescription#231
+- `STARS_345` **If 3rd party was a vendor, provide the Walmart vendor number** (PR3_If 3rd party was a vendor, provide the Walmart vendor number) type=lookup max=254 → STARS.Incident.MiscDescription#259
+- `STARS_346` **3rd Party Involved Vehicle Make** (PR3_3rd Party Involved Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#67
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_347` **3rd Party Involved Vehicle Model** (PR3_3rd Party Involved Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#84
+- `STARS_348` **3rd Party Involved Vehicle VIN#** (PR3_3rd Party Involved Vehicle VIN#) type=lookup max=254 → STARS.Incident.MiscDescription#87
+- `STARS_349` **3rd Party Involved Vehicle Year** (PR3_3rd Party Involved Vehicle Year) type=lookup max=254 → STARS.Incident.MiscDescription#86
+- `STARS_350` **3rd Party Involved Vehicle Tag#** (PR3_3rd Party Involved Vehicle Tag#) type=lookup max=8 → STARS.Incident.MiscDescription#85
+- `STARS_351` **3rd Party Involved Vehicle Tag State** (PR3_3rd Party Involved Vehicle Tag State) type=lookup → STARS.Incident.SpecialAnalysis#69
+  - options: 91 options (e.g. Alabama, Alaska, Arizona, Arkansas, BM-Pembroke, CA-Alberta …)
+- `STARS_352` **3rd Party Involved Vehicle Insurance Carrier and Policy#** (PR3_3rd Party Involved Vehicle Insurance Carrier and Policy#) type=lookup max=254 → STARS.Incident.MiscDescription#291
+- `STARS_353` **3rd Party Involved Vehicle Insurance Phone #** (PR3_3rd Party Involved Vehicle Insurance Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#233
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`PR3_Next`, cmd=Next) → 
+
+## Witness Statements  (`Page_STARS_7`)
+
+- `STARS_123` **Please give the witness the device to complete the Witness Statement. After the statement is filled out, ensure that the witness signed it.** (HiddenGLWS1) type=lookup HIDDEN
+- `STARS_102` **** (HiddenWCWS1) type=lookup HIDDEN
+- `STARS_124` **** (HiddenPRWS1) type=lookup HIDDEN
+- `STARS_126` **** (HiddenInfoTypeWS) type=lookup HIDDEN default=`WIT` → Supplemental.Information.InfoType
+- `STARS_300` **** (WS1_HiddenStatementType) type=lookup HIDDEN default=`WITNESS` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_574` **** (GLWST1.2_Hidden_SimID) type=lookup HIDDEN
+- `STARS_575` **** (GLWST1.1.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_576` **** (GLWST1.2.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_847` **** (GLWST1.3_Hidden_SimID) type=lookup HIDDEN
+- `STARS_848` **** (GLWST1.3.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_849` **** (GLWST1.4_Hidden_SimID) type=lookup HIDDEN
+- `STARS_902` **** (GLWST1.4.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_903` **** (GLWST1.5_Hidden_SimID) type=lookup HIDDEN
+- `STARS_904` **** (GLWST1.5.1_Hidden_SimID) type=lookup HIDDEN
+- **REQ** `STARS_104` **** (WS1_Date of Incident) type=5 HIDDEN default=`{Dynamic.STARS_458}` → Supplemental.Information.MiscDate#10
+- **REQ** `STARS_106` **** (WS1_Time of Incident) type=lookup HIDDEN default=`{Dynamic.STARS_464}` → Supplemental.Information.SpecialAnalysis#13
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_103` **Who is completing this statement?** (WS1_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: ASSOCIATE=Associate | CUSTOMER=Customer/Member | OTHER=Other
+- **REQ** `STARS_561` **Associate Witness Type (select all that apply)** (WS1_Associate Witness Type (select all that apply)) type=lookup → Supplemental.Information.MultiValue#1
+  - options: 3 options: ASSOC-1ST=Associate who arrived 1st on the scene  | ASSOC-FACT=Associate with facts relating to the incident | MGR REPORT=Manager who took report
+  - rule: row:[vis=4] NOT STARS_103='ASSOCIATE' AND NOT STARS_103='FACILITY'
+- **REQ** `STARS_107` **First name** (WS1_First Name) type=lookup max=254 → Supplemental.Information.MiscDescription#10
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_108` **Last name** (WS1_Last Name) type=lookup max=254 → Supplemental.Information.MiscDescription#11
+  - rule: row:[vis=4] STARS_103=''
+- `STARS_109` **Win #** (WS1_Win #) type=lookup max=254 → Supplemental.Information.MiscDescription#31
+  - rule: row:[vis=4] NOT STARS_103='ASSOCIATE'
+- `STARS_110` **Address** (WS1_Address) type=lookup max=254 → Supplemental.Information.MiscDescription#12
+  - rule: row:[vis=4] NOT STARS_103='CUSTOMER' AND NOT STARS_103='OTHER'
+- `STARS_111` **City** (WS1_City) type=lookup max=254 → Supplemental.Information.MiscDescription#27
+  - rule: row:[vis=4] NOT STARS_103='CUSTOMER' AND NOT STARS_103='OTHER'
+- `STARS_112` **State** (WS1_State) type=lookup → Supplemental.Information.SpecialAnalysis#16
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_103='CUSTOMER' AND NOT STARS_103='OTHER'
+- `STARS_113` **Zip Code** (WS1_Zip Code) type=lookup max=254 → Supplemental.Information.MiscDescription#29
+  - rule: row:[vis=4] NOT STARS_103='CUSTOMER' AND NOT STARS_103='OTHER'
+- `STARS_114` **What is the best phone # to reach you?** (WS1_What is the best phone # to reach you?) type=lookup max=254 → Supplemental.Information.MiscDescription#13
+  - rule: row:[vis=4] STARS_103=''
+- `STARS_115` **Email Address** (WS1_Email Address) type=lookup max=254 → Supplemental.Information.MiscDescription#15
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_118` **Describe in detail what you observed of the incident** (WS1_Describe in detail what you observed of the incident) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] STARS_103=''
+- `STARS_1097` **Use this field for additional details about what you observed** (WS1_Use this field for additional details about what you observed) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_119` **Were there signs of physical injury or damage?** (WS1_Were there signs of physical injury or damage?) type=lookup → Supplemental.Information.SpecialAnalysis#19
+  - options: 3 options: N=No | U=Unknown | Y=Yes
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_120` **Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, light pole, bollard, etc.)** (WS1_Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, etc.)) type=16 max=254 → Supplemental.Information.MiscDescription#20
+  - rule: row:[vis=4] NOT STARS_119='Y'
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_121` **Signature Name** (WS1_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_122` **** (WS1_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] STARS_103=''
+- **REQ** `STARS_172` **Would you like to add a new witness statement?** (WS1_Would you like to add a new witness statement?) type=radio
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_103=''
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`WS1_Next`, cmd=Next) → Page_STARS_12 when [vis=5] STARS_172='Y', Page_STARS_31 when [vis=5] STARS_172='N' AND STARS_454='ASSOC', Page_STARS_36 when [vis=5] NOT STARS_172='Y' AND STARS_454='CUST', Page_STARS_34 when [vis=5] NOT STARS_172='Y' AND STARS_454='CPD'
+  - shown when: [vis=5] NOT STARS_121='' AND STARS_122='Y'
+- `STARS_116` **<Removed> When is the best time to contact you?** (WS1_When is the best time to contact you? ) type=lookup → Supplemental.Information.SpecialAnalysis#11
+  - options: 3 options: A=Afternoons | E=Evenings | M=Mornings
+  - rule: row:[vis=4]
+- TABLE-LOOKUP **Witness Lookup** maps→ param=Supplemental.Information/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=82&lookup_instructions=Witness Lookup&maxrec=50&objId=STARS_7&sourceType=S
+- `STARS_117` **<Removed> What is your usual schedule (e.g. days of week, hours work, etc.)?** (WS1_What is your usual schedule (e.g. days of week, hours work, etc.)?) type=lookup max=254 → Supplemental.Information.MiscDescription#32
+  - rule: row:[vis=4]
+
+## Witness Statements 2  (`Page_STARS_12`)
+
+- `STARS_128` **Witness statement includes customer, associate entering, and any associates involved or with facts of the incident.** (HiddenGLWS2) type=lookup HIDDEN
+- `STARS_129` **** (HiddenWCWS2) type=lookup HIDDEN
+- `STARS_132` **** (HiddenPRWS2) type=lookup HIDDEN
+- `STARS_130` **** (HiddenInfoTypeWSSTARS_130) type=lookup HIDDEN default=`WIT` → Supplemental.Information.InfoType
+- `STARS_301` **** (WS2_HiddenStatementType) type=lookup HIDDEN default=`WITNESS` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_577` **** (GLWST2.2_Hidden_SimID) type=lookup HIDDEN
+- `STARS_578` **** (GLWST2.1.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_579` **** (GLWST2.2.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_758` **** (GLWST2.3_Hidden_SimID) type=lookup HIDDEN
+- `STARS_842` **** (GLWST2.3.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_843` **** (GLWST2.4_Hidden_SimID) type=lookup HIDDEN
+- `STARS_844` **** (GLWST2.4.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_845` **** (GLWST2.5_Hidden_SimID) type=lookup HIDDEN
+- `STARS_846` **** (GLWST2.5.1_Hidden_SimID) type=lookup HIDDEN
+- **REQ** `STARS_355` **** (WS2_Date of Incident) type=5 HIDDEN default=`{Dynamic.STARS_458}` → Supplemental.Information.MiscDate#10
+- **REQ** `STARS_154` **** (WS2_Time of Incident) type=lookup HIDDEN default=`{Dynamic.STARS_464}` → Supplemental.Information.SpecialAnalysis#13
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_463` **Who is completing this statement?** (WS2_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: ASSOCIATE=Associate | CUSTOMER=Customer/Member | OTHER=Other
+- **REQ** `STARS_562` **Associate Witness Type (select all that apply)** (WS2_Associate Witness Type (select all that apply)) type=lookup → Supplemental.Information.MultiValue#1
+  - options: 3 options: ASSOC-1ST=Associate who arrived 1st on the scene  | ASSOC-FACT=Associate with facts relating to the incident | MGR REPORT=Manager who took report
+  - rule: row:[vis=4] NOT STARS_463='ASSOCIATE' AND NOT STARS_463='FACILITY'
+- **REQ** `STARS_134` **First Name** (WS2_First Name) type=lookup max=254 → Supplemental.Information.MiscDescription#10
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_135` **Last Name** (WS2_Last Name) type=lookup max=254 → Supplemental.Information.MiscDescription#11
+  - rule: row:[vis=4] STARS_463=''
+- `STARS_136` **Win #** (WS2_Win #) type=lookup max=254 → Supplemental.Information.MiscDescription#31
+  - rule: row:[vis=4] NOT STARS_463='ASSOCIATE'
+- `STARS_137` **Address** (WS2_Address) type=lookup max=254 → Supplemental.Information.MiscDescription#12
+  - rule: row:[vis=4] NOT STARS_463='CUSTOMER' AND NOT STARS_463='OTHER'
+- `STARS_138` **City** (WS2_City) type=lookup max=254 → Supplemental.Information.MiscDescription#27
+  - rule: row:[vis=4] NOT STARS_463='CUSTOMER' AND NOT STARS_463='OTHER'
+- `STARS_139` **State** (WS2_State) type=lookup → Supplemental.Information.SpecialAnalysis#16
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_463='CUSTOMER' AND NOT STARS_463='OTHER'
+- `STARS_140` **Zip Code** (WS2_Zip Code) type=lookup max=254 → Supplemental.Information.MiscDescription#29
+  - rule: row:[vis=4] NOT STARS_463='CUSTOMER' AND NOT STARS_463='OTHER'
+- `STARS_141` **What is the best Phone # to reach you?** (WS2_What is the best Phone # to reach you?) type=lookup max=254 → Supplemental.Information.MiscDescription#13
+  - rule: row:[vis=4] STARS_463=''
+- `STARS_142` **Email Address** (WS2_Email Address) type=lookup max=254 → Supplemental.Information.MiscDescription#15
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_145` **Describe in detail what you observed of the incident** (WS2_Describe in detail what you observed of the incident) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] STARS_463=''
+- `STARS_1098` **Use this field for additional details about what you observed** (WS2_Use this field for additional details about what you observed) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_146` **Were there signs of physical injury or damage?** (WS2_Were there signs of physical injury or damage?) type=lookup → Supplemental.Information.SpecialAnalysis#19
+  - options: 3 options: N=No | U=Unknown | Y=Yes
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_147` **Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, light pole, bollard, etc.)** (WS2_Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, etc.)) type=16 max=254 → Supplemental.Information.MiscDescription#20
+  - rule: row:[vis=4] NOT STARS_146='Y'
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_148` **Signature Name** (WS2_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_149` **** (WS2_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] STARS_463=''
+- **REQ** `STARS_173` **Would you like to add a new witness statement?** (WS2_Would you like to add a new witness statement?) type=radio
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] STARS_463=''
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`WS2_Next`, cmd=Next) → Page_STARS_13 when [vis=5] STARS_173='Y', Page_STARS_31 when [vis=5] NOT STARS_173='Y' AND STARS_454='ASSOC', Page_STARS_36 when [vis=5] NOT STARS_173='Y' AND STARS_454='CUST', Page_STARS_34 when [vis=5] NOT STARS_173='Y' AND STARS_454='CPD'
+  - shown when: [vis=4] STARS_148='' OR STARS_149='N'
+- TABLE-LOOKUP **Witness Lookup** maps→ param=Supplemental.Information/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=82&lookup_instructions=Witness Lookup&maxrec=50&objId=STARS_9&sourceType=S
+- `STARS_143` **<Removed> When is the best time to contact you?** (WS2_When is the best time to contact you?) type=lookup → Supplemental.Information.SpecialAnalysis#11
+  - options: 3 options: A=Afternoons | E=Evenings | M=Mornings
+  - rule: row:[vis=4]
+- `STARS_144` **<Removed> What is your usual schedule (e.g. days of week, hours work, etc.)?** (WS2_What is your usual schedule (e.g. days of week, hours work, etc.)?) type=lookup max=254 → Supplemental.Information.MiscDescription#32
+  - rule: row:[vis=4]
+
+## Witness Statements 3  (`Page_STARS_13`)
+
+- `STARS_150` **Witness statement includes customer, associate entering, and any associates involved or with facts of the incident.** (HiddenGLWS3) type=lookup HIDDEN
+- `STARS_358` **** (HiddenWCWS3) type=lookup HIDDEN
+- `STARS_151` **** (HiddenPRWS3) type=lookup HIDDEN
+- `STARS_152` **** (HiddenInfoTypeWS3) type=lookup HIDDEN default=`WIT` → Supplemental.Information.InfoType
+- `STARS_302` **** (WS3_HiddenStatementType) type=lookup HIDDEN default=`WITNESS` → Supplemental.Information.SpecialAnalysis#24
+- `STARS_580` **** (GLWST3.2_Hidden_SimID) type=lookup HIDDEN
+- `STARS_581` **** (GLWST3.1.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_582` **** (GLWST3.2.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_587` **** (GLWST3.3_Hidden_SimID) type=lookup HIDDEN
+- `STARS_588` **** (GLWST3.3.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_744` **** (GLWST3.4_Hidden_SimID) type=lookup HIDDEN
+- `STARS_745` **** (GLWST3.4.1_Hidden_SimID) type=lookup HIDDEN
+- `STARS_746` **** (GLWST3.5_Hidden_SimID) type=lookup HIDDEN
+- `STARS_757` **** (GLWST3.5.1_Hidden_SimID) type=lookup HIDDEN
+- **REQ** `STARS_361` **** (WS3_Date of Incident) type=5 HIDDEN default=`{Dynamic.STARS_458}` → Supplemental.Information.MiscDate#10
+- **REQ** `STARS_364` **** (WS3_Time of Incident) type=lookup HIDDEN default=`{Dynamic.STARS_464}` → Supplemental.Information.SpecialAnalysis#13
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_131` **Who is completing this statement?** (WS3_Who is completing this statement?) type=radio → Supplemental.Information.SpecialAnalysis#17
+  - options: ASSOCIATE=Associate | CUSTOMER=Customer/Member | OTHER=Other
+- **REQ** `STARS_563` **Associate Witness Type (select all that apply)** (WS3_Associate Witness Type (select all that apply)) type=lookup → Supplemental.Information.MultiValue#1
+  - options: 3 options: ASSOC-1ST=Associate who arrived 1st on the scene  | ASSOC-FACT=Associate with facts relating to the incident | MGR REPORT=Manager who took report
+  - rule: row:[vis=4] NOT STARS_131='ASSOCIATE' AND NOT STARS_131='FACILITY'
+- **REQ** `STARS_156` **First Name** (WS3_First Name) type=lookup max=254 → Supplemental.Information.MiscDescription#10
+  - rule: row:[vis=4] STARS_131=''
+- **REQ** `STARS_157` **Last Name** (WS3_Last Name) type=lookup max=254 → Supplemental.Information.MiscDescription#11
+  - rule: row:[vis=4] STARS_131=''
+- `STARS_158` **Win #** (WS3_Win #) type=lookup max=254 → Supplemental.Information.MiscDescription#31
+  - rule: row:[vis=4] NOT STARS_131='ASSOCIATE'
+- `STARS_159` **Address** (WS3_Address) type=lookup max=254 → Supplemental.Information.MiscDescription#12
+  - rule: row:[vis=4] NOT STARS_131='CUSTOMER' AND NOT STARS_131='OTHER'
+- `STARS_160` **City** (WS3_City) type=lookup max=254 → Supplemental.Information.MiscDescription#27
+  - rule: row:[vis=4] NOT STARS_131='CUSTOMER' AND NOT STARS_131='OTHER'
+- `STARS_161` **State** (WS3_State) type=lookup → Supplemental.Information.SpecialAnalysis#16
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_131='CUSTOMER' AND NOT STARS_131='OTHER'
+- `STARS_162` **Zip Code** (WS3_Zip Code) type=lookup max=254 → Supplemental.Information.MiscDescription#29
+  - rule: row:[vis=4] NOT STARS_131='CUSTOMER' AND NOT STARS_131='OTHER'
+- `STARS_163` **What is the best phone # to reach you?** (WS3_What is the best phone # to reach you?) type=lookup max=254 → Supplemental.Information.MiscDescription#13
+  - rule: row:[vis=4] STARS_131=''
+- `STARS_164` **Email Address** (WS3_Email Address) type=lookup max=254 → Supplemental.Information.MiscDescription#15
+  - rule: row:[vis=4] STARS_131=''
+- **REQ** `STARS_167` **Describe in detail what you observed of the incident** (WS3_Describe in detail what you observed of the incident) type=16 max=254 → Supplemental.Information.MiscDescription#19
+  - rule: row:[vis=4] STARS_131=''
+- `STARS_1099` **Use this field for additional details about what you observed** (WS3_Use this field for additional details about what you observed) type=16 max=254 → Supplemental.Information.MiscDescription#40
+  - rule: row:[vis=4] STARS_131=''
+- **REQ** `STARS_168` **Were there signs of physical injury or damage?** (WS3_Were there signs of physical injury or damage?) type=lookup → Supplemental.Information.SpecialAnalysis#19
+  - options: 3 options: N=No | U=Unknown | Y=Yes
+  - rule: row:[vis=4] STARS_131=''
+- **REQ** `STARS_169` **Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, light pole, bollard, etc.)** (WS3_Describe physical injury or damage (e.g. injured right ankle, damage to cell phone, etc.)) type=16 max=254 → Supplemental.Information.MiscDescription#20
+  - rule: row:[vis=4] NOT STARS_168='Y'
+- _text_: It is unlawful for any person to obtain any benefit by fraud. Any person knowingly doing so may be exposed to potential criminal and/or civil penalties.
+- **REQ** `STARS_170` **Signature Name** (WS3_Signature Name) type=lookup max=254 → Supplemental.Information.MiscDescription#25
+  - rule: row:[vis=4] STARS_131=''
+- **REQ** `STARS_171` **** (WS3_Claimant signature confirmation) type=12 default=`N` → Supplemental.Information.SpecialAnalysis#22
+  - rule: row:[vis=4] STARS_131=''
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`WS3_Next`, cmd=Next) → Page_STARS_31 when [vis=5] STARS_454='ASSOC', Page_STARS_36 when [vis=5] STARS_454='CUST', Page_STARS_34 when [vis=5] STARS_454='CPD'
+  - shown when: [vis=4] STARS_170='' OR STARS_171='N'
+- TABLE-LOOKUP **Witness Lookup** maps→ param=Supplemental.Information/tablebased_lookup.cmdx?inputfields_to_refresh=&search_lookup_button_id=&lookupid=82&lookup_instructions=Witness Lookup&maxrec=50&objId=STARS_10&sourceType=S
+- `STARS_165` **<Removed> When is the best time to contact you?** (WS3_When is the best time to contact you?) type=lookup → Supplemental.Information.SpecialAnalysis#11
+  - options: 3 options: A=Afternoons | E=Evenings | M=Mornings
+  - rule: row:[vis=4]
+- `STARS_166` **<Removed> What is your usual schedule (e.g. days of week, hours work, etc.)?** (WS3_What is your usual schedule (e.g. days of week, hours work, etc.)?) type=lookup max=254 → Supplemental.Information.MiscDescription#32
+  - rule: row:[vis=4]
+
+## AL_Incident Summary  (`Page_STARS_26`)
+
+- `STARS_373` **** (HiddenALReportDate) type=5 HIDDEN default=`{IMPLICIT.DATE}` → STARS.Incident.ReportDate
+- `STARS_374` **** (HiddenCoverageAL) type=lookup HIDDEN default=`30` → STARS.Incident.CoverageCode
+- `STARS_459` **** (HiddelALCoverage) type=lookup HIDDEN default=`30` → STARS.Incident.CoverageCode
+  - rule: [vis=5] STARS_378='AL'
+- `STARS_460` **** (HiddenAPDCoverage) type=lookup HIDDEN default=`31` → STARS.Incident.CoverageCode
+  - rule: [vis=5] STARS_378='APD'
+- **REQ** `STARS_384` **Did the incident happen on the premises?** (ALIL_Did the incident happen on the premises?) type=radio → STARS.Incident.SpecialAnalysis#24
+  - options: Y=Yes | N=No
+- **REQ** `STARS_379` **Where did the incident occur?** (ALIL_Where did the incident occur?) type=lookup → STARS.Incident.SpecialAnalysis#356
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_380` **Provide specific location** (ALIL_Provide specific location ) type=lookup → STARS.Incident.SpecialAnalysis#79
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+  - help: Provide the nearest aisle#, register #, parking lot row, cooler#, etc.
+- `STARS_390` **Provide the nearest specific location** (ALIL_Provide the nearest specific location) type=lookup max=254 → STARS.Incident.MiscDescription#269
+  - rule: row:[vis=4] STARS_384=''
+- `STARS_385` **Business Name/Additional Location Information** (ALIL_Business Name/Additional Location Information) type=lookup max=254 → STARS.Incident.MiscDescription#93
+  - rule: row:[vis=4] NOT STARS_384='N'
+- **REQ** `STARS_386` **Street address where the incident occurred** (ALIL_Street address where the incident occurred) type=lookup max=254 → STARS.Incident.MiscDescription#2
+  - rule: row:[vis=4] NOT STARS_384='N'
+- **REQ** `STARS_387` **City** (ALIL_City) type=lookup max=254 → STARS.Incident.MiscDescription#4
+  - rule: row:[vis=4] NOT STARS_384='N'
+- **REQ** `STARS_388` **State** (ALIL_State) type=lookup → STARS.Incident.State
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_384='N'
+- **REQ** `STARS_389` **Zip Code** (ALIL_Zip Code) type=lookup max=254 → STARS.Incident.MiscDescription#5
+  - rule: row:[vis=4] NOT STARS_384='N'
+- **REQ** `STARS_391` **Incident Description** (ALII_Incident Description) type=16 max=254 → STARS.Incident.ClaimDescription
+- **REQ** `STARS_392` **Driver Association Type** (ALII_Driver Association Type) type=radio → STARS.Incident.SpecialAnalysis#157
+  - options: D=Dedicated | I=Insured | T=Third Party | U=Unknown | V=Vendor
+  - help: A 3rd party would include another auto or property not owned/operated by Walmart. (Ex. Guard rail, telephone pole, passenger vehicle, pedestrian, driver, passenger)
+- **REQ** `STARS_393` **Was a 3rd party involved in the incident?** (ALII_Was a 3rd party involved in the incident?) type=radio → STARS.Incident.SpecialAnalysis#205
+  - options: Y=Yes | N=No
+- `STARS_453` **** (ALII_ClaimantNameDefault) type=lookup HIDDEN default=`NA` → STARS.Incident.LastName1
+  - rule: [vis=5] STARS_393='N'
+- **REQ** `STARS_395` **Type of Incident** (ALII_Type of Incident) type=lookup → STARS.Incident.Cause
+  - options: 4 options: 24=Crime/Theft/Vandalism | 21=Property Damage | 32=Vehicle Collision (AL) | 28=Weather-Related Incident
+- **REQ** `STARS_396` **What is the specific cause of the incident?** (ALII_What is the specific cause of the incident?) type=lookup → STARS.Incident.SpecialAnalysis#294
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_397` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (ALII_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#355
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_398` **What specific item was involved with this incident?** (ALII_What specific item was involved with this incident?) type=lookup → STARS.Incident.SpecialAnalysis#85
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- `STARS_399` **Was citation issued?** (ALII_Was citation issued?) type=radio → STARS.Incident.SpecialAnalysis#219
+  - options: Y=Yes | N=No | U=Unknown
+- **REQ** `STARS_400` **Citation issued to?** (ALII_Citation issued to?) type=lookup max=254 → STARS.Incident.MiscDescription#111
+  - rule: row:[vis=4] NOT STARS_399='Y'
+- `STARS_401` **Was in-cab video activated?** (ALII_Was in-cab video activated?) type=radio → STARS.Incident.SpecialAnalysis#128
+  - options: Y=Yes | N=No
+- `STARS_402` **Delivery provider involved, if applicable** (ALII_Delivery provider involved, if applicable) type=lookup → STARS.Incident.SpecialAnalysis#124
+  - options: 16 options: 1= WM Associate-InHome | 26=DaaS GoLocal | 11=DaaS Sams  | 30=DaaS Walmart | 13=Drone-Drone-Up | 14=Drone-Flytrex  | 15=Drone-Zipline  | 28=FedEx | 2=InHome | 17=InstaCart  | 27=NASH | 20=Roadie | 3=Spark Delivery | 22=Spark Shopper | 23=Uber | 29=UPS
+  - rule: row:[vis=4] STARS_392='I'
+- `STARS_403` **Online Order #** (ALII_Online Order #) type=lookup max=254 → STARS.Incident.MiscDescription#158
+- **REQ** `STARS_404` **Describe damages to vehicle(s)** (ALII_Describe damages to vehicle(s)) type=16 max=254 → STARS.Incident.OtherDescription
+- `STARS_405` **Quickbase Report #** (ALII_Quickbase Report #) type=16 max=254 → STARS.Incident.MiscDescription#154
+- `STARS_1090` **Work Order # (Facility Services)** (ALII_Work Order #) type=lookup max=254 → STARS.Incident.MiscDescription#214
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALII_Next`, cmd=Next) → 
+
+## AL_Insured Driver and Vehicle  (`Page_STARS_27`)
+
+- **REQ** `STARS_406` **Driver First Name** (ALDV_Driver First Name) type=lookup max=50 → STARS.Incident.FirstName2
+- **REQ** `STARS_407` **Driver Last Name** (ALDV_Driver Last Name) type=lookup max=50 → STARS.Incident.LastName2
+- `STARS_409` **Driver Street Address** (ALDV_Driver Street Address) type=lookup max=254 → STARS.Incident.Address21
+- `STARS_410` **Driver City** (ALDV_Driver City) type=lookup max=25 → STARS.Incident.AddrCity2
+- `STARS_411` **Driver State** (ALDV_Driver State) type=lookup → STARS.Incident.AddrState2
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_412` **Driver Zip Code** (ALDV_Driver Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal2
+- `STARS_413` **Driver Phone #** (ALDV_Driver Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#98
+- `STARS_414` **Driver Email Address** (ALDV_Driver Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#260
+- **REQ** `STARS_415` **Unit #1 Type** (ALDV_Unit #1 Type) type=radio → STARS.Incident.SpecialAnalysis#214
+  - options: PV=Passenger Vehicle | T1=Tractor | T2=Trailer | T3=Truck (10,001-26K GVWR)
+- `STARS_416` **Unit #1 Number** (ALDV_Unit #1 Number) type=lookup max=254 → STARS.Incident.MiscDescription#112
+- `STARS_417` **Unit #2 Type** (ALDV_Unit #2 Type) type=radio → STARS.Incident.SpecialAnalysis#215
+  - options: PV=Passenger Vehicle | T1=Tractor | T2=Trailer | T3=Truck (10,001-26K GVWR) | T4=Tractor/Trailer
+- `STARS_418` **Unit #2 Number** (ALDV_Unit #2 Number) type=lookup max=254 → STARS.Incident.MiscDescription#113
+- **REQ** `STARS_419` **Insured Vehicle Owned/Leased/ Rented** (ALDV_Insured Vehicle Owned/Leased/ Rented) type=radio → STARS.Incident.SpecialAnalysis#151
+  - options: D=Dedicated | L=Leased | O=Owned | R=Rented | U=Unknown
+- `STARS_420` **Insured Vehicle License Plate #** (ALDV_Insured Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#42
+- **REQ** `STARS_421` **Insured Vehicle Tag/Garage State** (ALDV_Insured Vehicle Tag/Garage State) type=lookup → STARS.Incident.SpecialAnalysis#217
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_422` **Insured Vehicle Make** (ALDV_Insured Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#49
+  - options: 57 options (e.g. Acura, Audi, BMW, BrightDrop, Buick, Cadillac …)
+- `STARS_423` **Insured Vehicle Model** (ALDV_Insured Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#34
+- `STARS_424` **Insured Vehicle Year** (ALDV_Insured Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#50
+  - options: 28 options (e.g. 2000, 2001, 2002, 2003, 2004, 2005 …)
+- `STARS_425` **Insured Vehicle VIN#** (ALDV_Insured Vehicle VIN#) type=lookup max=254 → STARS.Incident.MiscDescription#35
+- `STARS_426` **Insured Vehicle Estimated Damages** (ALDV_Insured Vehicle Estimated Damages) type=text max=12 → STARS.Incident.MiscNumber#2
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALDV_Next`, cmd=Next) → Page_STARS_35 when [vis=5] NOT STARS_393='Y'
+
+## AL_Claimant Information  (`Page_STARS_28`)
+
+- **REQ** `STARS_427` **First Name** (ALCI_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_429` **Last Name** (ALCI_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - help: Please provide the name of the company when the 3rd party is not an individual.
+- `STARS_430` **Company Name** (ALCI_Company Name) type=lookup max=100 → STARS.Incident.Company1
+- `STARS_431` **Street Address** (ALCI_Street Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_432` **City** (ALCI_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_433` **State** (ALCI_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_434` **Zip Code** (ALCI_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_435` **Phone #** (ALCI_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- `STARS_436` **Email Address** (ALCI_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+- `STARS_437` **Birth date** (ALCI_Birth date) type=5 → STARS.Incident.MiscDate#4
+- `STARS_438` **Gender** (ALCI_Gender) type=radio → STARS.Incident.SpecialAnalysis#6
+  - options: M=Male | F=Female | U=Other/Unknown
+- `STARS_439` **Preferred language** (ALCI_Preferred language) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- **REQ** `STARS_394` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALCI_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_511` **** (ALCI_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_394='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_512` **** (ALCI_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party? PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_394='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_620` **** (ALCI_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party? NotBOTH) type=lookup HIDDEN default=`{Dynamic.STARS_394}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_394='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_440` **What injury or illness was reported?** (ALCI_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+  - rule: row:[vis=4] STARS_394='PD'
+- **REQ** `STARS_441` **What body part was affected?** (ALCI_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_394='PD'
+- **REQ** `STARS_442` **Which specific body part was affected?** (ALCI_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+  - rule: row:[vis=4] STARS_394='PD'
+- `STARS_443` **Was claimant driver of other vehicle** (ALCI_Was claimant driver of other vehicle) type=radio → STARS.Incident.SpecialAnalysis#364
+  - options: Y=Yes | N=No | U=Unknown
+- `STARS_444` **Claimant Vehicle License Plate #** (ALCI_Claimant Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#36
+- `STARS_445` **Claimant Vehicle License State** (ALCI_Claimant Vehicle License State) type=lookup → STARS.Incident.SpecialAnalysis#216
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_446` **Claimant Vehicle Make** (ALCI_Claimant Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_447` **Claimant Vehicle Model** (ALCI_Claimant Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- `STARS_448` **Claimant Vehicle Year** (ALCI_Claimant Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_449` **Claimant VIN** (ALCI_Claimant VIN) type=lookup max=254 → STARS.Incident.MiscDescription#38
+- `STARS_450` **Was the vehicle Owned/Leased/Rented** (ALCI_Was the vehicle Owned/Leased/Rented) type=radio → STARS.Incident.SpecialAnalysis#218
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+- **REQ** `STARS_408` **Do you need to add another incident/claim for this event** (ALCI_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALCI_Next`, cmd=Next) → Page_STARS_43 when [vis=5] STARS_408='Y'
+
+## AL2_Claimant Information  (`Page_STARS_43`)
+
+- **REQ** `STARS_905` **First Name** (ALCI2_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_907` **Last Name** (ALCI2_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - help: Please provide the name of the company when the 3rd party is not an individual.
+- `STARS_908` **Company Name** (ALCI2_Company Name) type=lookup max=100 → STARS.Incident.Company1
+- `STARS_909` **Street Address** (ALCI2_Street Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_961` **City** (ALCI2_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_962` **State** (ALCI2_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_963` **Zip Code** (ALCI2_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_964` **Phone #** (ALCI2_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- `STARS_965` **Email Address** (ALCI2_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+- `STARS_966` **Birth date** (ALCI2_Birth date) type=5 → STARS.Incident.MiscDate#4
+- `STARS_967` **Gender** (ALCI2_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknown
+- `STARS_968` **Preferred language** (ALCI2_Preferred language) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- **REQ** `STARS_1053` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALCI2_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_621` **** (ALCI2_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party? BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1053='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_906` **** (ALCI2_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party? PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1053='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1005` **** (ALCI2_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?NotBTOH) type=lookup HIDDEN default=`{Dynamic.STARS_1053}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_1053='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_969` **What injury or illness was reported?** (ALCI2_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_1053='PD'
+- **REQ** `STARS_970` **What body part was affected?** (ALCI2_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_1053='PD'
+- **REQ** `STARS_971` **Which specific body part was affected?** (ALCI2_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_1053='PD'
+- `STARS_972` **Was claimant driver of other vehicle** (ALCI2_Was claimant driver of other vehicle) type=radio → STARS.Incident.SpecialAnalysis#364
+  - options: Y=Yes | N=No | U=Unknwon
+- `STARS_973` **Claimant Vehicle License Plate #** (ALCI2_Claimant Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#36
+- `STARS_974` **Claimant Vehicle License State** (ALCI2_Claimant Vehicle License State) type=lookup → STARS.Incident.SpecialAnalysis#216
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_975` **Claimant Vehicle Make** (ALCI2_Claimant Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_976` **Claimant Vehicle Model** (ALCI2_Claimant Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- `STARS_977` **Claimant Vehicle Year** (ALCI2_Claimant Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_978` **Claimant VIN** (ALCI2_Claimant VIN) type=lookup max=254 → STARS.Incident.MiscDescription#38
+- `STARS_979` **Was the vehicle Owned/Leased/Rented** (ALCI2_Was the vehicle Owned/Leased/Rented) type=radio → STARS.Incident.SpecialAnalysis#218
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+- **REQ** `STARS_1056` **Do you need to add another incident/claim for this event** (ALCI2_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALCI2_Next`, cmd=Next) → Page_STARS_44 when [vis=5] STARS_1056='Y'
+
+## AL3_Claimant Information  (`Page_STARS_44`)
+
+- **REQ** `STARS_980` **First Name** (ALCI3_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_982` **Last Name** (ALCI3_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - help: Please provide the name of the company when the 3rd party is not an individual.
+- `STARS_983` **Company Name** (ALCI3_Company Name) type=lookup max=100 → STARS.Incident.Company1
+- `STARS_984` **Street Address** (ALCI3_Street Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_985` **City** (ALCI3_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_986` **State** (ALCI3_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_987` **Zip Code** (ALCI3_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_988` **Phone #** (ALCI3_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- `STARS_989` **Email Address** (ALCI3_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+- `STARS_990` **Birth date** (ALCI3_Birth date) type=5 → STARS.Incident.MiscDate#4
+- `STARS_991` **Gender** (ALCI3_Gender) type=lookup → STARS.Incident.SpecialAnalysis#6
+  - options: 3 options: F=Female | M=Male | U=Other/Unknwon
+- `STARS_992` **Preferred language** (ALCI3_Preferred language) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- **REQ** `STARS_1052` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALCI3_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_1029` **** (ALCI3_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1052='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1059` **** (ALCI3_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1052='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1060` **** (ALCI3_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?NotBOTH) type=lookup HIDDEN default=`{Dynamic.STARS_1052}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_1052='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_993` **What injury or illness was reported?** (ALCI3_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_1052='PD'
+- **REQ** `STARS_994` **What body part was affected?** (ALCI3_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_1052='PD'
+- **REQ** `STARS_995` **Which specific body part was affected?** (ALCI3_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_1052='PD'
+- `STARS_996` **Was claimant driver of other vehicle** (ALCI3_Was claimant driver of other vehicle) type=radio → STARS.Incident.SpecialAnalysis#364
+  - options: Y=Yes | N=No | U=Unknown
+- `STARS_997` **Claimant Vehicle License Plate #** (ALCI3_Claimant Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#36
+- `STARS_998` **Claimant Vehicle License State** (ALCI3_Claimant Vehicle License State) type=lookup → STARS.Incident.SpecialAnalysis#216
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_999` **Claimant Vehicle Make** (ALCI3_Claimant Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_1000` **Claimant Vehicle Model** (ALCI3_Claimant Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- `STARS_1001` **Claimant Vehicle Year** (ALCI3_Claimant Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_1002` **Claimant VIN** (ALCI3_Claimant VIN) type=lookup max=254 → STARS.Incident.MiscDescription#38
+- `STARS_1003` **Was the vehicle Owned/Leased/Rented** (ALCI3_Was the vehicle Owned/Leased/Rented) type=radio → STARS.Incident.SpecialAnalysis#218
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+- **REQ** `STARS_1057` **Do you need to add another incident/claim for this event** (ALCI3_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALCI3_Next`, cmd=Next) → Page_STARS_45 when [vis=5] STARS_1057='Y'
+
+## AL4_Claimant Information  (`Page_STARS_45`)
+
+- **REQ** `STARS_1004` **First Name** (ALCI4_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_1006` **Last Name** (ALCI4_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - help: Please provide the name of the company when the 3rd party is not an individual.
+- `STARS_1007` **Company Name** (ALCI4_Company Name) type=lookup max=100 → STARS.Incident.Company1
+- `STARS_1008` **Street Address** (ALCI4_Street Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_1009` **City** (ALCI4_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_1010` **State** (ALCI4_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_1011` **Zip Code** (ALCI4_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_1012` **Phone #** (ALCI4_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- `STARS_1013` **Email Address** (ALCI4_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+- `STARS_1014` **Birth date** (ALCI4_Birth date) type=5 → STARS.Incident.MiscDate#4
+- `STARS_1015` **Gender** (ALCI4_Gender) type=radio → STARS.Incident.SpecialAnalysis#6
+  - options: F=Female | M=Male | U=Other/Unknown
+- `STARS_1016` **Preferred language** (ALCI4_Preferred language) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- **REQ** `STARS_1054` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALCI4_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_1061` **** (ALCI4_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1054='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1065` **** (ALCI4_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1054='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1066` **** (ALCI4_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?NotBOTH) type=lookup HIDDEN default=`{Dynamic.STARS_1054}` → STARS.Incident.SpecialAnalysis#290
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_1017` **What injury or illness was reported?** (ALCI4_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_1054='PD'
+- **REQ** `STARS_1018` **What body part was affected?** (ALCI4_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_1054='PD'
+- **REQ** `STARS_1019` **Which specific body part was affected?** (ALCI4_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_1054='PD'
+- `STARS_1020` **Was claimant driver of other vehicle** (ALCI4_Was claimant driver of other vehicle) type=radio → STARS.Incident.SpecialAnalysis#364
+  - options: Y=Yes | N=No | U=Unkown
+- `STARS_1021` **Claimant Vehicle License Plate #** (ALCI4_Claimant Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#36
+- `STARS_1022` **Claimant Vehicle License State** (ALCI4_Claimant Vehicle License State) type=lookup → STARS.Incident.SpecialAnalysis#216
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_1023` **Claimant Vehicle Make** (ALCI4_Claimant Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_1024` **Claimant Vehicle Model** (ALCI4_Claimant Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- `STARS_1025` **Claimant Vehicle Year** (ALCI4_Claimant Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_1026` **Claimant VIN** (ALCI4_Claimant VIN) type=lookup max=254 → STARS.Incident.MiscDescription#38
+- `STARS_1027` **Was the vehicle Owned/Leased/Rented** (ALCI4_Was the vehicle Owned/Leased/Rented) type=radio → STARS.Incident.SpecialAnalysis#218
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+- **REQ** `STARS_1058` **Do you need to add another incident/claim for this event** (ALCI4_Do you need to add another incident/claim for this event) type=radio
+  - options: Y=Yes | N=No
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALCI4_Next`, cmd=Next) → Page_STARS_46 when [vis=5] STARS_1058='Y'
+
+## AL5_Claimant Information  (`Page_STARS_46`)
+
+- **REQ** `STARS_1028` **First Name** (ALCI5_First Name) type=lookup max=50 → STARS.Incident.FirstName1
+- **REQ** `STARS_1030` **Last Name** (ALCI5_Last Name) type=lookup max=50 → STARS.Incident.LastName1
+  - help: Please provide the name of the company when the 3rd party is not an individual.
+- `STARS_1031` **Company Name** (ALCI5_Company Name) type=lookup max=100 → STARS.Incident.Company1
+- `STARS_1032` **Street Address** (ALCI5_Street Address) type=lookup max=254 → STARS.Incident.Address11
+- `STARS_1033` **City** (ALCI5_City) type=lookup max=25 → STARS.Incident.AddrCity1
+- `STARS_1034` **State** (ALCI5_State) type=lookup → STARS.Incident.AddrState1
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_1035` **Zip Code** (ALCI5_Zip Code) type=lookup max=10 → STARS.Incident.AddrPostal1
+- `STARS_1036` **Phone #** (ALCI5_Phone #) type=lookup max=254 → STARS.Incident.MiscDescription#131
+- `STARS_1037` **Email Address** (ALCI5_Email Address) type=lookup max=254 → STARS.Incident.MiscDescription#15
+- `STARS_1038` **Birth date** (ALCI5_Birth date) type=5 → STARS.Incident.MiscDate#4
+- `STARS_1039` **Gender** (ALCI5_Gender) type=radio → STARS.Incident.SpecialAnalysis#6
+  - options: F=Female | M=Male | U=Other/Unkown
+- `STARS_1040` **Preferred language** (ALCI5_Preferred language) type=lookup → STARS.Incident.SpecialAnalysis#72
+  - options: 33 options (e.g. Albanian, Amharic, Apachean, Arabic, Bosnian, Cantonese …)
+- **REQ** `STARS_1055` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALCI5_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_1067` **** (ALCI5_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?BI) type=lookup HIDDEN default=`BI` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1055='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1068` **** (ALCI5_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?PD) type=lookup HIDDEN default=`PD` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] STARS_1055='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1069` **** (ALCI5_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?NotBOTH) type=lookup HIDDEN default=`{Dynamic.STARS_1055}` → STARS.Incident.SpecialAnalysis#290
+  - rule: [vis=5] NOT STARS_1055='BOTH' ; row:[vis=4] NOT STARS_393='Y'
+- `STARS_1041` **What injury or illness was reported?** (ALCI5_What injury or illness was reported?) type=lookup → STARS.Incident.SpecialAnalysis#4
+  - options: 79 options (e.g. Adverse reaction to a vaccination or inoculation (38), AIDS (75), Allergic Reaction (71), Amputation (2), Angina Pectoris/Chest Pain (3), Associate reported having COVID-19 (83) …)
+  - rule: row:[vis=4] STARS_1055='PD'
+- **REQ** `STARS_1042` **What body part was affected?** (ALCI5_What body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#365
+  - options: 6 options: HEAD=Head | LOWER EXTR=Lower Extremities | MISC/MULTI=Misc/Multiple | NECK=Neck | TRUNK=Trunk | UPPER EXTR=Upper Extremities
+  - rule: row:[vis=4] STARS_1055='PD'
+- **REQ** `STARS_1043` **Which specific body part was affected?** (ALCI5_Which specific body part was affected?) type=lookup → STARS.Incident.SpecialAnalysis#2
+  - options: 56 options (e.g. Abdomen including Groin, Ankle, Artificial Appliance, Big Toe, Brain, Buttocks …)
+  - rule: row:[vis=4] STARS_1055='PD'
+- `STARS_1044` **Was claimant driver of other vehicle** (ALCI5_Was claimant driver of other vehicle) type=radio → STARS.Incident.SpecialAnalysis#364
+  - options: Y=Yes | N=No | U=Unknown
+- `STARS_1045` **Claimant Vehicle License Plate #** (ALCI5_Claimant Vehicle License Plate #) type=lookup max=8 → STARS.Incident.MiscDescription#36
+- `STARS_1046` **Claimant Vehicle License State** (ALCI5_Claimant Vehicle License State) type=lookup → STARS.Incident.SpecialAnalysis#216
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_1047` **Claimant Vehicle Make** (ALCI5_Claimant Vehicle Make) type=lookup → STARS.Incident.SpecialAnalysis#60
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_1048` **Claimant Vehicle Model** (ALCI5_Claimant Vehicle Model) type=lookup max=254 → STARS.Incident.MiscDescription#37
+- `STARS_1049` **Claimant Vehicle Year** (ALCI5_Claimant Vehicle Year) type=lookup → STARS.Incident.SpecialAnalysis#59
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_1050` **Claimant VIN** (ALCI5_Claimant VIN) type=lookup max=254 → STARS.Incident.MiscDescription#38
+- `STARS_1051` **Was the vehicle Owned/Leased/Rented** (ALCI5_Was the vehicle Owned/Leased/Rented) type=radio → STARS.Incident.SpecialAnalysis#218
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Next** (`ALCI5_Next`, cmd=Next) → 
+
+## GL_Summary  (`Page_STARS_36`)
+
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`GL_Summ_SubmitSTARS_47`, cmd=Submit) → 
+- `STARS_775` **Date Reported** (SCGLS_Date Reported) type=5 default=`{Dynamic.STARS_100}`
+- `STARS_776` **Submitted By** (SCGLS_Submitted By) type=lookup default=`Facility 1458`
+- `STARS_784` **Incident #** (GLS_Incident #) type=lookup
+- **REQ** `STARS_686` **Date of Incident** (GLFIS_Date of Incident) type=5 default=`{Dynamic.STARS_458}`
+- **REQ** `STARS_687` **Time of Incident** (GLFIS_Time of Incident) type=lookup default=`{Dynamic.STARS_464}`
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_685` **Reporting Facility #** (GLFIS_Reporting Facility #) type=lookup default=`{Dynamic.STARS_792}`
+  - options: 1 options: 1458=1458 - FORT OGLETHORPE BATTLEFIELD PARKWAY
+- **REQ** `STARS_689` **When was the facility first notified about the incident?** (GLFIS_When was the facility first notified about the incident?) type=5 default=`{Dynamic.STARS_184}`
+- **REQ** `STARS_688` **What type of claim is being reported?** (GLFIS_What type of claim is being reported?) type=radio default=`{Dynamic.STARS_7}`
+  - options: AP=Asset Protection | CC=Cart Damaged Vehicle | GK=ACC/Sam's Garage Service | HD=InHome/Spark Delivery | GL=Customer Injury or Property Damage | PL=Product Sold at Store/Club | OPR=Product Prepared/Assembled by Store/Club
+- **REQ** `STARS_691` **Was this claim resolved at the facility?** (GLFIS_Was this claim resolved at the facility?) type=radio default=`{Dynamic.STARS_10}`
+  - options: Y=Yes | N=No
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_692` **Settlement Amount** (GLCTSIS_Settlement Amount) type=text default=`{Dynamic.STARS_54}`
+  - rule: row:[vis=4] NOT STARS_10='Y'
+- _text_: Amounts over $800 cannot be processed at the facility and must be submitted as a claim to WCS. If the amount entered is incorrect, please update it to proceed. Otherwise, for resolutions over $800, please select “No” for the question “Was this claim resolved at the facility?” to continue submitting the claim to WCS.
+- **REQ** `STARS_693` **Associate Entering Incident First and Last Name** (GLFIS_Associate Entering Incident First and Last Name) type=lookup default=`{Dynamic.STARS_26}`
+- **REQ** `STARS_694` **Associate Entering Direct Contact #** (GLFIS_Associate Entering Direct Contact #) type=lookup default=`{Dynamic.STARS_11}`
+- **REQ** `STARS_695` **First Name** (GLCIS_First Name) type=lookup default=`{Dynamic.STARS_12}`
+- **REQ** `STARS_696` **Last Name** (GLCIS_Last Name) type=lookup default=`{Dynamic.STARS_13}`
+- **REQ** `STARS_697` **Did the incident happen on the premises?** (GLILS_Did the incident happen on the premises?) type=radio default=`{Dynamic.STARS_28}`
+  - options: Y=Yes | N=No
+- **REQ** `STARS_699` **Street address where the incident occurred** (GLILS_Street address where the incident occurred) type=lookup default=`{Dynamic.STARS_30}`
+  - rule: row:[vis=4] STARS_28='Y'
+- **REQ** `STARS_700` **City** (GLILS_City) type=lookup default=`{Dynamic.STARS_31}`
+  - rule: row:[vis=4] STARS_28='Y'
+- **REQ** `STARS_701` **State** (GLILS_State) type=lookup default=`{Dynamic.STARS_32}`
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_28='Y'
+- **REQ** `STARS_702` **Zip Code** (GLILS_Zip Code) type=lookup default=`{Dynamic.STARS_33}`
+  - rule: row:[vis=4] STARS_28='Y'
+- **REQ** `STARS_706` **Incident Description** (GLIIS_Incident Description) type=16 default=`{Dynamic.STARS_37}` max=254
+- **REQ** `STARS_711` **Type of Incident** (GLIISAP_Type of Incident) type=lookup default=`{Dynamic.STARS_39}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='AP'
+- **REQ** `STARS_6` **Type of Incident** (GLIISCC_Type of Incident) type=lookup default=`{Dynamic.STARS_372}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='CC'
+- **REQ** `STARS_5` **Type of Incident** (GLIISGK_Type of Incident) type=lookup default=`{Dynamic.STARS_1151}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_9` **Type of Incident** (GLIISHD_Type of Incident) type=lookup default=`{Dynamic.STARS_1153}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='HD'
+- **REQ** `STARS_52` **Type of Incident** (GLIISOPR_Type of Incident) type=lookup default=`{Dynamic.STARS_1154}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='OPR'
+- **REQ** `STARS_72` **Type of Incident** (GLIISPL_Type of Incident) type=lookup default=`{Dynamic.STARS_1155}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_8` **Type of Incident** (GLIISGL_Type of Incident) type=lookup default=`{Dynamic.STARS_1152}`
+  - options: 22 options: 7=A. Slip, Trip, or Fall | 21=B. Customer's Property Damaged | 23=C. Hit by Cart, Equip, Merch, Vehicle | 3=D. Cut/Puncture/Scrape | 13=E. Injured By Facility Equipment or Person | 15=F. Personal Medical Issue | 6=G. Exposure/Contact With Substance | 9=GK-Battery | 10=GK-Oil | 11=GK-Other | 12=GK-Tire | 2=H. Caught Between Fixtures or Equipment | 19=I. Product Sold Caused Injury/Damage/Illness | 14=Injury/Aggravation from Injection | 30=J. Crime, Theft or Vandalism | 26=K. Vehicle Collision | 28=L. Weather-Related Incident | 4=M. Equal Rights/Accessibility Complaint | 20=N. Pharmacy or Optical Allegation | 17=Optical | 18=Pharmacy/Prescription/Drug Error | 16=Z. Other Type of Incident
+  - rule: row:[vis=4] NOT STARS_7='GL'
+- **REQ** `STARS_712` **What is the specific cause of the incident?** (GLIIS_What is the specific cause of the incident?1) type=lookup default=`{Dynamic.STARS_40}`
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_713` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (GLIIS_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup default=`{Dynamic.STARS_41}`
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_714` **What specific item was involved with this incident?** (GLIIS_What specific item was involved with this incident?) type=lookup default=`{Dynamic.STARS_42}`
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- **REQ** `STARS_707` **Does the incident involve Bodily Injury, Property Damage or both?** (GLIIS_Does the incident involve Bodily Injury, Property Damage or both?) type=radio default=`{Dynamic.STARS_38}`
+  - options: BI=Bodiy Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] STARS_10='Y'
+- **REQ** `STARS_708` **** (GLIIS_Does the incident involve Bodily Injury, Property Damage or both? BI) type=lookup HIDDEN default=`BI`
+  - rule: [vis=5] STARS_38='BOTH' ; row:[vis=4] STARS_10='Y'
+- **REQ** `STARS_709` **** (GLIIS_Does the incident involve Bodily Injury, Property Damage or both?PD) type=lookup HIDDEN default=`PD`
+  - rule: [vis=5] STARS_38='BOTH' ; row:[vis=4] STARS_10='Y'
+- **REQ** `STARS_710` **** (GLIIS_Does the incident involve Bodily Injury, Property Damage or both?NotBoth) type=lookup HIDDEN default=`{Dynamic.STARS_38}`
+  - rule: [vis=5] NOT STARS_38='BOTH' ; row:[vis=4] STARS_10='Y'
+- **REQ** `STARS_743` **Does the incident involve Bodily Injury, Property Damage or both?** (GLFIS_BI/PD) type=radio default=`{Dynamic.STARS_742}`
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_10='Y'
+- **REQ** `STARS_716` **What injury or illness was reported?** (GLIIS_What injury or illness was reported?) type=lookup default=`{Dynamic.STARS_44}`
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y'
+- **REQ** `STARS_717` **Which specific body part was affected?** (GLIIS_Which specific body part was affected?) type=lookup default=`{Dynamic.STARS_45}`
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y'
+- **REQ** `STARS_718` **Which side was affected?** (GLIIS_Which side was affected?) type=radio default=`{Dynamic.STARS_46}`
+  - options: R=Right | L=Left | B=Bilateral
+  - rule: row:[vis=4] STARS_38='PD' OR STARS_10='Y'
+- **REQ** `STARS_725` **Mileage of vehicle at time of incident?** (GLCTSIS_Mileage of vehicle at time of incident?) type=lookup default=`{Dynamic.STARS_55}`
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_726` **Mileage of vehicle when serviced?** (GLCTSIS_Mileage of vehicle when serviced?) type=lookup default=`{Dynamic.STARS_5611}`
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_727` **Service Date** (GLCTSIS_Service Date) type=5 default=`{Dynamic.STARS_57}`
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_728` **Key Tag #** (GLCTSIS_Key Tag #) type=lookup default=`{Dynamic.STARS_58}`
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_729` **Description of Damage to Customer’s Vehicle** (GLCTSIS_Description of Damage to Customer’s Vehicle) type=16 default=`{Dynamic.STARS_59}` max=254
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_730` **Vehicle Make** (GLCTSIS_Vehicle Make) type=lookup default=`{Dynamic.STARS_60}`
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_731` **Vehicle Model** (GLCTSIS_Vehicle Model) type=lookup default=`{Dynamic.STARS_61}`
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_732` **Vehicle Year** (GLCTSIS_Vehicle Year) type=lookup default=`{Dynamic.STARS_62}`
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_733` **Vehicle Color** (GLCTSIS_Vehicle Color) type=lookup default=`{Dynamic.STARS_63}`
+  - options: 14 options: BEIGE=Beige | BLACK=Black | BLUE=Blue | BROWN=Brown | GREEN=Green | GREY=Grey | ORANGE=Orange | OTHER=Other | PINK=Pink | PURPLE=Purple | RED=Red | SILVER=Silver | WHITE=White | YELLOW=Yellow
+  - rule: row:[vis=4] NOT STARS_7='GK'
+- **REQ** `STARS_734` **Product Name** (GLCTSIS_Product Name) type=lookup default=`{Dynamic.STARS_64}`
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_735` **Item #** (GLCTSIS_Item #) type=lookup default=`{Dynamic.STARS_65}`
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_736` **UPC #** (GLCTSIS_UPC #) type=lookup default=`{Dynamic.STARS_66}`
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_737` **Lot #** (GLCTSIS_Lot #) type=lookup default=`{Dynamic.STARS_67}`
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_738` **Expiration Date** (GLCTSIS_Expiration Date) type=5 default=`{Dynamic.STARS_68}`
+  - rule: row:[vis=4] NOT STARS_7='PL'
+- **REQ** `STARS_739` **Were the police called?** (GLCTSIS_Were the police called?) type=radio default=`{Dynamic.STARS_69}`
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_7='AP'
+- **REQ** `STARS_740` **Who called the police?** (GLCTSIS_Who called the police?) type=lookup default=`{Dynamic.STARS_70}`
+  - rule: row:[vis=4] NOT STARS_7='AP' OR NOT STARS_69='Y'
+- **REQ** `STARS_741` **Reason police were called** (GLCTSIS_Reason police were called) type=lookup default=`{Dynamic.STARS_71}`
+  - rule: row:[vis=4] NOT STARS_7='AP' OR NOT STARS_69='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`GL_Summ_Submit`, cmd=Submit) → 
+
+## WC_Summary  (`Page_STARS_31`)
+
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`WC_Summ_Submit`, cmd=Submit) → 
+- `STARS_779` **Date Reported** (SC_Date Reported3) type=5 default=`{Dynamic.STARS_100}`
+- `STARS_778` **Submitted By** (SC_Submitted By2) type=lookup default=`Facility 1458`
+- `STARS_785` **Incident #** (Incident #2) type=lookup
+- **REQ** `STARS_506` **Date of Incident** (WCFIS_Date of Incident) type=5 default=`{Dynamic.STARS_458}`
+- **REQ** `STARS_507` **Time of Incident** (WCFIS_Time of Incident) type=lookup default=`{Dynamic.STARS_464}`
+- **REQ** `STARS_505` **Reporting Facility #** (WCFIS_Reporting Facility #) type=lookup default=`{Dynamic.STARS_792}`
+  - options: 1 options: 1458=1458 - FORT OGLETHORPE BATTLEFIELD PARKWAY
+- **REQ** `STARS_508` **When was the facility first notified about the incident?** (WCFIS_When was the facility first notified about the incident?) type=5 default=`{Dynamic.STARS_184}`
+- **REQ** `STARS_509` **Associate Entering Incident First and Last Name** (WCFIS_Associate Entering Incident First and Last Name) type=lookup default=`{Dynamic.STARS_26}`
+- **REQ** `STARS_704` **Associate Entering Direct Contact #** (WCS_Associate Entering Direct Contact #) type=lookup default=`{Dynamic.STARS_11}`
+- **REQ** `STARS_705` **Who is completing this statement?** (WCAS_Who is completing this statement?STARS_705) type=radio default=`{Dynamic.STARS_268}`
+  - options: ASSOCIATE=Associate reporting injury or illness | FACILITY=Management or HR entering incident
+  - rule: row:[vis=4] NOT STARS_1101='WA'
+- **REQ** `STARS_715` **Is the associate/partner present?** (WCAS_Is the associate/partner present?STARS_715) type=lookup default=`{Dynamic.STARS_269}`
+  - options: 2 options: N=No | Y=Yes
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- **REQ** `STARS_719` **Name of person completing this statement (First and Last Name)** (WCAS_Name of person completing this statement (First and Last Name)STARS_719) type=lookup default=`{Dynamic.STARS_270}`
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- **REQ** `STARS_720` **Provide a detailed explanation as to why the associate is unable to complete the statement** (WCAS_Provide a detailed explanation as to why the associate is unable to complete the statement.STARS_720) type=16 default=`{Dynamic.STARS_271}` max=254
+  - rule: row:[vis=4] NOT STARS_268='FACILITY'
+- **REQ** `STARS_2744` **First Name** (WCASS_First Name) type=lookup default=`{Dynamic.STARS_230}`
+- **REQ** `STARS_2755` **Last Name** (WCASS_Last Name) type=lookup default=`{Dynamic.STARS_232}`
+- _text_: Provide a detailed description of the incident, including where it occurred, what happened, why it happened, and any resulting injuries or damage.
+- **REQ** `STARS_721` ***** (WCAS_Provide a detailed description of the incident, including where it occurred, what happened, why it happened, and any resulting injuries or damage.STARS_721) type=16 default=`{Dynamic.STARS_287}` max=254
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_513` **What facility number is associate payrolled from?** (WCA1S_What facility number is associate payrolled from?) type=lookup default=`{Dynamic.STARS_257}`
+  - rule: row:[vis=4] STARS_238=''
+- **REQ** `STARS_722` **Associate/Partner Signature Name** (WCAS_Associate Signature NameSTARS_722) type=lookup default=`{Dynamic.STARS_289}`
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_723` **** (WCAS_Claimant signature confirmationSTARS_723) type=12 default=`{Dynamic.STARS_290}`
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_724` **Associate Entering Incident Signature Name** (WCAS_Associate Entering Incident Signature NameSTARS_724) type=lookup default=`{Dynamic.STARS_291}`
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_1102` **** (WCAS_I confirm that by checking this box, I am providing my electronic signature.STARS_1102) type=12 default=`{Dynamic.STARS_292}`
+  - rule: row:[vis=4] STARS_1101='IC' OR NOT STARS_269='Y' AND NOT STARS_268='ASSOCIATE'
+- **REQ** `STARS_514` **Did the incident happen on the premises?** (WCILS_Did the incident happen on the premises?) type=radio default=`{Dynamic.STARS_212}`
+  - options: Y=Yes | N=No
+- **REQ** `STARS_520` **Where did the incident occur?** (WCILS_Where did the incident occur?) type=lookup default=`{Dynamic.STARS_218}`
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_521` **Provide specific location** (WCILS_Provide specific location) type=lookup default=`{Dynamic.STARS_219}`
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+- `STARS_522` **Provide the nearest specific location** (WCIL_Provide the nearest specific location1) type=lookup default=`{Dynamic.STARS_220}` max=254
+- `STARS_1103` **Business Name/Additional Location Information** (WCIL_Business Name/Additional Location InformationSTARS_1103) type=lookup default=`{Dynamic.STARS_213}`
+  - rule: row:[vis=4] NOT STARS_212='N'
+- **REQ** `STARS_516` **Street address where the incident occurred** (WCILS_Street address where the incident occurred) type=lookup default=`{Dynamic.STARS_214}`
+  - rule: row:[vis=4] STARS_212='Y'
+- **REQ** `STARS_517` **City** (WCILS_City) type=lookup default=`{Dynamic.STARS_215}`
+  - rule: row:[vis=4] STARS_212='Y'
+- **REQ** `STARS_518` **State** (WCILS_State) type=lookup default=`{Dynamic.STARS_216}`
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_212='Y'
+- **REQ** `STARS_519` **Zip Code** (WCILS_Zip Code) type=lookup default=`{Dynamic.STARS_217}`
+  - rule: row:[vis=4] STARS_212='Y'
+- **REQ** `STARS_523` **Time associate started work?** (WCIIS_Time associate started work?) type=lookup default=`{Dynamic.STARS_193}`
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_524` **Incident Description** (WCIIS_Incident Description) type=lookup default=`{Dynamic.STARS_204}`
+- **REQ** `STARS_525` **Type of Incident** (WCIIS_What caused the incident?) type=lookup default=`{Dynamic.STARS_206}`
+  - options: 13 options: 7=A. Slip, Trip, or Fall | 23=B. Hit by Cart, Equip, Merch | 3=C. Cut/Puncture/Scrape | 13=D. Injured By Facility Equipment or Person | 15=E. Personal Medical Issue | 6=F. Exposure/Contact With Substance | 2=G. Caught Between Fixtures or Equipment | 22=H. Rubbed or Injured By | 31=I. Crime, Theft or Vandalism | 4=J. Equal Rights/Accessibility Complaint | 28=K. Weather-Related Incident | 26=L. Vehicle Collision | 16=Z. Other Type of Incident
+- **REQ** `STARS_526` **What is the specific cause of the incident?** (WCIIS_What is the specific cause of the incident?) type=lookup default=`{Dynamic.STARS_207}`
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_527` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (WCIIS_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup default=`{Dynamic.STARS_208}`
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_528` **What specific item was involved with this incident?** (WCIIS_What specific item was involved with this incident?) type=lookup default=`{Dynamic.STARS_209}`
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- **REQ** `STARS_529` **What injury or illness did the associate report?** (WCIIS_What injury or illness did the associate report?) type=lookup default=`{Dynamic.STARS_210}`
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+- **REQ** `STARS_530` **Which specific body part was affected?** (WCIIS_Which specific body part was affected?) type=lookup default=`{Dynamic.STARS_283}`
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+- **REQ** `STARS_531` **Which side was affected?** (WCIIS_Which side was affected?) type=radio default=`{Dynamic.STARS_295}`
+  - options: B=Bilateral | L=Left | R=Right
+- **REQ** `STARS_532` **Has the associate sought, or requested to seek treatment with a medical provider?** (WCIIS_Has the associate sought, or requested to seek treatment with a medical provider?) type=radio default=`{Dynamic.STARS_293}`
+  - options: Y=Yes | N=No
+- `STARS_533` **Removed - Describe what the associate was doing before the incident?** (WCII_Describe what the associate was doing before the incident?1) type=lookup default=`{Dynamic.STARS_297}`
+  - rule: row:[vis=4]
+- **REQ** `STARS_534` **Type of initial treatment for this incident?** (WCMTS_Type of initial treatment for this incident?) type=lookup default=`{Dynamic.STARS_192}`
+  - options: 6 options: 3=Emergency Evaluation, Diagnostic Testing, and Medical | 5=Future Major Med/Lost Time Anticipated | 4=Hospitalization > 24 Hours | 2=Minor Clinic/Hospital Medical Remedies and Diagnosis | 1=Minor On-Site Remedies by Employer | 0=No Medical Treatment
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_535` **Date treatment was sought** (WCMT1S_Date treatment was sought) type=5 default=`{Dynamic.STARS_194}`
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_536` **Date management was informed that medical treatment was requested, or sought, for work injury:** (WCMTSS_Date management was informed that medical treatment was requested, or sought, for work injury:) type=5 default=`{Dynamic.STARS_195}`
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- **REQ** `STARS_537` **Name of medical provider or clinic that provided treatment** (WCMTS_Name of medical provider or clinic that provided treatment1) type=lookup default=`{Dynamic.STARS_196}`
+  - rule: row:[vis=4] NOT STARS_293='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`WC_Summ_SubmitSTARS_48`, cmd=Submit) → 
+
+## PR_Summary  (`Page_STARS_34`)
+
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`PR_Summ_SubmitSTARS_49`, cmd=Submit) → 
+- `STARS_777` **Date Reported** (SCPRS_Date Reported) type=5 default=`{Dynamic.STARS_100}`
+- `STARS_780` **Submitted By** (SCPRS_Submitted By) type=lookup default=`Facility 1458`
+- `STARS_786` **Incident #** (PRS_Incident #) type=lookup
+- **REQ** `STARS_568` **Reporting Facility #** (PRFIS_Reporting Facility #) type=lookup default=`{Dynamic.STARS_792}`
+  - options: 1 options: 1458=1458 - FORT OGLETHORPE BATTLEFIELD PARKWAY
+- **REQ** `STARS_589` **Did a non-Walmart 3rd party cause or contribute to the loss?** (PRFISS_Did a non-Walmart 3rd party cause or contribute to the loss?) type=radio default=`{Dynamic.STARS_312}`
+  - options: Y=Yes | N=No | U=Unknown
+- **REQ** `STARS_591` **What type of 3rd party was involved?** (PRFIS_What type of 3rd party was involved?1) type=radio default=`{Dynamic.STARS_590}`
+  - options: 3PRTYDRV=3rd Party Delivery Driver | CUSTOMER=Customer/Member | VENDOR=Vendor/Supplier/Contractor
+  - rule: row:[vis=4] NOT STARS_312='Y'
+- **REQ** `STARS_593` **Date of Incident** (PRGIS_Date of Incident) type=5 default=`{Dynamic.STARS_458}`
+- **REQ** `STARS_594` **Time of Incident** (PRGIS_Time of Incident) type=lookup default=`{Dynamic.STARS_464}`
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_595` **When was the facility first notified about the incident?** (PRGIS_When was the facility first notified about the incident?) type=5 default=`{Dynamic.STARS_184}`
+- **REQ** `STARS_596` **Associate Entering Incident First and Last Name** (PRGIS_Associate Entering Incident First and Last Name) type=lookup default=`{Dynamic.STARS_26}`
+- **REQ** `STARS_597` **Did the incident happen on the premises?** (PRILS_Did the incident happen on the premises?) type=radio default=`{Dynamic.STARS_304}`
+  - options: Y=Yes | N=No
+- `STARS_601` **Street address where the incident occurred** (PRIL_Street address where the incident occurred1) type=lookup default=`{Dynamic.STARS_318}`
+  - rule: row:[vis=4] STARS_304='Y'
+- `STARS_598` **City** (PRIL_City1) type=lookup default=`{Dynamic.STARS_319}`
+  - rule: row:[vis=4] STARS_304='Y'
+- `STARS_599` **State** (PRIL_State1) type=lookup default=`{Dynamic.STARS_320}`
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_304='Y'
+- `STARS_600` **Zip Code** (PRIL_Zip Code1) type=lookup default=`{Dynamic.STARS_321}`
+  - rule: row:[vis=4] STARS_304='Y'
+- **REQ** `STARS_602` **Incident Description** (PRIIS_Incident Description) type=16 default=`{Dynamic.STARS_314}` max=254
+- **REQ** `STARS_604` **Type of Incident** (PRIIS_Type of Incident) type=lookup default=`{Dynamic.STARS_325}`
+  - options: 8 options: 1=Cargo | 24=Crime, Theft or Vandalism | 5=Equipment Failure | 8=Fire | 29=Property Damage (PR) | 25=Vehicle | 27=Vendor Damage | 28=Weather-Related Incident
+- **REQ** `STARS_605` **What is the specific cause of the incident?** (PRIIS_What is the specific cause of the incident?) type=lookup default=`{Dynamic.STARS_326}`
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_606` **Name of Hurricane** (PRIIS_Name of Hurricane) type=lookup default=`{Dynamic.STARS_327}`
+  - rule: row:[vis=4] NOT STARS_326='309' AND NOT STARS_326='310' AND NOT STARS_326='311'
+- `STARS_607` **Was there merchandise loss?** (PRII_Was there merchandise loss?1) type=radio default=`{Dynamic.STARS_328}`
+  - options: Y=Yes | N=No
+- `STARS_608` **What is the estimated merchandise loss at cost?** (PRII_What is the estimated merchandise loss at cost?1) type=text default=`{Dynamic.STARS_339}`
+  - rule: row:[vis=4] NOT STARS_328='Y'
+  - help: For more information about the "Product and Property Loss" app, refer to the Product and Property Loss Training Document on oneWalmart.
+- `STARS_609` **Prod/Prop Loss app claim ID#** (PRII_Prod/Prop Loss app claim ID#1) type=lookup default=`{Dynamic.STARS_329}`
+- `STARS_610` **Provide work order #'s** (PRII_Provide work order #'s1) type=lookup default=`{Dynamic.STARS_330}`
+- `STARS_611` **Was EOC notified?** (PRII_Was EOC notified?1) type=radio default=`{Dynamic.STARS_331}`
+  - options: Y=Yes | N=No
+- `STARS_612` **List impacted departments** (PRII_List impacted departments1) type=lookup default=`{Dynamic.STARS_332}`
+- `STARS_613` **Was pharmacy impacted?** (PRII_Was pharmacy impacted?1) type=radio default=`{Dynamic.STARS_333}`
+  - options: Y=Yes | U=Unknown | N=No
+- `STARS_614` **If refrigerated trucks were used, how many?** (PRII_If refrigerated trucks were used, how many?1) type=lookup default=`{Dynamic.STARS_334}`
+- `STARS_615` **If open tops were used, how many?** (PRII_If open tops were used, how many?1) type=lookup default=`{Dynamic.STARS_335}`
+- `STARS_616` **Was a generator used?** (PRII_Was a generator used?1) type=radio default=`{Dynamic.STARS_336}`
+  - options: Y=Yes | N=No | U=Unknown
+- **REQ** `STARS_617` **Were authorities involved?** (PRIIS_Were authorities involved?) type=radio default=`{Dynamic.STARS_337}`
+  - options: Y=Yes | N=No | NA=N/A
+- **REQ** `STARS_618` **Name of authorities involved** (PRIIS_Name of authorities involved) type=lookup default=`{Dynamic.STARS_338}`
+  - rule: row:[vis=4] NOT STARS_337='Y'
+- `STARS_619` **What is the name of the 3rd party involved?** (PR3_What is the name of the 3rd party involved?1) type=lookup default=`{Dynamic.STARS_341}`
+- `STARS_622` **How did the 3rd party cause or contribute to the loss?** (PR3_How did the 3rd party cause or contribute to the loss?1) type=lookup default=`{Dynamic.STARS_344}`
+- `STARS_623` **If 3rd party was a vendor, provide the Walmart vendor number** (PR3_If 3rd party was a vendor, provide the Walmart vendor number1) type=lookup default=`{Dynamic.STARS_345}`
+- `STARS_624` **3rd Party Involved Vehicle Make** (PR3_3rd Party Involved Vehicle Make1) type=lookup default=`{Dynamic.STARS_346}`
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_625` **3rd Party Involved Vehicle Model** (PR3_3rd Party Involved Vehicle Model1) type=lookup default=`{Dynamic.STARS_347}`
+- `STARS_626` **3rd Party Involved Vehicle VIN#** (PR3_3rd Party Involved Vehicle VIN#1) type=lookup default=`{Dynamic.STARS_348}`
+- `STARS_627` **3rd Party Involved Vehicle Year** (PR3_3rd Party Involved Vehicle Year1) type=lookup default=`{Dynamic.STARS_349}`
+- `STARS_628` **3rd Party Involved Vehicle Tag#** (PR3_3rd Party Involved Vehicle Tag#1) type=lookup default=`{Dynamic.STARS_350}` max=8
+- `STARS_629` **3rd Party Involved Vehicle Tag State** (PR3_3rd Party Involved Vehicle Tag State1) type=lookup default=`{Dynamic.STARS_351}`
+  - options: 91 options (e.g. Alabama, Alaska, Arizona, Arkansas, BM-Pembroke, CA-Alberta …)
+- `STARS_630` **3rd Party Involved Vehicle Insurance Carrier and Policy#** (PR3_3rd Party Involved Vehicle Insurance Carrier and Policy#1) type=lookup default=`{Dynamic.STARS_352}`
+- `STARS_631` **3rd Party Involved Vehicle Insurance Phone #** (PR3_3rd Party Involved Vehicle Insurance Phone #1) type=lookup default=`{Dynamic.STARS_353}`
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`PR_Summ_Submit`, cmd=Submit) → 
+
+## AL_Summary  (`Page_STARS_35`)
+
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`AL_Summ_SubmitSTARS_50`, cmd=Submit) → 
+- `STARS_787` **Date Reported** (SC_Date Reported4) type=5 default=`{Dynamic.STARS_100}`
+- `STARS_788` **Submitted By** (SC_Submitted By4) type=lookup default=`Facility 1458`
+- `STARS_790` **Incident #** (Incident Numbe4) type=lookup
+- **REQ** `STARS_502` **Reporting Facility #** (ALFIS_Reporting Facility #) type=lookup default=`{Dynamic.STARS_792}`
+  - options: 1 options: 1458=1458 - FORT OGLETHORPE BATTLEFIELD PARKWAY
+- **REQ** `STARS_503` **Date of Incident** (ALFIS_Date of Incident) type=5 default=`{Dynamic.STARS_458}`
+- **REQ** `STARS_504` **Time of Incident** (ALFIS_Time of Incident) type=lookup default=`{Dynamic.STARS_464}`
+  - options: 1440 options (e.g. 1:00 AM, 1:00 PM, 1:01 AM, 1:01 PM, 1:02 AM, 1:02 PM …)
+- **REQ** `STARS_569` **When was the facility first notified about the incident?** (ALFIS_When was the facility first notified about the incident?) type=5 default=`{Dynamic.STARS_184}`
+- **REQ** `STARS_632` **What type of claim is being reported?** (ALFIS_What type of claim is being reported?) type=radio default=`{Dynamic.STARS_378}`
+  - options: AL=Auto Liability | APD=APD (Auto Property Damage)
+- **REQ** `STARS_633` **Reported By Name** (ALFIS_Reported By Name) type=lookup default=`{Dynamic.STARS_26}`
+- **REQ** `STARS_634` **Reported By Phone** (ALFIS_Reported By Phone) type=lookup default=`{Dynamic.STARS_11}`
+- **REQ** `STARS_635` **Did the incident happen on the premises?** (ALILS_Did the incident happen on the premises?) type=radio default=`{Dynamic.STARS_384}`
+  - options: Y=Yes | N=No
+- `STARS_636` **Business Name/Additional Location Information** (ALIL_Business Name/Additional Location Information1) type=lookup default=`{Dynamic.STARS_385}`
+  - rule: row:[vis=4] STARS_384='Y'
+- **REQ** `STARS_637` **Street address where the incident occurred** (ALILS_Street address where the incident occurred) type=lookup default=`{Dynamic.STARS_386}`
+  - rule: row:[vis=4] STARS_384='Y'
+- **REQ** `STARS_638` **City** (ALILS_City) type=lookup default=`{Dynamic.STARS_387}`
+  - rule: row:[vis=4] STARS_384='Y'
+- **REQ** `STARS_639` **State** (ALILS_State) type=lookup default=`{Dynamic.STARS_388}`
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] STARS_384='Y'
+- **REQ** `STARS_640` **Zip Code** (ALILS_Zip Code) type=lookup default=`{Dynamic.STARS_389}`
+  - rule: row:[vis=4] STARS_384='Y'
+- **REQ** `STARS_641` **Where did the incident occur?** (ALILS_Where did the incident occur?) type=lookup default=`{Dynamic.STARS_379}`
+  - options: 43 options (e.g. Action Alley, Apparel & Clothing, Auto & Tires, Away from Premises, Baby, Backroom …)
+- **REQ** `STARS_642` **Provide specific location** (ALILS_Provide specific location) type=lookup default=`{Dynamic.STARS_380}`
+  - options: 254 options (e.g. .com, ACC/TBC, ACC/TBC - Garage/Bay, ACC/TBC - Storage/Stockroom, ACC/TBC - Waiting room, Adult Beverages …)
+  - help: Provide the nearest aisle #, register #, parking lot row, etc.
+- `STARS_643` **Provide the nearest specific location** (ALIL_Provide the nearest specific location1) type=lookup default=`{Dynamic.STARS_390}`
+- **REQ** `STARS_644` **Incident Description** (ALIIS_Incident Description) type=16 default=`{Dynamic.STARS_391}` max=254
+- **REQ** `STARS_645` **Driver Association Type** (ALIIS_Driver Association Type) type=radio default=`{Dynamic.STARS_392}`
+  - options: D=Dedicated | I=Insured | T=Third Party | U=Unknown | V=Vendor
+- **REQ** `STARS_646` **Was a 3rd party involved in the incident?** (ALIIS_Was a 3rd party involved in the incident?) type=radio default=`{Dynamic.STARS_393}`
+  - options: Y=Yes | N=No
+- **REQ** `STARS_647` **Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?** (ALIIS_Does the incident involve Bodily Injury, Property Damage or both to a 3rd party?) type=radio default=`{Dynamic.STARS_394}`
+  - options: BI=Bodily Injury | PD=Property Damage | BOTH=Both
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- **REQ** `STARS_648` **Type of Incident** (ALIIS_Type of Incident) type=lookup default=`{Dynamic.STARS_395}`
+  - options: 4 options: 24=Crime, Theft or Vandalism | 21=Property Damaged | 32=Vehicle Collision (AL) | 28=Weather-Related Incident
+- **REQ** `STARS_649` **What is the specific cause of the incident?** (ALIIS_What is the specific cause of the incident?) type=lookup default=`{Dynamic.STARS_396}`
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- **REQ** `STARS_650` **What equipment, material, object, substance, chemical, etc. was involved with this incident?** (ALIIS_What equipment, material, object, substance, chemical, etc. was involved with this incident?) type=lookup default=`{Dynamic.STARS_397}`
+  - options: 21 options: 1=Asset Protection | 2=Auto/Tires | 4=Cart | 5=Checkout | 6=Door | 7=Equip/Tool/Machine | 8=Fixtures | 9=Floor Surface | 10=Grocery/Food | 11=Health & Wellness | 12=Liquid | 3=Medical/Body Condition | 13=Merchandise | 14=Miscellaneous | 20=Object | 15=Outside | 16=Person | 17=Property | 21=Substance | 18=Vehicle | 19=Weather/Nature/Environment
+- **REQ** `STARS_651` **What specific item was involved with this incident?** (ALIIS_What specific item was involved with this incident?) type=lookup default=`{Dynamic.STARS_398}`
+  - options: 171 options (e.g. AC Leak, Air Contaminant, Airlines & Hoses (Tractor/Trailer), Allergic Reaction, Ammunition, Animal-Insect …)
+- `STARS_652` **Was citation issued?** (ALIIS_Was citation issued?) type=radio default=`{Dynamic.STARS_399}`
+  - options: Y=Yes | N=No | U=Unknown
+- **REQ** `STARS_653` **Citation issued to?** (ALIIS_Citation issued to?) type=lookup default=`{Dynamic.STARS_400}`
+  - rule: row:[vis=4] NOT STARS_399='Y'
+- `STARS_1062` **Was in-cab video activated?** (ALIIS_Was in-cab video activated?) type=radio default=`{Dynamic.STARS_401}`
+  - options: Y=Yes | N=No
+- `STARS_654` **Delivery provider involved, if applicable** (ALIIS_Delivery provider involved, if applicable) type=lookup default=`{Dynamic.STARS_402}`
+  - options: 16 options: 1= WM Associate-InHome | 26=DaaS GoLocal | 11=DaaS Sams  | 30=DaaS Walmart | 13=Drone-Drone-Up | 14=Drone-Flytrex  | 15=Drone-Zipline  | 28=FedEx | 2=InHome | 17=InstaCart  | 27=NASH | 20=Roadie | 3=Spark Delivery | 22=Spark Shopper | 23=Uber | 29=UPS
+  - rule: row:[vis=4] NOT STARS_392='I'
+- `STARS_655` **Online Order #** (ALIIS_Online Order #) type=lookup default=`{Dynamic.STARS_403}`
+- **REQ** `STARS_656` **Describe damages to vehicle(s)** (ALIIS_Describe damages to vehicle(s)) type=16 default=`{Dynamic.STARS_404}` max=254
+- `STARS_657` **Quickbase Report #** (ALIIS_Quickbase Report #) type=16 default=`{Dynamic.STARS_405}` max=254
+- **REQ** `STARS_658` **Driver First Name** (ALDVS_Driver First Name) type=lookup default=`{Dynamic.STARS_406}`
+- **REQ** `STARS_659` **Driver Last Name** (ALDVS_Driver Last Name) type=lookup default=`{Dynamic.STARS_407}`
+- **REQ** `STARS_660` **Unit #1 Type** (ALDVS_Unit #1 Type) type=radio default=`{Dynamic.STARS_415}`
+  - options: PV=Passenger Vehicle | T1=Tractor | T2=Trailer | T3=Truck (10,001-26K GVWR)
+- `STARS_661` **Unit #1 Number** (ALDVS_Unit #1 Number) type=lookup default=`{Dynamic.STARS_416}`
+- `STARS_662` **Unit #2 Type** (ALDVS_Unit #2 Type) type=radio default=`{Dynamic.STARS_417}`
+  - options: PV=Passenger Vehicle | T1=Tractor | T2=Trailer | T3=Truck (10,001-26K GVWR) | T4=Tractor/Trailer
+- `STARS_663` **Unit #2 Number** (ALDVS_Unit #2 Number) type=lookup default=`{Dynamic.STARS_418}`
+- **REQ** `STARS_664` **Insured Vehicle Owned/Leased/ Rented** (ALDVS_Insured Vehicle Owned/Leased/ Rented) type=radio default=`{Dynamic.STARS_419}`
+  - options: D=Dedicated | L=Leased | O=Owned | R=Rented | U=Unknown
+- `STARS_665` **Insured Vehicle License Plate #** (ALDVS_Insured Vehicle License Plate #) type=lookup default=`{Dynamic.STARS_420}` max=8
+- `STARS_666` **Insured Vehicle Tag/Garage State** (ALDVS_Insured Vehicle Tag/Garage State) type=lookup default=`{Dynamic.STARS_421}`
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_667` **Insured Vehicle Make** (ALDVS_Insured Vehicle Make) type=lookup default=`{Dynamic.STARS_422}`
+  - options: 57 options (e.g. Acura, Audi, BMW, BrightDrop, Buick, Cadillac …)
+- `STARS_668` **Insured Vehicle Model** (ALDVS_Insured Vehicle Model) type=lookup default=`{Dynamic.STARS_423}`
+- `STARS_669` **Insured Vehicle Year** (ALDVS_Insured Vehicle Year) type=lookup default=`{Dynamic.STARS_424}`
+  - options: 28 options (e.g. 2000, 2001, 2002, 2003, 2004, 2005 …)
+- `STARS_670` **Insured Vehicle VIN#** (ALDVS_Insured Vehicle VIN#) type=lookup default=`{Dynamic.STARS_425}`
+- `STARS_671` **Insured Vehicle Estimated Damages** (ALDVS_Insured Vehicle Estimated Damages) type=text default=`{Dynamic.STARS_426}`
+- **REQ** `STARS_672` **First Name** (ALCIS_First Name) type=lookup default=`{Dynamic.STARS_427}`
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- **REQ** `STARS_673` **Last Name** (ALCIS_Last Name) type=lookup default=`{Dynamic.STARS_429}`
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_674` **Company Name** (ALCIS_Company Name) type=lookup default=`{Dynamic.STARS_430}`
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- **REQ** `STARS_675` **What injury or illness was reported?** (ALCIS_What injury or illness was reported?) type=lookup default=`{Dynamic.STARS_440}`
+  - options: 61 options (e.g. Adverse reaction to a vaccination or inoculation (38), Allergic Reaction (71), Amputation (2), Associate reported having COVID-19 (83), Bite/Sting (36), Blister (59) …)
+  - rule: row:[vis=4] STARS_394='PD' OR NOT STARS_393='Y'
+- **REQ** `STARS_676` **Which specific body part was affected?** (ALCIS_Which specific body part was affected?) type=lookup default=`{Dynamic.STARS_442}`
+  - options: 54 options (e.g. Abdomen including Groin, Ankle, Big Toe, Brain, Buttocks, Chest …)
+  - rule: row:[vis=4] STARS_394='PD' OR NOT STARS_393='Y'
+- `STARS_677` **Was claimant driver of other vehicle** (ALCIS_Was claimant driver of other vehicle) type=radio default=`{Dynamic.STARS_443}`
+  - options: Y=Yes | N=No | U=Unknown
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_678` **Claimant Vehicle License Plate #** (ALCIS_Claimant Vehicle License Plate #) type=lookup default=`{Dynamic.STARS_444}` max=8
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_679` **Claimant Vehicle License State** (ALCIS_Claimant Vehicle License State) type=lookup default=`{Dynamic.STARS_445}`
+  - options: 98 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_680` **Claimant Vehicle Make** (ALCIS_Claimant Vehicle Make) type=lookup default=`{Dynamic.STARS_446}`
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_681` **Claimant Vehicle Model** (ALCIS_Claimant Vehicle Model) type=lookup default=`{Dynamic.STARS_447}`
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_682` **Claimant Vehicle Year** (ALCIS_Claimant Vehicle Year) type=lookup default=`{Dynamic.STARS_448}`
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_683` **Claimant VIN** (ALFIS_Claimant VIN) type=lookup default=`{Dynamic.STARS_449}`
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- `STARS_684` **Was the vehicle Owned/Leased/Rented** (ALFIS_Was the vehicle Owned/Leased/Rented) type=radio default=`{Dynamic.STARS_450}`
+  - options: L=Leased | O=Owned | R=Rented | U=Unknown
+  - rule: row:[vis=4] NOT STARS_393='Y'
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`AL_Summ_Submit`, cmd=Submit) → 
+
+## Submit Confirmation  (`Page_STARS_10`)
+
+- `STARS_0` **Date Reported** (SC_Date Reported) type=5 default=`{Dynamic.STARS_100}`
+- `STARS_174` **Submitted By** (SC_Submitted By) type=lookup default=`Facility 1458`
+- `STARS_452` **Incident #** (Incident #) type=lookup
+- LINK **Click here to open the Incident** cmd=OpenUrl param=https://uat.riskonnectclearsight.com/enterprise/clientdata/w100uat/interview/incidents/http://uat.riskonnectclearsight.com/Enterprise/STARS.Incident/view.cmdx?id= required=False requiredAttachments=0
+- NAV **Print Abstract** (`PrintAbstractReport`, cmd=PrintAbstract) → 
+- NAV **Print Summary** (`SC_PrintSummary`, cmd=Next) → Page_STARS_36 when [vis=5] STARS_454='CUST', Page_STARS_31 when [vis=5] STARS_454='ASSOC', Page_STARS_35 when [vis=5] STARS_454='AUTO', Page_STARS_34 when [vis=5] STARS_454='CPD', Page_STARS_31 when [vis=5] STARS_454='DELIVERY' AND STARS_462='ASSOC', Page_STARS_36 when [vis=5] STARS_454='DELIVERY' AND STARS_462='CUST', Page_STARS_35 when [vis=5] STARS_454='DELIVERY' AND STARS_462='AUTO', Page_STARS_31 when [vis=5] STARS_454='FACM' AND STARS_462='ASSOC', Page_STARS_36 when [vis=5] STARS_454='FACM' AND STARS_462='CUST', Page_STARS_35 when [vis=5] STARS_454='FACM' AND STARS_462='AUTO', Page_STARS_37 when [vis=5] STARS_10='Y'
+
+## --Remove-- 952_1084 Settlement Statement   (`Page_STARS_37`)
+
+- `STARS_747` **Claim#** (GL_Incident #1) type=lookup
+- `STARS_748` **Date** (GLS_CurrentDate) type=5 default=`{IMPLICIT.DATE}`
+- **REQ** `STARS_749` **For the sole consideration of $ __** (GLCTSI_Settlement Amount2) type=text default=`{Dynamic.STARS_54}`
+- _text_: The undersigned hereby releases and forever discharges Walmart Store Inc., and its divisions, subsidiaries, successors, and agents from all claims and demands, rights and causes of action of any kind growing out of, resulting, or to result from an occurrence which has happened on or about the below mentioned service date. This release expresses a full and complete SETTLEMENT of liability claimed.
+- `STARS_750` **Service Date** (GLCTSI_Service Date2STARS_750) type=5 default=`{Dynamic.STARS_57}`
+- `STARS_751` **First Name** (GLCI_First Name2) type=lookup default=`{Dynamic.STARS_12}`
+- `STARS_752` **Last Name** (GLCI_Last Name2) type=lookup default=`{Dynamic.STARS_13}`
+- `STARS_753` **Address** (GLCI_Address2) type=lookup default=`{Dynamic.STARS_14}`
+- `STARS_754` **City** (GLCI_City2) type=lookup default=`{Dynamic.STARS_15}`
+- `STARS_755` **State** (GLCI_State2) type=lookup default=`{Dynamic.STARS_16}`
+  - options: 99 options (e.g. AC-St. Paul, Alabama, Alaska, Arizona, Arkansas, BM-Pembroke …)
+- `STARS_756` **Zip Code** (GLCI_Zip Code2) type=lookup default=`{Dynamic.STARS_17}`
+- `STARS_760` **Service Date** (GLCTSI_Service Date2) type=5 default=`{Dynamic.STARS_57}`
+- `STARS_761` **Vehicle Make** (GLCTSI_Vehicle Make2) type=lookup default=`{Dynamic.STARS_60}`
+  - options: 55 options (e.g. Acura, Audi, BMW, Buick, Cadillac, Chevrolet …)
+- `STARS_762` **Vehicle Model** (GLCTSI_Vehicle Model2) type=lookup default=`{Dynamic.STARS_61}`
+- `STARS_763` **Vehicle Year** (GLCTSI_Vehicle Year2) type=lookup default=`{Dynamic.STARS_62}`
+  - options: 38 options (e.g. 1990, 1991, 1992, 1993, 1994, 1995 …)
+- `STARS_764` **Mileage of vehicle at time of incident?** (GLCTSI_Mileage of vehicle at time of incident?2) type=lookup default=`{Dynamic.STARS_55}`
+- `STARS_765` **Key Tag #** (GLCTSI_Key Tag #2) type=lookup default=`{Dynamic.STARS_58}`
+- `STARS_766` **Description of Damage to Customer’s Vehicle** (GLCTSI_Description of Damage to Customer’s Vehicle2) type=16 default=`{Dynamic.STARS_59}` max=254
+- `STARS_767` **What caused the incident?** (GLII_What caused the incident?2) type=lookup default=`{Dynamic.STARS_39}`
+  - options: 32 options (e.g. Cargo, Caught In/Under/Between, Crime/Theft/Vandalism (AL/PR), Crime/Theft/Vandalism (GL), Crime/Theft/Vandalism (WC), Cut/Puncture/Scrape By …)
+- `STARS_768` **What is the specific cause of the incident?** (GLII_What is the specific cause of the incident?2) type=lookup default=`{Dynamic.STARS_40}`
+  - options: 255 options (e.g. Abnormal Air Pressure (14), Absorption/Ingestion/Inhalation (82), Accident, Accidental, Alleged Damage To Property, Allergic Reaction (99) …)
+- NAV **Back** (`Previous`, cmd=Pre) → 
+- NAV **Submit** (`SS_Next`, cmd=Submit) → 
