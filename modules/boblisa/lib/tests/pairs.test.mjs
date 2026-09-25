@@ -1,6 +1,6 @@
 // node modules/boblisa/lib/tests/pairs.test.mjs
 import assert from "node:assert/strict";
-import { analyzeDay, compactRecords, DEFAULT_OPTS } from "../pairs.js";
+import { analyzeDay, compactRecords, DEFAULT_OPTS, paysForTraining } from "../pairs.js";
 import { registerType } from "../registers.js";
 
 const TOKEN_A = "3DFBDA6D37D897579380E51A04208603818105780416";
@@ -59,6 +59,15 @@ const cashCase = day.trainings.find((t) => t.reg === 94);
 assert.equal(cashCase.paid.length, 1, "training receipt traced to the cash sale by UPC");
 assert.equal(cashCase.paid[0].reg, 92); assert.equal(cashCase.paid[0].hasToken, false); assert.equal(cashCase.paid[0].type, "Money Center");
 
+// Paying for a training receipt means the sale's lines ARE the receipt's lines, not one shared UPC.
+const longTrain = { items: [["PENS", "1", 447], ["LASHES", "2", 897], ["SPRAY", "3", 1098], ["BRUSH", "4", 800]].map(([desc, code, cents]) => ({ desc, code, cents })) };
+assert.equal(paysForTraining({ items: [{ desc: "PENS", code: "1", cents: 447 }, { desc: "SODA", code: "9", cents: 199 }] }, longTrain), false, "a basket with other items is a different customer");
+assert.equal(paysForTraining({ items: [{ desc: "PENS", code: "1", cents: 447 }] }, longTrain), false, "one line of four, 14% of the dollars, is not the payment");
+assert.equal(paysForTraining({ items: [{ desc: "SPRAY", code: "3", cents: 1098 }, { desc: "LASHES", code: "2", cents: 897 }] }, longTrain), true, "two of four lines pays");
+assert.equal(paysForTraining({ items: [{ desc: "SPRAY", code: "3", cents: 1098 }, { desc: "BRUSH", code: "4", cents: 800 }, { desc: "DEBIT LOAD", code: "s", cents: 3500, service: true }] }, longTrain), true, "money-service lines on the sale are ignored");
+assert.equal(paysForTraining({ items: [] }, longTrain), false);
+assert.equal(paysForTraining({ items: [{ desc: "PENS", code: "1", cents: 447 }] }, longTrain, { ...DEFAULT_OPTS, trainingMinCoverage: 0.2 }), true, "coverage threshold is an option");
+
 // Options are honoured
 const loose = analyzeDay(records, "2026-09-03", { ...DEFAULT_OPTS, minT2Cents: 0 });
 assert.equal(loose.pairs.length, 2, "dropping the $3 floor admits the gum");
@@ -113,3 +122,10 @@ assert.ok(vu.includes("startTime=2026-09-07T14%3A05%3A58") && vu.includes("endTi
 assert.equal(videoUrl("1458", 25, "2026-09-07", "bad"), null);
 assert.equal(videoUrl("1458", 25, "2026-09-07", "00:01:00").includes("2026-09-06T23%3A59%3A00"), true, "crosses midnight backwards");
 console.log("boblisa video.test: ok");
+
+// Operator names come from the day's sign-on banners, not from receipts.
+const signon = { transTime: 60000, opNum: 155, record: "****** 155    JANE DOE  ******\n   SIGN ON   06:00:00" };
+const named = analyzeDay([signon, ...records], "2026-09-03");
+assert.deepEqual(named.operators, { 155: "JANE DOE" });
+assert.deepEqual(analyzeDay(records, "2026-09-03").operators, {}, "no banner, no names");
+console.log("boblisa operators test: ok");

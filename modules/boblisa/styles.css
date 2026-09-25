@@ -36,6 +36,7 @@
 .module-boblisa .bl-tcard { background: var(--apai-bg-elev); border: 1px solid var(--apai-border-soft); border-top: 3px solid var(--apai-success); border-radius: var(--rad-md); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-sm); }
 .module-boblisa .bl-tcard-h { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--apai-ink-soft); }
 .module-boblisa .bl-tcard-items { margin-top: var(--sp-1); }
+.module-boblisa .bl-tcard .bl-doc-actions, .module-boblisa .bl-tcard .bl-docform, .module-boblisa .bl-tcard .bl-doc-card { margin-top: var(--sp-2); }
 .module-boblisa .bl-chain { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px dotted var(--apai-border-soft); font-size: var(--fs-sm); }
 .module-boblisa .bl-chain b { font-weight: var(--fw-semi); }
 
@@ -114,3 +115,30 @@
 .module-boblisa .bl-vidrow a.bl-muted { text-decoration: underline dotted; }
 .module-boblisa .bl-warn { color: var(--apai-warn); }
 .module-boblisa .bl-doc-td .bl-doc-actions { margin: 0; }
+
+/* review state: Clear / Undo on the row, cleared + documented rows out of the queue */
+.module-boblisa .bl-flags { white-space: nowrap; }
+.module-boblisa .bl-rowact { display: inline-flex; gap: var(--sp-1); margin-left: var(--sp-1); vertical-align: top; }
+.module-boblisa .bl-rowact .btn { padding-top: 0; padding-bottom: 0; }
+.module-boblisa .bl-row.bl-done td, .module-boblisa tr.bl-done td { color: var(--apai-muted); }
+.module-boblisa .bl-row.bl-done td .bl-money, .module-boblisa .bl-row.bl-done td .bl-reg { font-weight: var(--fw-regular); }
+.module-boblisa .bl-clrd { text-decoration: line-through; }
+.module-boblisa .bl-chip-r small { font-family: var(--font-mono); margin-left: 2px; }
+.module-boblisa .bl-chip-r[aria-pressed="true"] { background: var(--apai-ink-soft); border-color: var(--apai-ink-soft); color: var(--apai-bg); }
+
+/* cashier ledger tab */
+.module-boblisa .bl-cash-name { width: 14em; }
+.module-boblisa .bl-cashrow td { vertical-align: middle; }
+.module-boblisa .bl-events { width: 100%; font-size: var(--fs-sm); border-collapse: collapse; }
+.module-boblisa .bl-events th { text-align: left; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em; color: var(--apai-muted); padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--apai-border-soft); }
+.module-boblisa .bl-events td { padding: var(--sp-1) var(--sp-2); border-bottom: 1px dotted var(--apai-border-soft); }
+.module-boblisa .bl-events th.bl-num, .module-boblisa .bl-events td.bl-money { text-align: right; }
+.module-boblisa .bl-table tfoot td { border-top: 2px solid var(--apai-border); }
+
+/* the form's selects are wider than their grid cell by default and spill into the next one */
+.module-boblisa .bl-docform .bl-field { min-width: 0; }
+.module-boblisa .bl-docform select, .module-boblisa .bl-docform input, .module-boblisa .bl-docform textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+
+/* "Show more" row: pair tables render ROW_CAP rows at a time (view.js) */
+.module-boblisa .bl-more td { text-align: center; padding: var(--sp-3); }
+.module-boblisa .bl-more .bl-muted { margin-left: var(--sp-2); }

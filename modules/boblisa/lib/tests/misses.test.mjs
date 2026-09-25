@@ -13,9 +13,9 @@ const pair = {
 
 assert.equal(missedCents(pair), 4934, "missed $ = sum of second-transaction items");
 const note = draftNote(pair);
-assert.ok(note.startsWith("08/16/26 12:44: reg 17 (Manned), op 2920, TR 4587, 44 items $275.33."), note);
-assert.ok(note.includes("4 min later at reg 98 (Vision) TR 9391 for COORS LIGHT $24.67, COORS LIGHT $24.67."), note);
-assert.ok(note.includes("Training receipt printed 12:46 at reg 98 by op 6527."), note);
+assert.equal(note, "08/16/26 cashier op 2920 missed COORS LIGHT $24.67, COORS LIGHT $24.67 from BoB.", note);
+assert.equal(draftNote(pair, { cause: "inside_item", name: "Jane D" }), "08/16/26 cashier Jane D op 2920 missed COORS LIGHT $24.67, COORS LIGHT $24.67 from Lisa.");
+assert.equal(draftNote(pair, { cause: "other" }), "08/16/26 cashier op 2920 missed COORS LIGHT $24.67, COORS LIGHT $24.67.");
 
 const by = { win: "ses008s.s01458", displayName: "S Smith" };
 const now = new Date("2026-09-15T10:00:00Z");
@@ -65,3 +65,50 @@ assert.ok(lines[1].includes(`"${CAUSES.bottom_of_basket}","${OUTCOMES.training_r
 assert.ok(missesCsv([withVideo]).includes(`"${VIDEO_REVIEW.confirmed}","https://x/abc"`));
 assert.ok(csv.includes('"He said ""no"""'));
 console.log("boblisa misses.test: ok");
+
+// Cashier ledger: manned records only, count + second-transaction dollars per op,
+// events in date order, names remembered from the prior ledger.
+import { buildCashierLedger, ledgerRows, cashiersCsv, CASHIER_CSV_COLUMNS } from "../misses.js";
+const unmannedPair = { ...pair, key: "2026-08-22|31|500|17|600", date: "2026-08-22", category: "unmanned", t1: { ...pair.t1, reg: 31, type: "Self-checkout", op: "31" } };
+const ledgerRecords = { ...records, [unmannedPair.key]: buildRecord(unmannedPair, "1458", {}, by, null, now) };
+const ledger = buildCashierLedger(ledgerRecords, {}, now);
+assert.deepEqual(Object.keys(ledger).sort(), ["2920", "777"], "self-checkout first transactions charge nobody");
+assert.equal(ledger["2920"].count, 2); assert.equal(ledger["2920"].cents, 4934 + 3100); assert.equal(ledger["2920"].name, "Jane D");
+assert.deepEqual(ledger["2920"].events.map((e) => e.date), ["2026-08-16", "2026-08-20"]);
+assert.equal(ledger["2920"].events[0].items, "COORS LIGHT $24.67; COORS LIGHT $24.67"); assert.equal(ledger["2920"].events[0].training, true);
+assert.deepEqual(ledger["2920"].registers, [17]); assert.equal(ledger["2920"].updatedAt, now.toISOString());
+assert.equal(ledger["777"].name, "", "no name on the record and none remembered");
+const remembered = buildCashierLedger(ledgerRecords, { 777: { name: "Sam P" } }, now);
+assert.equal(remembered["777"].name, "Sam P", "a name typed once is kept for the op");
+assert.equal(buildCashierLedger({}, {}, now)["2920"], undefined, "removing every record empties the ledger");
+assert.deepEqual(ledgerRows(ledger).map((c) => c.op), ["2920", "777"]);
+const lcsv = cashiersCsv(ledger).split("\r\n");
+assert.equal(lcsv[0], CASHIER_CSV_COLUMNS.map((c) => `"${c}"`).join(","));
+assert.equal(lcsv.length, 3);
+assert.ok(lcsv[1].startsWith('"2920","Jane D","","2","80.34","2026-08-16","2026-08-20","17","1x Bottom of basket not checked; 1x Item inside another item or bag","2026-08-16 reg 17 TR 4587 $49.34 (COORS LIGHT $24.67; COORS LIGHT $24.67) | 2026-08-20'), lcsv[1]);
+console.log("boblisa cashier ledger test: ok");
+
+// Money-service lines (DEBIT LOAD, bill pay) are never the missed item: the
+// record's missed $, the note, the ledger and the CSV count merchandise only.
+import { missedItems } from "../misses.js";
+const mixedPair = { ...pair, key: "2026-08-23|17|700|31|800", date: "2026-08-23", training: false, trainingRef: null,
+  t2: { ...pair.t2, reg: 31, type: "Self-checkout", total: 10784, items: [{ desc: "MC BLACK", code: "9", cents: 784 }, { desc: "DEBIT LOAD", code: "8", cents: 10000, service: true }] } };
+assert.deepEqual(missedItems(mixedPair).map((i) => i.desc), ["MC BLACK"]);
+const mixedRec = buildRecord(mixedPair, "1458", { cashierName: "Jane D" }, by, null, now);
+assert.equal(mixedRec.missedCents, 784, "DEBIT LOAD is not merchandise");
+assert.equal(mixedRec.t2.items[1].service, true, "the service flag survives into the record");
+assert.ok(draftNote(mixedPair).includes("missed MC BLACK $7.84 from BoB.") && !draftNote(mixedPair).includes("DEBIT LOAD"), draftNote(mixedPair));
+const mixedLedger = buildCashierLedger({ [mixedRec.key]: mixedRec }, {}, now);
+assert.equal(mixedLedger["2920"].cents, 784); assert.equal(mixedLedger["2920"].events[0].items, "MC BLACK $7.84");
+assert.ok(missesCsv([mixedRec]).split("\r\n")[1].includes('"MC BLACK 7.84","7.84"'));
+console.log("boblisa money-service rule test: ok");
+
+// APPRISS employee block → operator name + WIN (lib/appriss_people.js).
+import { parseEmployee, journalEventUrl } from "../appriss_people.js";
+const ev = { data: { storecashierno: "5638", x_employeeid: "233359383", employee: { employeeid: "233359383", cashierno: "001458005638", operatorid: "M0C19P6", firstname: "MALEIGHA", lastname: "CLOWDUS", operatorrole: "FRONT END TA SERV", x_storecashierno: "5638" } } };
+assert.deepEqual(parseEmployee(ev), { op: "5638", first: "MALEIGHA", last: "CLOWDUS", name: "MALEIGHA CLOWDUS", win: "233359383", userId: "M0C19P6", role: "FRONT END TA SERV" });
+assert.equal(parseEmployee({ data: { storecashierno: "1" } }), null);
+assert.ok(journalEventUrl("2608160458742638422").endsWith("/platform/viewer/store/api/v1/journal/event/2608160458742638422?connectionName=pos-data"));
+const withWin = cashiersCsv({ 2920: { ...ledger["2920"], win: "233359383" } }).split("\r\n")[1];
+assert.ok(withWin.startsWith('"2920","Jane D","233359383","2"'), withWin);
+console.log("boblisa appriss people test: ok");

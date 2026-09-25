@@ -23,7 +23,7 @@
 //
 // Pure — no DOM, no chrome.*, safe in the SW, the shell and node.
 
-import { parseReceipt } from "../../registerls/lib/ej_parse.js";
+import { parseReceipt, operatorNames } from "../../registerls/lib/ej_parse.js";
 import { DEFAULT_REGISTERS, registerType, isManned, isVision } from "./registers.js";
 
 export const DEFAULT_OPTS = Object.freeze({
@@ -32,6 +32,10 @@ export const DEFAULT_OPTS = Object.freeze({
   maxT2Items: 4,          // "fewer than 5"
   minT2Cents: 300,        // gum and drinks get rung separately
   trainingWindowSec: 15 * 60,
+  // A sale pays for a training receipt only when every merchandise line on
+  // it is on the receipt AND those lines cover at least this share of the
+  // receipt's lines or dollars (user, 2026-09-17: one shared UPC is not paid).
+  trainingMinCoverage: 0.5,
   // Same register, second sale under 2 minutes later: one customer paying in
   // two rings (split tender, forgot an item at the belt), not a door catch.
   sameRegisterMinGapSec: 2 * 60,
@@ -95,6 +99,27 @@ export function compactRecords(records) {
 
 const money = (c) => Number(c) || 0;
 
+/**
+ * Does `sale` pay for `training`? Sharing one UPC is not enough: a 17-line
+ * $130 training receipt was once "paid" by a stranger's $20 basket that
+ * happened to hold the same pens. Every merchandise line on the sale must be
+ * on the training receipt, and together they must cover at least
+ * `trainingMinCoverage` of its lines or of its dollars. Money-service lines
+ * on the sale are ignored like everywhere else.
+ */
+export function paysForTraining(sale, training, o = DEFAULT_OPTS) {
+  const tItems = training?.items || [];
+  const merch = (o.skipServices ?? true) ? (sale?.items || []).filter((it) => !it.service) : (sale?.items || []);
+  if (!merch.length || !tItems.length) return false;
+  const codes = new Set(tItems.map((it) => it.code));
+  if (!merch.every((it) => codes.has(it.code))) return false;
+  const trainCents = tItems.reduce((s, it) => s + money(it.cents), 0);
+  const lines = merch.length / tItems.length;
+  const dollars = trainCents ? merch.reduce((s, it) => s + money(it.cents), 0) / trainCents : 0;
+  const min = o.trainingMinCoverage ?? 0.5;
+  return lines >= min || dollars >= min;
+}
+
 function scorePair(t1, t2, { training, vision, repeat }, regCfg) {
   let s = 0;
   if (t2.reg === t1.reg) s += 2;
@@ -136,7 +161,7 @@ export function findPairs(tx, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAULT_REG
       if (t2Value < o.minT2Cents) continue;
       const t1codes = new Set(t1.items.map((x) => x.code));
       const repeat = t2.items.filter((x) => t1codes.has(x.code)).length;
-      const train = trainings.find((x) => Math.abs(x.t - t2.t) <= o.trainingWindowSec && x.items.some((it) => t2.items.some((j) => j.code === it.code)));
+      const train = trainings.find((x) => Math.abs(x.t - t2.t) <= o.trainingWindowSec && paysForTraining(t2, x, o));
       const vision = isVision(t2.reg, regCfg);
       const flags = { training: !!train, vision, repeat };
       pairs.push({
@@ -160,7 +185,7 @@ export function findPairs(tx, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAULT_REG
 
 /**
  * Training receipts for one day, each traced to the paid sale that carries
- * the same UPC (any tender — this is how cash customers get in) and, when
+ * its lines (paysForTraining; any tender — this is how cash customers get in) and, when
  * that sale has a token, back to the customer's earlier transaction.
  */
 export function findTrainings(tx, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAULT_REGISTERS) {
@@ -168,8 +193,7 @@ export function findTrainings(tx, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAULT
   const out = [];
   for (const tr of tx) {
     if (!tr.isTraining || !tr.items.length) continue;
-    const codes = new Set(tr.items.map((i) => i.code));
-    const paid = tx.filter((x) => !x.isTraining && x.isSale && Math.abs(x.t - tr.t) <= o.trainingWindowSec && x.items.length <= o.maxT2Items && x.items.some((i) => codes.has(i.code)));
+    const paid = tx.filter((x) => !x.isTraining && x.isSale && Math.abs(x.t - tr.t) <= o.trainingWindowSec && paysForTraining(x, tr, o));
     out.push({
       key: `${dateIso}|train|${tr.reg}|${tr.tr}`,
       date: dateIso, time: tr.time, reg: tr.reg, op: tr.op, tr: tr.tr,
@@ -192,5 +216,9 @@ export function analyzeDay(records, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAU
     stats: { records: Array.isArray(records) ? records.length : (records?.records?.length || 0), transactions: tx.length, sales: sales.length, tokenedSales: sales.filter((x) => x.token).length },
     pairs: findPairs(tx, dateIso, opts, regCfg),
     trainings: findTrainings(tx, dateIso, opts, regCfg),
+    // op number → name from the day's sign-on banners (the register L/S triage
+    // reads the same banners); the service worker merges these per store so
+    // the cashier ledger and the miss form can name the operator.
+    operators: operatorNames(records),
   };
 }
