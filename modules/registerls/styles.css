@@ -74,6 +74,10 @@
 .module-registerls .rls-why-h { font-size: var(--fs-xs); font-weight: var(--fw-semi); text-transform: uppercase; letter-spacing: .04em; color: var(--apai-muted); margin-bottom: var(--sp-1); }
 .module-registerls .rls-why ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: var(--fs-sm); }
 .module-registerls .rls-why li.w-video { font-weight: var(--fw-semi); }
+.module-registerls .rls-why li.w-recurring { color: var(--apai-error); font-weight: var(--fw-semi); }
+.module-registerls .rls-row-recur { color: var(--apai-error); font-size: var(--fs-xs); }
+.module-registerls .rls-recur-table tr.is-hot td { background: var(--apai-error-bg); }
+.module-registerls .rls-recur-link { white-space: nowrap; }
 .module-registerls .rls-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
 .module-registerls .rls-actions .rls-links { margin-left: auto; font-size: var(--fs-sm); color: var(--apai-muted); }
 .module-registerls .rls-sources { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; font-size: var(--fs-xs); }
@@ -158,3 +162,25 @@
 /* "This was the cause" — the analyst's pick, shown beside the reason picker */
 .module-registerls .rls-cause-chip { display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--warn, #b7791f) 14%, transparent); font-size: var(--fs-sm); }
 .module-registerls [data-action="cause-tx"] { margin-left: var(--sp-2); }
+
+/* Queue banner when the open-time WorkView pull failed: the list on screen is
+   the previous pull and may still hold items dispositioned in APPRISS. */
+.module-registerls .rls-stale { margin: var(--sp-2) var(--sp-3); padding: var(--sp-2) var(--sp-3); background: var(--apai-warn-bg); border: 1px solid #FCD34D; border-radius: 6px; color: #92400E; font-size: var(--fs-xs); }
+.module-registerls .rls-stale a { color: inherit; text-decoration: underline; }
+
+/* Register map card + role tags on queue rows */
+.module-registerls .rls-registers { padding: var(--sp-3) var(--sp-4); }
+.module-registerls .rls-registers summary { cursor: pointer; display: flex; gap: var(--sp-2); align-items: baseline; flex-wrap: wrap; }
+.module-registerls .rls-registers-body { padding-top: var(--sp-3); display: grid; gap: var(--sp-3); }
+.module-registerls .rls-registers-table td, .module-registerls .rls-registers-table th { text-align: left; vertical-align: middle; }
+.module-registerls .rls-registers-table tr.is-analyst td { background: var(--apai-warn-bg); }
+.module-registerls .rls-role-select { padding: 2px var(--sp-2); font-size: var(--fs-xs); }
+.module-registerls .rls-role { font-size: var(--fs-xs); color: var(--apai-muted); font-weight: normal; margin-left: 4px; }
+
+/* Unpaid training receipt form (cashiers card) */
+.module-registerls .rls-receipt-form { margin-top: var(--sp-4); padding: var(--sp-3); border: 1px dashed var(--apai-border, #d1d5db); border-radius: 6px; display: grid; gap: var(--sp-2); }
+.module-registerls .rls-receipt-fields { display: flex; gap: var(--sp-2); align-items: end; flex-wrap: wrap; }
+.module-registerls .rls-receipt-fields label { display: grid; gap: 2px; font-size: var(--fs-xs); }
+.module-registerls .rls-receipt-reg { width: 5em; }
+.module-registerls .rls-receipt-amt { width: 7em; }
+.module-registerls .rls-receipt-note { flex: 1 1 14em; }

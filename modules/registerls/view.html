@@ -38,6 +38,11 @@
 
   <div class="rls-summary" data-summary></div>
 
+  <details class="rls-recurring card" data-recurring hidden open>
+    <summary><span class="card-title">Recurring operators on open shortages — look here for theft</span> <span class="rls-muted" data-recurring-meta></span></summary>
+    <div class="rls-recurring-body" data-recurring-body></div>
+  </details>
+
   <details class="rls-cashiers card" data-cashiers hidden>
     <summary><span class="card-title">Cashiers — errors by associate</span> <span class="rls-muted" data-cashiers-meta></span>
       <span class="rls-cashiers-actions">
@@ -48,6 +53,20 @@
       </span>
     </summary>
     <div class="rls-cashiers-body" data-cashiers-body></div>
+    <form class="rls-receipt-form" data-receipt-form>
+      <div class="rls-receipt-head"><strong>Attach an unpaid training receipt</strong> <span class="rls-muted">A receipt printed in training mode that the customer never really paid. Charged to the associate as an event; the receipt number keeps it from being attached twice.</span></div>
+      <div class="rls-receipt-fields">
+        <label><span class="rls-muted">WIN</span><input class="input" name="associateId" list="rls-receipt-wins" placeholder="WIN" required></label>
+        <datalist id="rls-receipt-wins" data-receipt-wins></datalist>
+        <label><span class="rls-muted">Name</span><input class="input" name="associate" placeholder="Last, First"></label>
+        <label><span class="rls-muted">Date</span><input class="input" type="date" name="date" required></label>
+        <label><span class="rls-muted">Register</span><input class="input rls-receipt-reg" name="register" placeholder="reg"></label>
+        <label><span class="rls-muted">Amount</span><input class="input rls-receipt-amt" type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required></label>
+        <label><span class="rls-muted">Receipt TC# / TR#</span><input class="input" name="receipt" placeholder="TC# or TR#" required></label>
+        <label class="rls-receipt-note"><span class="rls-muted">Note</span><input class="input" name="note" placeholder="What happened"></label>
+        <button class="btn btn-sm btn-primary" type="submit"><span class="btn-label">Attach to cashier</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>
+      </div>
+    </form>
   </details>
 
   <details class="rls-pantrylist card" data-pantrylist>
@@ -63,6 +82,14 @@
           <button class="btn btn-sm btn-secondary" type="button" data-action="pantry-reanalyze" title="Re-run every open item against the updated list"><span class="btn-label">Re-analyze with this list</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>
         </div>
       </form>
+    </div>
+  </details>
+
+  <details class="rls-registers card" data-registers hidden>
+    <summary><span class="card-title">Register map — what each register is at this store</span> <span class="rls-muted" data-registers-meta></span></summary>
+    <div class="rls-registers-body">
+      <div class="rls-muted">Layouts differ store to store. The till log names most registers (SCO, FRONT END, CUSTOMER SERVICE, PHARMACY…); registers 61–64 default to the money center and 92–94 to the service desk when the log does not say; a department label from the log is shown but ranks below those defaults because it goes stale when a register is moved. Correct any register here — your choice is kept for this store. The service desk is what the matcher lets pair with any register store-wide.</div>
+      <div data-registers-table></div>
     </div>
   </details>
 

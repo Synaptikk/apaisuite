@@ -38,6 +38,7 @@ export const ERROR_TYPES = {
   override:           "Check-in override on a discrepancy day",
   flip_checkin:       "Checked tills in to the wrong registers",
   cause_tx:           "Shortage traced to their transaction",
+  training_receipt:   "Unpaid training receipt",   // attached by the analyst (add_training_receipt), never derived
 };
 
 export function buildLedger({ items = [], verdicts = {}, tillRows = [], discrepancies = [], counterparts = {}, causes = {} } = {}) {

@@ -18,6 +18,7 @@
 import { completedCash, investigate, storeUseBasket } from "./investigation.js";
 
 import { safeReasonFor } from "./reasons.js";
+import { SERVICE_DESK_REGISTERS } from "./match_opts.js";
 import { linkVideo } from "./open_drawer.js";
 
 export const DEFAULT_CFG = {
@@ -58,21 +59,32 @@ export function findCounterpartFinding(findings, item) {
 // Discrepancies the engine should score: Power BI cells plus the WorkView
 // items themselves (every long/short work item IS a register-day amount, and
 // WorkView reaches further back than the report's ~60-day retention). Grid
-// cells win on a key collision because they carry operator shifts.
+// cells win on a key collision because they carry operator shifts — but when
+// WorkView raised the item at a different amount (reg 11 07-22: raised
+// -$13,023, finalized -$1,735) the raised figure rides along as
+// `raisedAmountCents`, because a cash-office event can close out against the
+// amount the item was RAISED at, not the reconciled one.
 export function unionDiscrepancies(gridDiscrepancies, queueItems, storeNbr) {
   const out = [];
-  const seen = new Set();
+  const byKey = new Map();
   for (const d of gridDiscrepancies || []) {
     const k = `${d.registerNbr}|${d.date}`;
-    if (seen.has(k)) continue;
-    seen.add(k); out.push(d);
+    if (byKey.has(k)) continue;
+    byKey.set(k, d); out.push(d);
   }
   for (const q of queueItems || []) {
     if (!q.register || !q.date || q.amountCents == null || q.amountCents === 0) continue;
     const k = `${q.register}|${q.date}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ storeNbr: String(q.store || storeNbr || ""), date: q.date, registerNbr: String(q.register), amountCents: q.amountCents, type: q.amountCents < 0 ? "short" : "over", amountAbsCents: Math.abs(q.amountCents), operators: [], _source: { module: "registerls", sourceMethod: "workview-item", workItemId: q.id } });
+    const cell = byKey.get(k);
+    if (cell) {
+      if (cell.raisedAmountCents == null && cell.amountCents !== q.amountCents) {
+        const withRaised = { ...cell, raisedAmountCents: q.amountCents, raisedWorkItemId: q.id };
+        byKey.set(k, withRaised); out[out.indexOf(cell)] = withRaised;
+      }
+      continue;
+    }
+    const d = { storeNbr: String(q.store || storeNbr || ""), date: q.date, registerNbr: String(q.register), amountCents: q.amountCents, type: q.amountCents < 0 ? "short" : "over", amountAbsCents: Math.abs(q.amountCents), operators: [], _source: { module: "registerls", sourceMethod: "workview-item", workItemId: q.id } };
+    byKey.set(k, d); out.push(d);
   }
   return out;
 }
@@ -229,6 +241,10 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   const isOver = (item.amountCents ?? discrepancy?.amountCents ?? 0) > 0;
   const m = finding?.matchedAgainst?.[0];
   const conf = finding?.flipConfidence ?? 0;
+  // Tier 1 pairs are exact neighbours (or service desk); tiers 2 and 3
+  // (near-miss, same-day far apart) are offered for review, never filed.
+  // A dead heat for one overage (two equal shortages) is never filed either.
+  const loose = (finding?.tier ?? 1) >= 2 || !!finding?.tie;
 
   if (!isOver && advFlip) {
     const a = advFlip.advance, o = advFlip.landedOn;
@@ -239,7 +255,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     // `finding` is the shortage's finding whose match is this overage.
     const p = { registerNbr: finding.primaryRegister, date: finding.primaryDate, amountCents: finding.primaryAmountCents };
     const same = finding.matchType === "same-register-bounceback";
-    const tight = amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, p.amountCents, cfg) && finding.tier !== 2;
+    const tight = amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, p.amountCents, cfg) && !loose;
     if (conf >= cfg.trustFlipAt && tight) {
       verdict = same ? "bounceback" : "flip"; verdictLabel = same ? "Bounceback (overage side) — nothing found" : "Till flip (overage side) — nothing found"; severity = "low";
       reason = `This ${amtText} on reg ${reg} is the other half of reg ${p.registerNbr} ${fmtShortOver(p.amountCents)} on ${p.date} (${Math.round(conf * 100)}% confidence).`;
@@ -256,17 +272,17 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     verdict = "unmatched_over"; verdictLabel = "Unmatched overage — review"; severity = abs >= 100000 ? "high" : abs >= 10000 ? "medium" : "low";
     reason = (finding || discrepancy || (item.amountCents != null)) ? `No shortage on a neighbouring register or on this register nearby offsets this ${amtText} on ${date}.` : `No data to match this overage against.`;
     dispositionText = "";
-  } else if (finding && finding.matchType === "nearby-register-offset" && conf >= cfg.trustFlipAt && finding.tier !== 2 && amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg)) {
+  } else if (finding && finding.matchType === "nearby-register-offset" && conf >= cfg.trustFlipAt && !loose && amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg)) {
     verdict = "flip"; verdictLabel = "Till flip — nothing found"; severity = "low";
     reason = `Reg ${reg} ${amtText} on ${date} is offset by reg ${m.registerNbr} ${fmtShortOver(m.amountCents)} on ${m.date} (${Math.round(conf * 100)}% confidence).`;
     dispositionText = `Nothing found — till flip. Register ${reg} ${amtText} on ${date} offsets register ${m.registerNbr} ${fmtShortOver(m.amountCents)} on ${m.date}; tills checked in against each other. Offsetting entries, no loss.`;
-  } else if (finding && finding.matchType === "same-register-bounceback" && conf >= cfg.trustFlipAt && finding.tier !== 2 && amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg)) {
+  } else if (finding && finding.matchType === "same-register-bounceback" && conf >= cfg.trustFlipAt && !loose && amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg)) {
     verdict = "bounceback"; verdictLabel = "Bounceback — nothing found"; severity = "low";
     reason = `Reg ${reg} ${amtText} on ${date} reverses on ${m.date} (${fmtShortOver(m.amountCents)}, ${Math.round(conf * 100)}% confidence).`;
     dispositionText = `Nothing found — drawer count corrected. Register ${reg} ${amtText} on ${date}, ${fmtShortOver(m.amountCents)} on ${m.date}. Same register, offsetting entries, no loss.`;
   } else if (finding && finding.matchType !== "none") {
     const gap = Math.abs(Math.abs(item.amountCents ?? discrepancy?.amountCents ?? 0) - Math.abs(m.amountCents));
-    const tight = amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg) && finding.tier !== 2;
+    const tight = amountsCancel(item.amountCents ?? discrepancy?.amountCents ?? 0, m.amountCents, cfg) && !loose;
     verdict = "suspect_flip"; verdictLabel = "Weak offset — review"; severity = "medium";
     reason = !tight
       ? `Reg ${m.registerNbr} ${fmtShortOver(m.amountCents)} on ${m.date} looks like the other half, but the amounts are ${fmtMoney(gap)} apart — if it is the same pair, ${fmtMoney(gap)} is still unexplained.`
@@ -280,6 +296,18 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     verdict = "no_grid"; verdictLabel = "No Power BI cell — review"; severity = abs >= 10000 ? "high" : "medium";
     reason = `Power BI has no long/short cell for reg ${reg} on ${date} (grid not pulled or the day is outside the report window). Offset detection could not run.`;
     dispositionText = "";
+  }
+
+  if (verdict === "suspect_flip" && finding?.tie) {
+    const o = isOver ? { registerNbr: finding.primaryRegister, date: finding.primaryDate, amountCents: finding.primaryAmountCents } : m;
+    const rivals = (finding.alsoWanted || []).filter((l) => l.tie && !l.pairedWith).map((l) => `reg ${l.registerNbr} ${fmtShortOver(l.amountCents)} on ${l.date}`).join(", ");
+    reason = isOver
+      ? `Reg ${o.registerNbr} ${fmtShortOver(o.amountCents)} on ${o.date} is one half of this ${amtText}, but ${rivals} is an equally good match for it. One overage closes one shortage — decide which one before filing.`
+      : `Reg ${o.registerNbr} ${fmtShortOver(o.amountCents)} on ${o.date} offsets this ${amtText}, but ${rivals} is an equally good match for that overage. One overage closes one shortage — decide which one before filing.`;
+  } else if (verdict === "suspect_flip" && finding?.pairing === "same_day_far") {
+    const o = isOver ? { registerNbr: finding.primaryRegister, amountCents: finding.primaryAmountCents } : m;
+    const gap = Math.abs(Math.abs(item.amountCents ?? discrepancy?.amountCents ?? 0) - Math.abs(o.amountCents));
+    reason = `Reg ${o.registerNbr} ${fmtShortOver(o.amountCents)} the same day is probably the other half of this ${amtText}${gap ? ` (${fmtMoney(gap)} apart)` : ""} — same date, similar total — but registers ${reg} and ${o.registerNbr} are not neighbours, so it is offered for review, not filed.`;
   }
 
   // A pantry run cashed out without a CFT is the cause, found: the register
@@ -308,10 +336,13 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   let comboShort = null;
   if (combo?.combo && ["unmatched", "unmatched_over", "no_grid"].includes(verdict)) {
     const c = combo.combo;
-    const ent = (r, d, a) => `reg ${r} ${fmtShortOver(a)} on ${d}`;
-    const primary = ent(c.primaryRegister, c.primaryDate, c.primaryAmountCents);
-    const others = c.parts.filter((x) => !(x.registerNbr === String(reg) && x.date === date)).map((x) => ent(x.registerNbr, x.date, x.amountCents)).join(" + ");
-    const all = c.parts.map((x) => ent(x.registerNbr, x.date, x.amountCents)).join(" + ");
+    // A part (or the primary) matched at the amount WorkView raised it at
+    // rather than the Power BI finalized figure says so, with both numbers.
+    const raisedNote = (basis, gridAmt) => (basis === "workview" ? ` (as WorkView raised it; Power BI finalized ${fmtShortOver(gridAmt)})` : "");
+    const ent = (r, d, a, basis, gridAmt) => `reg ${r} ${fmtShortOver(a)} on ${d}${raisedNote(basis, gridAmt)}`;
+    const primary = ent(c.primaryRegister, c.primaryDate, c.primaryAmountCents, c.primaryBasis, c.primaryGridAmountCents);
+    const others = c.parts.filter((x) => !(x.registerNbr === String(reg) && x.date === date)).map((x) => ent(x.registerNbr, x.date, x.amountCents, x.basis, x.gridAmountCents)).join(" + ");
+    const all = c.parts.map((x) => ent(x.registerNbr, x.date, x.amountCents, x.basis, x.gridAmountCents)).join(" + ");
     // The search ran on the Power BI finalized figure for this register-day.
     // When WorkView raised the item at a different amount (reg 11 07-22:
     // WorkView -$13,023, Power BI -$1,735, parts +$1,505 +$247) the parts add
@@ -408,13 +439,44 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
   } else {
     why.push({ kind: "nogrid", text: `No long/short data to match this register-day against.` });
   }
+  // How the two halves were allowed to meet (analyst rules, 2026-09-16):
+  // the service desk fixes other registers, so it pairs store-wide; two far
+  // registers with similar totals on the same day are probably a flip but
+  // are only ever offered, never filed.
+  if (finding && finding.matchType !== "none" && (finding.pairing === "service_desk" || finding.pairing === "same_day_far")) {
+    const other = isOver ? String(finding.primaryRegister) : String(m?.registerNbr ?? "");
+    if (finding.pairing === "service_desk") {
+      const wide = cfg.wideRegisters || SERVICE_DESK_REGISTERS;
+      const sd = wide.some((w) => String(w) === String(reg)) ? reg : other;
+      why.push({ kind: "pairing", text: `Reg ${sd} is the service desk, which is used to fix errors keyed on other manned registers — a service-desk entry can offset any register in the store, not only a neighbour.` });
+    } else {
+      why.push({ kind: "pairing", text: `Reg ${reg} and reg ${other} are not neighbours, but the totals are similar on the same day — probably a flip. Far pairs are offered for review, never filed: confirm the check-ins in the till log first.` });
+    }
+  }
+  // One overage closes one shortage. Say what was contested and who kept it.
+  const ct = finding?.contested;
+  if (ct && !isOver) {
+    const kept = `reg ${ct.wonBy.registerNbr} ${fmtShortOver(ct.wonBy.amountCents)} on ${ct.wonBy.date}`;
+    const mineNow = finding.matchType !== "none" && m ? ` This item is paired with reg ${m.registerNbr} ${fmtShortOver(m.amountCents)} on ${m.date} instead.` : " Nothing else offsets it, so it stays open.";
+    why.push({ kind: "contested", text: `Reg ${ct.registerNbr} ${fmtShortOver(ct.amountCents)} on ${ct.date} would have offset this, but it is already the other half of ${kept}${ct.tie ? " (an equal claim — the lower register number kept it)" : " (the better claim: nearer register, closer amount)"}. One overage closes one shortage.${mineNow}` });
+  }
+  if (finding?.alsoWanted?.length && finding.matchType !== "none") {
+    const others = finding.alsoWanted.map((l) => `reg ${l.registerNbr} ${fmtShortOver(l.amountCents)} on ${l.date}${l.pairedWith ? ` (now paired with reg ${l.pairedWith.registerNbr} on ${l.pairedWith.date})` : ""}`).join(", ");
+    const over = isOver ? `this overage` : `the ${fmtShortOver(m.amountCents)} on reg ${m.registerNbr} (${m.date})`;
+    why.push({ kind: "also_wanted", text: `${others} also matched ${over}. It closes only one shortage; it went to reg ${finding.primaryRegister}${finding.tie ? " on a tie — confirm which one before filing" : " on the better claim"}.` });
+  }
+  if (finding?.locked) why.push({ kind: "locked", text: `You already filed this pair (reg ${finding.primaryRegister} ${fmtShortOver(finding.primaryAmountCents)} on ${finding.primaryDate} with reg ${finding.matchedAgainst[0].registerNbr} ${fmtShortOver(finding.matchedAgainst[0].amountCents)} on ${finding.matchedAgainst[0].date}); the pairing is kept so no other shortage can claim either half.` });
   if (verdict === "suspect_combo") why.push({ kind: "combo", text: reason.split(" Amounts this size")[0] + (combo?.combo?.sameRegister ? " Same register on consecutive days — a count corrected on the later day." : ".") });
   // WorkView carries the amount the item was raised at; Power BI carries the
   // finalized long/short. When they differ, matching used Power BI and the
   // analyst must know the queue's figure is not the reconciled one.
   const gridAmt = discrepancy && discrepancy._source?.sourceMethod !== "workview-item" ? discrepancy.amountCents : null;
   if (gridAmt != null && item.amountCents != null && Math.abs(gridAmt - item.amountCents) > tolerance(Math.max(Math.abs(gridAmt), Math.abs(item.amountCents)), cfg)) {
-    why.unshift({ kind: "amount_differs", text: `WorkView carries this item at ${fmtShortOver(item.amountCents)}, but Power BI's finalized long/short for reg ${reg} on ${date} is ${fmtShortOver(gridAmt)}. Offsets were matched on the Power BI figure; the WorkView amount is what the item was raised at.` });
+    const mineBasis = combo?.combo ? (combo.role === "primary" ? combo.combo.primaryBasis : combo.combo.parts.find((x) => x.registerNbr === String(reg) && x.date === date)?.basis) : null;
+    const matchedOn = verdict === "suspect_combo" && mineBasis === "workview"
+      ? "One-to-one offsets were matched on the Power BI figure; the multi-entry offset below closes out the WorkView amount, the one the item was raised at."
+      : "Offsets were matched on the Power BI figure; the WorkView amount is what the item was raised at.";
+    why.unshift({ kind: "amount_differs", text: `WorkView carries this item at ${fmtShortOver(item.amountCents)}, but Power BI's finalized long/short for reg ${reg} on ${date} is ${fmtShortOver(gridAmt)}. ${matchedOn}` });
   }
   if (verdict === "outside_window") why.splice(0, 1, { kind: "outside", text: reason.split(" Only other open")[0] + " Only open WorkView items could be matched against it; a closed or never-opened offset would not show." });
   if (ej && !isOver) {
@@ -489,6 +551,7 @@ export function buildEvidence({ item, finding = null, discrepancy = null, ledger
     matchType: finding?.matchType ?? null,
     matchedAgainst: finding?.matchedAgainst ?? [],
     videoCandidates, cashMatches: matches, operators: ops, combo: combo?.combo || null, comboShort, gridAmountCents: gridAmt,
+    contested: finding?.contested || null, alsoWanted: finding?.alsoWanted || null, tie: !!finding?.tie, locked: !!finding?.locked,
     drawer: drawerRows ? { rows: drawerRows, count: drawerRows.length, explorerUrl: drawer.explorerUrl || null } : null,
     cashOut,
     cftNear, cftTx,

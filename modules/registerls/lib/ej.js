@@ -44,7 +44,7 @@ export function buildReceiptsBody(token, { registerNumber = "", operatorNumber =
 // The two-call sequence, written so it can run either in the SW (called
 // directly) or inside a tab (serialised by chrome.scripting.executeScript —
 // hence no closures over module scope).
-async function pullReceipts({ origin, url, registerNumber, currentDate }) {
+async function pullReceipts({ origin, url, registerNumber, currentDate, operatorNumber = "" }) {
   const out = { ok: false };
   try {
     const t = await fetch(`${origin}/api/v1/isp-token`, { credentials: "include", headers: { accept: "application/json, text/plain, */*" } });
@@ -54,7 +54,7 @@ async function pullReceipts({ origin, url, registerNumber, currentDate }) {
     try { token = JSON.parse(tText)?.data?.ispToken || null; } catch {}
     if (!token) return out;
     const corr = (globalThis.crypto?.randomUUID?.()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const body = { "isp-token": token, currentDate, registerNumber, transactionNumber: "", operatorNumber: "", tcNumber: "", startTime: "", stopTime: "" };
+    const body = { "isp-token": token, currentDate, registerNumber, transactionNumber: "", operatorNumber: String(operatorNumber || ""), tcNumber: "", startTime: "", stopTime: "" };
     const r = await fetch(url, {
       method: "POST", credentials: "include",
       headers: { "content-type": "application/json", accept: "application/json, text/plain, */*", "correlation-id": corr },
@@ -99,11 +99,15 @@ async function pullInTab(tabId, args) {
   return inj?.result || { ok: false, error: "no result from tab" };
 }
 
-export async function fetchReceipts(site, dateIso, registerNbr, { allowTabFallback = true, session = null } = {}) {
+// `operatorNumber` narrows the day to one operator (registerNbr "" = every
+// register): ~75 records / 2.5 s for a cashier-day, banners included — how
+// boblisa names an operator APPRISS has no drawer open for (2026-09-16).
+export async function fetchReceipts(site, dateIso, registerNbr, { allowTabFallback = true, session = null, operatorNumber = "" } = {}) {
   const args = {
     origin: EJ_ORIGIN,
     url: ejReceiptsUrl(site, dateIso),
     registerNumber: String(registerNbr || ""),
+    operatorNumber: String(operatorNumber || ""),
     currentDate: isoToEjDate(new Date().toISOString().slice(0, 10)),
   };
   let res, via;

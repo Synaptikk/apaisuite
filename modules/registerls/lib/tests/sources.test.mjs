@@ -691,3 +691,192 @@ test("multi-entry offsets prefer the same register; a part looks up its own regi
   const wv = { ...d("11", "2026-07-22", -13023), _source: { module: "registerls", sourceMethod: "workview-item" } };
   assert.ok(!buildEvidence({ item: { id: "q", register: "11", date: "2026-07-22", amountCents: -1302300, amountAbsCents: 1302300, sourceAppId: "overshort" }, discrepancy: wv }).why.some((w) => w.kind === "amount_differs"));
 });
+
+test("multi-entry offsets close out against the amount WorkView raised an item at when Power BI finalized it differently (reg 18 2026-07-23, live shape)", () => {
+  const d = (registerNbr, date, dollars) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: [], _source: { module: "livedashboard", sourceMethod: "powerbi" } });
+  // Power BI finalized reg 11 07-22 at -$1,735; WorkView raised the item at -$13,023.
+  const grid = [d("18", "2026-07-23", 38812), d("18", "2026-07-21", -26016.82), d("11", "2026-07-22", -1735), d("13", "2026-07-23", 1505), d("68", "2026-07-24", 247)];
+  const queue = [
+    { id: "w18o", store: "1458", register: "18", date: "2026-07-23", amountCents: 3881200 },
+    { id: "w18s", store: "1458", register: "18", date: "2026-07-21", amountCents: -2601682 },
+    { id: "w11",  store: "1458", register: "11", date: "2026-07-22", amountCents: -1302300 },
+  ];
+  const disc = unionDiscrepancies(grid, queue, "1458");
+  assert.equal(disc.length, 5, "grid cells win the collision");
+  const r11 = disc.find((x) => x.registerNbr === "11");
+  assert.equal(r11.amountCents, -173500); assert.equal(r11.raisedAmountCents, -1302300); assert.equal(r11.raisedWorkItemId, "w11");
+  assert.equal(disc.find((x) => x.registerNbr === "18" && x.date === "2026-07-23").raisedAmountCents, undefined, "same amount: nothing to carry");
+  const findings = tieredMatching(disc);
+  const combos = comboOffsets(disc, findings);
+  // Reg 18's overage: reg 18's own shortage + reg 11 at the RAISED figure.
+  const c18 = combos.find((c) => c.primaryRegister === "18" && c.primaryDate === "2026-07-23");
+  assert.ok(c18, "reg 18 overage is explained");
+  assert.deepEqual(c18.parts.map((p) => `${p.registerNbr}|${p.date}|${p.amountCents}|${p.basis}`).sort(), ["11|2026-07-22|-1302300|workview", "18|2026-07-21|-2601682|grid"]);
+  assert.equal(c18.residualCents, 22782);
+  assert.equal(c18.parts.find((p) => p.registerNbr === "11").gridAmountCents, -173500);
+  // One entry never contributes both figures to a set.
+  for (const c of combos) assert.equal(new Set(c.parts.map((p) => `${p.registerNbr}|${p.date}`)).size, c.parts.length);
+  // Overage side.
+  const over = { id: "w18o", register: "18", date: "2026-07-23", amountCents: 3881200, amountAbsCents: 3881200, sourceAppId: "overshort" };
+  const evO = buildEvidence({ item: over, discrepancy: disc[0], combo: findComboFor(combos, over) });
+  assert.equal(evO.verdict, "suspect_combo");
+  assert.match(evO.reason, /reg 18 \$26016\.82 short on 2026-07-21 \+ reg 11 \$13023\.00 short on 2026-07-22 \(as WorkView raised it; Power BI finalized \$1735\.00 short\) add up to \$39039\.82 short — \$227\.82 from this amount/);
+  assert.equal(evO.suggestion.safe, false);
+  // Reg 18's own shortage is a part of the same set.
+  const short18 = { id: "w18s", register: "18", date: "2026-07-21", amountCents: -2601682, amountAbsCents: 2601682, sourceAppId: "overshort" };
+  const p18 = findComboFor(combos, short18);
+  assert.equal(p18.role, "part"); assert.equal(p18.combo, c18);
+  const evS = buildEvidence({ item: short18, finding: findings.find((f) => f.primaryRegister === "18"), discrepancy: disc[1], combo: p18 });
+  assert.equal(evS.verdict, "suspect_combo");
+  assert.match(evS.reason, /together with reg 11 \$13023\.00 short on 2026-07-22 \(as WorkView raised it; Power BI finalized \$1735\.00 short\) it adds up to \$39039\.82 short, \$227\.82 from reg 18 \$38812\.00 over on 2026-07-23/);
+  // Reg 11 sits in two sets: primary of its $1,735 (reg 13 + reg 68) and part
+  // of reg 18's at the raised $13,023. The analyst's item is the $13,023 one,
+  // so that set wins and the text names both figures.
+  const item11 = { id: "w11", register: "11", date: "2026-07-22", amountCents: -1302300, amountAbsCents: 1302300, sourceAppId: "overshort" };
+  const c11own = combos.find((c) => c.primaryRegister === "11" && c.primaryBasis === "grid");
+  assert.ok(c11own, "the finalized $1,735 still has its own explanation");
+  const p11 = findComboFor(combos, item11);
+  assert.equal(p11.role, "part"); assert.equal(p11.combo, c18);
+  const ev11 = buildEvidence({ item: item11, finding: findings.find((f) => f.primaryRegister === "11"), discrepancy: r11, combo: p11 });
+  assert.equal(ev11.verdict, "suspect_combo");
+  assert.match(ev11.reason, /^No single entry offsets this \$13023\.00 short, but together with reg 18 \$26016\.82 short on 2026-07-21 it adds up to \$39039\.82 short, \$227\.82 from reg 18 \$38812\.00 over on 2026-07-23/);
+  assert.match(ev11.comboShort, /^with reg 18 \$26016\.82 short on 2026-07-21 adds up to reg 18 \$38812\.00 over on 2026-07-23 \(\$227\.82 off\)/);
+  assert.equal(ev11.why[0].kind, "amount_differs");
+  assert.match(ev11.why[0].text, /the multi-entry offset below closes out the WorkView amount/);
+  // An item carrying the finalized figure gets the finalized set.
+  const item11g = { ...item11, amountCents: -173500, amountAbsCents: 173500 };
+  assert.equal(findComboFor(combos, item11g).combo, c11own);
+});
+
+test("service desk (92/93/94) offsets any register; a far pair with similar totals on the same day is offered as a probable flip, never filed", () => {
+  const d = (registerNbr, date, dollars) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: [], _source: { module: "livedashboard", sourceMethod: "powerbi" } });
+  // Service desk: reg 92 short, reg 40 over the next day, 52 registers apart — tier 1, filed as a flip.
+  const sd = [d("92", "2026-08-09", -60.18), d("40", "2026-08-10", 60.18)];
+  const fsd = tieredMatching(sd);
+  const f92 = fsd.find((f) => f.primaryRegister === "92");
+  assert.equal(f92.matchType, "nearby-register-offset"); assert.equal(f92.tier, 1); assert.equal(f92.pairing, "service_desk");
+  assert.ok(f92.flipConfidence >= 0.7, `distance not held against the service desk (${f92.flipConfidence})`);
+  const ev92 = buildEvidence({ item: { id: "a", register: "92", date: "2026-08-09", amountCents: -6018, amountAbsCents: 6018, sourceAppId: "overshort" }, finding: f92, discrepancy: sd[0] });
+  assert.equal(ev92.verdict, "flip");
+  assert.match(ev92.why.find((w) => w.kind === "pairing").text, /Reg 92 is the service desk/);
+  const ev40 = buildEvidence({ item: { id: "b", register: "40", date: "2026-08-10", amountCents: 6018, amountAbsCents: 6018, sourceAppId: "overshort" }, finding: f92, discrepancy: sd[1] });
+  assert.equal(ev40.verdict, "flip");
+  assert.match(ev40.why.find((w) => w.kind === "pairing").text, /Reg 92 is the service desk/);
+  // The same distance without the service desk stays unmatched (reg 40 vs reg 88, next day).
+  const far = tieredMatching([d("88", "2026-08-09", -60.18), d("40", "2026-08-10", 60.18)]);
+  assert.equal(far.find((f) => f.primaryRegister === "88").matchType, "none");
+  // Same day, similar total, far apart: reg 21 -$158 / reg 95 +$145 on 07-24 — tier 3, review only.
+  const sameDay = [d("21", "2026-07-24", -158), d("95", "2026-07-24", 145), d("68", "2026-07-25", -25)];
+  const fs = tieredMatching(sameDay);
+  const f21 = fs.find((f) => f.primaryRegister === "21");
+  assert.equal(f21.tier, 3); assert.equal(f21.pairing, "same_day_far"); assert.equal(f21.matchedAgainst[0].registerNbr, "95");
+  const item21 = { id: "c", register: "21", date: "2026-07-24", amountCents: -15800, amountAbsCents: 15800, sourceAppId: "overshort" };
+  const ev21 = buildEvidence({ item: item21, finding: f21, discrepancy: sameDay[0] });
+  assert.equal(ev21.verdict, "suspect_flip");
+  assert.match(ev21.reason, /^Reg 95 \$145\.00 over the same day is probably the other half of this \$158\.00 short \(\$13\.00 apart\) — same date, similar total — but registers 21 and 95 are not neighbours, so it is offered for review, not filed\./);
+  assert.ok(!ev21.suggestion?.safe, "never auto-filed");
+  assert.match(ev21.why.find((w) => w.kind === "pairing").text, /Reg 21 and reg 95 are not neighbours/);
+  const ev95 = buildEvidence({ item: { id: "e", register: "95", date: "2026-07-24", amountCents: 14500, amountAbsCents: 14500, sourceAppId: "overshort" }, finding: f21, discrepancy: sameDay[1] });
+  assert.equal(ev95.verdict, "suspect_flip");
+  assert.match(ev95.reason, /^Reg 21 \$158\.00 short the same day is probably the other half of this \$145\.00 over/);
+  assert.equal(fs.find((f) => f.primaryRegister === "68").matchType, "none", "reg 68 -$25 has no same-day partner");
+  // An exact far pair on the same day is still review-only (tier 3 is loose by definition).
+  const exact = tieredMatching([d("21", "2026-07-24", -158), d("95", "2026-07-24", 158)]);
+  assert.equal(buildEvidence({ item: item21, finding: exact[0], discrepancy: null }).verdict, "suspect_flip");
+  // A day apart, far apart: nothing.
+  assert.equal(tieredMatching([d("21", "2026-07-24", -158), d("95", "2026-07-25", 158)])[0].matchType, "none");
+  // Neighbours are claimed first: a near-miss on reg 22 beats an exact far pair on reg 95.
+  const nb = tieredMatching([d("21", "2026-07-24", -158), d("22", "2026-07-24", 150), d("95", "2026-07-24", 158)]);
+  const n21 = nb.find((f) => f.primaryRegister === "21");
+  assert.equal(n21.matchedAgainst[0].registerNbr, "22"); assert.equal(n21.tier, 2); assert.equal(n21.pairing, "neighbour");
+});
+
+test("one overage closes one shortage: no double dip, ties are review-only, losers say who kept it, filed pairs stay locked", () => {
+  const d = (registerNbr, date, dollars) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: [], _source: { module: "livedashboard", sourceMethod: "powerbi" } });
+  const it = (register, date, dollars) => ({ id: `${register}-${date}`, register, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), sourceAppId: "overshort" });
+  const D = "2026-09-01";
+  // reg 10 short $20, reg 12 short $20, one $20 overage on reg 11: a dead heat.
+  const tie = tieredMatching([d("10", D, -20), d("11", D, 20), d("12", D, -20)]);
+  const t10 = tie.find((f) => f.primaryRegister === "10"), t12 = tie.find((f) => f.primaryRegister === "12");
+  assert.equal(t10.matchedAgainst[0].registerNbr, "11"); assert.equal(t10.tie, true);
+  assert.equal(t12.matchType, "none", "reg 12 does not get reg 11 as well");
+  assert.equal(t12.contested.registerNbr, "11"); assert.equal(t12.contested.wonBy.registerNbr, "10"); assert.equal(t12.contested.tie, true);
+  assert.equal(tie.filter((f) => f.matchedAgainst[0]?.registerNbr === "11").length, 1, "the overage is claimed once");
+  const e10 = buildEvidence({ item: it("10", D, -20), finding: t10 });
+  assert.equal(e10.verdict, "suspect_flip"); assert.ok(!e10.suggestion?.safe, "a tie is never filed");
+  assert.match(e10.reason, /^Reg 11 \$20\.00 over on 2026-09-01 offsets this \$20\.00 short, but reg 12 \$20\.00 short on 2026-09-01 is an equally good match for that overage\. One overage closes one shortage — decide which one before filing\./);
+  assert.match(e10.why.find((w) => w.kind === "also_wanted").text, /reg 12 \$20\.00 short on 2026-09-01 also matched the \$20\.00 over on reg 11 \(2026-09-01\)\. It closes only one shortage; it went to reg 10 on a tie/);
+  const e11 = buildEvidence({ item: it("11", D, 20), finding: t10 });
+  assert.equal(e11.verdict, "suspect_flip"); assert.ok(!e11.suggestion?.safe);
+  assert.match(e11.reason, /is one half of this \$20\.00 over, but reg 12 \$20\.00 short on 2026-09-01 is an equally good match for it/);
+  const e12 = buildEvidence({ item: it("12", D, -20), finding: t12 });
+  assert.equal(e12.verdict, "unmatched");
+  assert.match(e12.why.find((w) => w.kind === "contested").text, /^Reg 11 \$20\.00 over on 2026-09-01 would have offset this, but it is already the other half of reg 10 \$20\.00 short on 2026-09-01 \(an equal claim — the lower register number kept it\)\. One overage closes one shortage\. Nothing else offsets it, so it stays open\./);
+  // A second overage on reg 13: reg 12 finds its own partner in the same tier, nothing is a tie any more.
+  const two = tieredMatching([d("10", D, -20), d("11", D, 20), d("12", D, -20), d("13", D, 20)]);
+  const w10 = two.find((f) => f.primaryRegister === "10"), w12 = two.find((f) => f.primaryRegister === "12");
+  assert.equal(w10.matchedAgainst[0].registerNbr, "11"); assert.equal(w12.matchedAgainst[0].registerNbr, "13");
+  assert.equal(w10.tie, false); assert.equal(w10.alsoWanted[0].pairedWith.registerNbr, "13");
+  assert.equal(buildEvidence({ item: it("10", D, -20), finding: w10 }).verdict, "flip");
+  assert.equal(buildEvidence({ item: it("12", D, -20), finding: w12 }).verdict, "flip");
+  // The better claim keeps it: reg 10 (next door) beats reg 14 (three away); reg 10 is filed, reg 14 told why.
+  const near = tieredMatching([d("10", D, -20), d("11", D, 20), d("14", D, -20)]);
+  const n10 = near.find((f) => f.primaryRegister === "10"), n14 = near.find((f) => f.primaryRegister === "14");
+  assert.equal(n10.matchedAgainst[0].registerNbr, "11"); assert.equal(n10.tie, false);
+  assert.equal(buildEvidence({ item: it("10", D, -20), finding: n10 }).verdict, "flip");
+  assert.equal(n14.matchType, "none"); assert.equal(n14.contested.tie, false);
+  assert.match(buildEvidence({ item: it("14", D, -20), finding: n14 }).why.find((w) => w.kind === "contested").text, /the better claim: nearer register, closer amount/);
+  // Taken in an earlier tier: reg 10 exact (tier 1) keeps reg 11; reg 12's near-miss ($27, tier 2 only) is told who holds it.
+  const cross = tieredMatching([d("10", D, -20), d("11", D, 20), d("12", D, -27)]);
+  const c12 = cross.find((f) => f.primaryRegister === "12");
+  assert.equal(c12.matchType, "none"); assert.equal(c12.contested.wonBy.registerNbr, "10"); assert.equal(c12.contested.earlier, true);
+  // A pair the analyst already filed is locked: reg 12 keeps reg 11 even though reg 10 is the better claim.
+  const locked = tieredMatching([d("10", D, -20), d("11", D, 20), d("12", D, -20)], undefined, { locked: [{ short: { register: "12", date: D }, over: { register: "11", date: D } }] });
+  const l12 = locked.find((f) => f.primaryRegister === "12"), l10 = locked.find((f) => f.primaryRegister === "10");
+  assert.equal(l12.locked, true); assert.equal(l12.matchedAgainst[0].registerNbr, "11"); assert.equal(l12.tier, 1);
+  assert.equal(buildEvidence({ item: it("12", D, -20), finding: l12 }).verdict, "flip");
+  assert.match(buildEvidence({ item: it("12", D, -20), finding: l12 }).why.find((w) => w.kind === "locked").text, /You already filed this pair/);
+  assert.equal(l10.matchType, "none"); assert.equal(l10.contested.wonBy.registerNbr, "12");
+  // A locked pair whose halves are not in the sources any more is simply skipped.
+  assert.equal(tieredMatching([d("10", D, -20), d("11", D, 20)], undefined, { locked: [{ short: { register: "50", date: D }, over: { register: "51", date: D } }] }).find((f) => f.primaryRegister === "10").matchedAgainst[0].registerNbr, "11");
+});
+
+test("recurring operators: someone on two or more open shortages is flagged, harder when alone on the register and when the amounts are round", async () => {
+  const { recurringOperators, recurrenceText, isRoundAmount } = await import("../recurrence.js");
+  const d = (registerNbr, date, dollars, ops) => ({ storeNbr: "1458", registerNbr, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), type: dollars < 0 ? "short" : "over", operators: ops.map((o) => ({ operatorId: o })) });
+  const it = (id, register, date, dollars) => ({ id, register, date, amountCents: Math.round(dollars * 100), amountAbsCents: Math.abs(Math.round(dollars * 100)), sourceAppId: "overshort" });
+  assert.equal(isRoundAmount(-2000), true); assert.equal(isRoundAmount(-15800), false); assert.equal(isRoundAmount(-6018), false); assert.equal(isRoundAmount(-500), true); assert.equal(isRoundAmount(-100), false);
+  const disc = [
+    d("10", "2026-09-01", -20, ["0193"]),            // op 193 alone, round
+    d("14", "2026-09-03", -40, ["0193", "0450"]),    // op 193 + op 450, round
+    d("7",  "2026-09-05", -12.37, ["0193"]),         // op 193 alone, not round
+    d("22", "2026-09-05", -20, ["0450"]),            // op 450 alone, but this one is a flip
+    d("23", "2026-09-05", 20, ["0777"]),
+    d("30", "2026-09-06", -100, ["0888"]),           // one open shortage only — never flagged
+  ];
+  const items = [it("a", "10", "2026-09-01", -20), it("b", "14", "2026-09-03", -40), it("c", "7", "2026-09-05", -12.37), it("d", "22", "2026-09-05", -20), it("e", "23", "2026-09-05", 20), it("f", "30", "2026-09-06", -100)];
+  const verdicts = { a: { verdict: "unmatched" }, b: { verdict: "unmatched" }, c: { verdict: "suspect_flip" }, d: { verdict: "flip" }, e: { verdict: "flip" }, f: { verdict: "unmatched" } };
+  // Till log names the person on reg 14; EJ (analysis) names op 193.
+  const tillRows = [{ register: "14", date: "2026-09-03", action: "TILLCHECKIN", associateId: "CDH00BJ", associate: "JANE DOE", timeInt: 90000 }];
+  const analyses = { a: { operators: [{ opNum: "193", name: "SAM CASH" }] } };
+  const r = recurringOperators({ items, verdicts, discrepancies: disc, tillRows, analyses });
+  assert.equal(r.open, 4); assert.equal(r.openRound, 3);
+  assert.deepEqual(r.people.map((p) => p.id), ["193"], "op 450's second day is a filed flip; op 888 has one; JANE handled one till");
+  const p = r.people[0];
+  assert.equal(p.name, "SAM CASH"); assert.equal(p.count, 3); assert.equal(p.roundCount, 2); assert.equal(p.soleCount, 2); assert.equal(p.totalCents, -7237); assert.equal(p.seenDays, 3);
+  assert.deepEqual(p.days.map((x) => `${x.register}|${x.round}|${x.sole}`), ["10|true|true", "14|true|false", "7|false|true"]);
+  // Per item: the entry carries the OTHER days and the sentence names them.
+  const onB = r.byItem.b;
+  assert.equal(onB.length, 1); assert.equal(onB[0].sole, false); assert.equal(onB[0].others.length, 2);
+  assert.match(recurrenceText(onB[0]), /^SAM CASH \(op 193\) was signed on here and on 2 other open shortages: reg 10 -\$20\.00 on 2026-09-01 \(round\) \(only cashier\), reg 7 -\$12\.37 on 2026-09-05 \(only cashier\)\. 2 of the 3 are round amounts — bills, not keying errors\. The only cashier on 2 of them\. Seen on 3 register-days with a discrepancy in total\. Pull their transactions and video/);
+  assert.match(recurrenceText(r.byItem.a[0]), /^SAM CASH \(op 193\) was the only cashier signed on here/);
+  assert.equal(r.byItem.d, undefined, "a filed flip carries no recurrence");
+  assert.equal(r.byItem.f, undefined);
+  // Till-only involvement counts as a day too, and is worded as handling the till.
+  const r2 = recurringOperators({ items, verdicts, discrepancies: disc, tillRows: [...tillRows, { register: "10", date: "2026-09-01", action: "TILLCHECKOUT", associateId: "CDH00BJ", associate: "JANE DOE", timeInt: 1 }], analyses });
+  const jane = r2.people.find((x) => x.id === "CDH00BJ");
+  assert.equal(jane.count, 2); assert.deepEqual(jane.roles, ["till"]);
+  assert.match(recurrenceText(r2.byItem.a.find((x) => x.id === "CDH00BJ")), /^JANE DOE \(op CDH00BJ\) handled the till here and on 1 other open shortage/);
+  // Nothing open: nothing flagged.
+  assert.deepEqual(recurringOperators({ items, verdicts: { a: { verdict: "flip" }, b: { verdict: "flip" }, c: { verdict: "flip" }, f: { verdict: "flip" } }, discrepancies: disc, tillRows, analyses }).people, []);
+});

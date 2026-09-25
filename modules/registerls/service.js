@@ -23,6 +23,7 @@ import { parseRecords } from "./lib/ej_parse.js";
 import { buildEvidence, DEFAULT_CFG, findFindingFor, findDiscrepancyFor, findCounterpartFinding, unionDiscrepancies } from "./lib/evidence.js";
 import { MATCH_OPTS } from "./lib/match_opts.js";
 import { tieredMatching, comboOffsets, findComboFor } from "./lib/matching.js";
+import { recurringOperators } from "./lib/recurrence.js";
 import { prefillDisposition, completeDisposition } from "./lib/dispo.js";
 import { normalizeCause } from "./lib/cause.js";
 import { fetchCashRecycler } from "./lib/cash_recycler.js";
@@ -31,6 +32,7 @@ import { fetchCft, cftFor } from "./lib/cft.js";
 import { parsePantryText, mergePantry } from "./lib/pantry.js";
 import { tillsFor, wrongRegisterMoves, mergeDatedRows } from "./lib/till_events.js";
 import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents, ERROR_TYPES } from "./lib/cashiers.js";
+import { buildRegisterMap, wideRegistersOf, ROLES, isRole } from "./lib/registers.js";
 
 const TAG = "[registerls]";
 const KEYS = {
@@ -45,6 +47,7 @@ const KEYS = {
   analysis: (id) => `registerls.analysis.${id}`,
   cause: (id) => `registerls.cause.${id}`,   // the analyst's "this transaction was the cause" (record, survives re-analysis and clears)
   pantry: (storeNbr) => `registerls.pantry.${storeNbr}`,   // the analyst's own pantry UPCs for the store (record)
+  registers: (storeNbr) => `registerls.registers.${storeNbr}`,   // { roles: { [register]: role } } — the analyst's register-type overrides (record)
 };
 // WorkView keeps open items for months; two years is "everything open".
 const QUEUE_DAYS = 730;
@@ -57,7 +60,7 @@ const CFT_DAYS = 60;
 // Items analyzed in parallel by analyze_all (APPRISS searchlite + EJ calls are light; 3 keeps the servers polite).
 const ANALYZE_CONCURRENCY = 3;
 // Bump when the evidence shape changes so cached analyses are re-run.
-const ANALYSIS_SCHEMA = 9;   // 9: "outside the reports' window" verdict for items older than the pulled sources
+const ANALYSIS_SCHEMA = 12;  // 12: one overage closes one shortage (contested pairs, ties, filed pairs locked)
 const POWERBI_REPORT_URL = "https://app.powerbi.com/groups/me/reports/65c97d6a-7ad8-498d-b752-69028d408993/ReportSection?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
 
 function broadcast(type, payload) {
@@ -79,16 +82,52 @@ async function resolveStore(msg = {}) {
 // Matching over BOTH sources: Power BI cells (with operator shifts, ~60 days)
 // and the WorkView items themselves (further back). Cheap enough to run on
 // every get_state; the grid's own findings are not used directly.
-function matchingFor(grid, queue, storeNbr) {
+// `completed` (the registerls.completed log) supplies the pairs the analyst
+// already filed: each becomes a locked pair, and a filed half that no source
+// still carries is put back as a discrepancy so its overage stays claimed —
+// otherwise a later pull would offer that overage to another shortage.
+function matchingFor(grid, queue, storeNbr, completed = [], wideRegisters = null) {
   const gridDisc = grid && grid.storeNbr === String(storeNbr) ? grid.discrepancies : [];
   const discrepancies = unionDiscrepancies(gridDisc, queue?.items || [], storeNbr);
-  const findings = discrepancies.length ? tieredMatching(discrepancies) : [];   // exact pairs first, near-misses only for what is left
+  const locked = [];
+  const have = new Set(discrepancies.map((d) => `${d.registerNbr}|${d.date}`));
+  for (const c of completed || []) {
+    if (!c.counterpart?.register || !c.register || !c.date || c.amountCents == null || c.amountCents === 0) continue;
+    if (String(c.store || storeNbr) !== String(storeNbr)) continue;
+    for (const side of [{ register: c.register, date: c.date, amountCents: c.amountCents }, c.counterpart]) {
+      if (side.amountCents == null || have.has(`${side.register}|${side.date}`)) continue;
+      have.add(`${side.register}|${side.date}`);
+      discrepancies.push({ storeNbr: String(storeNbr), date: side.date, registerNbr: String(side.register), amountCents: side.amountCents, type: side.amountCents < 0 ? "short" : "over", amountAbsCents: Math.abs(side.amountCents), operators: [], _source: { module: "registerls", sourceMethod: "completed-item", workItemId: c.id } });
+    }
+    const mine = { register: String(c.register), date: c.date }, theirs = { register: String(c.counterpart.register), date: c.counterpart.date };
+    locked.push(c.amountCents < 0 ? { short: mine, over: theirs } : { short: theirs, over: mine });
+  }
+  const findings = discrepancies.length ? tieredMatching(discrepancies, undefined, { locked, wideRegisters }) : [];   // filed pairs first, then exact pairs, near-misses only for what is left
   const combos = findings.length ? comboOffsets(discrepancies, findings) : [];   // large leftovers explained by 2–3 entries store-wide (review only)
   // What the Power BI grid actually covers: an item older than gridMin can
   // only be matched against other OPEN WorkView items, never against a
   // closed or never-opened overage — so no "unmatched" claim is honest there.
   const coverage = gridDisc.length ? { gridMin: grid.dateMin || null, gridMax: grid.dateMax || null } : { gridMin: null, gridMax: null };
   return { discrepancies, findings, combos, coverage, gridCapturedAt: grid?.capturedAt || null };
+}
+
+// The store's register map — till-log labels, number-range defaults and
+// the analyst's overrides (lib/registers.js) — and what matching/evidence
+// take from it: which registers pair store-wide (the service desk).
+async function roleContext(storeNbr, { tillRows = null, grid = null, queue = null } = {}) {
+  const store = String(storeNbr || "");
+  let rows = tillRows;
+  if (rows == null) { const t = await get(KEYS.tills); rows = t && t.storeNbr === store ? t.rows : []; }
+  const g = grid === null ? await get(KEYS.grid) : grid;
+  const q = queue === null ? await get(KEYS.queue) : queue;
+  const registers = [
+    ...(g && g.storeNbr === store ? (g.discrepancies || []).map((d) => d.registerNbr) : []),
+    ...((q?.items || []).map((i) => i.register)),
+  ].filter(Boolean);
+  const overrides = (await get(KEYS.registers(store)))?.roles || {};
+  const map = buildRegisterMap({ tillRows: rows || [], registers, overrides });
+  const wide = wideRegistersOf(map);
+  return { map, wide, cfg: { ...DEFAULT_CFG, wideRegisters: wide } };
 }
 
 function lookups(match, item) {
@@ -106,15 +145,15 @@ function lookups(match, item) {
 
 // Offset-only verdict for the queue list (no network). Same function the
 // full analysis uses, so a row's pill never disagrees with its detail.
-function preVerdict(item, match, tillRows = null) {
+function preVerdict(item, match, tillRows = null, cfg = DEFAULT_CFG) {
   if (!match.discrepancies.length) return { verdict: "pending", verdictLabel: "no data yet", severity: "none" };
   const { finding, discrepancy, counterpart, combo } = lookups(match, item);
   const tills = tillRows ? tillsFor(tillRows, item, match.discrepancies, undefined, counterpart) : null;
-  const ev = buildEvidence({ item, finding, discrepancy, tills, combo, coverage: match.coverage });
+  const ev = buildEvidence({ item, finding, discrepancy, tills, combo, coverage: match.coverage, cfg });
   return {
     verdict: ev.verdict, verdictLabel: ev.verdictLabel, severity: ev.severity, flipConfidence: ev.flipConfidence, matchedAgainst: ev.matchedAgainst,
     counterpart: finding && (item.amountCents ?? 0) > 0 ? { registerNbr: finding.primaryRegister, date: finding.primaryDate, amountCents: finding.primaryAmountCents } : null,
-    why: ev.why, combo: ev.comboShort || null, gridAmountCents: ev.gridAmountCents ?? null,
+    why: ev.why, combo: ev.comboShort || null, gridAmountCents: ev.gridAmountCents ?? null, contested: ev.contested || null, tie: ev.tie || false, locked: ev.locked || false,
     // A clean pair needs no journal pull to be filed — carry the suggestion.
     suggestion: ev.suggestion && ev.suggestion.safe ? ev.suggestion : null,
   };
@@ -125,12 +164,14 @@ const SAFE = new Set(["flip", "bounceback"]);
 export const handlers = {
   async get_state(msg = {}) {
     const store = await resolveStore(msg);
-    const [queue, grid, tillsCache, cftCache] = await Promise.all([get(KEYS.queue), get(KEYS.grid), get(KEYS.tills), get(KEYS.cft)]);
+    const [queue, grid, tillsCache, cftCache, completedLog] = await Promise.all([get(KEYS.queue), get(KEYS.grid), get(KEYS.tills), get(KEYS.cft), get(KEYS.completed)]);
     const items = queue?.items || [];
     const gridForStore = grid && grid.storeNbr === store.storeNbr ? grid : null;
-    const match = matchingFor(grid, queue, store.storeNbr);
     const tillRows = tillsCache && tillsCache.storeNbr === store.storeNbr ? tillsCache.rows : null;
+    const roles = await roleContext(store.storeNbr, { tillRows: tillRows || [], grid, queue });
+    const match = matchingFor(grid, queue, store.storeNbr, completedLog || [], roles.wide);
     const analyses = {};
+    const analysisOps = {};   // EJ/Power BI operator timelines from cached analyses, for the recurrence pass
     const causes = {};
     if (items.length) {
       const gotCause = await chrome.storage.local.get(items.map((i) => KEYS.cause(i.id)));
@@ -138,12 +179,19 @@ export const handlers = {
       const got = await chrome.storage.local.get(items.map((i) => KEYS.analysis(i.id)));
       for (const i of items) {
         const a = got[KEYS.analysis(i.id)];
+        if (a && a.schema === ANALYSIS_SCHEMA) analysisOps[i.id] = { operators: a.evidence?.operators || [] };
         if (a && a.schema === ANALYSIS_SCHEMA) analyses[i.id] = { at: a.at, verdict: a.evidence?.verdict, verdictLabel: a.evidence?.verdictLabel, severity: a.evidence?.severity, hasVideo: !!a.evidence?.videoCandidates?.length, stale: !!(gridForStore && a.gridCapturedAt !== gridForStore.capturedAt) };
       }
     }
+    const pres = {};
+    for (const i of items) pres[i.id] = preVerdict(i, match, tillRows, roles.cfg);
+    // Who keeps turning up on shortages nobody can explain (store-wide, live).
+    const recurring = recurringOperators({ items, verdicts: pres, discrepancies: match.discrepancies, tillRows: tillRows || [], analyses: analysisOps });
     return {
       store,
-      queue: queue ? { fetchedAt: queue.fetchedAt, storeNbr: queue.storeNbr, otherCount: queue.otherCount, total: queue.total, totals: queue.totals || null, window: queue.window, items: items.map((i) => ({ ...i, pre: preVerdict(i, match, tillRows) })), others: queue.others || [] } : null,
+      recurring,
+      registers: roles.map,
+      queue: queue ? { fetchedAt: queue.fetchedAt, storeNbr: queue.storeNbr, otherCount: queue.otherCount, total: queue.total, totals: queue.totals || null, window: queue.window, items: items.map((i) => ({ ...i, pre: pres[i.id] })), others: queue.others || [] } : null,
       grid: gridForStore ? { capturedAt: gridForStore.capturedAt, storeNbr: gridForStore.storeNbr, cellCount: gridForStore.discrepancies?.length || 0, rollup: gridForStore.rollup, dateMin: gridForStore.dateMin || null, dateMax: gridForStore.dateMax || null } : (grid ? { staleStore: grid.storeNbr } : null),
       analyses,
       causes,
@@ -169,7 +217,7 @@ export const handlers = {
     // notes, the completed log and the three pulled reports (grid, till log,
     // CFTs — their older days cannot be re-pulled) are records, not cache,
     // and survive a clear; a fresh pull overwrites its own window anyway.
-    const keep = (k) => k === KEYS.store || k === KEYS.ledger || k === KEYS.completed || k === KEYS.tills || k === KEYS.grid || k === KEYS.cft || k.startsWith("registerls.coaching.") || k.startsWith("registerls.cause.") || k.startsWith("registerls.pantry.");
+    const keep = (k) => k === KEYS.store || k === KEYS.ledger || k === KEYS.completed || k === KEYS.tills || k === KEYS.grid || k === KEYS.cft || k.startsWith("registerls.coaching.") || k.startsWith("registerls.cause.") || k.startsWith("registerls.pantry.") || k.startsWith("registerls.registers.");
     const keys = Object.keys(all).filter((k) => k.startsWith("registerls.") && !keep(k));
     if (keys.length) await chrome.storage.local.remove(keys);
     return { removed: keys.length };
@@ -278,14 +326,15 @@ export const handlers = {
       ]);
       const grid = await get(KEYS.grid);
       const gridOk = grid && grid.storeNbr === String(store);
-      const match = matchingFor(grid, queue, store);
+      const tillsCache = await get(KEYS.tills);
+      const roles = await roleContext(store, { tillRows: tillsCache && tillsCache.storeNbr === String(store) ? tillsCache.rows : [], grid, queue });
+      const match = matchingFor(grid, queue, store, (await get(KEYS.completed)) || [], roles.wide);
       const { finding, discrepancy, counterpart, combo } = lookups(match, item);
       const ej = ejRes.ok ? parseRecords(ejRes.records) : null;
-      const tillsCache = await get(KEYS.tills);
       const tills = tillsCache && tillsCache.storeNbr === String(store) ? tillsFor(tillsCache.rows, item, match.discrepancies, undefined, counterpart) : null;
       const cftCache = await get(KEYS.cft);
       const cft = cftCache && cftCache.storeNbr === String(store) ? cftFor(cftCache.rows, item) : null;
-      const cfg = { ...DEFAULT_CFG, pantry: mergePantry((await get(KEYS.pantry(String(store))))?.items) };
+      const cfg = { ...roles.cfg, pantry: mergePantry((await get(KEYS.pantry(String(store))))?.items) };
       const evidence = buildEvidence({ item, finding, discrepancy, ledger: ledgerRes.ok ? ledgerRes.rows : null, ej, tills, drawer: drawerRes.ok ? drawerRes : null, cft, combo, coverage: match.coverage, cfg });
       const analysis = {
         schema: ANALYSIS_SCHEMA,
@@ -315,12 +364,13 @@ export const handlers = {
   async analyze_all(msg = {}) {
     const queue = await get(KEYS.queue);
     const gridNow0 = await get(KEYS.grid);
-    const match = matchingFor(gridNow0, queue, queue?.storeNbr);
     const tillsNow = await get(KEYS.tills);
     const tillRowsNow = tillsNow && tillsNow.storeNbr === queue?.storeNbr ? tillsNow.rows : null;
+    const rolesNow = await roleContext(queue?.storeNbr, { tillRows: tillRowsNow || [], grid: gridNow0, queue });
+    const match = matchingFor(gridNow0, queue, queue?.storeNbr, (await get(KEYS.completed)) || [], rolesNow.wide);
     // Only the items that need a look: clean pairs are filed from the match
     // alone, so pulling their journal is wasted time (pass force to include).
-    const items = (queue?.items || []).filter((i) => i.register && i.date).filter((i) => msg.force || !SAFE.has(preVerdict(i, match, tillRowsNow).verdict));
+    const items = (queue?.items || []).filter((i) => i.register && i.date).filter((i) => msg.force || !SAFE.has(preVerdict(i, match, tillRowsNow, rolesNow.cfg).verdict));
     if (!items.length) return { ok: false, error: "Nothing needs analysis — every register item is a clean pair, or refresh WorkView first." };
     const release = keepAwake("registerls.analyze_all");
     const done = [], failed = [];
@@ -392,7 +442,20 @@ export const handlers = {
           queue.others = (queue.others || []).filter((i) => i.id !== id);
           await set(KEYS.queue, queue);
           const done = (await get(KEYS.completed)) || [];
-          done.unshift({ id, at: new Date().toISOString(), reasonLabel, text, register: item?.register || null, date: item?.date || null, amountCents: item?.amountCents ?? null, category: item?.category || null, sourceAppId: item?.sourceAppId || null, cause: (await get(KEYS.cause(id))) || null });
+          // Remember the other half of a filed flip/bounceback, so the pair is
+          // locked from now on and the overage can never be filed twice.
+          let counterpart = null;
+          if (item) {
+            try {
+              const rolesCp = await roleContext(queue.storeNbr || item.store, { queue: { ...queue, items: [...queue.items, item] } });
+              const match = matchingFor(await get(KEYS.grid), { ...queue, items: [...queue.items, item] }, queue.storeNbr || item.store, done, rolesCp.wide);
+              const pre = preVerdict(item, match, null, rolesCp.cfg);
+              const cp = SAFE.has(pre.verdict) ? lookups(match, item).counterpart : null;
+              const cpd = cp ? findDiscrepancyFor(match.discrepancies, cp) : null;
+              if (cp) counterpart = { register: String(cp.register), date: cp.date, amountCents: cpd?.amountCents ?? null };
+            } catch (e) { console.warn(TAG, "counterpart lookup failed", e?.message || e); }
+          }
+          done.unshift({ id, at: new Date().toISOString(), reasonLabel, text, register: item?.register || null, date: item?.date || null, amountCents: item?.amountCents ?? null, category: item?.category || null, sourceAppId: item?.sourceAppId || null, cause: (await get(KEYS.cause(id))) || null, store: queue.storeNbr || item?.store || null, counterpart });
           await set(KEYS.completed, done.slice(0, 500));
         }
         await chrome.storage.local.remove(KEYS.analysis(id)).catch(() => {});
@@ -438,9 +501,10 @@ export const handlers = {
     const live = (queue?.items || []);
     const liveIds = new Set(live.map((i) => i.id));
     const items = [...live, ...done.filter((c) => !liveIds.has(c.id)).map((c) => ({ id: c.id, store: store.storeNbr, register: c.register, date: c.date, amountCents: c.amountCents, amountAbsCents: Math.abs(c.amountCents), type: c.amountCents < 0 ? "short" : "over", sourceAppId: c.sourceAppId || "overshort", category: c.category || "", completed: true }))];
-    const match = matchingFor(grid, { ...queue, items }, store.storeNbr);
+    const rolesL = await roleContext(store.storeNbr, { tillRows, grid, queue: { ...queue, items } });
+    const match = matchingFor(grid, { ...queue, items }, store.storeNbr, done, rolesL.wide);
     const verdicts = {};
-    for (const i of items) verdicts[i.id] = preVerdict(i, match, tillRows);
+    for (const i of items) verdicts[i.id] = preVerdict(i, match, tillRows, rolesL.cfg);
     const flipWho = {};
     for (const i of items) { const { finding, counterpart } = lookups(match, i); if (finding && finding.matchType === "nearby-register-offset" && counterpart) flipWho[i.id] = counterpart; }
     // Flip pairs the grid found whose shortage side is not a work item
@@ -500,7 +564,7 @@ export const handlers = {
     const sync = await handlers.sync_ledger(msg);
     const ledger = (await get(KEYS.ledger)) || { events: {} };
     const from = String(msg.from || ""), to = String(msg.to || "");
-    const events = Object.values(ledger.events).filter((e) => e.storeNbr === store.storeNbr && (!from || e.date >= from) && (!to || e.date <= to));
+    const events = Object.entries(ledger.events).map(([key, e]) => ({ ...e, key })).filter((e) => e.storeNbr === store.storeNbr && (!from || e.date >= from) && (!to || e.date <= to));
     const cashiers = aggregateEvents(events);
     const all = Object.values(ledger.events).filter((e) => e.storeNbr === store.storeNbr).map((e) => e.date).sort();
     const noteKeys = cashiers.map((c) => KEYS.coaching(c.id));
@@ -607,6 +671,71 @@ export const handlers = {
     await set(key, { storeNbr: store.storeNbr, items: cur.filter((p) => p.upc.replace(/^0+/, "") !== want) });
     return handlers.get_pantry(msg);
   },
+  // ── Register map ─────────────────────────────────────────────────
+  // What each register is at this store (lib/registers.js). The analyst's
+  // overrides are a record (kept by clear_cache); the rest is derived from
+  // the till log and the number-range defaults on every read.
+  async get_registers(msg = {}) {
+    const store = await resolveStore(msg);
+    const roles = await roleContext(store.storeNbr);
+    return { storeNbr: store.storeNbr, registers: Object.values(roles.map), roles: ROLES, wide: roles.wide };
+  },
+  async set_register_role(msg = {}) {
+    const store = await resolveStore(msg);
+    const reg = String(msg.register || "").replace(/^0+(?=\d)/, "").trim();
+    if (!reg) return { ok: false, error: "no register" };
+    const role = msg.role == null || msg.role === "" ? null : String(msg.role);
+    if (role && !isRole(role)) return { ok: false, error: `unknown role ${role}` };
+    const key = KEYS.registers(store.storeNbr);
+    const cur = (await get(key)) || { storeNbr: store.storeNbr, roles: {} };
+    if (role) cur.roles[reg] = role; else delete cur.roles[reg];
+    cur.updatedAt = new Date().toISOString();
+    await set(key, cur);
+    return { ok: true, ...(await handlers.get_registers(msg)) };
+  },
+
+  // ── Manual ledger events ─────────────────────────────────────────
+  // "Attach an unpaid training receipt to a cashier" (analyst, 2026-09-17):
+  // a receipt printed in training mode that the customer never actually
+  // paid. Nothing in the sources derives it, so the analyst records it
+  // against the associate directly; it then counts in the ledger and the
+  // CSV like any other event. Keyed on the receipt so the same one cannot
+  // be attached twice.
+  async add_training_receipt(msg = {}) {
+    const store = await resolveStore(msg);
+    const associateId = String(msg.associateId || "").trim();
+    const date = String(msg.date || "").slice(0, 10);
+    const receipt = String(msg.receipt || "").trim();
+    const cents = Math.round(Math.abs(Number(msg.amount)) * 100);
+    if (!store.storeNbr) return { ok: false, error: "No store set." };
+    if (!associateId) return { ok: false, error: "Associate WIN is required." };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Date is required." };
+    if (!receipt) return { ok: false, error: "Receipt number (TC# or TR#) is required." };
+    if (!Number.isFinite(cents) || cents <= 0) return { ok: false, error: "Amount must be more than $0." };
+    const register = String(msg.register || "").replace(/^0+(?=\d)/, "").trim();
+    const note = String(msg.note || "").trim();
+    const e = { associateId, associate: String(msg.associate || "").trim(), type: "training_receipt", date, register, cents, workItemId: `receipt:${receipt}`, detail: `Training receipt ${receipt}${note ? ` — ${note}` : ""}`, manual: true, storeNbr: store.storeNbr, firstSeen: new Date().toISOString() };
+    const key = `${store.storeNbr}|${eventKey(e)}`;
+    const ledger = (await get(KEYS.ledger)) || { events: {} };
+    if (ledger.events[key]) return { ok: false, error: `Receipt ${receipt} is already attached to ${associateId} on ${date}.` };
+    ledger.events[key] = e;
+    ledger.updatedAt = new Date().toISOString();
+    await set(KEYS.ledger, ledger);
+    return { ok: true, key, event: e };
+  },
+  // Only events the analyst entered by hand can be removed by hand.
+  async remove_manual_event(msg = {}) {
+    const key = String(msg.key || "");
+    const ledger = (await get(KEYS.ledger)) || { events: {} };
+    const e = ledger.events[key];
+    if (!e) return { ok: false, error: "event not found" };
+    if (!e.manual) return { ok: false, error: "only events entered by hand can be removed" };
+    delete ledger.events[key];
+    ledger.updatedAt = new Date().toISOString();
+    await set(KEYS.ledger, ledger);
+    return { ok: true, removed: key };
+  },
+
   async get_analysis(msg = {}) {
     const a = await get(KEYS.analysis(String(msg.id)));
     return { analysis: a && a.schema === ANALYSIS_SCHEMA ? a : null };   // auto-wrapped; "not yet" is not an error

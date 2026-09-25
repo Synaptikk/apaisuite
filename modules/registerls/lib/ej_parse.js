@@ -287,3 +287,23 @@ export function parseRecords(records) {
 
   return { transactions, signons, events, dayStats };
 }
+
+/**
+ * Operator number → name from the day's sign-on / sign-off banners
+ * (`****** 5638    MALEIGHA CLO******`, as the journal prints it — about
+ * twelve characters). Receipts themselves carry only the number. Cheap
+ * enough to run over a whole store-day; used by boblisa's day analysis.
+ */
+export function operatorNames(records) {
+  const list = Array.isArray(records) ? records : Array.isArray(records?.records) ? records.records : [];
+  const out = {};
+  for (const rec of list) {
+    const text = clean(rec?.record);
+    if (!signonKind(text)) continue;
+    const b = BANNER_OP_RE.exec(text);
+    if (!b) continue;
+    const op = stripZeros(b[1]), name = b[2].trim();
+    if (op && name && !out[op]) out[op] = name;
+  }
+  return out;
+}

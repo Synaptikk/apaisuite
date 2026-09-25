@@ -10,6 +10,7 @@
 const NOISE = new Set(["flip", "bounceback", "pantry_cft"]);   // cause found from the sources alone → ready to close
 import { reasonsFor } from "./lib/reasons.js";
 import { causeText, whoText } from "./lib/cause.js";
+import { recurrenceText } from "./lib/recurrence.js";
 import { receiptUpcs, receiptPantryText } from "./lib/pantry.js";
 const SEV_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 
@@ -38,10 +39,12 @@ export async function mount(host, container) {
   let storeDraft = "";
   let cashiers = null;      // get_cashiers payload
   let pantryList = null;    // get_pantry payload
+  let registersInfo = null; // get_registers payload
   let openCashier = null;   // expanded row
   let cashierRange = { from: "", to: "" };   // permanent ledger, date-filtered
   const inFlight = new Map();   // work items completing in the background: id → { reasonLabel, startedAt }
   let unmounted = false;        // set by cleanup; stops the open-time bootstrap from painting a dead container
+  const sourceErrors = new Map();   // last failed pull per action (refresh_queue…): { error, loginUrl } — painted on the pills and the queue banner
 
   // ── data ────────────────────────────────────────────────────────
   async function load() {
@@ -50,7 +53,7 @@ export async function mount(host, container) {
     catch (e) { host.ui.toast(e?.message || "state failed", { kind: "error" }); return; }
     state = res.data;
     storeDraft = state.store.storeNbr || "";
-    await Promise.all([loadCashiers(), loadPantry()]);
+    await Promise.all([loadCashiers(), loadPantry(), loadRegisters()]);
     paintAll();
   }
 
@@ -58,23 +61,35 @@ export async function mount(host, container) {
     try { const p = await host.messaging.send("get_pantry", {}); pantryList = p.data; } catch { pantryList = null; }
   }
 
+  async function loadRegisters() {
+    try { const r = await host.messaging.send("get_registers", {}); registersInfo = r.data; } catch { registersInfo = null; }
+  }
+
   async function loadCashiers() {
     try { const c = await host.messaging.send("get_cashiers", { from: cashierRange.from, to: cashierRange.to }); cashiers = c.data; } catch { cashiers = null; }
   }
 
-  async function run(action, payload, btn) {
+  // `openLogin`: a failed pull that names a sign-in page opens it in a new
+  // tab — wanted when the analyst clicked Refresh, NOT on the open-time
+  // bootstrap, which used to steal focus from whatever they were on the
+  // moment the module mounted (2026-09-17). Bootstrap failures are kept in
+  // `sourceErrors` and painted on the pills / queue banner instead.
+  async function run(action, payload, btn, { openLogin = true } = {}) {
     setBusy(btn, true);
     try {
       let res;
       try { res = await host.messaging.sendRaw(action, payload, { timeoutMs: 1_800_000 }); }
-      catch (e) { host.ui.toast(e?.message || `${action} failed`, { kind: "error" }); return null; }
+      catch (e) { host.ui.toast(e?.message || `${action} failed`, { kind: "error" }); sourceErrors.set(action, { error: e?.message || `${action} failed` }); return null; }
       const d = res && res.data !== undefined ? res.data : res;
       if (!res || res.ok === false || (d && d.ok === false)) {
-        host.ui.toast((d && d.error) || (res && res.error) || `${action} failed`, { kind: "error" });
+        const error = (d && d.error) || (res && res.error) || `${action} failed`;
         const loginUrl = (d && d.loginUrl) || (res && res.loginUrl);
-        if (loginUrl) window.open(loginUrl, "_blank");
+        sourceErrors.set(action, { error, loginUrl });
+        host.ui.toast(error, { kind: "error" });
+        if (loginUrl && openLogin) window.open(loginUrl, "_blank");
         return null;
       }
+      sourceErrors.delete(action);
       return d;
     } finally {
       setBusy(btn, false);
@@ -113,13 +128,32 @@ export async function mount(host, container) {
     if (i.pre.verdict === "suspect_combo" && i.pre.combo) return i.pre.combo;
     if (i.pre.verdict === "outside_window") return "no report reaches this date — only open WorkView items could be matched";
     if (i.pre.verdict === "no_grid") return "no long/short data for this day";
+    if (i.pre.verdict === "unmatched" && i.pre.contested) return `reg ${i.pre.contested.registerNbr} ${money(Math.abs(i.pre.contested.amountCents))} over on ${i.pre.contested.date} is already the other half of reg ${i.pre.contested.wonBy.registerNbr}`;
     if (i.pre.verdict === "unmatched") return "no offsetting entry on a neighbouring register";
     if (i.pre.verdict === "unmatched_over") return "no shortage nearby offsets this overage";
     return "";
   }
 
   // ── paint ───────────────────────────────────────────────────────
-  function paintAll() { paintHeader(); paintSummary(); paintCashiers(); paintPantry(); paintQueue(); paintDetail(); }
+  function paintAll() { paintHeader(); paintSummary(); paintRecurring(); paintCashiers(); paintPantry(); paintRegisters(); paintQueue(); paintDetail(); }
+
+  // "Reg 63 · money center" — the store's register map (lib/registers.js).
+  function roleTag(register) {
+    const e = state?.registers?.[String(register ?? "").replace(/^0+(?=\d)/, "")];
+    if (!e || e.role === "front_end" || e.role === "unknown") return "";
+    return e.role === "department" && e.desc ? e.desc.toLowerCase() : e.label.toLowerCase();
+  }
+
+  function paintRegisters() {
+    const box = $("[data-registers]");
+    const info = registersInfo;
+    if (!info || !info.registers?.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const src = { analyst: "set here", log: "till log", default: "default range", none: "" };
+    const overridden = info.registers.filter((r) => r.source === "analyst").length;
+    $("[data-registers-meta]").textContent = `${info.registers.length} registers · service desk: ${info.wide.length ? info.wide.join(", ") : "none"} · ${overridden} set by you · store ${info.storeNbr || "?"}`;
+    $("[data-registers-table]").innerHTML = `<table class="rls-table rls-registers-table"><thead><tr><th>Register</th><th>Till log says</th><th>Role</th><th>From</th><th></th></tr></thead><tbody>${info.registers.map((r) => `<tr class="${r.source === "analyst" ? "is-analyst" : ""}"><td>${esc(r.register)}</td><td class="rls-muted">${esc(r.desc || "—")}${r.rows ? ` <span title="till-log rows">(${r.rows})</span>` : ""}</td><td><select class="input rls-role-select" data-register-role data-register="${esc(r.register)}">${Object.entries(info.roles).map(([k, v]) => `<option value="${esc(k)}" ${k === r.role ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></td><td class="rls-muted">${esc(src[r.source] || "")}</td><td>${r.source === "analyst" ? `<button class="btn btn-sm btn-ghost" type="button" data-action="register-reset" data-register="${esc(r.register)}" title="Back to what the till log / defaults say">Reset</button>` : ""}</td></tr>`).join("")}</tbody></table>`;
+  }
 
   function paintPantry() {
     const box = $("[data-pantrylist]");
@@ -134,6 +168,30 @@ export async function mount(host, container) {
 
   const ACTIONS = ["Retrained", "Coached", "Verbal warning", "Written warning", "Cleared", "Note"];
 
+  // Store-wide: people on more than one open shortage. A pattern to look at,
+  // not a finding — the rows link to the items so the analyst can pull video.
+  function paintRecurring() {
+    const box = $("[data-recurring]"); if (!box) return;
+    const r = state?.recurring;
+    if (!r || !r.people?.length) { box.hidden = true; return; }
+    box.hidden = false;
+    $("[data-recurring-meta]").textContent = `${r.people.length} on 2+ open shortages · ${r.open} open shortages, ${r.openRound} round amounts`;
+    const day = (d) => `<a href="#" class="rls-recur-link" data-select="${esc(d.itemId)}">reg ${esc(d.register)} ${esc(money(d.amountCents))} ${esc(d.date)}${d.round ? " · round" : ""}${d.sole ? " · only cashier" : ""}</a>`;
+    $("[data-recurring-body]").innerHTML = `<div class="rls-muted">People signed on to, or handling the till of, more than one shortage nobody can explain. A round amount is bills, not a keying error; "only cashier" means nobody else was signed on to that register that day. Being on a bad day is not proof — pull their transactions and video. "Seen" is every register-day with a discrepancy this person appears on, good or bad.</div>
+      <table class="rls-table rls-recur-table"><thead><tr><th>Associate</th><th>Open shortages</th><th>Round</th><th>Only cashier</th><th>Seen</th><th>Total short</th><th>Register-days</th></tr></thead><tbody>${r.people.map((p) => `
+        <tr class="${p.soleCount > 1 || p.roundCount > 1 ? "is-hot" : ""}"><td>${esc(p.name || "")} <span class="rls-muted">${esc(p.id)}</span></td><td>${p.count}</td><td>${p.roundCount}</td><td>${p.soleCount}</td><td>${p.seenDays}</td><td>${esc(money(p.totalCents))}</td><td>${p.days.map(day).join(", ")}</td></tr>`).join("")}</tbody></table>`;
+  }
+  function recurRow(i) {
+    const rec = state?.recurring?.byItem?.[i.id] || [];
+    const round = (i.amountCents < 0) && Math.abs(i.amountCents) >= 500 && Math.abs(i.amountCents) % 500 === 0 && ["unmatched", "suspect_flip", "no_grid", "outside_window", "suspect_combo"].includes(i.pre?.verdict);
+    if (!rec.length && !round) return "";
+    const who = rec.map((r) => `${r.name || `op ${r.id}`} ×${r.count}${r.sole ? " (only cashier)" : ""}`).join(", ");
+    return `<div class="rls-row-recur">${rec.length ? `↻ ${esc(who)} on open shortages` : ""}${rec.length && round ? " · " : ""}${round ? "round amount" : ""}</div>`;
+  }
+  function recurWhy(item) {
+    return (state?.recurring?.byItem?.[item.id] || []).map((r) => ({ kind: "recurring", text: recurrenceText(r) }));
+  }
+
   function paintCashiers() {
     const box = $("[data-cashiers]");
     if (!cashiers || (!cashiers.hasTills && !cashiers.stored?.events)) { box.hidden = true; return; }
@@ -147,10 +205,12 @@ export async function mount(host, container) {
     if (document.activeElement !== toEl) toEl.value = cashierRange.to;
     const pantry = cashiers.pantry || [];
     const pantryHtml = pantry.length ? `<div class="rls-pantry"><h3>Pantry runs cashed out without a CFT — process, not a cashier error</h3><div class="rls-muted">The associate pantry is rung up, cashed out and closed with a CFT to the register. These tickets have no CFT, so the register is short the ticket. Permanent record; who rang it is shown for reference only and nothing is charged to them.</div><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Ticket</th><th>Cash</th><th>Register L/S</th><th>Pantry lines</th><th>Rang by</th><th>Work item</th></tr></thead><tbody>${pantry.map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.register)}</td><td>TR# ${esc(e.transNum)} ${esc(e.time)}</td><td>${esc(money(e.cents))}</td><td class="neg">${esc(money(e.shortCents))}</td><td>${e.lines} · ${esc((e.products || []).join(", "))}</td><td>${esc(e.opName || "")} <span class="rls-muted">${esc(e.opNum)}</span></td><td>${String(e.workItemId).startsWith("grid:") ? "grid only" : `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>`}</td></tr>`).join("")}</tbody></table></div>` : "";
+    const wins = $("[data-receipt-wins]"); if (wins) wins.innerHTML = list.map((c) => `<option value="${esc(c.id)}">${esc(c.name || "")}</option>`).join("");
+    const dateEl = $("[data-receipt-form] [name='date']"); if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
     if (!list.length) { $("[data-cashiers-body]").innerHTML = `<div class="rls-muted">No attributed errors in this range.</div>${pantryHtml}`; return; }
     const chip = (c) => Object.entries(c.byType).map(([k, v]) => `<span class="rls-chip t-${esc(k)}" title="${esc(cashiers.types[k] || k)} · ${esc(money(v.cents))}">${esc(shortType(k))} ×${v.count}</span>`).join(" ");
     $("[data-cashiers-body]").innerHTML = `<table class="rls-table rls-cashier-table"><thead><tr><th>Associate</th><th>$ involved</th><th>Events</th><th>Error types</th><th>First → last</th><th></th></tr></thead><tbody>${list.map((c) => `
-      <tr class="rls-cashier-row ${openCashier === c.id ? "is-open" : ""}" data-cashier="${esc(c.id)}"><td>${esc(c.name || c.id)} <span class="rls-muted">${esc(c.id)}</span></td><td>${esc(money(c.totalCents))}</td><td>${c.count}</td><td class="rls-chips">${chip(c)}</td><td>${esc(c.first)} → ${esc(c.last)}</td><td><button class="btn btn-sm btn-ghost" data-action="cashier-toggle" data-id="${esc(c.id)}">${openCashier === c.id ? "Hide" : "Details"}</button> <button class="btn btn-sm btn-ghost" data-action="cashier-export" data-id="${esc(c.id)}" title="Write this associate's CSV">Export</button></td></tr>
+      <tr class="rls-cashier-row ${openCashier === c.id ? "is-open" : ""}" data-cashier="${esc(c.id)}"><td>${esc(c.name || c.id)} <span class="rls-muted">${esc(c.id)}</span></td><td>${esc(money(c.totalCents))}</td><td>${c.count}</td><td class="rls-chips">${chip(c)}</td><td>${esc(c.first)} → ${esc(c.last)}</td><td><button class="btn btn-sm btn-ghost" data-action="cashier-toggle" data-id="${esc(c.id)}">${openCashier === c.id ? "Hide" : "Details"}</button> <button class="btn btn-sm btn-ghost" data-action="cashier-export" data-id="${esc(c.id)}" title="Write this associate's CSV">Export</button> <button class="btn btn-sm btn-ghost" data-action="cashier-receipt" data-id="${esc(c.id)}" data-name="${esc(c.name || "")}" title="Attach an unpaid training receipt to this associate">Training receipt</button></td></tr>
       ${openCashier === c.id ? `<tr class="rls-cashier-detail"><td colspan="6">${cashierDetail(c)}</td></tr>` : ""}`).join("")}</tbody></table>
       <div class="rls-muted">Permanent record: an event stays here after its work item is completed and after the till log window moves on. Every entry is an action the till log records this person doing: a till checked in to a register it was not checked out to, a cash advance carried to the wrong register or never surfaced, a till re-checked in with less cash, or a check-in override on a discrepancy day. Being on a register that came up short is not counted.</div>${pantryHtml}`;
   }
@@ -163,7 +223,7 @@ export async function mount(host, container) {
     const notes = cashiers.notes[c.id] || [];
     const today = new Date().toISOString().slice(0, 10);
     return `<div class="rls-cashier-panel">
-      <div><strong>Events</strong><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Type</th><th>Amount</th><th>Work item</th><th>Detail</th></tr></thead><tbody>${c.events.map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.register)}</td><td>${esc(cashiers.types[e.type] || e.type)}</td><td>${esc(money(Math.abs(e.cents || 0)))}</td><td>${String(e.workItemId || "").startsWith("grid:") ? "grid only" : e.workItemId ? `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>` : ""}</td><td>${esc(e.detail || "")}</td></tr>`).join("")}</tbody></table></div>
+      <div><strong>Events</strong><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Type</th><th>Amount</th><th>Work item</th><th>Detail</th></tr></thead><tbody>${c.events.map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.register)}</td><td>${esc(cashiers.types[e.type] || e.type)}</td><td>${esc(money(Math.abs(e.cents || 0)))}</td><td>${String(e.workItemId || "").startsWith("grid:") ? "grid only" : String(e.workItemId || "").startsWith("receipt:") ? `receipt ${esc(String(e.workItemId).slice(8))}` : e.workItemId ? `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>` : ""}</td><td>${esc(e.detail || "")}${e.manual ? ` <button class="btn btn-sm btn-ghost" type="button" data-action="event-remove" data-key="${esc(e.key || "")}" title="Entered by hand — remove it">remove</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
       <div><strong>Coaching log</strong>${notes.length ? `<table class="rls-table"><thead><tr><th>Date</th><th>Action</th><th>Note</th><th></th></tr></thead><tbody>${notes.map((n) => `<tr><td>${esc(n.date)}</td><td>${esc(n.action)}</td><td>${esc(n.note)}</td><td><button class="btn btn-sm btn-ghost" data-action="note-remove" data-id="${esc(c.id)}" data-at="${esc(n.at)}">remove</button></td></tr>`).join("")}</tbody></table>` : `<div class="rls-muted">No coaching recorded yet.</div>`}
         <form class="rls-note-form" data-note-form data-id="${esc(c.id)}">
           <input class="input" type="date" name="date" value="${today}">
@@ -180,13 +240,20 @@ export async function mount(host, container) {
     if (document.activeElement !== inp) inp.value = storeDraft;
     $("[data-store-src]").textContent = state.store.source === "override" ? "(override)" : state.store.source === "profile" ? "(your home store)" : state.store.source === "none" ? "(not set)" : "";
     const q = state.queue, g = state.grid;
-    pill("queue", q ? `WorkView · ${q.items.length + (q.others || []).length} open items${q.totals ? ` (${q.totals.unassigned ?? 0} new, ${q.totals.assigned ?? 0} assigned)` : ""} · ${ago(q.fetchedAt)}` : "WorkView: not pulled", q ? "pill-ok" : "pill-checking", state.links.workview);
+    // A pull that failed on open keeps the previous data on screen; the pill
+    // says so and links the sign-in page instead of opening it uninvited.
+    const failed = (action, text, cls, href) => {
+      const e = sourceErrors.get(action);
+      if (!e) return [text, cls, href, "open"];
+      return [`${text} · refresh failed: ${e.error}`, "pill-warn", e.loginUrl || href, e.loginUrl ? "sign in" : "open"];
+    };
+    pill("queue", ...failed("refresh_queue", q ? `WorkView · ${q.items.length + (q.others || []).length} open items${q.totals ? ` (${q.totals.unassigned ?? 0} new, ${q.totals.assigned ?? 0} assigned)` : ""} · ${ago(q.fetchedAt)}` : "WorkView: not pulled", q ? "pill-ok" : "pill-checking", state.links.workview));
     const t = state.tills;
-    pill("tills", t ? `Till log · ${t.rows} events · ${t.dateMin} → ${t.dateMax} · ${ago(t.fetchedAt)}` : "Till log: not pulled", t ? "pill-ok" : "pill-warn", t?.reportUrl || null);
+    pill("tills", ...failed("refresh_tills", t ? `Till log · ${t.rows} events · ${t.dateMin} → ${t.dateMax} · ${ago(t.fetchedAt)}` : "Till log: not pulled", t ? "pill-ok" : "pill-warn", t?.reportUrl || null));
     const cf = state.cft;
-    pill("cft", cf ? `CFTs · ${cf.rows} transfers · ${cf.dateMin} → ${cf.dateMax} · ${ago(cf.fetchedAt)}` : "Cash fund transfers: not pulled", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null);
+    pill("cft", ...failed("refresh_cft", cf ? `CFTs · ${cf.rows} transfers · ${cf.dateMin} → ${cf.dateMax} · ${ago(cf.fetchedAt)}` : "Cash fund transfers: not pulled", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null));
     paintMoves();
-    pill("grid", g && g.capturedAt ? `Power BI · ${g.cellCount} register-days${g.dateMin ? ` · ${g.dateMin} → ${g.dateMax}` : ""} · ${ago(g.capturedAt)}` : g?.staleStore ? `Power BI: cached for store ${g.staleStore} — refresh` : "Power BI: not pulled", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi);
+    pill("grid", ...failed("refresh_grid", g && g.capturedAt ? `Power BI · ${g.cellCount} register-days${g.dateMin ? ` · ${g.dateMin} → ${g.dateMax}` : ""} · ${ago(g.capturedAt)}` : g?.staleStore ? `Power BI: cached for store ${g.staleStore} — refresh` : "Power BI: not pulled", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi));
   }
 
   function paintMoves() {
@@ -198,10 +265,10 @@ export async function mount(host, container) {
     $("[data-moves-body]").innerHTML = `<table class="rls-table"><thead><tr><th>Date</th><th>Associate</th><th>Out of</th><th>Into</th><th>Out</th><th>In</th><th>Amount out / in</th></tr></thead><tbody>${moves.map((m) => `<tr><td>${esc(m.date)}</td><td>${esc(m.associate || m.associateId)} <span class="rls-muted">${esc(m.associateId)}</span></td><td>reg ${esc(m.fromRegister)}</td><td>reg ${esc(m.toRegister)}${m.override ? ' <span class="badge badge-warn">override</span>' : ""}</td><td>${esc(m.outTime)}</td><td>${esc(m.inTime)}</td><td>${esc(money(m.outCents))} / ${esc(money(m.inCents))}</td></tr>`).join("")}</tbody></table><div class="rls-muted">A till checked in to a register it was never checked out to, paired with a register whose till never came back that day. Charged to the person who did the check-in. This is how flips happen; the matching pair usually sits in "ready to close".</div>`;
   }
 
-  function pill(key, text, cls, href) {
+  function pill(key, text, cls, href, linkLabel = "open") {
     const el = $(`[data-pill="${key}"]`);
     el.className = `pill ${cls}`;
-    el.innerHTML = esc(text) + (href ? ` <a href="${esc(href)}" target="_blank" rel="noopener">open</a>` : "");
+    el.innerHTML = esc(text) + (href ? ` <a href="${esc(href)}" target="_blank" rel="noopener">${esc(linkLabel)}</a>` : "");
   }
 
   function paintSummary() {
@@ -224,6 +291,10 @@ export async function mount(host, container) {
     const list = $("[data-queue-list]");
     const q = state.queue;
     if (!q) { list.innerHTML = `<div class="rls-empty">No WorkView data yet — click <strong>Refresh WorkView</strong>.</div>`; return; }
+    // Items dispositioned in APPRISS only leave this list on a successful
+    // pull, so a failed one must say the list may be behind.
+    const qe = sourceErrors.get("refresh_queue");
+    const stale = qe ? `<div class="rls-stale">WorkView could not be refreshed (${esc(qe.error)}). This list was pulled ${esc(ago(q.fetchedAt))} and may still show items already dispositioned in APPRISS.${qe.loginUrl ? ` <a href="${esc(qe.loginUrl)}" target="_blank" rel="noopener">Sign in</a>, then click <strong>Refresh WorkView</strong>.` : ""}</div>` : "";
     const groups = { ready: [], review: [], pending: [] };
     for (const i of q.items) groups[classify(i).bucket].push(i);
     groups.review.sort((a, b) => ((classify(b).video ? 1 : 0) - (classify(a).video ? 1 : 0)) || (SEV_ORDER[classify(a).severity] ?? 3) - (SEV_ORDER[classify(b).severity] ?? 3) || (b.amountAbsCents || 0) - (a.amountAbsCents || 0));
@@ -235,12 +306,13 @@ export async function mount(host, container) {
       const busy = inFlight.has(i.id);
       return `<div class="rls-row ${i.id === selectedId ? "is-selected" : ""} b-${c.bucket} ${busy ? "is-busy" : ""}" data-id="${esc(i.id)}" role="button" tabindex="0">
         <div class="rls-row-top">
-          <span class="rls-row-reg">Reg ${esc(i.register || "?")}</span>
+          <span class="rls-row-reg">Reg ${esc(i.register || "?")}${roleTag(i.register) ? ` <span class="rls-role">${esc(roleTag(i.register))}</span>` : ""}</span>
           <span class="rls-row-amt ${i.type}">${esc(money(i.amountCents))}</span>
           <span class="rls-row-date">${esc(i.date || "?")}</span>
           ${busy ? `<span class="badge badge-info">completing…</span>` : `<span class="badge v-${esc(c.verdict)}">${esc(c.label)}${c.video ? " · 🎥" : ""}</span>${state.causes?.[i.id] ? ` <span class="badge badge-warn" title="Cause picked: TR# ${esc(state.causes[i.id].transNum)}">cause picked</span>` : ""}`}
         </div>
         ${c.why ? `<div class="rls-row-why">${esc(c.why)}</div>` : ""}
+        ${recurRow(i)}
         <div class="rls-row-sla ${i.isOverDue ? "overdue" : ""}">${esc(i.sourceAppId === "mel" ? "Long/Short item" : i.category)}${i.view === "assigned" ? " · assigned" : ""}${sla ? ` · ${esc(sla)}` : ""}${c.analyzed ? " · analyzed" : " · grid only"}</div>
       </div>`;
     };
@@ -252,7 +324,7 @@ export async function mount(host, container) {
       </div>`;
     };
     const html = sec("review", groups.review.map(row)) + sec("ready", groups.ready.map(row)) + sec("pending", groups.pending.map(row)) + sec("other", (q.others || []).map(other));
-    list.innerHTML = html || `<div class="rls-empty">No open work items in the last 30 days.</div>`;
+    list.innerHTML = stale + (html || `<div class="rls-empty">No open work items in the last 30 days.</div>`);
   }
 
   function paintDetail() {
@@ -265,7 +337,7 @@ export async function mount(host, container) {
     }
     const c = classify(item);
     const ev = analysis?.evidence || null;
-    const why = ev?.why || item.pre.why || (c.why ? [{ kind: "grid", text: c.why.charAt(0).toUpperCase() + c.why.slice(1) + "." }] : []);
+    const why = [...(ev?.why || item.pre.why || (c.why ? [{ kind: "grid", text: c.why.charAt(0).toUpperCase() + c.why.slice(1) + "." }] : [])), ...recurWhy(item)];
     const sug = ev?.suggestion || item.pre.suggestion || null;
     const cause = state.causes?.[item.id] || null;
     const sugText = sug ? (cause && !sug.safe ? `${causeText(item, cause)}\n\n${sug.text}` : sug.text) : "";
@@ -457,6 +529,46 @@ export async function mount(host, container) {
     pantryList = d; paintPantry();
     host.ui.toast(`TR# ${tr}: ${d.added} added, ${d.updated} already listed. Re-analyze to apply.`, { kind: "success" });
   });
+  host.ui.delegate(container, "change", "[data-register-role]", async (ev) => {
+    ev.stopPropagation();
+    const sel = ev.target;
+    const d = await run("set_register_role", { register: sel.dataset.register, role: sel.value }, null);
+    if (d) { registersInfo = d; await load(); host.ui.toast(`Reg ${sel.dataset.register} set to ${d.roles?.[sel.value] || sel.value}; matching re-run.`); }
+  });
+  host.ui.delegate(container, "click", "[data-action='register-reset']", async (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const reg = ev.target.closest("[data-register]").dataset.register;
+    const d = await run("set_register_role", { register: reg, role: null }, ev.target.closest("button"));
+    if (d) { registersInfo = d; await load(); }
+  });
+  host.ui.delegate(container, "click", ".rls-role-select", (ev) => { ev.stopPropagation(); });
+  host.ui.delegate(container, "submit", "[data-receipt-form]", async (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const f = ev.target.closest("form");
+    const fd = new FormData(f);
+    const payload = Object.fromEntries(["associateId", "associate", "date", "register", "amount", "receipt", "note"].map((k) => [k, fd.get(k)]));
+    const d = await run("add_training_receipt", payload, f.querySelector("button[type='submit']"));
+    if (d) {
+      for (const k of ["register", "amount", "receipt", "note"]) f.elements[k].value = "";
+      openCashier = payload.associateId;
+      await loadCashiers(); paintCashiers();
+      host.ui.toast(`Training receipt ${payload.receipt} attached to ${payload.associateId}`);
+    }
+  });
+  host.ui.delegate(container, "click", "[data-receipt-form], [data-receipt-form] *", (ev) => { ev.stopPropagation(); });
+  host.ui.delegate(container, "click", "[data-action='cashier-receipt']", (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const b = ev.target.closest("[data-id]");
+    const f = $("[data-receipt-form]");
+    f.elements.associateId.value = b.dataset.id; f.elements.associate.value = b.dataset.name || "";
+    f.scrollIntoView({ behavior: "smooth", block: "center" }); f.elements.date.focus();
+  });
+  host.ui.delegate(container, "click", "[data-action='event-remove']", async (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const key = ev.target.closest("[data-key]").dataset.key;
+    const d = await run("remove_manual_event", { key }, ev.target.closest("button"));
+    if (d) { await loadCashiers(); paintCashiers(); }
+  });
   host.ui.delegate(container, "click", "[data-action='pantry-remove']", async (ev) => {
     const d = await run("remove_pantry_item", { upc: ev.target.dataset.upc }, ev.target);
     if (d) { pantryList = d; paintPantry(); }
@@ -563,6 +675,14 @@ export async function mount(host, container) {
   host.ui.delegate(container, "change", "[data-cause]", (ev) => {
     const btn = $("[data-action='prefill']"); if (btn) btn.disabled = !ev.target.value;
   });
+  host.ui.delegate(container, "click", "[data-select]", async (ev) => {
+    ev.preventDefault();
+    const id = ev.target.closest("[data-select]")?.dataset.select;
+    if (!id) return;
+    selectedId = id; await reloadSelected();
+    paintQueue(); paintDetail();
+    $(`.rls-row[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
+  });
   host.ui.delegate(container, "click", ".rls-row", async (ev) => {
     const id = ev.target.closest(".rls-row")?.dataset.id;
     if (!id) return;
@@ -607,7 +727,7 @@ export async function mount(host, container) {
     if (!state?.store.storeNbr) return;
     const stale = (iso, min) => !iso || Date.now() - new Date(iso).getTime() > min * 60_000;
     const steps = [];
-    if (!state.queue || stale(state.queue.fetchedAt, 30)) steps.push({ action: "refresh_queue", btn: "refresh-queue", label: "WorkView" });
+    if (!state.queue || stale(state.queue.fetchedAt, 5)) steps.push({ action: "refresh_queue", btn: "refresh-queue", label: "WorkView" });
     if (!state.grid?.capturedAt || stale(state.grid.capturedAt, 6 * 60)) steps.push({ action: "refresh_grid", btn: "refresh-grid", label: "Power BI" });
     if (!state.tills || stale(state.tills.fetchedAt, 6 * 60)) steps.push({ action: "refresh_tills", btn: "refresh-tills", label: "Till log" });
     if (!state.cft || stale(state.cft.fetchedAt, 6 * 60)) steps.push({ action: "refresh_cft", btn: "refresh-cft", label: "Cash fund transfers" });
@@ -619,7 +739,7 @@ export async function mount(host, container) {
     for (const st of steps) {
       if (unmounted) return;
       progress(`Loading ${st.label}…`);
-      const d = await run(st.action, {}, $(`[data-action='${st.btn}']`));
+      const d = await run(st.action, {}, $(`[data-action='${st.btn}']`), { openLogin: false });
       if (unmounted) return;
       if (d) loaded.push(st.label);
       await load();

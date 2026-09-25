@@ -13,7 +13,7 @@
 // as a generic card (normalizeOtherItem) so the store's whole open queue is
 // visible; only register items get the long/short analysis.
 
-import { APPRISS_BASE, APPRISS_HOME } from "../../../shared/appriss.js";
+import { APPRISS_BASE, APPRISS_HOME, apprissReauthInBackground } from "../../../shared/appriss.js";
 import { classifyAuthResponse, isAuthFailureStatus } from "../../../shared/auth.js";
 
 export const LIST_URL   = `${APPRISS_BASE}/platform/workview/api/v2/workviewItems`;
@@ -202,6 +202,27 @@ async function postList(body) {
   return { ok: true, data: json.data || {} };
 }
 
+// Silent reauth. The SW's WorkView call comes back as the sign-in page once
+// the APPRISS session has expired (daily in practice). The mechanics now live
+// in shared/appriss.js (`apprissReauthInBackground`) — this file was the third
+// copy of them, and boblisa became a fourth caller that shipped without any,
+// so the analyst had to open Secure by hand. WorkView's own list call is the
+// readiness probe. Kept as a named export because it reads as part of this
+// module's API.
+export const reauthInBackground = (probe, opts = {}) =>
+  apprissReauthInBackground(probe, { moduleId: "registerls", ...opts });
+
+// One list page, with one silent reauth when the session has expired.
+async function postListWithReauth(body, state) {
+  let res = await postList(body);
+  if (res.ok || res.errorClass !== "AUTH" || state.reauthTried) return res;
+  state.reauthTried = true;
+  const again = await reauthInBackground(() => postList(body));
+  if (again.ok) return again.res;
+  console.warn("[registerls.workview] silent reauth failed:", again.reason);
+  return res;
+}
+
 // Every open work item for the store: all pages of the "unassigned" (New)
 // view plus the "assigned" (in progress) view. Items are tagged with which
 // view they came from. `days` is the date-range filter WorkView applies
@@ -210,12 +231,13 @@ export async function fetchWorkItems(storeNbr, { days = 730, statuses = ["unassi
   const raw = new Map();
   const totals = {};
   let window = null;
+  const authState = { reauthTried: false };
   for (const status of statuses) {
     let startIndex = 0, fetched = 0;
     for (let page = 0; page < maxPages; page++) {
       const body = buildListBody(storeNbr, { days, status, startIndex });
       window = window || { fromDate: body.fromDate, toDate: body.toDate };
-      const res = await postList(body);
+      const res = await postListWithReauth(body, authState);
       if (!res.ok) return res;
       const items = res.data.items || [];
       if (page === 0) totals[status] = Number(res.data.totalResults) || items.length;
