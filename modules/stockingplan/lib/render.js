@@ -7,6 +7,7 @@
 // what the overnight coach reads off at shift start.
 
 import { formatShiftRange } from "./compute.js";
+import { withWeekday } from "../../../shared/dates.js";
 import { verdictLine } from "./shifts.js";
 import { lineText } from "./suggest.js";
 
@@ -89,7 +90,7 @@ export function flattenRows(plan, assignments) {
 function headline(plan) {
   const cap = plan.capacity;
   const lines = [];
-  lines.push(`Stocking Plan — Store ${plan.storeNbr} — ${plan.dateLabel || plan.businessDate}`);
+  lines.push(`Stocking Plan — Store ${plan.storeNbr} — ${plan.dateLabel || withWeekday(plan.businessDate)}`);
   lines.push("");
   lines.push(
     `Freight: ${plan.requiredHours}h` +
@@ -200,7 +201,7 @@ export function toPlaintext(plan, assignments) {
   if (plan.trucks.length) {
     lines.push("TRUCKS");
     for (const t of plan.trucks) {
-      lines.push(`  ${t.type} ${t.eta} — ${t.totalCases.toLocaleString()} cases (load ${t.loadId})`);
+      lines.push(`  ${t.type} ${withWeekday(t.eta)} — ${t.totalCases.toLocaleString()} cases (load ${t.loadId})`);
     }
     lines.push("");
   }
@@ -324,7 +325,7 @@ export function toPrintHtml(plan, assignments) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Stocking Plan — Store ${escaped(plan.storeNbr)} — ${escaped(plan.businessDate)}</title>
+<title>Stocking Plan — Store ${escaped(plan.storeNbr)} — ${escaped(withWeekday(plan.businessDate))}</title>
 <style>
   body { font-family: Arial, sans-serif; font-size: 11pt; margin: 1.5cm; }
   h1 { font-size: 14pt; margin-bottom: 0.2em; }
@@ -355,7 +356,7 @@ export function toPrintHtml(plan, assignments) {
 </head>
 <body>
 <h1>Stocking Plan</h1>
-<p class="subtitle">Store ${escaped(plan.storeNbr)} &mdash; ${escaped(plan.dateLabel || plan.businessDate)}
+<p class="subtitle">Store ${escaped(plan.storeNbr)} &mdash; ${escaped(plan.dateLabel || withWeekday(plan.businessDate))}
   &middot; morning crew ${escaped(plan.nextDateLabel)}</p>
 
 <div class="verdict ${escaped(cap.verdict)}">${escaped(verdictLine(cap))}</div>

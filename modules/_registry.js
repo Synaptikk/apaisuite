@@ -33,6 +33,7 @@ import digitalrollup     from "./digitalrollup/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
 import costinventory     from "./costinventory/module.js";
 import accidents         from "./accidents/module.js";
+import cx                from "./cx/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -47,6 +48,7 @@ export default [
   vizpick,           // VizPick Market Rollup — every store in a market at once
   digitalrollup,     // Digital Market Rollup — live OPD fulfilment, same layout
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
+  cx,                // Cx — store NPS + Medallia comment themes, what's going right/wrong
   aurorbuddy,
   registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ
   boblisa,           // BoB and Lisa — missed-item finder (same card, second sale minutes later)

@@ -885,7 +885,7 @@ export async function mount(host, container) {
     const sameDay = new Date().toDateString() === d.toDateString();
     return sameDay
       ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+      : d.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", year: "2-digit", hour: "2-digit", minute: "2-digit" });
   }
 
   function cssEsc(s) {

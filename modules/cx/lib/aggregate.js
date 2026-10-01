@@ -19,7 +19,7 @@
 //     hundred percent. Four weeks against the prior four is the shortest span
 //     that moves for a reason.
 
-import { themeFor, themeMeta, topicLabel, polarityOf, sentimentWeight, ratingBand } from "./topics.js";
+import { themeFor, themeMeta, canonicalTopic, polarityOf, sentimentWeight, ratingBand } from "./topics.js";
 
 /** Default comparison span, in days, for "what changed". */
 export const MOVEMENT_WINDOW_DAYS = 28;
@@ -162,13 +162,21 @@ export function themeBreakdown(records, { examplesPerTheme = EXAMPLES_PER_THEME 
 
       // Per-topic detail inside the theme, so "Associates & service" can be
       // opened to see whether it is attitude or staffing.
+      //
+      // Keyed on the CANONICAL topic, not the raw Medallia name: the two
+      // taxonomies carry identical subthemes ("Attitude" arrives under both
+      // "Interaction" and "Associate Interaction"), and keying on the raw name
+      // splits one row into two with half the count each.
       for (const t of r.topics) {
-        if (themeFor(t.name) !== themeId) continue;
-        const key = t.name;
-        const tb = bucket.topics.get(key) ?? { name: key, label: topicLabel(key), mentions: 0, positive: 0, negative: 0, neutral: 0 };
+        const canon = canonicalTopic(t.name);
+        if (canon.themeId !== themeId) continue;
+        const tb = bucket.topics.get(canon.key)
+          ?? { key: canon.key, label: canon.label, sources: [], mentions: 0, positive: 0, negative: 0, neutral: 0 };
         tb.mentions++;
         tb[polarityOf(t.sentiment)]++;
-        bucket.topics.set(key, tb);
+        // Kept so a merged figure can be traced back to the source vocabulary.
+        if (!tb.sources.includes(canon.source)) tb.sources.push(canon.source);
+        bucket.topics.set(canon.key, tb);
       }
 
       if (bucket.examples[hit.polarity].length < examplesPerTheme && r.text) {

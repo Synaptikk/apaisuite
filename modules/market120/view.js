@@ -6,6 +6,7 @@
 import { computeAlerts, fmtAlertValue, hasRealKpis } from "./lib/alerts.js";
 import { hbarSvg, donutSvg, CHART_COLORS } from "./lib/charts.js";
 import { summarize as summarizeIsa, storeSummary as isaStoreSummary } from "./lib/isa_review.js";
+import { withWeekday } from "../../shared/dates.js";
 
 export async function mount(host, container) {
   // 1. Inject module CSS (removed on unmount).
@@ -180,7 +181,7 @@ export async function mount(host, container) {
 
     const asOf = container.querySelector("[data-breakdown-asof]");
     if (asOf) {
-      asOf.textContent = bd.capturedAt ? `as of ${new Date(bd.capturedAt).toLocaleString("en-US")}` : "";
+      asOf.textContent = bd.capturedAt ? `as of ${withWeekday(new Date(bd.capturedAt).toLocaleString("en-US"), bd.capturedAt)}` : "";
     }
 
     // Executive insights (top). These are our own HTML strings (only <b> tags).
@@ -280,7 +281,7 @@ export async function mount(host, container) {
     parts.push(`<div class="mkt120-isa-controls">
       <div class="mkt120-isa-seg" role="group" aria-label="Review window">${isa.presets.map((d) =>
         `<button class="mkt120-isa-segbtn" data-isa-action="days" data-days="${d}" aria-pressed="${d === rv.window.days}"${isa.busy ? " disabled" : ""}>${d} days</button>`).join("")}</div>
-      <span class="mkt120-sd-meta">${isa.busy ? "Loading from Power BI…" : `${escapeHtml(fmtRange(rv.window))} · data through ${escapeHtml(fmtDay(rv.dataThrough))} · pulled ${escapeHtml(new Date(rv.capturedAt).toLocaleString("en-US"))}`}</span>
+      <span class="mkt120-sd-meta">${isa.busy ? "Loading from Power BI…" : `${escapeHtml(fmtRange(rv.window))} · data through ${escapeHtml(fmtDay(rv.dataThrough))} · pulled ${escapeHtml(withWeekday(new Date(rv.capturedAt).toLocaleString("en-US"), rv.capturedAt))}`}</span>
     </div>`);
 
     const maxReason = Math.max(1, ...sum.byReason.map((r) => Math.abs(r.dollars)));
@@ -454,7 +455,7 @@ export async function mount(host, container) {
     } else {
       const det = d.detail;
       const items = det.items.items.filter((it) => !reasons || reasons.includes(it.reason)).slice(0, 25);
-      parts.push(head(`${escapeHtml(int(det.items.itemCount))} items · ${escapeHtml(int(det.items.lines))} lines · ${escapeHtml(smoney(det.items.total))} · pulled ${escapeHtml(new Date(det.capturedAt).toLocaleString("en-US"))}${d.loading ? " · refreshing…" : ""}`));
+      parts.push(head(`${escapeHtml(int(det.items.itemCount))} items · ${escapeHtml(int(det.items.lines))} lines · ${escapeHtml(smoney(det.items.total))} · pulled ${escapeHtml(withWeekday(new Date(det.capturedAt).toLocaleString("en-US"), det.capturedAt))}${d.loading ? " · refreshing…" : ""}`));
       if (d.error) parts.push(`<p class="mkt120-debug-error">${escapeHtml(d.error)}</p>`);
       parts.push(`<div class="mkt120-wow-table-wrap"><table><thead><tr><th>Item</th><th>Description</th><th>Category</th><th>Reason</th><th>Source</th><th>Dates</th><th class="num">Units</th><th class="num">$</th></tr></thead><tbody>` +
         (items.map((it) => `<tr><td>${escapeHtml(it.item)}</td><td>${escapeHtml(it.desc)}</td><td>${escapeHtml(it.cat)} <span class="mkt120-sd-meta">D${escapeHtml(it.dept)}</span></td>` +
@@ -508,7 +509,7 @@ export async function mount(host, container) {
 
   function fmtDay(ymdStr) {
     if (!ymdStr) return "—";
-    return new Date(`${ymdStr}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    return new Date(`${ymdStr}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
   }
   // Windows are [from, to): show the last included day.
   function fmtRange(w) {
@@ -646,7 +647,7 @@ export async function mount(host, container) {
       if (loading) parts.push(`<p class="mkt120-empty">Reading this store's items from Tableau in a background tab…</p>`);
       else if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(res.detailError)}</p>`);
     } else {
-      parts.push(head(`${escapeHtml(int(d.itemCount))} items · pulled ${escapeHtml(new Date(d.capturedAt).toLocaleString("en-US"))}${loading ? " · refreshing…" : ""}`));
+      parts.push(head(`${escapeHtml(int(d.itemCount))} items · pulled ${escapeHtml(withWeekday(new Date(d.capturedAt).toLocaleString("en-US"), d.capturedAt))}${loading ? " · refreshing…" : ""}`));
       if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(res.detailError)}</p>`);
 
       const rollup = (title, rows, label) => {

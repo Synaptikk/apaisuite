@@ -1340,3 +1340,73 @@
 .module-digitalmetrics .dm-fold > summary:hover { color: var(--apai-blue); }
 .module-digitalmetrics .dm-fold[open] > summary { border-bottom: 1px solid var(--apai-border, #e2e2e2); }
 .module-digitalmetrics .dm-fold-body { padding: var(--sp-4); }
+
+/* Pick Starts and Stops: the per-person daily grid (lib/pages/insights.js).
+   Fixed columns and no wrapping — a sentence per day wrapped into a block
+   nobody could scan. */
+.module-digitalmetrics .dm-daily {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 880px;
+  font-size: 12px;
+  white-space: nowrap;
+  margin: 2px 0;
+}
+/* The sub-header is a header-only copy of the grid inside the outer sticky
+   header cell, so it scrolls with the column headers, not the rows. */
+.module-digitalmetrics .dm-daily-head { margin: 0; }
+.module-digitalmetrics .dm-daily-head th { padding-top: 0; padding-bottom: 0; opacity: .8; }
+.module-digitalmetrics .dm-daily td { overflow: hidden; text-overflow: ellipsis; }
+.module-digitalmetrics .dm-daily th,
+.module-digitalmetrics .dm-daily td {
+  padding: 2px 8px 2px 0;
+  text-align: left;
+  border: 0;
+  font-weight: 400;
+  color: var(--text, inherit);
+}
+.module-digitalmetrics .dm-daily th {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  opacity: .6;
+}
+.module-digitalmetrics .dm-daily .is-right { text-align: right; padding-right: 16px; }
+.module-digitalmetrics .dm-daily td strong.is-bad { font-weight: 600; }
+
+/* A start/end gap over MOVED_MIN (first_pick.js): most likely another role
+   with the board not updated. Shown, marked, not counted. */
+.module-digitalmetrics .dm-moved { opacity: .55; font-style: italic; }
+
+/* Pick Hours (lib/pages/pickhours.js): Digital Rollup's day graph, kept per
+   day. The SVG comes from digitalrollup/lib/pick_chart.js and names its hit
+   areas .dmr-bar-hit, hence the foreign prefix inside this scope. */
+.module-digitalmetrics .dm-pickhours-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.module-digitalmetrics .dm-pickchart { position: relative; margin-top: var(--sp-3); }
+.module-digitalmetrics .dm-pickchart svg {
+  display: block; width: 100%; max-width: 960px; height: auto; overflow: visible;
+}
+/* Hovered hour: a faint column behind the bar, so the tooltip's hour is obvious. */
+.module-digitalmetrics .dm-pickchart .dmr-bar-hit.is-on { fill: var(--apai-muted) !important; fill-opacity: 0.08; }
+.module-digitalmetrics .dm-pickchart-tip {
+  position: absolute; top: 8px; transform: translateX(-50%);
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--apai-bg-elev, var(--apai-bg-soft)); border: 1px solid var(--apai-border, #e2e2e2);
+  font-size: var(--fs-xs); color: var(--apai-text, inherit);
+  white-space: nowrap; pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.module-digitalmetrics .dm-pick-note { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); }
+.module-digitalmetrics .dm-pickday-btn {
+  background: none; border: 0; padding: 0; font: inherit; color: var(--apai-blue); cursor: pointer;
+  white-space: nowrap;
+}
+.module-digitalmetrics .dm-pickday-btn:hover { text-decoration: underline; }
+.module-digitalmetrics .dm-pickday-btn.is-active { font-weight: var(--fw-semi, 600); text-decoration: underline; }
+.module-digitalmetrics .dm-pick-peak { font-weight: var(--fw-semi, 600); }
+.module-digitalmetrics .dm-pick-now { color: var(--apai-muted); font-style: italic; }
+.module-digitalmetrics .dm-pick-est { color: var(--apai-muted); }

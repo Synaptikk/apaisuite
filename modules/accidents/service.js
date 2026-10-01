@@ -174,6 +174,37 @@ export const handlers = {
     }
   },
 
+  // Batch detail for several PNL refs (the email list needs every open ref).
+  // Skips refs already in refDetails unless msg.force; writes the cache once
+  // per ref so a mid-way session expiry keeps what was fetched.
+  async resolve_refs(msg) {
+    return withKeepAwake(`${MODULE_ID}.resolve_refs`, async () => {
+      const store = String(msg?.store || "").trim();
+      const refs = [...new Set((msg?.refs || []).map((r) => String(r).trim()).filter(Boolean))];
+      if (!store || !refs.length) return { ok: false, error: "store and refs required" };
+      if (!(await ensureClearsight())) return { ok: false, error: "Not signed in to Clearsight." };
+      const data = await readCache(store);
+      if (!data) return { ok: false, error: "Pull the store first." };
+      const todo = refs.filter((r) => msg?.force || !data.refDetails[r] || data.refDetails[r].error);
+      let done = 0, failed = 0, expired = false;
+      for (const ref of todo) {
+        progress(`Clearsight ${done + failed + 1}/${todo.length}: claim ${ref}…`);
+        try {
+          data.refDetails[ref] = await enrichClaim(ref);
+          done++;
+        } catch (e) {
+          if (e instanceof cs.NotSignedIn) { expired = true; break; }
+          data.refDetails[ref] = { ref, error: e.message };
+          failed++;
+        }
+        await writeCache(store, data);
+      }
+      progress("");
+      return { ok: true, refDetails: data.refDetails, done, failed, skipped: refs.length - todo.length,
+               error: expired ? "Clearsight session expired mid-way — run it again." : null };
+    });
+  },
+
   async open_claim(msg) {
     const url = msg?.claimUrl || (msg?.claimId ? cs.claimUrl(msg.claimId) : `${cs.BASE}/app/Clearsight/`);
     await chrome.tabs.create({ url, active: true });

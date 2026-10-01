@@ -34,6 +34,12 @@ async function getJson(path) {
   if (/<html|login\.cmdx|SsoSessionEnded|noAuthentication/i.test(text.slice(0, 400))) {
     throw new NotSignedIn("Not signed in to Clearsight in this browser.");
   }
+  // An expired session answers 500 with JSON:
+  // {"ErrorType":"serverError","ErrorDescription":"Your session is no longer valid. …"}
+  // (seen 2026-09-27). Treat it as signed-out so ensureClearsight re-runs SSO.
+  if (r.status >= 400 && /session is no longer valid|session has expired|not authenticated/i.test(text.slice(0, 400))) {
+    throw new NotSignedIn("Clearsight session expired.");
+  }
   if (!r.ok) throw new Error(`Clearsight ${path.split("?")[0].split("/").pop()} returned ${r.status}`);
   try { return JSON.parse(text); } catch { throw new Error(`Bad JSON from ${path.split("?")[0]}: ${text.slice(0, 120)}`); }
 }
@@ -83,6 +89,7 @@ export function claimDigest(d) {
     claimNumber:  String(d.ClaimNumber ?? ""),
     claimant:     (d.ClaimName1 || "").trim(),
     status:       deco(d, "Status"),
+    denied:       d.Denied === true,
     coverage:     deco(d, "CoverageCode"),
     claimType:    deco(d, "SpecialAnalysis#19"),
     lossDate:     (d.LossDate || "").split(" ")[0],

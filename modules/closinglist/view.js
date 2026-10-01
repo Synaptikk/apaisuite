@@ -21,6 +21,7 @@ import * as Parse from "./lib/parse.js";
 import { collectSchedule, failureKind } from "./lib/collection.js";
 import { uploadAssociatesToFirestore } from "./lib/firebaseUpload.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
+import { withWeekday } from "../../shared/dates.js";
 
 const DEFAULTS = {
   storeNbr: "",
@@ -273,7 +274,7 @@ export async function mount(host, container) {
     const storeNbr     = $("cl-storeNbr").value.trim() || DEFAULTS.storeNbr;
     const businessDate = $("cl-businessDate").value || todayIso();
     if (!text) { setStatus("Generate the draft first.", "error"); return; }
-    const subject = `Closing List — Store ${storeNbr} — ${businessDate}`;
+    const subject = `Closing List — Store ${storeNbr} — ${withWeekday(businessDate)}`;
     const url =
       `https://outlook.office.com/mail/deeplink/compose` +
       `?to=${encodeURIComponent(recipient)}` +

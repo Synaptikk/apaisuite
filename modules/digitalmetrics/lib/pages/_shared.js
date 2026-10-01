@@ -96,7 +96,9 @@ export function compareBy(key, dir = "desc", valueOf = null) {
 /**
  * A data table, optionally with click-to-sort headers.
  *
- * `columns` = [{ key, label, align?, format?, sortKey?, sortable? }]
+ * `columns` = [{ key, label, labelHtml?, align?, format?, sortKey?, sortable? }]
+ *   labelHtml: trusted markup for the header cell instead of the escaped
+ *   label (a sub-header grid, say); the label still names the column.
  *
  * Pass `sort: { key, dir }` to turn the headers into sort buttons. The table
  * does NOT sort — it only renders the current state and emits `data-dm-sort`
@@ -115,7 +117,7 @@ export function table(columns, rows, { emptyMessage = "No data.", sort = null } 
       const right = c.align === "right" ? "is-right" : "";
       const sortKey = c.sortable === false ? null : (c.sortKey || c.key);
       if (!sort || !sortKey) {
-        return `<th class="${right}">${esc(c.label)}</th>`;
+        return `<th class="${right}">${c.labelHtml ?? esc(c.label)}</th>`;
       }
       const active = sort.key === sortKey;
       // "↕" on an unsorted column advertises that it can be clicked at all —

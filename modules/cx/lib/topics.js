@@ -99,6 +99,43 @@ const FAMILY_THEME = Object.freeze({
 
   "Brand":                     "brand",
   "Brand Affinity":            "brand",
+
+  // ── The long tail. Every one of these was found unmapped against a real
+  // 90-day pull (dev/cx-check-topics.mjs), each in single digits. They are
+  // mapped rather than left to fall through because the fall-through creates a
+  // one-row theme that then ranks as a "mover" off a single mention.
+  "Account Activities":        "digital",   // W+ membership
+  "Order Updates":             "digital",   // WISMO / no notification
+  "Payment":                   "digital",   // charge disputes
+  "Error/Speed":               "digital",   // app malfunction
+  "Communication":             "handoff",   // driver chat, language barrier
+  "Fulfillment Options":       "handoff",   // delivery slots
+  "Post Transaction":          "accuracy",  // approve/reject substitution
+  "Cancellations":             "accuracy",
+  "Restrooms":                 "store",
+  // "waited a long time for assistance getting earbuds that were locked in
+  // case" — a store-floor problem, not a product one.
+  "Unique Items":              "store",
+  "Pricing Accuracy":          "price",     // shelf price vs register
+  "Competitive":               "price",
+  "Scan & Go General":                      "checkout",
+  "Scan & Go Scanning/Checkout/Payment":    "checkout",
+  "Scan & Go App Experience":               "digital",
+  "Payment Methods":           "checkout",  // EBT at the register
+
+  // A second sweep over the full 52 weeks turned these up, all in single
+  // digits — the 90-day sample had none of them. Each was showing as its own
+  // one-mention theme, which is how a single comment ends up ranked as a mover.
+  "Parking Lot":               "store",
+  "Fitting Rooms":             "store",
+  "Restroom":                  "store",
+  "Navigation":                "digital",   // site/app search and filters
+  // A receipt check at the door and a physical altercation are both the store's,
+  // and both belong where someone would look for them rather than in a theme of
+  // their own.
+  "Security Personnel":        "store",
+  "Security Locker/Item Case": "store",
+  "Critical Incident":         "store",
 });
 
 /**
@@ -152,7 +189,47 @@ export function themeMeta(themeId) {
 /** Short label for a topic within its theme — the subtheme carries the detail. */
 export function topicLabel(topicName) {
   const { family, subtheme } = splitTopic(topicName);
-  return subtheme || family;
+  if (!subtheme) return family;
+  return SUBTHEME_LABEL[topicName] ?? subtheme;
+}
+
+/**
+ * Subthemes whose own name is ambiguous once the family is dropped.
+ *
+ * "Associate Dept - Checkout" inside the "Associates & service" theme renders as
+ * a bare "Checkout", which reads as the checkout THEME rather than as the
+ * associates working there.
+ */
+const SUBTHEME_LABEL = Object.freeze({
+  "Associate Dept - Checkout":             "At the checkout",
+  "Associate Dept - Customer Service Desk": "At the service desk",
+});
+
+/**
+ * Canonical identity of a topic within its theme.
+ *
+ * The parallel taxonomies do not only differ at family level — they carry
+ * genuinely identical subthemes. Against a real 90-day pull, "Attitude",
+ * "Helpfulness", "Knowledge/Accuracy of Information", "Refunds" and "General"
+ * each arrived under two different families, and rendered as two rows with the
+ * same label and half the count each. That is worse than useless: it is the same
+ * top-of-list error the family map exists to prevent, one level down.
+ *
+ * So topic rows are keyed on theme + normalised subtheme, and `sources` keeps
+ * every raw Medallia name that folded into the row so a figure can still be
+ * traced back to the source vocabulary.
+ */
+export function canonicalTopic(topicName) {
+  const themeId = themeFor(topicName);
+  const { family, subtheme } = splitTopic(topicName);
+  // A family with no subtheme ("Associate -Direct Mentions") keys on itself.
+  const basis = subtheme || family;
+  return {
+    key: `${themeId}/${basis.toLowerCase()}`,
+    label: topicLabel(topicName),
+    themeId,
+    source: topicName,
+  };
 }
 
 // ── Sentiment ───────────────────────────────────────────────────────────

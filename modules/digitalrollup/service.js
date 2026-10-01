@@ -16,6 +16,7 @@ import { getUserHomeMarket, getUserHomeStore } from "../../shared/userStore.js";
 import { fetchDashboard, fetchHierarchy, GifApiError } from "./lib/gif_api.js";
 import { flattenKeys, normalizeDashboard } from "./lib/normalize.js";
 import { recordSnapshot, rollingWindow, hourlyBars, dayStartFrom } from "./lib/pick_history.js";
+import { PICK_DAYS_KEY, upsertDay } from "./lib/pick_days.js";
 // Cross-module on purpose: MetricShot owns the only working "post an image to a
 // Workvivo chat" path (session-key sniffing + Workvivo's own file endpoint), and
 // a second copy would drift. It needs nothing from MetricShot's state.
@@ -30,6 +31,10 @@ const K = {
   // Per-store (source time, running items-picked) samples for the rolling
   // hour. See lib/pick_history.js.
   picks:     "digitalrollup.pickHistory.v1",
+  // Per-store, per-board-day archive of the hourly bars (the graph, kept past
+  // the day). Written on every pull; read by Digital Metrics' "Pick Hours"
+  // tab. See lib/pick_days.js.
+  pickDays:  PICK_DAYS_KEY,
   // Outcome of the last live tick, for diagnostics only.
   liveLast:  "digitalrollup.live.last",
   // Outcome of the last Workvivo share, incl. what the Workvivo tab looked like
@@ -147,13 +152,26 @@ async function pull(market, { live = false } = {}) {
     }
 
     const snapshot = { ...norm.snapshot, via };
-    const prevPicks = (await chrome.storage.local.get(K.picks))[K.picks] ?? null;
+    const got = await chrome.storage.local.get([K.picks, K.pickDays]);
+    const prevPicks = got[K.picks] ?? null;
+    // Home store only: the rolling hour is a "how is MY store doing" figure,
+    // and tracking one store keeps the history to a few KB. No home store
+    // (e.g. a market-role user) records nothing.
+    const picks = recordSnapshot(prevPicks, snapshot, { stores: [await getUserHomeStore().catch(() => null)] });
+    // Archive today's hourly bars for every tracked store, from the whole
+    // day's samples, so the graph outlives the day (lib/pick_days.js). Done
+    // here, on the SAME write, because the series above forgets a day the
+    // moment the board's report day rolls — there is no later chance.
+    let pickDays = got[K.pickDays] ?? null;
+    const dayStart = dayStartFrom(snapshot);
+    for (const [store, samples] of Object.entries(picks.series || {})) {
+      const day = hourlyBars(samples, dayStart);
+      if (day) pickDays = upsertDay(pickDays, { store, day, market: target, reportDate: snapshot.reportDate, samples: samples.length });
+    }
     await chrome.storage.local.set({
       [K.snapshot]: snapshot,
-      // Home store only: the rolling hour is a "how is MY store doing" figure,
-      // and tracking one store keeps the history to a few KB. No home store
-      // (e.g. a market-role user) records nothing.
-      [K.picks]: recordSnapshot(prevPicks, snapshot, { stores: [await getUserHomeStore().catch(() => null)] }),
+      [K.picks]: picks,
+      ...(pickDays ? { [K.pickDays]: pickDays } : {}),
       [K.debug]: { ok: true, at: Date.now(), via, market: target, ms: Date.now() - started },
     });
     if (!live) log.emit("pull-ok", {
@@ -331,6 +349,12 @@ async function liveDiagnostics(snapshot) {
     lastTick: got[K.liveLast]
       ? { ...got[K.liveLast], at: new Date(got[K.liveLast].at).toISOString() }
       : null,
+    // Archived board days per store (lib/pick_days.js), so "is the graph
+    // being kept?" is answerable from the diagnostics alone.
+    archivedDays: Object.fromEntries(Object.entries(got[K.pickDays]?.days || {}).map(([k, v]) => {
+      const keys = Object.keys(v).sort();
+      return [k, { days: keys.length, first: keys[0] ?? null, last: keys.at(-1) ?? null }];
+    })),
     history: history && {
       market: history.market,
       day: history.day,

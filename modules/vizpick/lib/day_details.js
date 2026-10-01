@@ -136,7 +136,7 @@ export function detailFromHistoryEntry(entry) {
     .map((b) => ({
       locGroup: String(parseInt(String(b.location).split("/")[0], 10)),
       location: b.location, picksSeen: b.seen, picksDone: b.done, skipped: b.seen - b.done,
-      win: b.win || null, lastSeenAt: b.lastSeenAt || null,
+      win: b.win || null, lastSeenAt: b.lastSeenAt || null, seenToday: b.seenToday ?? null,
     }));
   return {
     store: String(entry.store),

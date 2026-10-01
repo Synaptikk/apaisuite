@@ -8,6 +8,8 @@
 //   set_store_override  / clear_cache
 //   link_video          APPRISS transaction ids for a pair via Open Drawer
 //                       (registerls' route), cached per register-day
+//   open_video          verify Secure will serve CCTV for a register (camera
+//                       list + one silent reauth), THEN open the viewer tab
 //   save_miss / delete_miss / export_misses
 //                       the analyst's documented cashier misses, one object
 //                       per store (boblisa.misses.<store>) that survives
@@ -37,8 +39,9 @@ import { DEFAULT_REGISTERS } from "./lib/registers.js";
 import { buildRecord, buildCashierLedger, cashiersCsv, missesCsv, pairFromRecord } from "./lib/misses.js";
 import { getIdentity } from "../../shared/identity.js";
 import { fetchOpenDrawer, linkVideo } from "../registerls/lib/open_drawer.js";
+import { probeCameras } from "./lib/video.js";
 import { fetchEmployee } from "./lib/appriss_people.js";
-import { apprissAuthGate } from "../../shared/appriss.js";
+import { apprissAuthGate, APPRISS_ORIGIN } from "../../shared/appriss.js";
 
 const TAG = "[boblisa]";
 const KEYS = {
@@ -230,6 +233,36 @@ export const handlers = {
   },
 
   // ── video ──────────────────────────────────────────────────────
+  // Open a CCTV / receipt link the way every other APPRISS call in this module
+  // runs: verified first, and reauthenticated silently if the session is cold.
+  //
+  // WHY this is not just an anchor (2026-09-27): a signed-out click on the
+  // viewer is redirected to the CCTV app's own blocked origin and lands on
+  // "Error 403 - Forbidden · The web app you have attempted to reach has
+  // blocked your access" — a tab that reads like a missing entitlement and
+  // offers no way to sign in. So the register's camera list is probed through
+  // the auth gate (`lib/video.js::probeCameras`) and only an entitlement
+  // problem, a dead session or nothing at all is reported; a register with no
+  // camera mapped still opens, with the reason attached.
+  // msg: { url, reg?, storeNbr? }
+  async open_video(msg = {}) {
+    const url = String(msg.url || "");
+    if (!url.startsWith(`${APPRISS_ORIGIN}/`)) return { ok: false, error: "Not an APPRISS video link." };
+    const store = await resolveStore(msg);
+    const reg = msg.reg == null || msg.reg === "" ? null : msg.reg;
+    let probe = { ok: true, cameras: null };
+    if (store.storeNbr && reg != null) {
+      const gate = apprissAuthGate({ moduleId: "boblisa" });
+      probe = await gate.run(() => probeCameras(store.storeNbr, reg));
+    }
+    if (!probe.ok && probe.errorClass !== "NO_CAMERA") {
+      return { ok: false, errorClass: probe.errorClass, error: probe.error, loginUrl: probe.loginUrl || null, accessUrl: probe.accessUrl || null };
+    }
+    await chrome.tabs.create({ url, active: true });
+    return { ok: true, warn: probe.ok ? null : probe.error, cameras: probe.cameras?.length || 0 };
+  },
+
+
   // APPRISS video keyed on its own transaction id, the way the L/S triage does
   // it: Open Drawer lists every drawer-opening transaction on a register-day
   // with APPRISS's id. A card sale that never opened the drawer falls back to

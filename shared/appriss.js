@@ -54,6 +54,14 @@ export const APPRISS_TAB_PATTERN = `${APPRISS_ORIGIN}/*`;
 // RelayState back without re-running the redirect probe.
 export const APPRISS_HOME = `${APPRISS_BASE}/secure/sso/saml2`;
 
+// The corp short link the analyst is told to use for Secure Store. Verified
+// 2026-09-27: `http://wmlink/securestore` 302s to
+// `${APPRISS_BASE}/signin/sso/saml2` → pfedprod `/idp/SSO.saml2` →
+// `/walmart-usa/secure` → `/walmart-usa/platform/portal` — the same
+// SP-initiated chain as APPRISS_HOME, so it is safe to quote in an error
+// message as "sign in here" without the analyst landing somewhere else.
+export const APPRISS_WMLINK = "http://wmlink/securestore";
+
 // Sign-in-page detection. The new host renamed the page: `/secure/cpf/auth/logon`
 // 302s to `/walmart-usa/signin`. Callers that only tested for `logon`/`login`
 // read that page as "signed in" — which is worse than reading it as signed out,

@@ -9,14 +9,28 @@
 
   const MODULE_ID = "stockingplan";
   const API_PATH  = "/Protected/CaseVisibility/ashx/Main.ashx";
+  const APP_INFO_PATH = "/Protected/CaseVisibility/js/appInfo.js";
+  // Since 2026-09-22 Main.ashx returns an EMPTY roster (200, no error) unless
+  // the call carries the page's appID; read it from appInfo.js.
+  const FALLBACK_APP_ID = "FPTx";
+  let appIdPromise = null;
 
   function toApiDate(yyyyMmDd) {
     return String(yyyyMmDd || "").replace(/-/g, "/");
   }
 
+  function getAppId() {
+    appIdPromise ??= fetch(APP_INFO_PATH, { credentials: "include", signal: AbortSignal.timeout(10_000) })
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((js) => js.match(/appInfo_appID\s*=\s*["']([^"']+)["']/)?.[1] || FALLBACK_APP_ID)
+      .catch(() => FALLBACK_APP_ID);
+    return appIdPromise;
+  }
+
   async function fetchInit(storeNbr, businessDate) {
     const params = new URLSearchParams({
       func: "init",
+      appID: await getAppId(),
       storeNbr: String(storeNbr),
       businessDate: toApiDate(businessDate),
     });

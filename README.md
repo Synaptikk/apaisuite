@@ -23,6 +23,7 @@ Distributed as a sideload package via [qrcallbox.com/extension/](https://qrcallb
 | ClaimsDisposition | live | `claimsdisposition` | 30-day Looker Studio pull per store; per-user outlier analysis; BigQuery historical roll-ups |
 | DigitalLocks | live (V1) | `digitallocks` | Daily AP review of digital-lock unlock events; risk-scored, in-browser only |
 | Workvivo (keep-alive) | beta | `workvivo` | Couriers your Workvivo/Sendbird access token to QRCallBox hourly so QR-scan notifications keep working without SAML/MFA replay |
+| Cx | alpha | `cx` | Store NPS and the customer-service sub-scores from the Hoops scorecard, against a year of the store's own Medallia comments broken down by theme and sentiment — what is going wrong, what is going right, and what changed. Also a market scoreboard (every store's NPS and sub-scores, ranked against the market) and a PDF export |
 | ClaimsBuddy | WIP, disabled | `claimsbuddy` | Clearsight claims helper. Disabled in `modules/_registry.js` pending QA. |
 
 Order in the sidebar is set by the array in [`modules/_registry.js`](modules/_registry.js).

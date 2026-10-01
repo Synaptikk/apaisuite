@@ -958,7 +958,8 @@ export async function register() {
 // ── Utilities ────────────────────────────────────────────────────────────
 
 function formatLocal(epochMs, zone) {
-  const opts = { dateStyle: "medium", timeStyle: "short" };
+  // dateStyle can't combine with weekday, so the fields are spelled out.
+  const opts = { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
   if (zone && zone !== "local") opts.timeZone = zone;
   try { return new Intl.DateTimeFormat([], opts).format(new Date(epochMs)); }
   catch { return new Date(epochMs).toString(); }

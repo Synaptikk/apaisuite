@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  dev/pickhours-preview.html — renders Digital Metrics' Pick Hours tab
+  (modules/digitalmetrics/lib/pages/pickhours.js) against synthetic archive
+  records, with the suite's real stylesheets, outside the extension.
+
+  Serve the repo root over HTTP (ES modules do not load over file://):
+      python -m http.server 8765 --bind 127.0.0.1
+  then open http://127.0.0.1:8765/dev/pickhours-preview.html
+
+  Pure modules only — nothing here touches chrome.* or Firestore.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pick Hours preview</title>
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/layout.css">
+  <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../modules/digitalmetrics/styles.css">
+  <style> body { padding: 16px; } </style>
+</head>
+<body>
+  <div class="module-digitalmetrics"><div class="dm-shell"><div id="dm-page" class="dm-page"></div></div></div>
+  <script type="module">
+    import { hourlyBars } from "../modules/digitalrollup/lib/pick_history.js";
+    import { upsertDay, listDays } from "../modules/digitalrollup/lib/pick_days.js";
+    import * as page from "../modules/digitalmetrics/lib/pages/pickhours.js";
+
+    const H = 3600e3;
+    const dayStart = (daysAgo) => { const d = new Date(); d.setHours(5, 0, 0, 0); return d.getTime() - daysAgo * 24 * H; };
+    // A store day: quiet early, a morning ramp, a lunch dip, an afternoon peak, tailing off by 10 PM.
+    const shape = (h) => [0, 120, 480, 820, 900, 760, 640, 880, 1010, 930, 700, 520, 380, 260, 140, 60, 0, 0, 0, 0, 0, 0, 0, 0][h] ?? 0;
+    function samplesFor(start, fromHour, toMs, scale = 1) {
+      // Recording that starts late still sees the board's running total, so the
+      // day's earlier picks are in the first reading (that is what the grey block shows).
+      const out = []; let total = 0; for (let h = 0; h < fromHour - 5; h++) total += shape(h) * scale;
+      let prev = start + (fromHour - 5) * H;
+      for (let t = prev; t <= toMs; t += 5 * 60e3) {
+        total += shape(Math.floor((t - start) / H)) * scale * (t - prev) / H; prev = t;
+        out.push([t, Math.round(total)]);
+      }
+      return out;
+    }
+    let archive = null;
+    const put = (start, s) => { archive = upsertDay(archive, { store: "1458", day: hourlyBars(s, start), market: "120", reportDate: "x", samples: s.length }); };
+    // Six full days, one of them recorded only from 9 AM (before block), and today so far.
+    for (let ago = 6; ago >= 1; ago--) put(dayStart(ago), samplesFor(dayStart(ago), ago === 3 ? 9 : 5, dayStart(ago) + 19 * H, 0.9 + ago * 0.03));
+    put(dayStart(0), samplesFor(dayStart(0), 5, Math.min(Date.now(), dayStart(0) + 9.4 * H)));
+
+    const el = document.getElementById("dm-page");
+    const state = { store: "1458", pickDays: listDays(archive, "1458"), ui: {} };
+    let dispose = null;
+    const host = { ui: { delegate: (root, ev, sel, fn) => { const h = (e) => { const m = e.target.closest(sel); if (m && root.contains(m)) fn(e, m); }; root.addEventListener(ev, h); return () => root.removeEventListener(ev, h); } } };
+    function render() {
+      dispose?.();
+      const ctx = { ...state, host, onUiChange: (patch) => { state.ui = { ...state.ui, ...patch }; render(); } };
+      el.innerHTML = page.render(ctx);
+      dispose = page.wire(ctx, el);
+    }
+    render();
+    window.__pickhours = { state, render };
+  </script>
+</body>
+</html>

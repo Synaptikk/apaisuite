@@ -10,7 +10,7 @@
 import { store, weeks, classifications, schedules, assignments, suggestions } from "./lib/firestore.js";
 import { loadAliases, aliasCount } from "./lib/names.js";
 import { splitByStoreWeek } from "./lib/data/parse.js";
-import { dayName, isFinalized } from "./lib/data/grid.js";
+import { dayName } from "./lib/data/grid.js";
 import { pivotAssociateData } from "./lib/data/tableau.js";
 import { pullMetrics } from "./lib/sources/tableau_metrics.js";
 import { pullExpressDay } from "./lib/sources/tableau_express.js";
@@ -22,7 +22,7 @@ import { getUserHomeStore, getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster, listKnownMarkets } from "../../shared/marketRoster.js";
 import { ensureAlarm } from "../../shared/alarms.js";
 import { withTableauLock } from "../../shared/tableau_lock.js";
-import { fetchDailyBoard } from "./lib/sources/daily_board_source.js";
+import { fetchDailyBoard, isSignInError, refreshSession } from "./lib/sources/daily_board_source.js";
 import { pullClockIns } from "./lib/sources/gta_timesheet.js";
 import { clockInCandidates } from "./lib/data/first_pick.js";
 import {
@@ -31,6 +31,13 @@ import {
 } from "./lib/data/board_sync.js";
 import { deriveClassifications, deriveExceptions, isDigitalJob, leadershipForJob } from "./lib/data/job_classify.js";
 import { dateKey } from "./lib/data/adherence.js";
+import { withWeekday } from "../../shared/dates.js";
+// Cross-module on purpose: Digital Rollup is the module that reads the GIF
+// board and archives the home store's picks per hour, one record per board
+// day (its lib/pick_days.js). The "Pick Hours" tab here only reads that
+// archive; importing the key and the pure reader keeps one source of truth
+// for its shape rather than a copied constant that would drift.
+import { PICK_DAYS_KEY, listDays as listPickDays } from "../digitalrollup/lib/pick_days.js";
 
 const ALIAS_KEY = "digitalmetrics.aliases";
 
@@ -58,6 +65,23 @@ const PULL_PERIOD_MIN = 60;
 // with "a pull is already running" and pin the pill on "syncing…" for good
 // (2026-09-14: 15 minutes of "syncing…" with nothing written).
 const PULL_STALE_MS = 25 * 60 * 1000;
+
+/** Express Pickup tabs opened at once (see pullMetricsForStore). */
+const EXPRESS_PARALLEL = 3;
+
+/** Promise.all with at most `limit` in flight; results in input order. */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 
 async function getPullState() {
   const got = await chrome.storage.local.get(PULL_STATE_KEY);
@@ -144,16 +168,20 @@ async function pullEnabled() {
  * The two sources keep separate "what do we have" ledgers, so a week that has
  * its associate rows but no Express numbers yet gets only the Express loads.
  */
-async function pullMetricsForStore(storeId, { force = false, onProgress = () => {} } = {}) {
+/** The most days a "Refresh this store" may reach back; 8 is the everyday window (pull_schedule.js). */
+const MAX_LOOKBACK_DAYS = 31;
+
+async function pullMetricsForStore(storeId, { force = false, lookback = undefined, onProgress = () => {} } = {}) {
   const now = new Date();
+  const window = lookback ? { lookback: Math.min(MAX_LOOKBACK_DAYS, Math.max(1, Math.floor(lookback))) } : {};
   // Week documents hold rows, not a date index, so "what do we already have"
   // means reading the recent weeks and collecting their distinct dates.
   const have = force
     ? { metrics: [], express: [], expressRate: [], expressOrders: {} }
     : await storedCoverage(storeId).catch(() => ({ metrics: [], express: [], expressRate: [], expressOrders: {} }));
-  const dates        = datesToPull(now, have.metrics);
-  const expressDates = datesToPull(now, have.express);
-  const rateDates    = datesToPull(now, have.expressRate);
+  const dates        = datesToPull(now, have.metrics, window);
+  const expressDates = datesToPull(now, have.express, window);
+  const rateDates    = datesToPull(now, have.expressRate, window);
   if (!dates.length && !expressDates.length && !rateDates.length) return { store: storeId, skipped: "up to date" };
 
   // Everything this run will write, keyed by store+week. Metrics groups come
@@ -196,9 +224,16 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
       express.failed.push({ date: "*", error:
         `no market known for store ${storeId} — set your market under Settings › Defaults` });
     } else {
-      for (const d of expressDates) {
+      // Days are independent tabs, so run a few at once. Sequential, a
+      // first sync of a store paid ~19 s × 8 days here (measured 2026-09-27,
+      // store 1458); three abreast brings that under a minute. Tableau is
+      // already asked for four VizPick tabs at a time by the ORC crawl, so
+      // this is within what it is known to tolerate.
+      let done = 0;
+      await mapLimit(expressDates, EXPRESS_PARALLEL, async (d) => {
+        const progress = (e) => onProgress({ ...e, done, total: expressDates.length });
         try {
-          const day = await pullExpressDay(storeId, market, d, { onProgress });
+          const day = await pullExpressDay(storeId, market, d, { onProgress: progress });
           const doc = groupFor(storeId, weekKey(d)).doc;
           doc.express = { ...(doc.express || {}), [d]: day };
           have.expressOrders[d] = day.orders;
@@ -206,7 +241,8 @@ async function pullMetricsForStore(storeId, { force = false, onProgress = () => 
         } catch (e) {
           express.failed.push({ date: d, error: String(e?.message ?? e) });
         }
-      }
+        done++;
+      });
     }
   }
 
@@ -381,26 +417,36 @@ async function resolveStores(explicit) {
 // │ a bare "digitalmetrics.pull_now failed". A partial pull is a normal  │
 // │ outcome, not a transport failure.                                    │
 // └──────────────────────────────────────────────────────────────────────┘
-async function runPull({ force = false, stores = null } = {}) {
+async function runPull({ force = false, stores = null, manual = false } = {}) {
   const state = await getPullState();
   if (state.running) return { notRun: "a pull is already running" };
-  if (!force && !isPullDue(new Date(), state.lastRunAt, { minGapMs: MIN_PULL_GAP_MS })) {
+  // A click skips the "pulled too recently" gap, but NOT the coverage check:
+  // Sync now used to pass force and re-pull all eight lookback days of every
+  // source on every click, which is most of why a manual sync took minutes.
+  // Only the volatile days are re-read; "Refresh this store" (pull_store)
+  // is the way to force a full re-pull.
+  if (!force && !manual && !isPullDue(new Date(), state.lastRunAt, { minGapMs: MIN_PULL_GAP_MS })) {
     return { notRun: "pulled too recently", lastRunAt: state.lastRunAt };
   }
 
   await setPullState({ running: true, runningSince: Date.now(), progress: null });
-
-  // One Tableau capture at a time across the suite (shared/tableau_lock.js).
-  // VizPick's open-check fires at the same moment a Sync-now click does, and
-  // its four tabs starve this pull's 120s viz wait. Queue instead, and say so.
-  return withTableauLock("Digital Metrics sync", () => runPullLocked({ force, stores }), {
-    onWait: ({ heldBy }) => setProgress("waiting", { text: `waiting for ${heldBy} to finish with Tableau` }),
-  });
+  return runPullBody({ force, stores, manual });
 }
 
-async function runPullLocked({ force, stores }) {
-  // The clock for "is this run dead" starts now, not when we joined the queue.
-  await setPullState({ runningSince: Date.now(), progress: null });
+/**
+ * How long a run queues behind another module's Tableau capture before it
+ * runs anyway, sharing the browser (shared/tableau_lock.js).
+ *
+ * The lock used to wrap the WHOLE run, and a Sync now click landed behind
+ * VizPick's open-check or Today crawl for as long as those took — the user
+ * reported most of a sync spent "waiting for other modules". Now only the
+ * Tableau steps queue (the scheduler and the timesheet are other sites and
+ * run meanwhile), and a click waits two minutes at most. An alarm run has
+ * nobody watching it, so it keeps queueing politely for the default 10.
+ */
+const MANUAL_LOCK_WAIT_MS = 2 * 60_000;
+
+async function runPullBody({ force, stores, manual = false }) {
   const result = { startedAt: new Date().toISOString(), metrics: [], schedule: null, errors: [] };
 
   // The sources report phases; without this the pill says "syncing…" for
@@ -411,17 +457,20 @@ async function runPullLocked({ force, stores }) {
     reading:   "reading the schedule",
     nextWeek:  "reading next week's schedule",
   };
+  // Express days run a few at a time, so the day named is whichever tab
+  // spoke last; the tally is what actually moves.
+  const expressTally = (e) => e.total ? ` · ${e.done}/${e.total} days done` : "";
   const METRICS_PHASES = {
     opening:   (e) => e.source === "express"
-      ? `opening Express Pickup for store ${e.store} (${e.date})`
+      ? `opening Express Pickup for store ${e.store} (${withWeekday(e.date)})${expressTally(e)}`
       : e.source === "express-rate"
       ? `opening Express pick rate for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`
       : `opening Tableau for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`,
     rendering: (e) => e.source === "express"
-      ? `waiting for the Express Pickup viz (${e.date})`
+      ? `waiting for the Express Pickup viz (${withWeekday(e.date)})${expressTally(e)}`
       : `waiting for the Tableau viz (store ${e.store})`,
     reading:   (e) => e.source === "express"
-      ? `reading Express Pickup for ${e.date}`
+      ? `reading Express Pickup for ${withWeekday(e.date)}${expressTally(e)}`
       : `reading metrics for store ${e.store}`,
     done:      (e) => `store ${e.store}: ${e.rows} rows`,
   };
@@ -483,24 +532,35 @@ async function runPullLocked({ force, stores }) {
       });
     }
 
-    for (const s of list) {
-      const onProgress = (e) => setProgress("metrics", { text: (METRICS_PHASES[e.phase] || (() => e.phase))(e), store: s });
-      try {
-        const m = await pullMetricsForStore(s, { force, onProgress });
-        result.metrics.push(m);
-        // One error per store, not one per day — the view toasts each entry.
-        const failed = m.express?.failed || [];
-        if (failed.length) {
-          result.errors.push({
-            scope: `express ${s}`,
-            error: failed.length === 1 && failed[0].date === "*"
-              ? failed[0].error
-              : `${failed.length} day${failed.length === 1 ? "" : "s"} failed: ` +
-                failed.map((f) => `${f.date} (${f.error})`).join("; "),
-          });
-        }
-      } catch (e) { result.errors.push({ scope: `metrics ${s}`, error: String(e?.message ?? e) }); }
-    }
+    // One Tableau capture at a time across the suite (shared/tableau_lock.js).
+    // VizPick's open-check fires at the same moment a Sync-now click does, and
+    // its four tabs starve this pull's viz wait. Queue — around the Tableau
+    // steps only — and say so; see MANUAL_LOCK_WAIT_MS for how long.
+    if (list.length) await withTableauLock("Digital Metrics sync", async () => {
+      // The clock for "is this run dead" restarts now, not when we queued.
+      await setPullState({ runningSince: Date.now() });
+      for (const s of list) {
+        const onProgress = (e) => setProgress("metrics", { text: (METRICS_PHASES[e.phase] || (() => e.phase))(e), store: s });
+        try {
+          const m = await pullMetricsForStore(s, { force, onProgress });
+          result.metrics.push(m);
+          // One error per store, not one per day — the view toasts each entry.
+          const failed = m.express?.failed || [];
+          if (failed.length) {
+            result.errors.push({
+              scope: `express ${s}`,
+              error: failed.length === 1 && failed[0].date === "*"
+                ? failed[0].error
+                : `${failed.length} day${failed.length === 1 ? "" : "s"} failed: ` +
+                  failed.map((f) => `${withWeekday(f.date)} (${f.error})`).join("; "),
+            });
+          }
+        } catch (e) { result.errors.push({ scope: `metrics ${s}`, error: String(e?.message ?? e) }); }
+      }
+    }, {
+      onWait: ({ heldBy }) => setProgress("waiting", { text: `waiting for ${heldBy} to finish with Tableau` }),
+      ...(manual ? { maxWaitMs: MANUAL_LOCK_WAIT_MS } : {}),
+    });
 
     // ── classification, derived from the scheduler's job titles ─────────
     //
@@ -741,7 +801,17 @@ async function runBoardSync() {
     if (!link?.site || !link?.uniqueId) { result.notRun = "no Daily Board link saved"; return result; }
 
     await ensureAliases();
-    const board = await fetchDailyBoard(link);
+    let board;
+    try {
+      board = await fetchDailyBoard(link);
+    } catch (e) {
+      // An expired SharePoint session is renewed by a background visit
+      // (daily_board_source.js refreshSession); anything else is real.
+      if (!isSignInError(e)) throw e;
+      result.sessionRefreshed = await refreshSession(link);
+      if (!result.sessionRefreshed) throw e;
+      board = await fetchDailyBoard(link);
+    }
     result.file = { name: board.name, modifiedAt: board.modifiedAt };
 
     const sheets = weekdaySheets(board.sheets);
@@ -793,23 +863,22 @@ async function runBoardSync() {
         result.dates.push({ date: plan.date, skipped: "the day was finalized in the app" });
         continue;
       }
-      // A past day the grid already treats as done (mostly filled, locked at
-      // midnight) is history; the board only fills days left mostly empty.
-      if (plan.mode === "backfill" && doc && isFinalized(doc)) {
-        snaps[plan.date] = { fp: plan.fp, cells: plan.cells, names: {}, appliedAt: result.at, skipped: true };
-        result.dates.push({ date: plan.date, skipped: "that day was already filled in the app and is locked" });
-        continue;
-      }
+      // The board IS the plan at store 1458 (the user, 2026-09-27: "we should
+      // be copying it"). Its rows mirror onto the grid whatever the app holds
+      // — a grid filled from suggestions, or edited after the workbook was
+      // saved, is not a reason to keep the app's cells. Rows the board does
+      // not have are left alone, and an explicit Finalize (above) still
+      // holds. This replaced "newest edit wins" and the fill-percentage lock
+      // on past days, which together left suggestion-filled days as they were.
       const schedule = await scheduleFor(plan.date);
       const { matched, unmatched } = resolveBoardNames(plan.cells, schedule, { aliases, isDigital, roster, learned });
       const merged = mergeBoard(doc, {
         cells: plan.cells, matched,
         previous: snaps[plan.date]?.cells || null,
         previousNames: snaps[plan.date]?.names || null,
-        // A past day's own edits were made after that day's plan, so the
-        // board only fills its gaps.
-        boardModifiedAt: plan.mode === "backfill" ? "0000" : board.modifiedAt,
+        boardModifiedAt: board.modifiedAt,
         schedule,
+        mirror: true,
       });
 
       if (!merged.unchanged) {
@@ -865,7 +934,7 @@ async function runBoardSync() {
       const doc = await assignments.get(BOARD_STORE, date);
       if (!doc || doc.finalized === true) continue;
       const merged = mergeBoard(doc, {
-        cells: snap.cells, matched, previous: snap.cells, previousNames: snap.names, schedule,
+        cells: snap.cells, matched, previous: snap.cells, previousNames: snap.names, schedule, mirror: true,
       });
       if (!merged.unchanged) {
         await assignments.put(BOARD_STORE, date, {
@@ -1055,7 +1124,7 @@ export const handlers = {
   // a refresh without waiting an hour and without flipping the schedule on.
 
   /** Run everything now, ignoring the minimum-gap guard. */
-  "pull_now": withAliases((m) => runPull({ force: true, stores: m.stores || null })),
+  "pull_now": withAliases((m) => runPull({ manual: true, stores: m.stores || null })),
 
   /** One store's metrics, for the "Refresh this store" button. */
   "pull_store": withAliases(async (m) => {
@@ -1063,7 +1132,9 @@ export const handlers = {
     // into { ok:false, error } with the real message, which is what the view
     // can actually display. See the note above runPull.
     if (!m.store) throw new Error("no store given");
-    return pullMetricsForStore(m.store, { force: !!m.force });
+    // `lookback` (days) widens the window for a one-off backfill — e.g. the
+    // last-scan column added 2026-09-27, re-pulled for the last 10 days.
+    return pullMetricsForStore(m.store, { force: !!m.force, lookback: m.lookback });
   }),
 
   // ── Daily Board (store 1458 only — see BOARD_STORE) ──────────────────────
@@ -1105,6 +1176,18 @@ export const handlers = {
   },
   /** The last clock-in pull, manual or automatic: { at, auto, matched, days, unmatched, errors, error, ms }. */
   "get_clock_state": async () => localGet(CLOCK_STATE_KEY, null),
+
+  /**
+   * { store } → the archived picks-per-hour days for that store, newest
+   * first (see ../digitalrollup/lib/pick_days.js for the record shape).
+   * Digital Rollup writes the archive for the HOME store only, while its Auto
+   * refresh is on, so any other store comes back empty — and so does this
+   * browser for days it was not running. Local to this device, like clock-ins.
+   */
+  "get_pick_days": async (m) => {
+    const got = await chrome.storage.local.get(PICK_DAYS_KEY);
+    return { store: String(m?.store ?? ""), days: listPickDays(got[PICK_DAYS_KEY] ?? null, m?.store) };
+  },
   /** { store, from, to, people:[name] } → pull, merge, and report what matched. */
   "pull_clockins": withAliases((m) => syncClockIns(m.store, m.from, m.to, m.people, { auto: false })),
 

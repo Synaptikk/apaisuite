@@ -53,6 +53,12 @@ export function compactRow(r) {
   const ttc = r.task_complete_ts_lcl && r.hzd_ts_lcl
     ? Math.round((Date.parse(r.task_complete_ts_lcl) - Date.parse(r.hzd_ts_lcl)) / 6000) / 10
     : null;
+  // Accept → task complete, straight from the two timestamps (not ttc − ack:
+  // acknowledgement_minutes arrives pre-rounded). This is the "held it" time —
+  // while an accepted alert sits open, nobody else can complete it.
+  const hold = r.task_complete_ts_lcl && r.action_ts_lcl
+    ? Math.round((Date.parse(r.task_complete_ts_lcl) - Date.parse(r.action_ts_lcl)) / 6000) / 10
+    : null;
   return [
     ts,                                              // 0 local detection "YYYY-MM-DD HH:MM"
     r.camera_name || "(no camera)",                  // 1
@@ -67,5 +73,6 @@ export function compactRow(r) {
     r.aisle_nm || "",                                // 10
     r.is_during_operational_hours !== false,         // 11
     r.hzd_id || "",                                  // 12 image key (see hazardImageUrl)
+    hold,                                            // 13 accepted → task complete, minutes
   ];
 }

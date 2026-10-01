@@ -4,6 +4,9 @@
 // claim cards for everything on the evidence reports (summary, statements,
 // evidence checklist) and the FY PNL charge table with credit-back flags.
 
+import { withWeekday } from "../../shared/dates.js";
+import { composeEmail, chargedRefs } from "./lib/email.js";
+
 const money = (n) => (n == null ? "–" : (n < 0 ? "-" : "") + "$" + Math.abs(n).toLocaleString());
 
 const STATUS_LABEL = { complete: "✓", missing: "✗", partial: "…", unknown: "–" };
@@ -38,7 +41,11 @@ export async function mount(host, container) {
     claims: $("#acc-claims"), pnl: $("#acc-pnl"), pnlBody: $("#acc-pnl-body"),
     pnlCredits: $("#acc-pnl-credits"), pnlFy: $("#acc-pnl-fy"), empty: $("#acc-empty"),
     tOpen: $("#acc-t-open"), tMissing: $("#acc-t-missing"), tCharged: $("#acc-t-charged"), tCredit: $("#acc-t-credit"),
+    emailBuild: $("#acc-email-build"), email: $("#acc-email"), emailTitle: $("#acc-email-title"),
+    emailStmts: $("#acc-email-stmts"), emailCopy: $("#acc-email-copy"), emailCopyText: $("#acc-email-copy-text"),
+    emailClose: $("#acc-email-close"), emailNote: $("#acc-email-note"), emailText: $("#acc-email-text"),
   };
+  let email = null;   // last composeEmail() result
 
   let state = null;    // { store, storeSource, data }
   let busy = false;
@@ -59,7 +66,7 @@ export async function mount(host, container) {
       return;
     }
     els.empty.hidden = true; els.tiles.hidden = false; els.tabs.hidden = false;
-    els.meta.textContent = `Store ${data.store} · CAS data as of ${data.sourceUpdatedOn || "?"} · pulled ${new Date(data.capturedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    els.meta.textContent = `Store ${data.store} · CAS data as of ${data.sourceUpdatedOn ? withWeekday(data.sourceUpdatedOn) : "?"} · pulled ${new Date(data.capturedAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 
     els.banner.hidden = !data.clearsight?.error;
     if (data.clearsight?.error) els.banner.textContent = data.clearsight.error;
@@ -126,7 +133,7 @@ export async function mount(host, container) {
         <div class="acc-check ${checklist.complete ? "is-ok" : ""}">
           <div class="acc-check-head">
             Evidence Collection (Clearsight): ${checklist.complete
-              ? `completed ${esc(checklist.completedOn)}`
+              ? `completed ${esc(withWeekday(checklist.completedOn))}`
               : `${checklist.filled}/${checklist.total} fields filled — <strong>not completed</strong>`}
           </div>
           ${checklist.complete ? "" : `<ul class="acc-check-list">${missingItems.map((i) => `<li>${esc(i.label)}</li>`).join("")}</ul>`}
@@ -231,12 +238,91 @@ export async function mount(host, container) {
     }
   }
 
+  // ── email list (open, non-denied charges) ─────────────────────
+
+  // Resolves Clearsight details for every open ref in the chosen FY that
+  // is not cached yet, then composes the list into the panel.
+  async function buildEmail() {
+    if (busy || !state?.data) return;
+    busy = true;
+    els.emailBuild.disabled = true;
+    try {
+      const fy = els.pnlFy.value;
+      const need = chargedRefs(state.data, { fy }).filter((r) => {
+        const det = state.data.refDetails?.[r] || state.data.claims?.[r];
+        return !det || det.error;
+      });
+      let note = "";
+      if (need.length) {
+        els.emailBuild.textContent = `Loading ${need.length} claim${need.length === 1 ? "" : "s"}…`;
+        try {
+          const res = await host.messaging.send("resolve_refs", { store: state.data.store, refs: need });
+          state.data.refDetails = res.refDetails || state.data.refDetails;
+          if (res.error) note = res.error;
+          else if (res.failed) note = `${res.failed} claim lookup${res.failed === 1 ? "" : "s"} failed — listed without a situation.`;
+        } catch (e) {
+          note = `Clearsight details could not be loaded (${e.message}). Listed from the CAS table only.`;
+        }
+        drawPnlRows(state.data);
+      }
+      renderEmail(note);
+    } finally {
+      busy = false;
+      els.emailBuild.disabled = false;
+      els.emailBuild.textContent = "Email list: charges";
+    }
+  }
+
+  function renderEmail(note = "") {
+    const fy = els.pnlFy.value;
+    email = composeEmail(state.data, { fy, includeStatements: els.emailStmts.checked });
+    els.emailTitle.textContent = `${email.rows.length} charged claim${email.rows.length === 1 ? "" : "s"}${fy ? ` · ${fy}` : ""}`;
+    const charged = chargedRefs(state.data, { fy });
+    const dropped = charged.length - email.rows.length;
+    const reversed = state.data.pnl.refs.filter((r) => r.charges.some((c) => !fy || c.fy === fy)).length - charged.length;
+    const bits = [];
+    if (dropped > 0) bits.push(`${dropped} claim${dropped === 1 ? "" : "s"} dropped as denied in Clearsight.`);
+    if (reversed > 0) bits.push(`${reversed} ref${reversed === 1 ? "" : "s"} with no net charge (reversed / $0) not listed.`);
+    bits.push("Edit the text below if needed — \"Copy for Outlook\" pastes as a table, plain text pastes as written here.");
+    if (note) bits.unshift(note);
+    els.emailNote.textContent = bits.join(" ");
+    els.emailText.value = email.text;
+    els.email.hidden = false;
+  }
+
+  async function copyEmail(richHtml) {
+    if (!email) return;
+    const text = els.emailText.value;
+    try {
+      if (richHtml && typeof ClipboardItem !== "undefined") {
+        // Outlook takes the text/html flavour and keeps the table; the plain
+        // flavour is what lands in anything that ignores HTML.
+        const item = new ClipboardItem({
+          "text/html":  new Blob([`<p><b>${email.subject}</b></p>` + email.html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        });
+        await navigator.clipboard.write([item]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      host.ui.toast(richHtml ? "Copied — paste into the email body." : "Copied as plain text.", { kind: "ok" });
+    } catch (e) {
+      host.ui.toast(`Copy failed: ${e.message}`, { kind: "error" });
+    }
+  }
+
   // ── events ────────────────────────────────────────────────────
+
+  els.emailBuild.addEventListener("click", buildEmail);
+  els.emailStmts.addEventListener("change", () => state?.data && !els.email.hidden && renderEmail());
+  els.emailCopy.addEventListener("click", () => copyEmail(true));
+  els.emailCopyText.addEventListener("click", () => copyEmail(false));
+  els.emailClose.addEventListener("click", () => { els.email.hidden = true; });
 
   els.pull.addEventListener("click", pull);
   els.signin.addEventListener("click", () => host.messaging.send("open_signin", {}));
   els.pnlCredits.addEventListener("change", () => state?.data && drawPnlRows(state.data));
-  els.pnlFy.addEventListener("change", () => state?.data && drawPnlRows(state.data));
+  els.pnlFy.addEventListener("change", () => { if (!state?.data) return; drawPnlRows(state.data); if (!els.email.hidden) renderEmail(); });
 
   els.tabs.addEventListener("click", (e) => {
     const tab = e.target.closest(".acc-tab");

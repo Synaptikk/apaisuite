@@ -3,10 +3,12 @@
 // Search for an associate, then their full report: headline metrics, per-day
 // breakdown with adherence, and historical task patterns.
 
+import { dateKey } from "../data/adherence.js";
 import { section, empty, esc, table, statCard, statRow } from "./_shared.js";
 import { badgeClass } from "../data/classify.js";
 import { searchAssociates, associateReport } from "../data/associates.js";
 import { formatHour } from "../data/insights.js";
+import { withWeekday } from "../../../../shared/dates.js";
 
 const SLOT_COUNT = 17;              // 5am–10pm inclusive
 const slotLabel = (idx) => formatHour((5 + Number(idx)) % 24);
@@ -61,12 +63,14 @@ function reportView(ctx, name) {
       ])
     : empty("No pick assignments recorded for this associate this week.");
 
-  // Per-day adherence is keyed by the MM/DD/YY label the metrics rows use.
+  // Per-day adherence is keyed by ISO date (the assignment documents' key)
+  // while the metrics rows carry Tableau's "9/25/26" label. Both sides go
+  // through dateKey, or the column reads "—" on every row (2026-09-27).
   const adherenceByDate = Object.fromEntries(
-    (adherence?.dailyDetails || []).map((d) => [d.date, d]));
+    (adherence?.dailyDetails || []).map((d) => [dateKey(d.date), d]));
 
   const dailyTable = table([
-    { label: "Date",      key: "date" },
+    { label: "Date",      key: "date", format: (d) => esc(withWeekday(d.date)) },
     { label: "First Scan", key: "firstScan", format: (d) => esc(d.firstScan || "—") },
     { label: "Hours",     key: "hours",     align: "right" },
     { label: "Picks",     key: "picked",    align: "right",
@@ -78,7 +82,7 @@ function reportView(ctx, name) {
     {
       label: "Adherence", key: "_adh", align: "right",
       format: (d) => {
-        const a = adherenceByDate[d.date];
+        const a = adherenceByDate[dateKey(d.date)];
         if (!a) return "—";
         const low = a.adherence < 70;
         return `<span class="${low ? "is-bad" : "is-good"}">${esc(a.adherence)}%</span>`;

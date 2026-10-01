@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { needsImageRefresh, upgradeImageCache, IMAGE_SCHEMA } from './image_cache.js';
 import { compactRow, hazardImageUrl, hazardSql } from './sql.js';
 
-test('legacy rows without the image column require refresh', () => {
+test('legacy rows without the image or hold column require refresh', () => {
   assert.equal(needsImageRefresh({ rows: [Array(12).fill('')] }), true);
-  assert.equal(needsImageRefresh({ rows: [Array(13).fill('')] }), false);
-  assert.equal(needsImageRefresh({ schema: IMAGE_SCHEMA, rows: [Array(13).fill('')] }), false);
+  assert.equal(needsImageRefresh({ schema: 2, rows: [Array(13).fill('')] }), true);
+  assert.equal(needsImageRefresh({ rows: [Array(14).fill('')] }), false);
+  assert.equal(needsImageRefresh({ schema: IMAGE_SCHEMA, rows: [Array(14).fill('')] }), false);
   assert.equal(needsImageRefresh(null), false);
   assert.equal(needsImageRefresh({ rows: [] }), false);
 });
@@ -30,4 +31,13 @@ test('failed refresh preserves dashboard and gives a retry message', async () =>
 test('current cache is never fetched again just because an alert has no image ID', async () => {
   const data = { schema: IMAGE_SCHEMA, rows: [compactRow({})] };
   assert.equal((await upgradeImageCache(data, () => assert.fail('unexpected refresh'))).data, data);
+});
+test('compactRow derives hold from accept to task complete', () => {
+  const row = compactRow({
+    hzd_ts_lcl: '2026-09-27T10:00:00', action_ts_lcl: '2026-09-27T10:02:00',
+    task_complete_ts_lcl: '2026-09-27T10:32:30',
+  });
+  assert.equal(row[8], 32.5);   // detection → complete
+  assert.equal(row[13], 30.5);  // accept → complete
+  assert.equal(compactRow({ hzd_ts_lcl: '2026-09-27T10:00:00' })[13], null);
 });

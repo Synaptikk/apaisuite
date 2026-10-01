@@ -13,6 +13,7 @@
 import { esc } from "../_shared.js";
 import { inRange } from "../../data/paste.js";
 import { isWithinShift, lunchIssue } from "../../data/lunch.js";
+import { withWeekday } from "../../../../../shared/dates.js";
 import { breakTimes } from "../../data/adherence.js";
 import {
   TIME_SLOTS, SUMMARY_TASKS, summarise, taskClass, fillPercentage, isHalfSlot, partialSide,
@@ -177,12 +178,12 @@ export function render(ctx) {
     // that Sync is what extends it.
     const dates = ctx.scheduleDates;
     const covered = Array.isArray(dates) && dates.length
-      ? `Workforce Planning data covers ${dates[0]} to ${dates[dates.length - 1]}` +
+      ? `Workforce Planning data covers ${withWeekday(dates[0])} to ${withWeekday(dates[dates.length - 1])}` +
         (dates.length > 2 ? ` (${dates.length} days)` : "")
       : "No Workforce Planning schedules have been pulled for this store yet";
 
     return `<div class="dm-todo">
-      <strong>No schedule for ${esc(ctx.date || "this date")}.</strong>
+      <strong>No schedule for ${esc(ctx.date ? withWeekday(ctx.date) : "this date")}.</strong>
       <div class="dm-stat-note">${esc(covered)}.</div>
       <div class="dm-stat-note">The pull captures whichever week the scheduler
         page is showing, so a date outside it has nothing stored. Open that week

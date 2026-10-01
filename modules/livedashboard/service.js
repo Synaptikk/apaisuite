@@ -7,7 +7,7 @@
 import { fetchCvp, fetchCvpBreakdown, CVP_CATEGORIES } from "./lib/sources/cvp.js";
 import { peek, collect, normalize, rollup } from "./lib/sources/absences.js";
 import { fetchCompliance, rollup as complianceRollup } from "./lib/sources/compliance.js";
-import { fetchRegister, runMatching, rollup as registerRollup } from "./lib/sources/register.js";
+import { fetchAurorExceptions, rollup as aurorRollup } from "./lib/sources/auror.js";
 import { fetchAccident, rollup as accidentRollup } from "./lib/sources/accident.js";
 import { fetchRecognition, rollup7d as recognitionRollup7d } from "./lib/sources/recognition.js";
 import * as freshness  from "./lib/freshness.js";
@@ -25,7 +25,7 @@ const K = {
   // until a heavy IVR re-collect ran.
   absencesCache:   "livedashboard.absences.cache",
   complianceCache: "livedashboard.compliance.cache",
-  registerCache:   "livedashboard.register.cache",     // import + findings
+  aurorCache:      (storeNbr) => `livedashboard.auror.cache.${storeNbr}`,
   accidentCache:   (storeNbr) => `livedashboard.accident.cache.${storeNbr}`,
   recognitionCache: (storeNbr) => `livedashboard.recognition.cache.${storeNbr}`,
 };
@@ -35,7 +35,7 @@ export const ALARM_NAMES = {
   cvp:        "livedashboard.cvp",
   absences:   "livedashboard.absences",
   compliance: "livedashboard.compliance",
-  register:   "livedashboard.register",
+  auror:      "livedashboard.auror",
   accident:   "livedashboard.accident",
   recognition: "livedashboard.recognition",
 };
@@ -43,7 +43,7 @@ const ALARM_INTERVAL_MIN = {
   [ALARM_NAMES.cvp]:        15,
   [ALARM_NAMES.absences]:   60,    // hourly per user request — IVR is heavy
   [ALARM_NAMES.compliance]: 360,   // 6h
-  [ALARM_NAMES.register]:   360,   // 6h
+  [ALARM_NAMES.auror]:      360,   // 6h — evidence uploads trickle in over the day
   [ALARM_NAMES.accident]:   240,   // 4h — file regenerates daily, this catches it
   [ALARM_NAMES.recognition]: 360,  // 6h — observations get logged through the day
 };
@@ -67,7 +67,7 @@ const BOOTSTRAP_STALE_MS = {
   cvp:          30 * 60_000,         // 30 min
   absences:     60 * 60_000,         // 1 h
   compliance:   60 * 60_000,         // 1 h
-  register:     6  * 60 * 60_000,    // 6 h
+  auror:        6  * 60 * 60_000,    // 6 h
   accident:     4  * 60 * 60_000,    // 4 h
   recognition:  6  * 60 * 60_000,    // 6 h
 };
@@ -86,9 +86,9 @@ export async function bootstrapIfNeeded() {
       console.log("[livedashboard] bootstrap → pullCvp");
       tasks.push(pullCvp({ storeNbr }).catch((e) => console.warn("[livedashboard] bootstrap pullCvp threw:", e?.message)));
     }
-    if (shouldBootstrap(fresh.register, BOOTSTRAP_STALE_MS.register)) {
-      console.log("[livedashboard] bootstrap → pullRegister");
-      tasks.push(pullRegister({ storeNbr }).catch((e) => console.warn("[livedashboard] bootstrap pullRegister threw:", e?.message)));
+    if (shouldBootstrap(fresh.auror, BOOTSTRAP_STALE_MS.auror)) {
+      console.log("[livedashboard] bootstrap → pullAuror");
+      tasks.push(pullAuror({ storeNbr }).catch((e) => console.warn("[livedashboard] bootstrap pullAuror threw:", e?.message)));
     }
     if (shouldBootstrap(fresh.accident, BOOTSTRAP_STALE_MS.accident)) {
       console.log("[livedashboard] bootstrap → pullAccident");
@@ -171,7 +171,7 @@ export async function onAlarm(alarm) {
   // Store-keyed alarms are silent no-ops until the user has a store set.
   // Compliance + absences are account-global and always allowed to run.
   const needsStore = alarm.name === ALARM_NAMES.cvp
-                  || alarm.name === ALARM_NAMES.register
+                  || alarm.name === ALARM_NAMES.auror
                   || alarm.name === ALARM_NAMES.accident
                   || alarm.name === ALARM_NAMES.recognition;
   if (needsStore && !storeNbr) return;
@@ -179,7 +179,7 @@ export async function onAlarm(alarm) {
     case ALARM_NAMES.cvp:          await pullCvp({ storeNbr });        break;
     case ALARM_NAMES.absences:     await pullAbsences({ storeNbr });   break;
     case ALARM_NAMES.compliance:   await pullCompliance();             break;
-    case ALARM_NAMES.register:     await pullRegister({ storeNbr });   break;
+    case ALARM_NAMES.auror:        await pullAuror({ storeNbr });      break;
     case ALARM_NAMES.accident:     await pullAccident({ storeNbr });   break;
     case ALARM_NAMES.recognition:  await pullRecognition({ storeNbr }); break;
   }
@@ -321,36 +321,32 @@ async function pullAccident({ storeNbr } = {}) {
   return { ok: true, records: res.records, counts };
 }
 
-// ── Pull: Register (V1.5 — automated capture from Power BI) ─────────
-async function pullRegister({ storeNbr } = {}) {
+// ── Pull: Auror Exceptions (evidence completeness on home-store events) ──
+async function pullAuror({ storeNbr } = {}) {
   storeNbr = storeNbr || (await getStoreNbr());
-  if (!storeNbr) return noStoreSet("register");
-  await freshness.startAttempt("register");
+  if (!storeNbr) return noStoreSet("auror");
+  await freshness.startAttempt("auror");
 
-  const res = await fetchRegister(storeNbr);
+  const res = await fetchAurorExceptions(storeNbr);
   if (!res.ok) {
-    await freshness.markError("register", `${res.errorClass}: ${res.error}`);
-    broadcast("source_complete", { sourceId: "register", ok: false, error: res.error });
+    await freshness.markError("auror", `${res.errorClass}: ${res.error}`);
+    broadcast("source_complete", { sourceId: "auror", ok: false, error: res.error });
     return res;
   }
 
-  const findings = runMatching(res.discrepancies);
-  const counts   = registerRollup(findings);
+  const counts = aurorRollup(res.records);
   await chrome.storage.local.set({
-    [K.registerCache]: {
+    [K.aurorCache(storeNbr)]: {
       storeNbr,
-      discrepancies: res.discrepancies,
-      findings,
+      records:    res.records,
       counts,
+      days:       res.days,
       capturedAt: res.capturedAt,
-      replayed:   res.replayed,
-      cellCount:  res.cellCount,
-      shiftCount: res.shiftCount,
     },
   });
-  await freshness.markSuccess("register");
-  broadcast("source_complete", { sourceId: "register", ok: true, rolledUp: counts });
-  return { ok: true, counts, cellCount: res.cellCount, findings: findings.length };
+  await freshness.markSuccess("auror");
+  broadcast("source_complete", { sourceId: "auror", ok: true, rolledUp: counts });
+  return { ok: true, counts, records: res.records.length };
 }
 
 // ── Pull: Compliance ─────────────────────────────────────────────────
@@ -411,11 +407,11 @@ async function pullRecognition({ storeNbr } = {}) {
 // ── refresh_all ─────────────────────────────────────────────────────
 async function refreshAll() {
   const storeNbr = await getStoreNbr();
-  const [cvp, abs, comp, reg, acc, rec] = await Promise.allSettled([
+  const [cvp, abs, comp, aur, acc, rec] = await Promise.allSettled([
     pullCvp({ storeNbr }),
     pullAbsences({ storeNbr }),
     pullCompliance(),
-    pullRegister({ storeNbr }),
+    pullAuror({ storeNbr }),
     pullAccident({ storeNbr }),
     pullRecognition({ storeNbr }),
   ]);
@@ -423,7 +419,7 @@ async function refreshAll() {
     cvp:        cvp.status  === "fulfilled" ? cvp.value  : { ok: false, error: String(cvp.reason) },
     absences:   abs.status  === "fulfilled" ? abs.value  : { ok: false, error: String(abs.reason) },
     compliance: comp.status === "fulfilled" ? comp.value : { ok: false, error: String(comp.reason) },
-    register:   reg.status  === "fulfilled" ? reg.value  : { ok: false, error: String(reg.reason) },
+    auror:      aur.status  === "fulfilled" ? aur.value  : { ok: false, error: String(aur.reason) },
     accident:   acc.status  === "fulfilled" ? acc.value  : { ok: false, error: String(acc.reason) },
     recognition: rec.status === "fulfilled" ? rec.value  : { ok: false, error: String(rec.reason) },
   };
@@ -440,14 +436,14 @@ async function getDashboardState() {
   const freshAll  = await freshness.readAll();
   const absGot    = await chrome.storage.local.get(K.absencesCache);
   const complianceGot = await chrome.storage.local.get(K.complianceCache);
-  const registerGot   = await chrome.storage.local.get(K.registerCache);
-  const [cvpGot, accidentGot, recognitionGot] = storeNbr
+  const [cvpGot, accidentGot, recognitionGot, aurorGot] = storeNbr
     ? await Promise.all([
         chrome.storage.local.get(K.cvpCache(storeNbr)),
         chrome.storage.local.get(K.accidentCache(storeNbr)),
         chrome.storage.local.get(K.recognitionCache(storeNbr)),
+        chrome.storage.local.get(K.aurorCache(storeNbr)),
       ])
-    : [{}, {}, {}];
+    : [{}, {}, {}, {}];
   return {
     settings,
     storeNbr,
@@ -471,10 +467,10 @@ async function getDashboardState() {
         cache: storeNbr ? (cvpGot[K.cvpCache(storeNbr)] || null) : null,
         phase: "phase1",
       },
-      register: {
-        cache: registerGot[K.registerCache] || null,
-        phase: "v1.5",
-        note:  "Captured automatically from Power BI report tab; polls every 6h.",
+      auror: {
+        cache: storeNbr ? (aurorGot[K.aurorCache(storeNbr)] || null) : null,
+        phase: "v1.7",
+        note:  "Auror evidence completeness on home-store events; needs the captured Auror JWT.",
       },
       recognition: {
         cache: storeNbr ? (recognitionGot[K.recognitionCache(storeNbr)] || null) : null,
@@ -517,7 +513,7 @@ export const handlers = {
   async "pull_cvp"(msg)             { return await pullCvp(msg || {}); },
   async "pull_absences"(msg)        { return await pullAbsences(msg || {}); },
   async "pull_compliance"(_msg)     { return await pullCompliance(); },
-  async "pull_register"(msg)        { return await pullRegister(msg || {}); },
+  async "pull_auror"(msg)           { return await pullAuror(msg || {}); },
   async "pull_accident"(msg)        { return await pullAccident(msg || {}); },
   async "pull_recognition"(msg)     { return await pullRecognition(msg || {}); },
   async "focus_enviance_tab"(_msg)  {
@@ -543,8 +539,8 @@ export const handlers = {
     // Auto-pull CVP for the new store synchronously so the view can read
     // fresh data on its next get_dashboard_state. Absences are NOT
     // re-pulled — IVR is account-global; the existing cache applies to
-    // every store. Compliance/accident/register are Phase 2; their pulls
-    // will be added here when those handlers exist.
+    // every store. Compliance/accident/auror refresh on their own alarms
+    // or the next bootstrap.
     let cvpResult = null;
     try { cvpResult = await pullCvp({ storeNbr }); }
     catch (e) { cvpResult = { ok: false, error: String(e?.message ?? e) }; }

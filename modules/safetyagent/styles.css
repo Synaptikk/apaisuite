@@ -49,6 +49,7 @@
 .module-safetyagent .sa-reasons { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 24px; font-size: var(--fs-sm); }
 .module-safetyagent .sa-reasons div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--apai-border); }
 .module-safetyagent .sa-reasons i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 2px; }
+.module-safetyagent .sa-reasons > button { grid-column: 1 / -1; justify-self: start; margin-top: 6px; }
 
 .module-safetyagent .sa-ctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .module-safetyagent .sa-count { color: var(--apai-muted); font-size: var(--fs-xs); margin-left: auto; }
@@ -69,6 +70,10 @@
 .module-safetyagent td.sa-dept { color: var(--apai-ink-soft); }
 .module-safetyagent td.sa-pct  { background: color-mix(in srgb, var(--sa-nhf) calc(var(--p) * 55%), transparent); }
 .module-safetyagent td.sa-heat { background: color-mix(in srgb, var(--sa-nhf) calc(var(--h) * 45%), transparent); }
+/* vs-expected index: --i is clamped to 2 by the view, so 1.0 (the house rate)
+   sits at half tint and anything at or past 2x is fully shaded. */
+.module-safetyagent td.sa-idx  { background: color-mix(in srgb, var(--sa-nhf) calc((var(--i) - 1) * 55%), transparent); font-variant-numeric: tabular-nums; }
+.module-safetyagent td.sa-hold { background: color-mix(in srgb, var(--sa-nhf) 30%, transparent); font-weight: var(--fw-medium); }
 .module-safetyagent tr.sa-row { cursor: pointer; }
 .module-safetyagent tr.sa-row:hover td { background: var(--apai-bg-soft); }
 .module-safetyagent tr.sa-row[aria-expanded="true"] td { background: var(--apai-bg-soft); }

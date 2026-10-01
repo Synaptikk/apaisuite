@@ -22,6 +22,30 @@
 const ENDPOINT = "https://puppy-backend.walmart.com/anthropic/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+/**
+ * `x-puppy-version` — the gateway gates on this against a client-version floor
+ * (`puppy_backend_rs::cli_version_blacklist`).
+ *
+ * Measured 2026-09-25: 0.1.61 is blocked, 0.1.70 and anything above passes, and
+ * **sending no header at all is also blocked** — Code Puppy's own
+ * `puppy_version_header.py` says an absent header reads as "so old it never sent
+ * one". So the header is not optional for us.
+ *
+ * This is deliberately a visible, editable setting rather than something buried:
+ * the extension is not the Code Puppy CLI, and the only way any client
+ * identifies itself here is this header. If the floor rises, the gateway's own
+ * block message is detected below and says so.
+ */
+export const DEFAULT_CLIENT_VERSION = "0.1.70";
+
+/**
+ * The gateway does not reject a blocked client with a status code. It answers
+ * **HTTP 200 with the block notice as the assistant's text**, so without this
+ * check the module would store "your CLI is out of date" as the store's Cx
+ * analysis and show it as a finished read.
+ */
+const BLOCKED_RE = /out of date and has been temporarily blocked|update to the latest version from https:\/\/puppy\.walmart\.com/i;
+
 /** Verbatims per theme sent to the model. Enough to characterise, not to dump. */
 const QUOTES_PER_THEME = 4;
 /** Themes sent per side. Past this the prompt is long and nobody reads that far. */
@@ -70,7 +94,7 @@ export function tokenStatus(token) {
  * @param {object} opts      { token, model, storeNbr, scores }
  * @returns {Promise<{text: string, model: string, usage: object, promptFacts: object}>}
  */
-export async function writeNarrative(analysis, { token, model = "claude-sonnet-5", storeNbr, scores = null } = {}) {
+export async function writeNarrative(analysis, { token, model = "claude-sonnet-5", storeNbr, scores = null, clientVersion = DEFAULT_CLIENT_VERSION } = {}) {
   const status = tokenStatus(token);
   if (!status.ok) {
     throw new GatewayError(
@@ -82,11 +106,58 @@ export async function writeNarrative(analysis, { token, model = "claude-sonnet-5
   }
 
   const facts = promptFacts(analysis, { storeNbr, scores });
+  const content = userPrompt(facts);
+
+  // First attempt at the normal budget; a retry at the larger one if the
+  // gateway spent the whole budget thinking. See MAX_TOKENS below.
+  let json = await callGateway(token, model, content, MAX_TOKENS, clientVersion);
+  let text = textOf(json);
+
+  if (!text && allThinking(json)) {
+    json = await callGateway(token, model, content, MAX_TOKENS_RETRY, clientVersion);
+    text = textOf(json);
+  }
+
+  if (!text) {
+    // Say what came back rather than "no text". A bare "no text" is
+    // unactionable, and the two real causes look nothing alike: `max_tokens`
+    // means the answer was cut off before any prose, while an unfamiliar block
+    // type means the gateway's response shape has moved.
+    const blocks = (json?.content ?? []).map((b) => b?.type ?? "?").join(", ") || "none";
+    throw new GatewayError(
+      `The AI gateway returned no text (stop_reason: ${json?.stop_reason ?? "?"}, blocks: ${blocks}).`,
+      "SHAPE",
+    );
+  }
+
+  return { text, model: json?.model ?? model, usage: json?.usage ?? null, promptFacts: facts };
+}
+
+/**
+ * Output budget.
+ *
+ * Sized for the thinking case, not the normal one. The gateway INTERMITTENTLY
+ * answers with extended-thinking blocks even though `thinking` is set to
+ * disabled below — four back-to-back probes on 2026-09-25 returned
+ * `thinking_tokens: 0` from both node and the service worker, and the very next
+ * real call came back `stop_reason: max_tokens, blocks: thinking` with no prose
+ * at all on a 2,000-token budget. The read-out itself runs about 1,100 output
+ * tokens, so 4,000 leaves room for a thinking pass and still finishes the answer.
+ */
+const MAX_TOKENS = 4000;
+/** One retry, for the case where even 4,000 went entirely on thinking. */
+const MAX_TOKENS_RETRY = 12_000;
+
+async function callGateway(token, model, content, maxTokens, clientVersion) {
   const body = {
     model,
-    max_tokens: 2000,
+    max_tokens: maxTokens,
+    // Asked for explicitly rather than left to the default, because the default
+    // is what varies. It is accepted by the gateway (verified) and is not on its
+    // own sufficient, which is why the budget above is generous too.
+    thinking: { type: "disabled" },
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt(facts) }],
+    messages: [{ role: "user", content }],
   };
 
   let res;
@@ -97,6 +168,8 @@ export async function writeNarrative(analysis, { token, model = "claude-sonnet-5
         "content-type": "application/json",
         "X-Api-Key": token,
         "anthropic-version": ANTHROPIC_VERSION,
+        // Not optional: an absent version header is treated as an ancient client.
+        ...(clientVersion ? { "x-puppy-version": clientVersion } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -113,14 +186,43 @@ export async function writeNarrative(analysis, { token, model = "claude-sonnet-5
   }
 
   const json = await res.json().catch(() => null);
-  const text = (json?.content ?? [])
+
+  // Checked before anything else reads the content: a version block is a 200
+  // whose "answer" is the block notice, and it would otherwise be stored and
+  // rendered as the store's Cx read.
+  const asText = (json?.content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
+  if (BLOCKED_RE.test(asText)) {
+    throw new GatewayError(
+      "The AI gateway is blocking this client version. Update Code Puppy from "
+      + "https://puppy.walmart.com, then set the new version under Cx settings "
+      + `(currently sending ${clientVersion || "no version"}).`,
+      "BLOCKED",
+    );
+  }
+
+  // A gateway error can arrive inside a 200, as an error-typed envelope rather
+  // than an HTTP status — so the status alone does not mean success.
+  if (json?.type === "error" || json?.error) {
+    const detail = json.error?.message ?? json.error?.type ?? "unknown";
+    throw new GatewayError(`AI gateway error: ${detail}`, "HTTP");
+  }
+  return json;
+}
+
+function textOf(json) {
+  return (json?.content ?? [])
     .filter((b) => b?.type === "text")
     .map((b) => b.text)
     .join("")
     .trim();
-  if (!text) throw new GatewayError("The AI gateway returned no text.", "SHAPE");
+}
 
-  return { text, model: json?.model ?? model, usage: json?.usage ?? null, promptFacts: facts };
+/** The retryable shape: budget exhausted, and nothing but thinking came back. */
+function allThinking(json) {
+  const blocks = json?.content ?? [];
+  return json?.stop_reason === "max_tokens"
+    && blocks.length > 0
+    && blocks.every((b) => b?.type === "thinking" || b?.type === "redacted_thinking");
 }
 
 // ── Prompt construction ─────────────────────────────────────────────────

@@ -143,6 +143,62 @@ test("the worst associates sort first, so a top-10 slice takes the right ten", (
     "no dropped associate may have more picks left than a kept one");
 });
 
+// ── Same day only (2026-09-29) ─────────────────────────────────────────────
+//
+// The export lists every bin with its LAST scan, whenever that was, so a bin
+// untouched since Sunday still carries Sunday's scanner on Monday's sheet.
+// Charging Monday's leftovers to someone who was not in the building is a
+// false accusation, so those bins come back as `carried` instead.
+
+test("Tableau's own Seen Today flag is carried onto each gap", () => {
+  const { gaps } = parseLocationDetails(CSV);
+  assert.equal(gaps.find((g) => g.location === "002/003").seenToday, true);
+  assert.equal(gaps.find((g) => g.location === "002/004").seenToday, false);
+});
+
+test("a bin last scanned on an earlier day is carried over, not charged to its scanner", () => {
+  const sheet = [
+    HEAD,
+    line("001/001", "Yes", "9/28/2026 11:39:00 AM", "duane01", "1", "2"),
+    line("001/003", "Yes", "9/28/2026 12:05:00 PM", "duane01", "0", "1"),
+    // Same sheet, but this bin's last scan was the day before. Three data rows
+    // because the parser picks the location column by content (minHits = 3).
+    line("001/002", "No", "9/27/2026 4:09:00 PM", "terry01", "0", "3"),
+  ].join("\r\n");
+  const { gaps } = parseLocationDetails(sheet);
+  const { associates, carried, carriedSkipped } = rollUpSkippedByAssociate(gaps, { day: "2026-09-28" });
+  assert.deepEqual(associates.map((a) => a.win), ["duane01"]);
+  assert.deepEqual(carried.map((b) => b.location), ["001/002"]);
+  assert.equal(carriedSkipped, 3);
+});
+
+test("without a day nothing is excluded, so old callers read the same as before", () => {
+  const sheet = [
+    HEAD,
+    line("001/002", "No", "9/27/2026 4:09:00 PM", "terry01", "0", "3"),
+    line("001/004", "No", "9/27/2026 4:11:00 PM", "terry01", "0", "1"),
+    line("001/005", "No", "9/27/2026 4:12:00 PM", "terry01", "0", "1"),
+  ].join("\r\n");
+  const { associates, carried } = rollUpSkippedByAssociate(parseLocationDetails(sheet).gaps);
+  assert.deepEqual(associates.map((a) => a.win), ["terry01"]);
+  assert.equal(carried.length, 0);
+});
+
+test("gaps stored before the flag existed fall back to the scan date", () => {
+  const mk = (location, lastSeenAt) => ({ locGroup: "1", location, picksSeen: 5, picksDone: 0, skipped: 5, win: "terry01", lastSeenAt });
+  const r = rollUpSkippedByAssociate(
+    [mk("001/001", "9/28/2026 8:00:00 AM"), mk("001/002", "9/26/2026 8:00:00 PM")],
+    { day: "2026-09-28" },
+  );
+  assert.equal(r.associates[0].bins.length, 1);
+  assert.deepEqual(r.carried.map((b) => b.location), ["001/002"]);
+  // A gap with no timestamp at all cannot be judged, so it stays attributed
+  // rather than quietly vanishing from the total.
+  const none = rollUpSkippedByAssociate([mk("001/003", null)], { day: "2026-09-28" });
+  assert.equal(none.carried.length, 0);
+  assert.equal(none.associates[0].skipped, 5);
+});
+
 test("ties break deterministically, so the cap does not shuffle between paints", () => {
   // Two associates on the same count must not swap places on re-render, or the
   // tenth row would flicker in and out and its title lookup would restart.

@@ -33,6 +33,7 @@ import { exportActiveCsv, exportChecklistCsv,
          exportHistoryCsv, exportCaseOpeningsCsv,
          exportCaseSummaryCsv }                   from "./lib/exportChecklist.js";
 import { parseCaseItemsFile, lookupCaseItems }    from "./lib/parseCaseItems.js";
+import { withWeekday }                             from "../../shared/dates.js";
 
 const POWER_BI_URL = "https://app.powerbi.com/groups/me/reports/a118e7e7-9431-4240-b630-04575d36cc37/217785fb10b56ddae020?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
 
@@ -474,7 +475,7 @@ export async function mount(host, container) {
         active
           ? h("div", { class: "dl-case-map-active" },
               h("strong", null, "Active: "), active.sourceFileName || "(unknown)",
-              h("span", { class: "dl-muted" }, ` · ${active.summary?.itemCount ?? "?"} items · ${active.summary?.lockCount ?? "?"} locks · imported ${new Date(active.importedAt).toLocaleString()}`),
+              h("span", { class: "dl-muted" }, ` · ${active.summary?.itemCount ?? "?"} items · ${active.summary?.lockCount ?? "?"} locks · imported ${withWeekday(new Date(active.importedAt).toLocaleString(), active.importedAt)}`),
             )
           : h("p", { class: "dl-muted" }, "No case map loaded."),
         h("p", null,
@@ -490,7 +491,7 @@ export async function mount(host, container) {
               )),
               h("tbody", null, ...state.mappingsIndex.map((m) =>
                 h("tr", null,
-                  h("td", null, new Date(m.importedAt).toLocaleString()),
+                  h("td", null, withWeekday(new Date(m.importedAt).toLocaleString(), m.importedAt)),
                   h("td", null, m.sourceFileName || "(unknown)"),
                   h("td", null, String(m.summary?.itemCount ?? "")),
                   h("td", null, m.mappingId === state.activeMappingId ? "✓" : ""),
@@ -656,7 +657,7 @@ export async function mount(host, container) {
               )),
               h("tbody", null, ...state.importsIndex.map((imp) =>
                 h("tr", null,
-                  h("td", null, new Date(imp.importedAt).toLocaleString()),
+                  h("td", null, withWeekday(new Date(imp.importedAt).toLocaleString(), imp.importedAt)),
                   h("td", null, imp.sourceFileName || "(unknown)"),
                   h("td", null, String(imp.summary?.rowCount ?? "")),
                   h("td", null, imp.importId === state.activeImportId ? "✓" : ""),
@@ -714,14 +715,14 @@ export async function mount(host, container) {
       return;
     }
     const imp = state.importMeta;
-    const when = new Date(imp.importedAt).toLocaleString();
+    const when = withWeekday(new Date(imp.importedAt).toLocaleString(), imp.importedAt);
     els.importBanner.classList.remove("dl-hidden");
     replace(els.importBanner,
       h("div", null,
         h("strong", null, `Active import: ${imp.sourceFileName || "(unknown)"}`),
         " ",
         h("span", { class: "dl-banner-meta" },
-          `imported ${when} · ${imp.summary?.rowCount ?? "?"} rows · ${imp.summary?.dateRange?.min ?? "?"} → ${imp.summary?.dateRange?.max ?? "?"} · ${(imp.summary?.stores || []).join(", ") || "no store info"}`),
+          `imported ${when} · ${imp.summary?.rowCount ?? "?"} rows · ${imp.summary?.dateRange?.min ? withWeekday(imp.summary.dateRange.min) : "?"} → ${imp.summary?.dateRange?.max ? withWeekday(imp.summary.dateRange.max) : "?"} · ${(imp.summary?.stores || []).join(", ") || "no store info"}`),
       ),
     );
   }
@@ -1678,7 +1679,7 @@ export async function mount(host, container) {
           dt("Source"),     dd(e.unlockSource || "—"),
           dt("Status"),     dd(STATUS_LABEL[e.reviewStatus] || e.reviewStatus),
           e.clearedAt ? dt("Cleared at") : null,
-          e.clearedAt ? dd(new Date(e.clearedAt).toLocaleString()) : null,
+          e.clearedAt ? dd(withWeekday(new Date(e.clearedAt).toLocaleString(), e.clearedAt)) : null,
           e.clearedReason ? dt("Cleared reason") : null,
           e.clearedReason ? dd(STATUS_LABEL[e.clearedReason] || e.clearedReason) : null,
         ),
@@ -1949,7 +1950,7 @@ export async function mount(host, container) {
     const newHireThreshold = rules?.thresholds?.newHireThresholdDays ?? 90;
     const isNewHire = tenureDays != null && tenureDays < newHireThreshold;
     const approxHireDate = tenureDays != null
-      ? new Date(Date.now() - tenureDays * 86_400_000).toLocaleDateString()
+      ? withWeekday(new Date(Date.now() - tenureDays * 86_400_000).toLocaleDateString())
       : null;
 
     section.appendChild(
@@ -2020,7 +2021,7 @@ export async function mount(host, container) {
     const assocName = ctx?.name || e.fullName || "";
     const tenureDays = ctx?.tenureDays ?? null;
     const approxHireDate = tenureDays != null
-      ? new Date(Date.now() - tenureDays * 86_400_000).toLocaleDateString()
+      ? withWeekday(new Date(Date.now() - tenureDays * 86_400_000).toLocaleDateString())
       : "unknown";
 
     const noteEl = els.drawerHost.querySelector("#dl-note-edit");
@@ -2341,7 +2342,7 @@ function fmtDateTime(t) {
   if (!t) return "";
   const d = new Date(t);
   if (!Number.isFinite(d.getTime())) return String(t);
-  return d.toISOString().replace("T", " ").replace(/:\d\d\.\d+Z$/, "").replace(/Z$/, "");
+  return withWeekday(d.toISOString().replace("T", " ").replace(/:\d\d\.\d+Z$/, "").replace(/Z$/, ""));
 }
 function fmtTime(t) {
   if (!t) return "";

@@ -9,6 +9,8 @@
 // too or the data-session attribute terminates early and the row stops
 // opening. Use esc() for anything that is not a number this file computed.
 
+import { withWeekday } from "../../shared/dates.js";
+
 // Module-level state
 let $ = null;
 let $$ = null;
@@ -60,7 +62,7 @@ export async function mount(host, container) {
   // ── Utilities ──────────────────────────────────────────────────────────
   const fmt = {
   num: (n) => (n != null ? n.toLocaleString() : "—"),
-  date: (d) => d || "—",
+  date: (d) => (d ? withWeekday(d) : "—"),
   dur: (ms) => {
     if (ms == null) return "—";
     const totalSec = Math.floor(ms / 1000);
@@ -140,7 +142,7 @@ async function loadOverview() {
     if (stats.daily.length > 0) {
       const first = stats.daily[0].extraction_date;
       const last = stats.daily[stats.daily.length - 1].extraction_date;
-      $("sr-date-range").textContent = `${first} – ${last}`;
+      $("sr-date-range").textContent = `${withWeekday(first)} – ${withWeekday(last)}`;
     }
 
     // Render KPIs
@@ -358,9 +360,9 @@ async function openSessionDetail(sessionId) {
       const exitedTime = new Date(session.dispatched_time);
       const arrivedTime = new Date(session.review_window_start);
       
-      const formatTime = (d) => d.toLocaleString('en-US', { 
-        month: '2-digit', day: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true 
+      const formatTime = (d) => d.toLocaleString('en-US', {
+        weekday: 'short', month: '2-digit', day: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
       });
       
       registerWindow = `

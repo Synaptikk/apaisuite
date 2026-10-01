@@ -324,3 +324,62 @@ pickers), with its own coverage ledger, so it backfills days whose orders
 are already stored. A day with no Express Pickup has no rows and is recorded
 as `rate: null` once the load shows rows for another day, or the Overview
 already recorded 0 orders for it.
+
+## Where a sync's minutes go, and what did not speed it up (added 2026-09-27)
+
+Timed over CDP in the debug Edge (store 1458, all eight lookback days
+missing, VizPick holding the Tableau lock for the first 14 s):
+
+| Step | Tabs | Wall time |
+|---|---|---|
+| Scheduler (current week, no next-week read) | 1 | 31 s |
+| Associate By Day, 8 days in one load | 1 | 17 s |
+| Express Pickup Overview, one tab PER DAY | 8 | 144 s (17–20 s each) |
+| Express pick rate, 8 days in one load | 1 | 16 s |
+| GTA clock-ins | 1 | 35 s |
+| **Whole run** | | **4 m 30 s** |
+
+Each Express tab was ~11 s of load + viz registration, then the driver's
+flat 6 s settle, then the read. So the per-day Overview is more than half
+of a cold sync, and it is the part that scales with days missing.
+
+**Tab reuse through the JS API is dead.** Probed
+(`scratchpad/express-reuse-probe.mjs`, read-only): the workbook's
+parameters are all metric goals and selectors (`Report By`, `BU Selector`,
+`Sales`…) — none is the Report Date, and `changeParameterValueAsync` on the
+nearest name throws `Invalid parameter`. `getFiltersAsync` on every
+worksheet of the dashboard lists categorical filters only (`STORE`,
+`MARKET`, `FULFMT_TYPE`, `WM_WEEK_NBR`…); `RPT_DT` is not exposed as a
+filter on any sheet, so there is nothing to `applyRangeFilterAsync` to.
+Re-navigating the SAME tab to the next day's URL (`location.href = …`) does
+work and returns the right rows, but it is a full re-render: 12.0 s, the
+same as a fresh load (11.4–13.2 s). No saving there either.
+
+What did change:
+
+- **Days run three at a time** (`EXPRESS_PARALLEL` in service.js). The
+  ORC crawl already asks Tableau for four VizPick tabs at once.
+- **The settle is a poll, not a sleep** (`readWhenSettled` in
+  tableau_driver.js): accept the read as soon as rows appear and a second
+  read agrees on the count. Empty reads wait LONGER than before (12 s):
+  one fresh load in four of a day with 42 orders still read 0 rows at the
+  6 s mark, and an empty read on a real day is recorded as a zero-order day
+  by pullExpressDay's unfiltered check — permanently once the day leaves
+  the volatile window.
+- **Sync now no longer forces a full re-pull.** `pull_now` passed
+  `force: true`, which skipped BOTH the "pulled too recently" gap and the
+  coverage check — so every click re-read all eight lookback days of all
+  three Tableau sources. A click now skips only the gap; the volatile two
+  days are re-read as on an alarm run. "Refresh this store" (`pull_store`)
+  keeps the full force. Measured: a manual sync with a warm store went from
+  4 m 30 s to 1 m 56 s, and half of that is the scheduler (23 s) and the
+  timesheet (30 s), neither of them Tableau.
+- **The Tableau lock now wraps only the Tableau steps.** It used to wrap
+  the whole run, so a click queued behind VizPick's open-check or Today
+  crawl before even the scheduler opened — "most of the time is spent
+  waiting for other modules". The scheduler and the timesheet run outside
+  the lock, and a manual run waits at most 2 minutes for it before sharing
+  the browser (`MANUAL_LOCK_WAIT_MS`); alarm runs keep the 10-minute wait.
+  The driver's viz timeout went 120 s → 180 s to survive sharing. Observed:
+  with VizPick's Today crawl running, the scheduler read finished during
+  the crawl and the Tableau steps started 36 s later.

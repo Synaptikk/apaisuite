@@ -14,7 +14,7 @@
 //
 // Full contract, headers and paging costs: dev/CX_FINDINGS.md section 2.
 
-import { withSessionTabs, registerSessionTab } from "../../../shared/tabSessions.js";
+import { withSessionTabs, registerSessionTab, forgetSessionTab } from "../../../shared/tabSessions.js";
 import { COMMENTS_QUERY, commentsVariables, DATA_VIEW } from "./medallia_query.js";
 
 const ROOT_URL    = "https://walmart.medallia.com/sso/walmart/";
@@ -22,9 +22,10 @@ const TAB_PATTERN = "https://walmart.medallia.com/*";
 // The SSO hand-off pages. A fetch from one of these has no reporting session
 // yet, so they are not usable as an anchor tab.
 const SSO_HOP_RE  = /\/(ssoLoginRequest|samlRequest|logonSubmit)\.do/i;
-// An anchor tab must be inside the reporting app, which is where the csrfToken
-// is rendered.
-const APP_URL_RE  = /walmart\.medallia\.com\/sso\/walmart\/applications\//i;
+// Any page under the SSO app. Deliberately broad — which page a session lands
+// on varies by the user's default view, and whether it is usable is decided by
+// pingTab (does it hand us a CSRF token?), not by its path.
+const MEDALLIA_URL_RE = /walmart\.medallia\.com\/sso\/walmart\//i;
 
 /**
  * Records per request. 1000 measured at 714 KB / 14 s against a 52-week window;
@@ -35,6 +36,52 @@ export const PAGE_SIZE = 1000;
 
 /** Guard against an unbounded loop if the cursor ever stops advancing. */
 const MAX_PAGES = 60;
+
+/**
+ * How many times one pull may throw away a dead anchor and open a fresh one.
+ * Two covers "the borrowed tab was frozen" plus "our replacement froze as well";
+ * a third would mean something other than freezing is wrong.
+ */
+const MAX_REANCHORS = 2;
+
+/**
+ * Deadline on every executeScript.
+ *
+ * Chrome freezes a background tab that has been idle, and a frozen tab NEVER
+ * SETTLES an executeScript — it does not reject, it hangs, so a loop around it
+ * never gets to re-check its own deadline. That is exactly how VizPick's crawl
+ * hung overnight and leaked 46 tabs on 2026-09-15
+ * (modules/vizpick/lib/sources/vizpick_stores_tableau.js carries the same
+ * guard). A timeout turns the hang into an ordinary failed attempt.
+ *
+ * 45 s: a legitimate 1000-record page measured 14 s and the slowest observed was
+ * under 25 s, so this cannot cut a real request short — and since a stall is now
+ * recoverable (the pull re-anchors and retries the same cursor) rather than
+ * fatal, waiting any longer to notice only adds dead time. It was 90 s, which
+ * cost a user a minute and a half before the fallback kicked in.
+ */
+const EXEC_TIMEOUT_MS = 45_000;
+
+/**
+ * Deadline on the liveness probe. It reads one regex out of the DOM, so an awake
+ * tab answers in well under a second; anything slower than this is frozen, and
+ * waiting the full EXEC_TIMEOUT_MS to find that out would waste a minute and a
+ * half at the start of every pull.
+ */
+const PING_TIMEOUT_MS = 8_000;
+
+function execScriptWithTimeout(opts, ms = EXEC_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    chrome.scripting.executeScript(opts),
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`executeScript timed out after ${Math.round(ms / 1000)}s (tab frozen or hung)`)),
+        ms,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 export class MedalliaError extends Error {
   constructor(message, errorClass = "HTTP") {
@@ -63,14 +110,28 @@ export async function fetchComments({
   if (!from || !to) throw new MedalliaError("fetchComments needs both from and to", "SHAPE");
 
   return withSessionTabs("cx", async () => {
-    const { tabId, roleId } = await anchorTab();
+    let anchor = await acquireAnchor();
 
     const records = [];
-    let cursor = null, total = null, pages = 0, stoppedEarly = false;
+    let cursor = null, total = null, pages = 0, stoppedEarly = false, reanchors = 0;
 
     do {
       const vars = commentsVariables({ from, to, limit: PAGE_SIZE, cursor });
-      const page = await postInTab(tabId, roleId, COMMENTS_QUERY, vars, "cxComments");
+
+      let page;
+      try {
+        page = await postInTab(anchor, COMMENTS_QUERY, vars, "cxComments");
+      } catch (e) {
+        // A frozen or vanished anchor is recoverable, and recovering means
+        // REPLACING it: a tab that froze once will freeze again, and a borrowed
+        // tab is not ours to reload. The cursor is untouched, so the same page
+        // is simply re-fetched against the new tab.
+        if (!(e instanceof MedalliaError) || e.errorClass !== "TAB" || reanchors >= MAX_REANCHORS) throw e;
+        reanchors++;
+        anchor = await reanchor(anchor);
+        continue;
+      }
+
       const feedback = page?.data?.feedback;
       if (!feedback) throw new MedalliaError("Medallia returned no feedback connection", "SHAPE");
 
@@ -96,26 +157,59 @@ export async function fetchComments({
       if (records.length >= maxRecords) { stoppedEarly = true; break; }
     } while (cursor && pages < MAX_PAGES);
 
-    return { records, total: total ?? records.length, pages, stoppedEarly, roleId };
+    // `reanchors` is surfaced so the panel's diagnostics can say a tab had to be
+    // replaced mid-pull — a slow but successful pull should not look identical
+    // to a clean one.
+    return { records, total: total ?? records.length, pages, stoppedEarly, reanchors, roleId: anchor.roleId };
   });
 }
 
 // ── Anchor tab ──────────────────────────────────────────────────────────
+//
+// An anchor is `{ tabId, roleId, owned }`. `owned` decides what we are allowed
+// to do to it: a tab we opened can be reloaded or closed freely, the user's own
+// tab cannot.
+//
+// Readiness is NOT judged by the URL. The landing page differs per profile —
+// this machine's debug profile lands on `/sso/walmart/applications/ex_WEB-5/
+// pages/4899`, while a plain session lands on `/sso/walmart/pages/?roleId=…`
+// (observed 2026-09-25). An earlier version required `/applications/` in the
+// path and would simply never accept the second shape. The only thing that
+// actually matters is whether the page hands us a CSRF token, so that is what
+// is tested.
 
-async function anchorTab() {
-  // Reuse a reporting-app tab the user already has open before opening one.
-  const existing = (await chrome.tabs.query({ url: TAB_PATTERN }))
-    .filter((t) => APP_URL_RE.test(t.url || "") && !SSO_HOP_RE.test(t.url || ""));
+async function acquireAnchor() {
+  return (await borrowAnchor()) ?? (await openAnchor());
+}
 
-  if (existing.length) {
-    const tab = existing[0];
-    await waitForComplete(tab.id, 15_000);
+/** A Medallia tab the user already has open, if it is usable. Never reloaded. */
+async function borrowAnchor() {
+  const candidates = (await chrome.tabs.query({ url: TAB_PATTERN }))
+    .filter((t) => !SSO_HOP_RE.test(t.url || ""));
+
+  for (const tab of candidates) {
     const roleId = roleIdFromUrl(tab.url);
-    if (roleId) return { tabId: tab.id, roleId };
-    // An app tab with no roleId is unusual; fall through and open our own
-    // rather than guessing one.
+    if (!roleId) continue;
+    await waitForComplete(tab.id, 10_000);
+    // Probe before trusting it. A tab that has sat in the background is very
+    // likely frozen, and a frozen tab HANGS executeScript rather than failing
+    // it — which is what made the first end-to-end run sit for seven minutes
+    // with nothing to show (MEMORY.md::VizPick tab leak, same shape).
+    if (!await pingTab(tab.id)) continue;
+    // Discarding mid-pull would lose the session the pull rides on. Best
+    // effort: not every Chromium honours it, which is why the per-call timeout
+    // and the re-anchor path both stay.
+    try { await chrome.tabs.update(tab.id, { autoDiscardable: false }); } catch { /* fine */ }
+    return { tabId: tab.id, roleId, owned: false };
   }
+  // A frozen or role-less user tab is deliberately left alone rather than
+  // reloaded: it is theirs, reloading discards whatever they had on screen, and
+  // it was measured at 193 s to still fail. Opening our own is ~20 s.
+  return null;
+}
 
+/** Our own background tab: walks the SAML hand-off and proves it has a token. */
+async function openAnchor() {
   let opened;
   try {
     opened = await chrome.tabs.create({ url: ROOT_URL, active: false });
@@ -124,20 +218,80 @@ async function anchorTab() {
   }
   // Registered so the shared reaper closes it if anything below throws.
   await registerSessionTab("cx", opened.id);
+  try { await chrome.tabs.update(opened.id, { autoDiscardable: false }); } catch { /* fine */ }
 
-  // The root URL walks the SAML hand-off and lands on the user's own default
-  // page with the roleId filled in. Wait for that landing, not just for load.
-  const landed = await waitForAppLanding(opened.id, 45_000);
-  if (!landed) {
+  const roleId = await waitForLanding(opened.id, 60_000);
+  if (!roleId) {
+    await closeTab(opened.id);
     throw new MedalliaError(
       "Medallia session is not active. Open walmart.medallia.com in a tab, sign in, then refresh.",
       "AUTH",
     );
   }
-  return { tabId: opened.id, roleId: landed };
+
+  // Landed is not the same as ready: the token has to actually be in the
+  // document. Ours to reload, so give it one before giving up.
+  if (!await pingTab(opened.id)) {
+    try { await chrome.tabs.reload(opened.id); } catch { /* falls through */ }
+    await waitForLanding(opened.id, 45_000);
+    if (!await pingTab(opened.id)) {
+      await closeTab(opened.id);
+      throw new MedalliaError(
+        "The Medallia tab loaded but never served a CSRF token. Open walmart.medallia.com, sign in, then refresh.",
+        "AUTH",
+      );
+    }
+  }
+  return { tabId: opened.id, roleId, owned: true };
 }
 
-async function waitForAppLanding(tabId, timeoutMs) {
+/**
+ * Replace a dead anchor mid-pull.
+ *
+ * A tab that has frozen once will freeze again, and reloading a borrowed tab is
+ * not ours to do — so the recovery is a fresh tab of our own, not a repair.
+ */
+async function reanchor(dead) {
+  if (dead?.owned) await closeTab(dead.tabId);
+  return openAnchor();
+}
+
+async function closeTab(tabId) {
+  try { await chrome.tabs.remove(tabId); } catch { /* already gone */ }
+  try { await forgetSessionTab(tabId); } catch { /* best effort */ }
+}
+
+/**
+ * Is this tab awake and inside the reporting app?
+ *
+ * One regex against the DOM: an awake tab answers in well under a second, and a
+ * frozen one never answers at all, so the short deadline is what actually
+ * distinguishes them. Cheap enough to run before every pull, which is the point
+ * — the pull's first real page should never be the thing that discovers the
+ * anchor is dead.
+ */
+async function pingTab(tabId) {
+  try {
+    const r = await execScriptWithTimeout({
+      target: { tabId },
+      world: "MAIN",
+      func: () => /csrfToken:\s*"([^"]+)"/.test(document.documentElement.outerHTML),
+    }, PING_TIMEOUT_MS);
+    return r?.[0]?.result === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wait for the SAML hand-off to settle somewhere that carries a roleId.
+ *
+ * Any loaded `/sso/walmart/` page that is not one of the hand-off endpoints
+ * counts. Requiring `/applications/` here was a bug: the landing page depends on
+ * the user's default view, and a session that lands on `/sso/walmart/pages/`
+ * would have waited out the whole timeout and reported the session dead.
+ */
+async function waitForLanding(tabId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(700);
@@ -145,7 +299,7 @@ async function waitForAppLanding(tabId, timeoutMs) {
     try { tab = await chrome.tabs.get(tabId); } catch { return null; }
     const url = tab.url || "";
     if (SSO_HOP_RE.test(url)) continue;
-    if (!APP_URL_RE.test(url)) continue;
+    if (!MEDALLIA_URL_RE.test(url)) continue;
     if (tab.status !== "complete") continue;
     const roleId = roleIdFromUrl(url);
     if (roleId) return roleId;
@@ -173,10 +327,11 @@ async function waitForComplete(tabId, timeoutMs) {
 
 // ── The POST, executed in the page ──────────────────────────────────────
 
-async function postInTab(tabId, roleId, query, variables, operationName) {
+async function postInTab(anchor, query, variables, operationName) {
+  const { tabId, roleId } = anchor;
   let results;
   try {
-    results = await chrome.scripting.executeScript({
+    results = await execScriptWithTimeout({
       target: { tabId },
       world: "MAIN",
       // Must be pure — this function is serialized into the page and closes
@@ -212,6 +367,8 @@ async function postInTab(tabId, roleId, query, variables, operationName) {
       args: [roleId, DATA_VIEW, operationName, query, variables],
     });
   } catch (e) {
+    // TAB, not HTTP: a hang or a thrown executeScript means the tab is frozen,
+    // discarded or gone — which the pull loop recovers from by re-anchoring.
     throw new MedalliaError(`Could not run the query in the Medallia tab: ${e?.message ?? e}`, "TAB");
   }
 

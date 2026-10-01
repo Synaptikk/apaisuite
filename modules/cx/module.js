@@ -68,17 +68,30 @@ export default {
     permissions: {
       // `tabs` + `scripting` drive the Medallia anchor tab (its CSRF token is
       // only ever in the page HTML) and the Hoops cookie fallback.
-      needs: ["storage", "unlimitedStorage", "tabs", "scripting", "alarms"],
+      needs: ["storage", "unlimitedStorage", "tabs", "scripting", "alarms", "downloads"],
       hosts: [
         "https://hoops.wal-mart.com/*",
         "https://walmart.medallia.com/*",
         // The internal AI gateway for the written read. Sends no CORS headers,
         // so this only works from the service worker.
         "https://puppy-backend.walmart.com/*",
+        // The gateway's sign-in page, for the content-script pair that reads
+        // the token out of it — Private Network Access means the token POST
+        // never reaches the network, so it has to be caught in the page.
+        "https://puppy.walmart.com/*",
       ],
     },
 
-    contentScripts: [],
+    // Declared here for documentation; Chrome reads the top-level manifest.json.
+    contentScripts: [
+      { matches: ["https://puppy.walmart.com/*"],
+        js:      ["modules/cx/content/puppy_auth_hook.js"],
+        run_at:  "document_start",
+        world:   "MAIN" },
+      { matches: ["https://puppy.walmart.com/*"],
+        js:      ["modules/cx/content/puppy_auth_relay.js"],
+        run_at:  "document_start" },
+    ],
     webRequestFilters: [],
   },
 

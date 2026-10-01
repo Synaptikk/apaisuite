@@ -75,10 +75,16 @@ test("the shared sheet unchanged since six days ago: tomorrow waits", () => {
   assert.match(plan["2026-09-24"].skip, /not been updated/);
 });
 
-test("a past day already filled from the board is never refilled (midnight lock)", () => {
-  const snaps = { "2026-09-22": { fp: "whatever" } };
+test("a past day already filled from an unchanged sheet is not refilled", () => {
+  const snaps = { "2026-09-22": { fp: fingerprint(week[2]) } };
   const plan = byDate(planDates(week, "2026-09-23", (d) => snaps[d] || null));
-  assert.match(plan["2026-09-22"].skip, /locked/);
+  assert.match(plan["2026-09-22"].skip, /unchanged/);
+});
+
+test("a past day whose sheet changed since it was applied is refilled (the board is the record)", () => {
+  const snaps = { "2026-09-22": { fp: "an older copy" } };
+  const plan = byDate(planDates(week, "2026-09-23", (d) => snaps[d] || null));
+  assert.equal(plan["2026-09-22"].mode, "backfill");
 });
 
 test("a sheet identical to what was applied a week earlier is stale", () => {
@@ -256,6 +262,24 @@ test("first sight: an app edit newer than the board is kept; the board only fill
   const r = mergeBoard(doc, { cells: { "MARLA F": { 1: "PICK", 2: "PICK" } }, matched, previous: null,
     boardModifiedAt: "2026-09-23T12:00:00Z", schedule });
   assert.deepEqual(r.associates[0].slots, { 1: "DISP", 2: "PICK" });
+});
+
+test("mirror: the board row replaces the app's cells whatever their age, app-only cells on that row go", () => {
+  const doc = { updatedAt: "2026-09-23T13:00:00Z",
+    associates: [{ name: "MARLA FINCH", slots: { 1: "DISP", 2: "PICK", 4: "L" } }, { name: "APP ONLY", slots: { 1: "STAGE" } }] };
+  const r = mergeBoard(doc, { cells: { "MARLA F": { 1: "PICK", 3: "PICK" } }, matched, previous: null,
+    boardModifiedAt: "2026-09-23T12:00:00Z", schedule, mirror: true });
+  assert.deepEqual(r.associates[0].slots, { 1: "PICK", 3: "PICK" });
+  assert.deepEqual(r.associates[1].slots, { 1: "STAGE" });   // not on the board: untouched
+  assert.equal(r.changedCells, 4);
+});
+
+test("mirror: a later pull with an unchanged board still restores a cell the app changed", () => {
+  const doc = { associates: [{ name: "MARLA FINCH", slots: { 1: "DISP" } }] };
+  const cells = { "MARLA F": { 1: "PICK" } };
+  const r = mergeBoard(doc, { cells, matched, previous: cells, schedule, mirror: true });
+  assert.deepEqual(r.associates[0].slots, { 1: "PICK" });
+  assert.equal(r.unchanged, false);
 });
 
 test("later pulls: only cells the board changed replace app edits", () => {

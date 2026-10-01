@@ -408,6 +408,25 @@ test("scanLedger reads each bin as scans, scanless changes and handovers", () =>
   assert.equal(ledger.find((b) => b.location === "091/009").scans, 0);
 });
 
+test("open picks at close are charged only to scans made on that day", () => {
+  // 040/005 was last scanned the day before and still holds 6 open picks. The
+  // Associates card used to charge them to brendan, who was not in the store.
+  const day = [
+    { store: "1458", sourceIso: "2026-09-16T14:00:00Z", capturedAt: "2026-09-16T14:00:00Z", bins: [
+      { location: "040/005", seen: 10, done: 4, win: "brendan", lastSeenAt: "9/15/2026 6:51:00 PM", seenToday: false },
+      { location: "002/003", seen: 5, done: 1, win: "michael", lastSeenAt: "9/16/2026 9:11:00 AM", seenToday: true },
+    ] },
+    { store: "1458", sourceIso: "2026-09-16T18:00:00Z", capturedAt: "2026-09-16T18:00:00Z", bins: [
+      { location: "040/005", seen: 10, done: 4, win: "brendan", lastSeenAt: "9/15/2026 6:51:00 PM", seenToday: false },
+      { location: "002/003", seen: 7, done: 1, win: "michael", lastSeenAt: "9/16/2026 1:05:00 PM", seenToday: true },
+    ] },
+  ];
+  const g = Object.fromEntries(HH.scanImpact(day, (win) => GROUP[win]).groups.map((r) => [r.group, r]));
+  assert.equal(g.Digital, undefined, "brendan's day-old scan owns nothing at close");
+  assert.equal(g["Stocking 1"].openAtClose, 6);
+  assert.equal(g["Stocking 1"].binsOpenAtClose, 1);
+});
+
 test("scanImpact compares rescans by group against bins nobody rescanned, and finds one-group windows", () => {
   const impact = HH.scanImpact(SEP15, (win) => GROUP[win]);
   const g = Object.fromEntries(impact.groups.map((r) => [r.group, r]));

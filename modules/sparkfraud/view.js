@@ -20,6 +20,7 @@
 import { toTrip, toCandidateMatch, computeInStoreWindow, isWithinPresenceWindow, attachOmsItems, toItem } from "./models/index.js";
 import { emit, EVENTS } from "./telemetry/events.js";
 import { saveInvestigation, toInvestigationRecord } from "./journal.js";
+import { withWeekday } from "../../shared/dates.js";
 
 const SWIFT_DASHBOARD = "https://swift.walmart.com/sparkApp/api/proxy/v4/dashboard";
 
@@ -352,7 +353,7 @@ export async function mount(host, container) {
       const tzAbbr = tzAbbrFor(new Date(), STORE_TZ);
       const rows = matching.map(t => {
         const startStr = t.customerStartTime
-          ? new Date(t.customerStartTime).toLocaleString("en-US", { timeZone: STORE_TZ })
+          ? withWeekday(new Date(t.customerStartTime).toLocaleString("en-US", { timeZone: STORE_TZ }))
           : "?";
         const orderIds = (t.orders || []).map(o => o.orderId).filter(Boolean);
         const orders = orderIds.length ? orderIds.join(", ") : "—";
@@ -572,7 +573,7 @@ export async function mount(host, container) {
         }
 
         const tzAbbr = tzAbbrFor(now, STORE_TZ);
-        const stamp = now.toLocaleString("en-US", { timeZone: STORE_TZ });
+        const stamp = withWeekday(now.toLocaleString("en-US", { timeZone: STORE_TZ }));
 
         const driverRows = enriched.map(e => {
           const n = e.normalized;
@@ -713,7 +714,7 @@ ${enriched.length
     const transit = trip.status?.transit || "";
     const tzAbbr = tzAbbrFor(new Date(eventTimestampMs || Date.now()), STORE_TZ);
     const eventStr = eventTimestampMs
-      ? `${new Date(eventTimestampMs).toLocaleString("en-US", { timeZone: STORE_TZ })} ${tzAbbr}`
+      ? `${withWeekday(new Date(eventTimestampMs).toLocaleString("en-US", { timeZone: STORE_TZ }))} ${tzAbbr}`
       : "—";
     const cwStart = trip.customerWindow?.startMs;
     const cwEnd   = trip.customerWindow?.endMs;
@@ -829,7 +830,7 @@ ${confidenceHtml}
   <div><dt>Investigated event:</dt> ${escapeHtml(eventStr)}</div>
   <div><dt>Store:</dt> ${storeIdDisplay} (${STORE_TZ})</div>
   <div><dt>Evidence:</dt> ${evidenceLine}</div>
-  <div><dt>Generated:</dt> ${new Date().toLocaleString("en-US", { timeZone: STORE_TZ })} ${tzAbbr}</div>
+  <div><dt>Generated:</dt> ${withWeekday(new Date().toLocaleString("en-US", { timeZone: STORE_TZ }))} ${tzAbbr}</div>
 </div>
 ${missingThumbCount ? `<div class="thumb-banner">⚠ ${missingThumbCount} thumbnail${missingThumbCount === 1 ? "" : "s"} unavailable (no product image found). Dashed boxes indicate missing images.</div>` : ""}
 ${itemsHtml}
@@ -1902,7 +1903,7 @@ ${itemsHtml}
     summary.textContent = `${watchlist.length} watched` + (recentHitCount ? ` · ${recentHitCount} hit${recentHitCount === 1 ? "" : "s"} (24h)` : "");
 
     const watchedRows = watchlist.map(w => {
-      const seen = w.lastSeenMs ? new Date(w.lastSeenMs).toLocaleString("en-US", { timeZone: STORE_TZ }) : "—";
+      const seen = w.lastSeenMs ? withWeekday(new Date(w.lastSeenMs).toLocaleString("en-US", { timeZone: STORE_TZ })) : "—";
       const status = w.lastStatus
         ? `<span class="sf-wl-status sf-wl-status-${escapeHtml(w.lastStatus)}">${escapeHtml(w.lastStatus)}</span>`
         : `<span class="muted tiny">no data yet</span>`;
@@ -1918,7 +1919,7 @@ ${itemsHtml}
 
     const recentHits = hits.slice(-10).reverse();
     const hitRows = recentHits.map(h => {
-      const t = new Date(h.hitAt).toLocaleString("en-US", { timeZone: STORE_TZ });
+      const t = withWeekday(new Date(h.hitAt).toLocaleString("en-US", { timeZone: STORE_TZ }));
       const orderIds = (h.orderIds || []).slice(0, 3).join(", ") + ((h.orderIds || []).length > 3 ? "…" : "");
       const itemsBlurb = h.itemsByOrder
         ? ` · ${Object.values(h.itemsByOrder).reduce((n, rows) => n + rows.length, 0)} items captured`

@@ -14,6 +14,50 @@ import { parseXlsxAllSheets } from "../../vendor/xlsx_min.js";
 const TIMEOUT_MS = 60_000;
 
 const SIGN_IN = "not signed in to OneDrive — open the Daily Board link once in this browser, then sync again";
+const REFRESH_MS = 45_000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Is this the "no SharePoint session" failure (the one a visit can fix)? */
+export function isSignInError(e) {
+  return String(e?.message ?? e) === SIGN_IN;
+}
+
+/**
+ * Renew the SharePoint session by visiting the site in a background tab.
+ *
+ * The FedAuth cookie the plain fetch rides on expires after a while, and
+ * when it does every 30-minute sync fails with SIGN_IN until someone happens
+ * to open OneDrive — which is how store 1458's board went unsynced from
+ * 09-24 to 09-27. A navigation bounces through login.microsoftonline.com,
+ * where corporate SSO completes without a prompt and lands back on the
+ * site with a fresh cookie; measured 2026-09-27, well under 10 s. The tab
+ * opens on the file's metadata endpoint (JSON), NOT download.aspx, which
+ * would drop the workbook into the user's Downloads.
+ *
+ * Resolves true once the tab is back on the site's host, false when the
+ * sign-in needs a person (the tab stays on the login page) — the caller
+ * then reports SIGN_IN as before. Always closes its tab.
+ */
+export async function refreshSession({ site, uniqueId }, { timeoutMs = REFRESH_MS } = {}) {
+  const host = new URL(site).host;
+  const url = `${site}/_api/web/GetFileById('${uniqueId}')?$select=Name`;
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await sleep(1000);
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t) return false;
+      let landed = null;
+      try { landed = new URL(t.url || t.pendingUrl || "").host; } catch { /* about:blank */ }
+      if (t.status === "complete" && landed === host) return true;
+    }
+    return false;
+  } finally {
+    await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
 
 async function get(url, headers = {}) {
   const ctl = new AbortController();

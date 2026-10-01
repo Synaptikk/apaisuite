@@ -12,6 +12,7 @@ import {
   buildWorksheet, DEPARTMENTS,
 } from "./lib/compute.js";
 import { fillWorkbook, excelDateSerial } from "./lib/xlsx.js";
+import { withWeekday } from "../../shared/dates.js";
 
 const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
@@ -223,12 +224,12 @@ export async function mount(host, container) {
       sourceLine("Sales & purchases", snap.sources.itr,
         snap.sources.itr?.coverage
           ? snap.sources.itr.coverage.days + " days, " +
-            snap.sources.itr.coverage.firstDate + " → " + snap.sources.itr.coverage.lastDate +
+            withWeekday(snap.sources.itr.coverage.firstDate) + " → " + withWeekday(snap.sources.itr.coverage.lastDate) +
             (snap.sources.itr.coverage.missingTail > 0
               ? " (ITR is " + snap.sources.itr.coverage.missingTail + " day behind)" : "")
           : "Ops Portal ITR"),
       sourceLine("Freight", snap.sources.trailers,
-        (snap.sources.trailers?.loads?.length ?? 0) + " fresh trailer(s) on " + (snap.sources.trailers?.night ?? "—")),
+        (snap.sources.trailers?.loads?.length ?? 0) + " fresh trailer(s) on " + withWeekday(snap.sources.trailers?.night ?? "—")),
     ];
     els.sources.innerHTML = lines.join("");
   }
@@ -238,7 +239,7 @@ export async function mount(host, container) {
       if (panel && night) {
         els.trailers.hidden = false;
         els.trailerBody.innerHTML =
-          '<p class="ci-note">No MP or FDD trailers invoiced for the night of ' + night + ".</p>";
+          '<p class="ci-note">No MP or FDD trailers invoiced for the night of ' + withWeekday(night) + ".</p>";
         return;
       }
       els.trailers.hidden = true;
@@ -254,8 +255,8 @@ export async function mount(host, container) {
     for (const t of panel.trailers) {
       html += '<tr><td class="ci-trailer-id"><span class="ci-type ci-type-' + t.type.toLowerCase() + '">' +
         t.type + "</span> " + t.trailer +
-        (t.arrived ? '<em>arrived ' + t.arrived + "</em>" : "") +
-        (t.invoiceDates?.length ? '<em>invoiced ' + t.invoiceDates.join(", ") + "</em>" : "") +
+        (t.arrived ? '<em>arrived ' + withWeekday(t.arrived) + "</em>" : "") +
+        (t.invoiceDates?.length ? '<em>invoiced ' + t.invoiceDates.map((d) => withWeekday(d)).join(", ") + "</em>" : "") +
         "</td>" +
         depts.map((d) => "<td>" + money(t.byDept[d.dept] ?? 0) + "</td>").join("") +
         "<td><strong>" + money(t.total) + "</strong></td></tr>";

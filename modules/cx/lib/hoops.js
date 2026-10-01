@@ -23,7 +23,35 @@ const OPS_PORTAL_URL  = "https://hoops.wal-mart.com/ops-portal/";
 const OPS_TAB_PATTERN = "https://hoops.wal-mart.com/ops-portal/*";
 const LOGGED_OUT_RE   = /hoops\.wal-mart\.com\/(soteria|login)/i;
 
+/**
+ * buType selects the level the figures are for. 6 is a store; 5 is a MARKET,
+ * found by probing on 2026-09-25 — `{ buId: 120, buType: 5 }` returns a real
+ * published market NPS series, so the market line on the scoreboard is Hoops'
+ * own number rather than an average of store averages we computed.
+ */
 const BU_TYPE_STORE = 6;
+export const BU_TYPE_MARKET = 5;
+
+/**
+ * Deadline on the in-tab fetch. A frozen background tab never settles an
+ * executeScript at all — it hangs rather than rejecting — so every call needs
+ * its own clock. Same guard as lib/medallia.js and VizPick's crawl; see
+ * MEMORY.md::VizPick tab leak.
+ */
+const EXEC_TIMEOUT_MS = 45_000;
+
+function execScriptWithTimeout(opts, ms = EXEC_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    chrome.scripting.executeScript(opts),
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`executeScript timed out after ${Math.round(ms / 1000)}s (tab frozen or hung)`)),
+        ms,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 /** timeType values the Cx procedures accept. NPS only populates from WEEK up. */
 export const TIME_TYPE = Object.freeze({
@@ -47,8 +75,8 @@ export class HoopsError extends Error {
  * actually carries a number — DAY and the 201 variant return null for every
  * row (verified 2026-09-25), so offering "daily NPS" would draw an empty chart.
  */
-export async function fetchNps(storeNbr, { timeType = TIME_TYPE.WEEK } = {}) {
-  const grid = await callGrid("metric.cx.megaCard.nps", { buId: num(storeNbr), buType: BU_TYPE_STORE, timeType });
+export async function fetchNps(storeNbr, { timeType = TIME_TYPE.WEEK, buType = BU_TYPE_STORE } = {}) {
+  const grid = await callGrid("metric.cx.megaCard.nps", { buId: num(storeNbr), buType, timeType });
   return {
     periods: grid.rows.map((r) => ({
       key:       String(r[grid.idx.timeInt]),
@@ -81,8 +109,8 @@ export const SUBSCORES = Object.freeze([
   { key: "overallSatisfaction",  label: "Overall satisfaction",   scope: "store"   },
 ]);
 
-export async function fetchSubscores(storeNbr, { timeType = TIME_TYPE.WEEK } = {}) {
-  const grid = await callGrid("metric.cx.megaCard.inStore", { buId: num(storeNbr), buType: BU_TYPE_STORE, timeType });
+export async function fetchSubscores(storeNbr, { timeType = TIME_TYPE.WEEK, buType = BU_TYPE_STORE } = {}) {
+  const grid = await callGrid("metric.cx.megaCard.inStore", { buId: num(storeNbr), buType, timeType });
 
   const periods = grid.rows.map((r) => {
     const out = {
@@ -217,7 +245,7 @@ async function fetchInsideOpsPortalTabImpl(url) {
 
   let results;
   try {
-    results = await chrome.scripting.executeScript({
+    results = await execScriptWithTimeout({
       target: { tabId },
       world: "MAIN",
       func: async (u) => {

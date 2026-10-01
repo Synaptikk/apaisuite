@@ -11,7 +11,7 @@ const STALE_DEFAULT_MS = {
   compliance:   12 * 60 * 60 * 1000,
   accident:     60 * 60 * 1000,
   cvp:          30 * 60 * 1000,
-  register:     24 * 60 * 60 * 1000,
+  auror:        24 * 60 * 60 * 1000,
   recognition:  12 * 60 * 60 * 1000,
 };
 
@@ -33,7 +33,7 @@ export async function read(sourceId) {
 // heavy pull, and concurrent pulls fight over the same capture tab) and the
 // view gets no lastError to render, so a failing source silently keeps
 // painting its last good cache. That's what happened to `recognition`.
-export async function readAll(sourceIds = ["absences","compliance","accident","cvp","register","recognition"]) {
+export async function readAll(sourceIds = ["absences","compliance","accident","cvp","auror","recognition"]) {
   const out = {};
   for (const id of sourceIds) out[id] = await read(id);
   return out;

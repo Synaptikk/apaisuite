@@ -34,6 +34,7 @@ import { mapRowToRingData } from "./sources/vizpick_snapshot.js";
 import { getFollowUpSheets } from "./sources/followup_data.js";
 import { renderMetricCard } from "./render_card.js";
 import { svgToPngBase64 } from "./rasterize.js";
+import { withWeekday } from "../../../shared/dates.js";
 
 const _auth = createAuth("metricshot");
 
@@ -280,8 +281,8 @@ export async function captureMetric(metric, opts = {}) {
     // own capture time when there's no snapshot at all to read a real stamp
     // from (store never crawled by VizPick's Today capture).
     const sourceStamp = snapshotRow?.sourceUpdate?.iso
-      ? new Date(snapshotRow.sourceUpdate.iso).toLocaleString()
-      : snapshotRow?.sourceUpdate?.raw || null;
+      ? withWeekday(new Date(snapshotRow.sourceUpdate.iso).toLocaleString(), snapshotRow.sourceUpdate.iso)
+      : (snapshotRow?.sourceUpdate?.raw ? withWeekday(snapshotRow.sourceUpdate.raw) : null);
     step("ring-source", {
       healthSource: ring?.health != null ? "vizpick-snapshot" : "headless-export",
       deptRingsSource: ring?.deptRings != null ? "vizpick-snapshot" : "headless-export",
@@ -302,7 +303,7 @@ export async function captureMetric(metric, opts = {}) {
     }, {
       title: metric.name || "VizPick Backroom Health",
       store,
-      capturedAt: sourceStamp || new Date(capturedAt).toLocaleString(),
+      capturedAt: sourceStamp || withWeekday(new Date(capturedAt).toLocaleString(), capturedAt),
     });
 
     step("rasterize", { width: card.width, height: card.height });

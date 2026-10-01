@@ -66,7 +66,7 @@ const bins = (n, open) => Array.from({ length: n }, (_, i) => ({ location: `00${
 test('home history rebuilds a past day: open bins become gaps, depts take the card shape', () => {
   const d = detailFromHistoryEntry(entry('1458', '2026-09-14', '19:02', bins(10, 3)));
   assert.equal(d.locations.gaps.length, 3);
-  assert.deepEqual({ ...d.locations.gaps[0] }, { locGroup: '0', location: '000/100', picksSeen: 2, picksDone: 0, skipped: 2, win: 'abc123', lastSeenAt: null });
+  assert.deepEqual({ ...d.locations.gaps[0] }, { locGroup: '0', location: '000/100', picksSeen: 2, picksDone: 0, skipped: 2, win: 'abc123', lastSeenAt: null, seenToday: null });
   assert.equal(d.depts[0].suggestedPicksCompleted, 1);
   assert.equal(d.depts[0].pickPct, 25);
   assert.equal(d.fromHistory, true);

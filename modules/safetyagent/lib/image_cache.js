@@ -1,8 +1,9 @@
-export const IMAGE_SCHEMA = 2;
+// 2 added the image-ID column (12); 3 added accept→complete minutes (13).
+export const IMAGE_SCHEMA = 3;
 
 export function needsImageRefresh(data) {
   return !!data && data.schema !== IMAGE_SCHEMA &&
-    Array.isArray(data.rows) && data.rows.some(row => row.length < 13);
+    Array.isArray(data.rows) && data.rows.some(row => row.length < 14);
 }
 
 // Keep the old dashboard usable if authentication or the refresh fails.

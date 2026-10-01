@@ -72,3 +72,10 @@
 .module-accidents .acc-ref-detail td { background: var(--apai-surface-2, #f8f9fb); }
 
 .module-accidents .acc-empty { color: var(--apai-text-dim, #667); font-size: 13px; padding: 18px 0; text-align: center; }
+
+.module-accidents .acc-btn-sm { padding: 4px 10px; font-size: 12px; }
+.module-accidents .acc-email { background: var(--apai-surface, #fff); border: 1px solid var(--apai-border, #e2e5ea); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.module-accidents .acc-email-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.module-accidents .acc-email-spacer { flex: 1; }
+.module-accidents .acc-email-note { font-size: 12px; color: var(--apai-text-dim, #667); }
+.module-accidents .acc-email-text { width: 100%; min-height: 320px; box-sizing: border-box; font: 12px/1.45 ui-monospace, Consolas, monospace; border: 1px solid var(--apai-border, #e2e5ea); border-radius: 8px; padding: 8px; resize: vertical; }

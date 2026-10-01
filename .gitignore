@@ -76,3 +76,7 @@ dev/cx-hoops-comments-*.json
 dev/cx-replay2.json
 dev/clearsight-intake-catalog.json
 dev/clearsight-intake-lookups.json
+
+# dev probe outputs carry real names / incident text (public repo)
+dev/_*-out.json
+dev/_omni-compact.json

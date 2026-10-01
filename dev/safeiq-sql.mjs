@@ -10,19 +10,49 @@ const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith("
 const positional = process.argv.slice(2).filter(a => !a.startsWith("--"));
 const sql = args.file ? readFileSync(args.file, "utf8") : positional[0];
 if (!sql) { console.error("need sql"); process.exit(1); }
-const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", protocolTimeout: 300000 });
+// targetFilter matters: browser.pages() attaches to every target, and one frozen
+// tab in the debug Edge makes that hang with "Network.enable timed out". Note
+// puppeteer hands the filter an object whose url/type are FUNCTIONS.
+const browser = await puppeteer.connect({
+  browserURL: "http://localhost:9222",
+  protocolTimeout: 300000,
+  targetFilter: (t) => {
+    const ty = typeof t.type === "function" ? t.type() : String(t.type || "");
+    const u  = typeof t.url  === "function" ? t.url()  : String(t.url  || "");
+    return ty === "browser" || String(u).includes("safeiq.stage.walmart.net");
+  },
+});
 const page = (await browser.pages()).find(p => p.url().includes("safeiq.stage.walmart.net"));
 if (!page) { console.error("no safeiq tab open in debug Edge"); process.exit(1); }
 const TOK_FILE = homedir() + "/.apaisuite-safeiq-token";
 let token = existsSync(TOK_FILE) ? readFileSync(TOK_FILE, "utf8").trim() : "";
+// The Studio token is a static READ token minted into the dashboard's own HTML,
+// which the page will hand us using its OIDC access token. Far more reliable than
+// sniffing request headers — the dashboard only sends the header while it is
+// actually running queries. Falls back to the header sniff.
 async function sniffToken() {
+  const fromHtml = await page.evaluate(async () => {
+    const k = Object.keys(sessionStorage).find(x => x.startsWith("oidc.user:"));
+    if (!k) return { err: "not signed in (no oidc.user in sessionStorage)" };
+    const { access_token } = JSON.parse(sessionStorage.getItem(k));
+    const id = (location.pathname.match(/dashboards\/([0-9a-f-]{36})/) || [])[1];
+    if (!id) return { err: "open a /SafeIQStudio/dashboards/<id> page first" };
+    const r = await fetch(`/api/studio/dashboards/${id}/html`, {
+      credentials: "include", headers: { authorization: "Bearer " + access_token },
+    });
+    if (!r.ok) return { err: `dashboard html HTTP ${r.status}` };
+    const m = (await r.text()).match(/SAFEIQ_STUDIO_TOKEN\s*=\s*"([^"]+)"/);
+    return m ? { token: m[1] } : { err: "no SAFEIQ_STUDIO_TOKEN in dashboard html" };
+  }).catch(e => ({ err: e.message }));
+  if (fromHtml?.token) { writeFileSync(TOK_FILE, fromHtml.token); token = fromHtml.token; return; }
+  console.error("token from dashboard html failed:", fromHtml?.err, "— falling back to header sniff");
   let t = null;
   const h = req => { const hh = req.headers(); const k = Object.keys(hh).find(x => x.toLowerCase() === "x-safepass-token"); if (k) t = hh[k]; };
   page.on("request", h);
-  await page.reload({ waitUntil: "networkidle2", timeout: 90000 }).catch(() => {});
-  for (let i = 0; i < 20 && !t; i++) await new Promise(r => setTimeout(r, 500));
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+  for (let i = 0; i < 40 && !t; i++) await new Promise(r => setTimeout(r, 500));
   page.off("request", h);
-  if (!t) { console.error("could not sniff X-SafePass-Token (is the tab signed in?)"); process.exit(3); }
+  if (!t) { console.error("could not get a Studio token (is the tab signed in?)"); process.exit(3); }
   writeFileSync(TOK_FILE, t); token = t;
 }
 async function runPage(pg) {

@@ -51,6 +51,11 @@ lib/
   data/            pure logic: weeks, parse, metrics, adherence,
                    classify, opportunities
   pages/           one renderer per tab: render(ctx) -> html, wire(ctx, root)
+                   pickhours.js is the one tab fed from another module: it
+                   reads Digital Rollup's per-day picks-per-hour archive
+                   (../digitalrollup/lib/pick_days.js, chrome.storage.local
+                   key digitalrollup.pickDays.v1) via the get_pick_days
+                   handler. Home store only, this browser only, kept 120 days.
 backend/           rules + indexes SCHEMATIC for the future project (not deployed)
 ```
 

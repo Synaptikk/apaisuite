@@ -12,8 +12,8 @@ export default {
   manifest: {
     id:          "orcmonitor",
     name:        "ORC Corridor Monitor",
-    description: "Identifies approaching ORC threats by tracking their event history trajectory along interstate corridors toward a selected store.",
-    version:     "0.1.0",
+    description: "Tracks ORC groups along the interstate network — routes driven between hits, heading, and the stores most likely to be hit next — with a market PDF brief.",
+    version:     "0.2.0",
     status:      "active",
     accent:      "#0071CE",   // APAISuite brand blue
 

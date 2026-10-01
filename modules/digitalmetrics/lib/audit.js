@@ -1,4 +1,5 @@
 import { getIdentity } from "../../../shared/identity.js";
+import { withWeekday } from "../../../shared/dates.js";
 import { seal, open } from "./crypto.js";
 
 // Shared edit attribution, separate from usage telemetry. Identity labels
@@ -19,5 +20,5 @@ export async function decodeEditor(editor) {
 export function editorText(editor) {
   if (!editor) return "Last saved by: unavailable for this older record";
   const date = new Date(editor.at || NaN);
-  return `Last saved by ${editor.label || "Unknown user"}${Number.isNaN(date.getTime()) ? "" : ` · ${date.toLocaleString()}`}`;
+  return `Last saved by ${editor.label || "Unknown user"}${Number.isNaN(date.getTime()) ? "" : ` · ${withWeekday(date.toLocaleString(), date)}`}`;
 }

@@ -1,0 +1,834 @@
+/* modules/cx/styles.css
+   Every selector scoped under .module-cx — the shell wraps the mount container
+   in that class. Colour, spacing and type come from styles/tokens.css only, so
+   the module follows the theme (including dark mode) without a second palette.
+
+   Sentiment colour is the one place this module adds meaning to colour, so it is
+   never the only signal: negative rows also carry a ▲, a "% neg" figure and a
+   position in the "What's going wrong" column. */
+
+.module-cx .cx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-10);
+}
+
+/* ── Header ───────────────────────────────────────────────────── */
+
+.module-cx .cx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.module-cx .cx-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.module-cx .cx-title h1 {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+}
+
+.module-cx .cx-store {
+  font-size: var(--fs-md);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.module-cx .cx-freshness {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-stale {
+  color: var(--apai-warn);
+  font-weight: var(--fw-medium);
+}
+
+.module-cx .cx-linkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--apai-link);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.module-cx .cx-linkbtn:hover { color: var(--apai-blue-darker); }
+
+/* ── Panels ───────────────────────────────────────────────────── */
+
+.module-cx .cx-panel {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+}
+
+.module-cx .cx-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.module-cx .cx-panel-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+}
+
+.module-cx .cx-panel-stamp,
+.module-cx .cx-panel-sub {
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-panel-head .cx-linkbtn { margin-left: auto; }
+.module-cx .cx-panel-head .cx-linkbtn ~ .cx-linkbtn { margin-left: 0; }
+
+.module-cx .cx-empty {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-error {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-md);
+  color: var(--apai-error);
+}
+
+.module-cx .cx-note {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--apai-muted);
+}
+
+/* ── Run note ─────────────────────────────────────────────────── */
+
+.module-cx .cx-runnote {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--rad-md);
+  font-size: var(--fs-md);
+  background: var(--apai-info-bg);
+  color: var(--apai-info);
+}
+
+.module-cx .cx-runnote.is-warn { background: var(--apai-warn-bg); color: var(--apai-warn); }
+.module-cx .cx-runnote.is-bad  { background: var(--apai-error-bg); color: var(--apai-error); }
+
+/* ── Scorecard ────────────────────────────────────────────────── */
+
+.module-cx .cx-score-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-3);
+}
+
+.module-cx .cx-tile {
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  padding: var(--sp-3);
+  background: var(--apai-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* NPS gets the whole first row on wide screens — it is the graded number and
+   the only one with a trend line under it. */
+.module-cx .cx-tile-hero {
+  grid-column: 1 / -1;
+  background: var(--module-accent-bg);
+  border-color: color-mix(in srgb, var(--module-accent) 30%, transparent);
+}
+
+@media (min-width: 900px) {
+  .module-cx .cx-tile-hero { grid-column: span 2; }
+}
+
+.module-cx .cx-tile-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--apai-ink-soft);
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+
+.module-cx .cx-tile-period { font-weight: var(--fw-regular); color: var(--apai-muted); }
+
+.module-cx .cx-tile-value {
+  font-size: 34px;
+  line-height: 1;
+  font-weight: var(--fw-bold);
+  color: var(--apai-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-cx .cx-tile-value-sm { font-size: var(--fs-2xl); }
+
+.module-cx .cx-tile-meta {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* Scope stripe: whether the store floor can actually do anything about it. */
+.module-cx .cx-scope-store   { border-left: 3px solid var(--module-accent); }
+.module-cx .cx-scope-digital { border-left: 3px solid var(--chart-near); }
+.module-cx .cx-scope-company { border-left: 3px solid var(--apai-border); }
+
+.module-cx .cx-delta {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  padding: 1px var(--sp-2);
+  border-radius: var(--rad-pill);
+  background: var(--apai-border-soft);
+  color: var(--apai-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-cx .cx-delta em { font-style: normal; font-weight: var(--fw-regular); opacity: .85; }
+.module-cx .cx-delta.is-good { background: var(--apai-success-bg); color: var(--apai-success); }
+.module-cx .cx-delta.is-bad  { background: var(--apai-error-bg);  color: var(--apai-error); }
+.module-cx .cx-delta.is-none { opacity: .6; }
+
+.module-cx .cx-scorecard-note { grid-column: 1 / -1; }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+
+.module-cx .cx-spark { width: 100%; height: 40px; margin-top: var(--sp-2); overflow: visible; }
+.module-cx .cx-spark-ty { stroke: var(--chart-met); stroke-width: 2; stroke-linejoin: round; }
+.module-cx .cx-spark-ly { stroke: var(--chart-muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.module-cx .cx-spark-dot { fill: var(--chart-met); }
+
+.module-cx .cx-spark-key,
+.module-cx .cx-legend {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: var(--sp-1);
+  vertical-align: -1px;
+}
+
+.module-cx .cx-key-ty { background: var(--chart-met); }
+.module-cx .cx-key-ly { background: var(--chart-muted); }
+
+/* ── Chips ────────────────────────────────────────────────────── */
+
+.module-cx .cx-filters {
+  display: flex;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-lg);
+  background: var(--apai-bg-soft);
+}
+
+.module-cx .cx-filter-block { display: flex; flex-direction: column; gap: var(--sp-2); }
+.module-cx .cx-filter-window { min-width: 230px; }
+
+.module-cx .cx-filter-label {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: var(--fw-semi);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; max-width: 620px; }
+
+.module-cx .cx-chip {
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 3px var(--sp-3);
+  border-radius: var(--rad-pill);
+  border: 1px solid var(--apai-border);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink-soft);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.module-cx .cx-chip:hover { background: var(--apai-border-soft); }
+
+.module-cx .cx-chip.is-on {
+  background: var(--module-accent);
+  border-color: var(--module-accent);
+  color: var(--module-accent-ink);
+}
+
+.module-cx .cx-chip-count { opacity: .7; font-variant-numeric: tabular-nums; }
+
+.module-cx .cx-window-select,
+.module-cx .cx-comment-filter,
+.module-cx .cx-settings select,
+.module-cx .cx-settings input {
+  font: inherit;
+  font-size: var(--fs-md);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+}
+
+.module-cx .cx-filter-meta { flex: 1 1 100%; margin: 0; font-size: var(--fs-sm); color: var(--apai-muted); }
+
+/* ── Two columns ──────────────────────────────────────────────── */
+
+.module-cx .cx-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
+}
+
+@media (min-width: 1000px) {
+  .module-cx .cx-columns { grid-template-columns: 1fr 1fr; }
+}
+
+.module-cx .cx-col-bad  { border-top: 3px solid var(--chart-missed); }
+.module-cx .cx-col-good { border-top: 3px solid var(--apai-success); }
+
+.module-cx .cx-themes { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* ── Theme rows ───────────────────────────────────────────────── */
+
+.module-cx .cx-theme {
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-md);
+  overflow: hidden;
+  background: var(--apai-bg-elev);
+}
+
+.module-cx .cx-theme-head {
+  display: grid;
+  grid-template-columns: 52px 1fr auto 16px;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.module-cx .cx-theme-head:hover { background: var(--apai-bg-soft); }
+
+.module-cx .cx-theme-count {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--apai-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-cx .cx-theme-name {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--apai-ink);
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.module-cx .cx-theme-scope {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 0 var(--sp-1);
+  border-radius: var(--rad-sm);
+  background: var(--apai-border-soft);
+  color: var(--apai-muted);
+  cursor: help;
+}
+
+.module-cx .cx-theme-split { display: flex; align-items: center; gap: var(--sp-2); }
+
+.module-cx .cx-theme-bar {
+  display: block;
+  width: 64px;
+  height: 6px;
+  border-radius: var(--rad-pill);
+  background: var(--apai-border);
+  overflow: hidden;
+}
+
+.module-cx .cx-theme-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--chart-missed);
+}
+
+.module-cx .cx-theme-splitnum {
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+}
+
+.module-cx .cx-theme-caret {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--apai-muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.module-cx .cx-theme.is-open .cx-theme-caret { transform: rotate(180deg); }
+
+.module-cx .cx-theme-body {
+  padding: 0 var(--sp-3) var(--sp-3);
+  border-top: 1px solid var(--apai-border-soft);
+}
+
+.module-cx .cx-theme-blurb {
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-topic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-3);
+}
+
+.module-cx .cx-topic-table th,
+.module-cx .cx-topic-table td {
+  text-align: right;
+  padding: 3px var(--sp-2);
+  border-bottom: 1px solid var(--apai-border-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-cx .cx-topic-table th:first-child,
+.module-cx .cx-topic-table td:first-child { text-align: left; }
+
+.module-cx .cx-topic-table th {
+  font-weight: var(--fw-medium);
+  color: var(--apai-muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.module-cx .cx-num-good { color: var(--apai-success); }
+.module-cx .cx-num-bad  { color: var(--apai-error); }
+
+.module-cx .cx-quotes-head {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--apai-muted);
+}
+
+.module-cx .cx-quotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.module-cx .cx-quotes li {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--apai-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.module-cx .cx-quote-meta { font-size: var(--fs-xs); color: var(--apai-muted); }
+
+.module-cx .cx-quote-text {
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+  color: var(--apai-ink-soft);
+}
+
+/* ── Movers ───────────────────────────────────────────────────── */
+
+.module-cx .cx-movers { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+.module-cx .cx-mover {
+  display: grid;
+  grid-template-columns: 86px 1fr auto 56px auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--rad-sm);
+  font-size: var(--fs-md);
+}
+
+.module-cx .cx-mover:nth-child(odd) { background: var(--apai-bg-soft); }
+.module-cx .cx-mover.is-thin { opacity: .62; }
+
+/* The direction reads as a word, not a glyph. A 12px triangle pair separated
+   only by colour was hard to tell apart at a glance and useless to anyone who
+   cannot use colour, so the word carries the meaning and the arrow and fill only
+   reinforce it. */
+.module-cx .cx-mover-dir {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  justify-self: start;
+  min-width: 74px;
+  padding: 1px var(--sp-2);
+  border-radius: var(--rad-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: var(--apai-border-soft);
+  color: var(--apai-ink-soft);
+}
+
+.module-cx .cx-mover-arrow { font-size: var(--fs-base); line-height: 1; font-weight: var(--fw-bold); }
+
+.module-cx .cx-mover-worse  .cx-mover-dir { background: var(--apai-error-bg);   color: var(--apai-error); }
+.module-cx .cx-mover-better .cx-mover-dir { background: var(--apai-success-bg); color: var(--apai-success); }
+.module-cx .cx-mover-worse  .cx-mover-delta { color: var(--apai-error); }
+.module-cx .cx-mover-better .cx-mover-delta { color: var(--apai-success); }
+
+.module-cx .cx-mover-name { font-weight: var(--fw-medium); color: var(--apai-ink); }
+
+.module-cx .cx-mover-thin {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-1);
+  border-radius: var(--rad-sm);
+  background: var(--apai-border-soft);
+  color: var(--apai-muted);
+  cursor: help;
+}
+
+.module-cx .cx-mover-rates,
+.module-cx .cx-mover-counts { color: var(--apai-muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.module-cx .cx-mover-rates strong { color: var(--apai-ink); }
+.module-cx .cx-mover-unit { font-size: var(--fs-xs); }
+.module-cx .cx-mover-delta { text-align: right; font-weight: var(--fw-semi); font-variant-numeric: tabular-nums; }
+
+/* ── Weekly bars ──────────────────────────────────────────────── */
+
+.module-cx .cx-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 130px;
+  padding-bottom: var(--sp-4);
+  overflow-x: auto;
+}
+
+.module-cx .cx-bar-col {
+  flex: 1 0 14px;
+  min-width: 14px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  position: relative;
+}
+
+.module-cx .cx-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+  background: var(--chart-track);
+}
+
+.module-cx .cx-seg { display: block; width: 100%; }
+.module-cx .cx-seg-pro { background: var(--apai-success); }
+.module-cx .cx-seg-pas { background: var(--chart-near); }
+.module-cx .cx-seg-det { background: var(--chart-missed); }
+
+.module-cx .cx-bar-label {
+  position: absolute;
+  bottom: calc(-1 * var(--sp-4));
+  font-size: 9px;
+  color: var(--apai-muted);
+  white-space: nowrap;
+}
+
+/* Only every other label at narrow widths, or they collide. */
+@media (max-width: 1200px) {
+  .module-cx .cx-bar-col:nth-child(even) .cx-bar-label { visibility: hidden; }
+}
+
+.module-cx .cx-legend-note { margin-left: auto; }
+
+/* ── Narrative ────────────────────────────────────────────────── */
+
+.module-cx .cx-narrative-body { font-size: var(--fs-base); line-height: var(--lh-loose); color: var(--apai-ink-soft); }
+.module-cx .cx-narrative-body h3,
+.module-cx .cx-narrative-body h4 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-md);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--apai-heading);
+}
+.module-cx .cx-narrative-body h3:first-child,
+.module-cx .cx-narrative-body h4:first-child { margin-top: 0; }
+.module-cx .cx-narrative-body p { margin: 0 0 var(--sp-2); }
+.module-cx .cx-narrative-body strong { color: var(--apai-ink); }
+.module-cx .cx-md-list { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); }
+.module-cx .cx-md-list li { margin-bottom: var(--sp-1); }
+
+/* ── Comments ─────────────────────────────────────────────────── */
+
+.module-cx .cx-search { flex: 1 1 200px; max-width: 320px; font: inherit; font-size: var(--fs-md);
+  padding: var(--sp-1) var(--sp-2); border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm); background: var(--apai-bg-elev); color: var(--apai-ink); }
+
+.module-cx .cx-comment-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.module-cx .cx-comment {
+  border: 1px solid var(--apai-border);
+  border-left-width: 3px;
+  border-radius: var(--rad-sm);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--apai-bg-elev);
+}
+
+.module-cx .cx-rating-1,
+.module-cx .cx-rating-2,
+.module-cx .cx-rating-3 { border-left-color: var(--chart-missed); }
+.module-cx .cx-rating-4 { border-left-color: var(--chart-near); }
+.module-cx .cx-rating-5 { border-left-color: var(--apai-success); }
+
+.module-cx .cx-comment-meta {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  color: var(--apai-muted);
+  margin-bottom: var(--sp-1);
+}
+
+.module-cx .cx-comment-stars { letter-spacing: 1px; }
+.module-cx .cx-comment-themes em { font-style: normal; padding: 0 var(--sp-1); border-radius: var(--rad-sm);
+  background: var(--apai-border-soft); margin-right: var(--sp-1); }
+
+.module-cx .cx-comment-text { margin: 0; font-size: var(--fs-md); line-height: var(--lh-base); color: var(--apai-ink-soft); }
+
+.module-cx .cx-more { margin-top: var(--sp-3); }
+
+/* ── GenAI + settings + debug ─────────────────────────────────── */
+
+.module-cx .cx-genai-brief { font-size: var(--fs-md); line-height: var(--lh-loose); color: var(--apai-ink-soft); }
+.module-cx .cx-genai-list { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-md); color: var(--apai-ink-soft); }
+.module-cx .cx-genai h4 { margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-sm); color: var(--apai-heading); }
+
+.module-cx .cx-setting { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-4); max-width: 520px; }
+.module-cx .cx-setting label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--apai-ink-soft); }
+.module-cx .cx-setting-hint { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--apai-muted); }
+.module-cx .cx-setting-hint code { font-family: var(--font-mono); font-size: 10px; }
+.module-cx .cx-setting-danger { border-top: 1px solid var(--apai-border-soft); padding-top: var(--sp-4); }
+
+.module-cx .cx-token-status { font-size: var(--fs-xs); color: var(--apai-muted); }
+.module-cx .cx-token-status.is-ok   { color: var(--apai-success); }
+.module-cx .cx-token-status.is-warn { color: var(--apai-warn); }
+.module-cx .cx-token-status.is-bad  { color: var(--apai-error); }
+
+.module-cx .cx-facts {
+  max-height: 360px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  background: var(--apai-bg-soft);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  padding: var(--sp-2);
+  color: var(--apai-ink-soft);
+}
+
+/* Auditability of the written read: what actually went to the gateway, inline
+   beside the prose rather than in a dialog (shared/ui.js has no modal helper). */
+.module-cx .cx-facts-block {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--apai-border-soft);
+  padding-top: var(--sp-2);
+}
+
+.module-cx .cx-facts-block > summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--apai-link);
+}
+
+/* A period figure (month-to-date) rather than a delta: neutral by design, since
+   it is context for the in-progress week above it, not a judgement. */
+.module-cx .cx-delta.is-period {
+  background: transparent;
+  border: 1px solid var(--apai-border);
+  color: var(--apai-muted);
+}
+
+/* ── Market scoreboard ────────────────────────────────────────── */
+
+.module-cx .cx-market-lead {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-base);
+  color: var(--apai-ink-soft);
+}
+
+.module-cx .cx-market-lead strong { color: var(--apai-ink); }
+
+/* Ten stores x thirteen columns will not fit a narrow pane; scroll the table
+   rather than shrinking the type below readable. */
+.module-cx .cx-market-scroll { overflow-x: auto; }
+
+.module-cx .cx-market-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-cx .cx-market-table th,
+.module-cx .cx-market-table td {
+  padding: 4px var(--sp-2);
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--apai-border-soft);
+}
+
+.module-cx .cx-market-table th {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--apai-muted);
+  border-bottom-color: var(--apai-border);
+}
+
+.module-cx .cx-market-table th:nth-child(2),
+.module-cx .cx-market-table td:nth-child(2) { text-align: left; }
+
+/* The scope stripe from the scorecard, carried onto the sub-score columns so
+   "can the floor act on this?" reads the same in both places. */
+.module-cx .cx-market-table th.cx-scope-head { border-top: 2px solid transparent; }
+.module-cx .cx-market-table th.cx-scope-store   { border-top-color: var(--module-accent); }
+.module-cx .cx-market-table th.cx-scope-digital { border-top-color: var(--chart-near); }
+.module-cx .cx-market-table th.cx-scope-company { border-top-color: var(--apai-border); }
+
+.module-cx .cx-market-table tr.is-home { background: var(--module-accent-bg); }
+.module-cx .cx-market-table tr.is-home td { font-weight: var(--fw-semi); }
+
+.module-cx .cx-home-tag {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 0 var(--sp-1);
+  margin-left: var(--sp-1);
+  border-radius: var(--rad-sm);
+  background: var(--module-accent);
+  color: var(--module-accent-ink);
+}
+
+.module-cx .cx-market-table .cx-num.is-good { color: var(--apai-success); }
+.module-cx .cx-market-table .cx-num.is-bad  { color: var(--apai-error); }
+
+/* Sign-in row: the button is the primary path, the status sits beside it, and
+   the paste field is tucked into a <details> for when the button cannot reach
+   the auth page. */
+.module-cx .cx-signin-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.module-cx .cx-setting-alt { margin-top: var(--sp-2); }
+
+.module-cx .cx-setting-alt > summary {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--apai-link);
+}
+
+.module-cx .cx-setting-alt input { margin-top: var(--sp-2); width: 100%; }
+
+/* Sign-in diagnostics: only rendered after a failure, and collapsed by default
+   so a working sign-in never shows any of it. */
+.module-cx .cx-signin-diag { margin-top: var(--sp-2); }
+.module-cx .cx-signin-diag > details > summary {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--apai-link);
+  margin-bottom: var(--sp-2);
+}
+.module-cx .cx-signin-diag table { margin-top: var(--sp-2); }
+
+/* A file input styled as a button. The native control's "No file chosen" text
+   is noise here — the status line already says whether a token is held. */
+.module-cx .cx-setting-alt-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+
+.module-cx .cx-filebtn {
+  display: inline-block;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--apai-border);
+  border-radius: var(--rad-sm);
+  background: var(--apai-bg-elev);
+  color: var(--apai-ink);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.module-cx .cx-filebtn:hover { background: var(--apai-bg-soft); }
+.module-cx .cx-setting-alt-row .cx-setting-hint { flex: 1 1 320px; }

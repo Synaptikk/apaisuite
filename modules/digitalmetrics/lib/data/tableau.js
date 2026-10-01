@@ -62,6 +62,9 @@ export function pivotAssociateData(rows) {
         "Pick Date":       date,
         "Associate":       associate,
         "Min. First Scan": row["MIN(First Scan)"] || row["Min. First Scan"] || "",
+        // Kept since 2026-09-27 for early stops (first_pick.js). Weeks pulled
+        // before then carry no last scan until the day is re-pulled.
+        "Max. Last Scan":  row["MAX(Last Scan)"]  || row["Max. Last Scan"]  || "",
       });
     }
 

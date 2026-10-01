@@ -25,6 +25,7 @@ import * as insights     from "./lib/pages/insights.js";
 import * as associatesPage from "./lib/pages/associates.js";
 import { taskPatterns } from "./lib/data/associates.js";
 import * as assignmentsPage from "./lib/pages/assignments/index.js";
+import * as pickhours    from "./lib/pages/pickhours.js";
 import { editorText } from "./lib/audit.js";
 import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
 import { leadershipForJob, byLeadershipFirst, isDigitalJob } from "./lib/data/job_classify.js";
@@ -42,6 +43,9 @@ const PAGES = {
   leaderboard,
   associates:    associatesPage,
   assignments:   assignmentsPage,
+  // Picks per hour, day by day, from Digital Rollup's archive of the home
+  // store's board readings (see lib/pages/pickhours.js).
+  pickhours,
   faq,
 };
 
@@ -91,6 +95,7 @@ export async function mount(host, container) {
     adherence: {},
     clockIns: {},       // { iso: { NAME: { clockIn, clockOut } } } — this browser only
     clockPull: null,    // last "Pull clock-ins" outcome
+    pickDays: null,     // Pick Hours tab: archived days for the store, newest first (null = not loaded)
     // Assignments tab
     assignmentDate: defaultDate(),
     assignments: [],
@@ -261,6 +266,23 @@ export async function mount(host, container) {
     if (page === "assignments" && state.store) loadAssignments();
     // The Associates tab lists Daily Board names to check (1458 only).
     if (page === "associates") loadBoard().then(renderPage).catch(() => {});
+    // Pick Hours reads Digital Rollup's per-day archive; cheap, so it is
+    // re-read on every entry to pick up the hour that just closed.
+    if (page === "pickhours") loadPickDays();
+  }
+
+  let pickDaysRequest = 0;
+  async function loadPickDays() {
+    if (!state.store) return;
+    const request = ++pickDaysRequest;
+    const store = state.store;
+    const res = await call("get_pick_days", { store });
+    if (request !== pickDaysRequest || store !== state.store) return;
+    state.pickDays = res?.days || [];
+    // Keep the chosen day if it is still there; otherwise show the newest.
+    const keys = new Set(state.pickDays.map((d) => d.key));
+    if (!keys.has(state.ui.pickDay)) state.ui = { ...state.ui, pickDay: state.pickDays[0]?.key ?? null };
+    if (state.page === "pickhours") renderPage();
   }
 
   // ── Derived state ────────────────────────────────────────────────────────
@@ -387,6 +409,11 @@ export async function mount(host, container) {
     const request = ++weeksRequest;
     const store = state.store;
     setStatus("loading weeks…");
+    // The pick-hour archive is per store too; drop the old store's days and
+    // fetch the new one's if that tab is showing.
+    state.pickDays = null;
+    state.ui = { ...state.ui, pickDay: null };
+    if (state.page === "pickhours") loadPickDays();
 
     // Classifications are per store, so they reload with every store switch —
     // this is the one place every store selection passes through.
@@ -1055,12 +1082,17 @@ export async function mount(host, container) {
     if (state.lastRunAt) {
       const mins = Math.round((Date.now() - state.lastRunAt) / 60000);
       const when = mins < 1 ? "just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
-      const failed = state.lastResult?.errors?.length;
+      const errors = state.lastResult?.errors || [];
+      const failed = errors.length;
       const abandoned = state.lastResult?.abandoned;
       setPullStatus(abandoned
                       ? `last sync died ${when} — run Sync now`
                       : `synced ${when}${failed ? ` · ${failed} failed` : ""}`,
                     { kind: abandoned || failed ? "warn" : "ok" });
+      // The toasts that named each failure are gone by the time anyone asks
+      // "what failed?"; keep the reasons on the pill itself.
+      const pill = $("#dm-pull-status");
+      if (pill) pill.title = errors.map((e) => `${e.scope}: ${e.error}`).join("\n");
     } else {
       setPullStatus("never synced");
     }

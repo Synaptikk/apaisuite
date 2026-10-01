@@ -12,6 +12,7 @@ import { reasonsFor } from "./lib/reasons.js";
 import { causeText, whoText } from "./lib/cause.js";
 import { recurrenceText } from "./lib/recurrence.js";
 import { receiptUpcs, receiptPantryText } from "./lib/pantry.js";
+import { withWeekday } from "../../shared/dates.js";
 const SEV_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 
 const BUCKET = {
@@ -122,13 +123,13 @@ export async function mount(host, container) {
   }
   function preWhyBody(i) {
     const cp = i.pre.counterpart;
-    if (cp) return `other half of reg ${cp.registerNbr} ${money(Math.abs(cp.amountCents))} ${cp.amountCents < 0 ? "short" : "over"} on ${cp.date}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
+    if (cp) return `other half of reg ${cp.registerNbr} ${money(Math.abs(cp.amountCents))} ${cp.amountCents < 0 ? "short" : "over"} on ${withWeekday(cp.date)}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
     const m = i.pre.matchedAgainst?.[0];
-    if (m) return `${m.registerNbr === i.register ? "same register" : `reg ${m.registerNbr}`} ${money(Math.abs(m.amountCents))} ${m.amountCents < 0 ? "short" : "over"} on ${m.date}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
+    if (m) return `${m.registerNbr === i.register ? "same register" : `reg ${m.registerNbr}`} ${money(Math.abs(m.amountCents))} ${m.amountCents < 0 ? "short" : "over"} on ${withWeekday(m.date)}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
     if (i.pre.verdict === "suspect_combo" && i.pre.combo) return i.pre.combo;
     if (i.pre.verdict === "outside_window") return "no report reaches this date — only open WorkView items could be matched";
     if (i.pre.verdict === "no_grid") return "no long/short data for this day";
-    if (i.pre.verdict === "unmatched" && i.pre.contested) return `reg ${i.pre.contested.registerNbr} ${money(Math.abs(i.pre.contested.amountCents))} over on ${i.pre.contested.date} is already the other half of reg ${i.pre.contested.wonBy.registerNbr}`;
+    if (i.pre.verdict === "unmatched" && i.pre.contested) return `reg ${i.pre.contested.registerNbr} ${money(Math.abs(i.pre.contested.amountCents))} over on ${withWeekday(i.pre.contested.date)} is already the other half of reg ${i.pre.contested.wonBy.registerNbr}`;
     if (i.pre.verdict === "unmatched") return "no offsetting entry on a neighbouring register";
     if (i.pre.verdict === "unmatched_over") return "no shortage nearby offsets this overage";
     return "";
@@ -176,7 +177,7 @@ export async function mount(host, container) {
     if (!r || !r.people?.length) { box.hidden = true; return; }
     box.hidden = false;
     $("[data-recurring-meta]").textContent = `${r.people.length} on 2+ open shortages · ${r.open} open shortages, ${r.openRound} round amounts`;
-    const day = (d) => `<a href="#" class="rls-recur-link" data-select="${esc(d.itemId)}">reg ${esc(d.register)} ${esc(money(d.amountCents))} ${esc(d.date)}${d.round ? " · round" : ""}${d.sole ? " · only cashier" : ""}</a>`;
+    const day = (d) => `<a href="#" class="rls-recur-link" data-select="${esc(d.itemId)}">reg ${esc(d.register)} ${esc(money(d.amountCents))} ${esc(withWeekday(d.date))}${d.round ? " · round" : ""}${d.sole ? " · only cashier" : ""}</a>`;
     $("[data-recurring-body]").innerHTML = `<div class="rls-muted">People signed on to, or handling the till of, more than one shortage nobody can explain. A round amount is bills, not a keying error; "only cashier" means nobody else was signed on to that register that day. Being on a bad day is not proof — pull their transactions and video. "Seen" is every register-day with a discrepancy this person appears on, good or bad.</div>
       <table class="rls-table rls-recur-table"><thead><tr><th>Associate</th><th>Open shortages</th><th>Round</th><th>Only cashier</th><th>Seen</th><th>Total short</th><th>Register-days</th></tr></thead><tbody>${r.people.map((p) => `
         <tr class="${p.soleCount > 1 || p.roundCount > 1 ? "is-hot" : ""}"><td>${esc(p.name || "")} <span class="rls-muted">${esc(p.id)}</span></td><td>${p.count}</td><td>${p.roundCount}</td><td>${p.soleCount}</td><td>${p.seenDays}</td><td>${esc(money(p.totalCents))}</td><td>${p.days.map(day).join(", ")}</td></tr>`).join("")}</tbody></table>`;
@@ -198,19 +199,19 @@ export async function mount(host, container) {
     box.hidden = false;
     const list = cashiers.cashiers;
     const st = cashiers.stored || {};
-    const rangeTxt = cashierRange.from || cashierRange.to ? `${cashierRange.from || "…"} → ${cashierRange.to || "…"}` : `all time (${st.dateMin || "?"} → ${st.dateMax || "?"})`;
+    const rangeTxt = cashierRange.from || cashierRange.to ? `${withWeekday(cashierRange.from || "…")} → ${withWeekday(cashierRange.to || "…")}` : `all time (${withWeekday(st.dateMin || "?")} → ${withWeekday(st.dateMax || "?")})`;
     $("[data-cashiers-meta]").textContent = `${list.length} associates · ${money(list.reduce((s, c) => s + c.totalCents, 0))} involved · ${rangeTxt} · ${st.events || 0} events on record`;
     const fromEl = $("[data-range-from]"), toEl = $("[data-range-to]");
     if (document.activeElement !== fromEl) fromEl.value = cashierRange.from;
     if (document.activeElement !== toEl) toEl.value = cashierRange.to;
     const pantry = cashiers.pantry || [];
-    const pantryHtml = pantry.length ? `<div class="rls-pantry"><h3>Pantry runs cashed out without a CFT — process, not a cashier error</h3><div class="rls-muted">The associate pantry is rung up, cashed out and closed with a CFT to the register. These tickets have no CFT, so the register is short the ticket. Permanent record; who rang it is shown for reference only and nothing is charged to them.</div><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Ticket</th><th>Cash</th><th>Register L/S</th><th>Pantry lines</th><th>Rang by</th><th>Work item</th></tr></thead><tbody>${pantry.map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.register)}</td><td>TR# ${esc(e.transNum)} ${esc(e.time)}</td><td>${esc(money(e.cents))}</td><td class="neg">${esc(money(e.shortCents))}</td><td>${e.lines} · ${esc((e.products || []).join(", "))}</td><td>${esc(e.opName || "")} <span class="rls-muted">${esc(e.opNum)}</span></td><td>${String(e.workItemId).startsWith("grid:") ? "grid only" : `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>`}</td></tr>`).join("")}</tbody></table></div>` : "";
+    const pantryHtml = pantry.length ? `<div class="rls-pantry"><h3>Pantry runs cashed out without a CFT — process, not a cashier error</h3><div class="rls-muted">The associate pantry is rung up, cashed out and closed with a CFT to the register. These tickets have no CFT, so the register is short the ticket. Permanent record; who rang it is shown for reference only and nothing is charged to them.</div><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Ticket</th><th>Cash</th><th>Register L/S</th><th>Pantry lines</th><th>Rang by</th><th>Work item</th></tr></thead><tbody>${pantry.map((e) => `<tr><td>${esc(withWeekday(e.date))}</td><td>${esc(e.register)}</td><td>TR# ${esc(e.transNum)} ${esc(e.time)}</td><td>${esc(money(e.cents))}</td><td class="neg">${esc(money(e.shortCents))}</td><td>${e.lines} · ${esc((e.products || []).join(", "))}</td><td>${esc(e.opName || "")} <span class="rls-muted">${esc(e.opNum)}</span></td><td>${String(e.workItemId).startsWith("grid:") ? "grid only" : `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>`}</td></tr>`).join("")}</tbody></table></div>` : "";
     const wins = $("[data-receipt-wins]"); if (wins) wins.innerHTML = list.map((c) => `<option value="${esc(c.id)}">${esc(c.name || "")}</option>`).join("");
     const dateEl = $("[data-receipt-form] [name='date']"); if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
     if (!list.length) { $("[data-cashiers-body]").innerHTML = `<div class="rls-muted">No attributed errors in this range.</div>${pantryHtml}`; return; }
     const chip = (c) => Object.entries(c.byType).map(([k, v]) => `<span class="rls-chip t-${esc(k)}" title="${esc(cashiers.types[k] || k)} · ${esc(money(v.cents))}">${esc(shortType(k))} ×${v.count}</span>`).join(" ");
     $("[data-cashiers-body]").innerHTML = `<table class="rls-table rls-cashier-table"><thead><tr><th>Associate</th><th>$ involved</th><th>Events</th><th>Error types</th><th>First → last</th><th></th></tr></thead><tbody>${list.map((c) => `
-      <tr class="rls-cashier-row ${openCashier === c.id ? "is-open" : ""}" data-cashier="${esc(c.id)}"><td>${esc(c.name || c.id)} <span class="rls-muted">${esc(c.id)}</span></td><td>${esc(money(c.totalCents))}</td><td>${c.count}</td><td class="rls-chips">${chip(c)}</td><td>${esc(c.first)} → ${esc(c.last)}</td><td><button class="btn btn-sm btn-ghost" data-action="cashier-toggle" data-id="${esc(c.id)}">${openCashier === c.id ? "Hide" : "Details"}</button> <button class="btn btn-sm btn-ghost" data-action="cashier-export" data-id="${esc(c.id)}" title="Write this associate's CSV">Export</button> <button class="btn btn-sm btn-ghost" data-action="cashier-receipt" data-id="${esc(c.id)}" data-name="${esc(c.name || "")}" title="Attach an unpaid training receipt to this associate">Training receipt</button></td></tr>
+      <tr class="rls-cashier-row ${openCashier === c.id ? "is-open" : ""}" data-cashier="${esc(c.id)}"><td>${esc(c.name || c.id)} <span class="rls-muted">${esc(c.id)}</span></td><td>${esc(money(c.totalCents))}</td><td>${c.count}</td><td class="rls-chips">${chip(c)}</td><td>${esc(withWeekday(c.first))} → ${esc(withWeekday(c.last))}</td><td><button class="btn btn-sm btn-ghost" data-action="cashier-toggle" data-id="${esc(c.id)}">${openCashier === c.id ? "Hide" : "Details"}</button> <button class="btn btn-sm btn-ghost" data-action="cashier-export" data-id="${esc(c.id)}" title="Write this associate's CSV">Export</button> <button class="btn btn-sm btn-ghost" data-action="cashier-receipt" data-id="${esc(c.id)}" data-name="${esc(c.name || "")}" title="Attach an unpaid training receipt to this associate">Training receipt</button></td></tr>
       ${openCashier === c.id ? `<tr class="rls-cashier-detail"><td colspan="6">${cashierDetail(c)}</td></tr>` : ""}`).join("")}</tbody></table>
       <div class="rls-muted">Permanent record: an event stays here after its work item is completed and after the till log window moves on. Every entry is an action the till log records this person doing: a till checked in to a register it was not checked out to, a cash advance carried to the wrong register or never surfaced, a till re-checked in with less cash, or a check-in override on a discrepancy day. Being on a register that came up short is not counted.</div>${pantryHtml}`;
   }
@@ -223,8 +224,8 @@ export async function mount(host, container) {
     const notes = cashiers.notes[c.id] || [];
     const today = new Date().toISOString().slice(0, 10);
     return `<div class="rls-cashier-panel">
-      <div><strong>Events</strong><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Type</th><th>Amount</th><th>Work item</th><th>Detail</th></tr></thead><tbody>${c.events.map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.register)}</td><td>${esc(cashiers.types[e.type] || e.type)}</td><td>${esc(money(Math.abs(e.cents || 0)))}</td><td>${String(e.workItemId || "").startsWith("grid:") ? "grid only" : String(e.workItemId || "").startsWith("receipt:") ? `receipt ${esc(String(e.workItemId).slice(8))}` : e.workItemId ? `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>` : ""}</td><td>${esc(e.detail || "")}${e.manual ? ` <button class="btn btn-sm btn-ghost" type="button" data-action="event-remove" data-key="${esc(e.key || "")}" title="Entered by hand — remove it">remove</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
-      <div><strong>Coaching log</strong>${notes.length ? `<table class="rls-table"><thead><tr><th>Date</th><th>Action</th><th>Note</th><th></th></tr></thead><tbody>${notes.map((n) => `<tr><td>${esc(n.date)}</td><td>${esc(n.action)}</td><td>${esc(n.note)}</td><td><button class="btn btn-sm btn-ghost" data-action="note-remove" data-id="${esc(c.id)}" data-at="${esc(n.at)}">remove</button></td></tr>`).join("")}</tbody></table>` : `<div class="rls-muted">No coaching recorded yet.</div>`}
+      <div><strong>Events</strong><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Type</th><th>Amount</th><th>Work item</th><th>Detail</th></tr></thead><tbody>${c.events.map((e) => `<tr><td>${esc(withWeekday(e.date))}</td><td>${esc(e.register)}</td><td>${esc(cashiers.types[e.type] || e.type)}</td><td>${esc(money(Math.abs(e.cents || 0)))}</td><td>${String(e.workItemId || "").startsWith("grid:") ? "grid only" : String(e.workItemId || "").startsWith("receipt:") ? `receipt ${esc(String(e.workItemId).slice(8))}` : e.workItemId ? `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>` : ""}</td><td>${esc(e.detail || "")}${e.manual ? ` <button class="btn btn-sm btn-ghost" type="button" data-action="event-remove" data-key="${esc(e.key || "")}" title="Entered by hand — remove it">remove</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
+      <div><strong>Coaching log</strong>${notes.length ? `<table class="rls-table"><thead><tr><th>Date</th><th>Action</th><th>Note</th><th></th></tr></thead><tbody>${notes.map((n) => `<tr><td>${esc(withWeekday(n.date))}</td><td>${esc(n.action)}</td><td>${esc(n.note)}</td><td><button class="btn btn-sm btn-ghost" data-action="note-remove" data-id="${esc(c.id)}" data-at="${esc(n.at)}">remove</button></td></tr>`).join("")}</tbody></table>` : `<div class="rls-muted">No coaching recorded yet.</div>`}
         <form class="rls-note-form" data-note-form data-id="${esc(c.id)}">
           <input class="input" type="date" name="date" value="${today}">
           <select class="input" name="action">${ACTIONS.map((a) => `<option>${esc(a)}</option>`).join("")}</select>
@@ -249,11 +250,11 @@ export async function mount(host, container) {
     };
     pill("queue", ...failed("refresh_queue", q ? `WorkView · ${q.items.length + (q.others || []).length} open items${q.totals ? ` (${q.totals.unassigned ?? 0} new, ${q.totals.assigned ?? 0} assigned)` : ""} · ${ago(q.fetchedAt)}` : "WorkView: not pulled", q ? "pill-ok" : "pill-checking", state.links.workview));
     const t = state.tills;
-    pill("tills", ...failed("refresh_tills", t ? `Till log · ${t.rows} events · ${t.dateMin} → ${t.dateMax} · ${ago(t.fetchedAt)}` : "Till log: not pulled", t ? "pill-ok" : "pill-warn", t?.reportUrl || null));
+    pill("tills", ...failed("refresh_tills", t ? `Till log · ${t.rows} events · ${withWeekday(t.dateMin)} → ${withWeekday(t.dateMax)} · ${ago(t.fetchedAt)}` : "Till log: not pulled", t ? "pill-ok" : "pill-warn", t?.reportUrl || null));
     const cf = state.cft;
-    pill("cft", ...failed("refresh_cft", cf ? `CFTs · ${cf.rows} transfers · ${cf.dateMin} → ${cf.dateMax} · ${ago(cf.fetchedAt)}` : "Cash fund transfers: not pulled", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null));
+    pill("cft", ...failed("refresh_cft", cf ? `CFTs · ${cf.rows} transfers · ${withWeekday(cf.dateMin)} → ${withWeekday(cf.dateMax)} · ${ago(cf.fetchedAt)}` : "Cash fund transfers: not pulled", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null));
     paintMoves();
-    pill("grid", ...failed("refresh_grid", g && g.capturedAt ? `Power BI · ${g.cellCount} register-days${g.dateMin ? ` · ${g.dateMin} → ${g.dateMax}` : ""} · ${ago(g.capturedAt)}` : g?.staleStore ? `Power BI: cached for store ${g.staleStore} — refresh` : "Power BI: not pulled", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi));
+    pill("grid", ...failed("refresh_grid", g && g.capturedAt ? `Power BI · ${g.cellCount} register-days${g.dateMin ? ` · ${withWeekday(g.dateMin)} → ${withWeekday(g.dateMax)}` : ""} · ${ago(g.capturedAt)}` : g?.staleStore ? `Power BI: cached for store ${g.staleStore} — refresh` : "Power BI: not pulled", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi));
   }
 
   function paintMoves() {
@@ -261,8 +262,8 @@ export async function mount(host, container) {
     const moves = state.tills?.moves || [];
     if (!moves.length) { box.hidden = true; return; }
     box.hidden = false;
-    $("[data-moves-meta]").textContent = `${moves.length} in the last ${state.tills.dateMin} → ${state.tills.dateMax}`;
-    $("[data-moves-body]").innerHTML = `<table class="rls-table"><thead><tr><th>Date</th><th>Associate</th><th>Out of</th><th>Into</th><th>Out</th><th>In</th><th>Amount out / in</th></tr></thead><tbody>${moves.map((m) => `<tr><td>${esc(m.date)}</td><td>${esc(m.associate || m.associateId)} <span class="rls-muted">${esc(m.associateId)}</span></td><td>reg ${esc(m.fromRegister)}</td><td>reg ${esc(m.toRegister)}${m.override ? ' <span class="badge badge-warn">override</span>' : ""}</td><td>${esc(m.outTime)}</td><td>${esc(m.inTime)}</td><td>${esc(money(m.outCents))} / ${esc(money(m.inCents))}</td></tr>`).join("")}</tbody></table><div class="rls-muted">A till checked in to a register it was never checked out to, paired with a register whose till never came back that day. Charged to the person who did the check-in. This is how flips happen; the matching pair usually sits in "ready to close".</div>`;
+    $("[data-moves-meta]").textContent = `${moves.length} in the last ${withWeekday(state.tills.dateMin)} → ${withWeekday(state.tills.dateMax)}`;
+    $("[data-moves-body]").innerHTML = `<table class="rls-table"><thead><tr><th>Date</th><th>Associate</th><th>Out of</th><th>Into</th><th>Out</th><th>In</th><th>Amount out / in</th></tr></thead><tbody>${moves.map((m) => `<tr><td>${esc(withWeekday(m.date))}</td><td>${esc(m.associate || m.associateId)} <span class="rls-muted">${esc(m.associateId)}</span></td><td>reg ${esc(m.fromRegister)}</td><td>reg ${esc(m.toRegister)}${m.override ? ' <span class="badge badge-warn">override</span>' : ""}</td><td>${esc(m.outTime)}</td><td>${esc(m.inTime)}</td><td>${esc(money(m.outCents))} / ${esc(money(m.inCents))}</td></tr>`).join("")}</tbody></table><div class="rls-muted">A till checked in to a register it was never checked out to, paired with a register whose till never came back that day. Charged to the person who did the check-in. This is how flips happen; the matching pair usually sits in "ready to close".</div>`;
   }
 
   function pill(key, text, cls, href, linkLabel = "open") {
@@ -302,13 +303,13 @@ export async function mount(host, container) {
     const sec = (key, rows) => rows.length ? `<div class="rls-group" data-group="${key}"><div class="rls-group-head"><span>${esc(BUCKET[key].title)}</span><span class="rls-group-n">${rows.length}</span></div><div class="rls-group-hint">${esc(BUCKET[key].hint)}</div>${rows.join("")}</div>` : "";
     const row = (i) => {
       const c = classify(i);
-      const sla = i.isOverDue ? "overdue" : i.targetResolutionAt ? `due ${i.targetResolutionAt.slice(0, 10)}` : "";
+      const sla = i.isOverDue ? "overdue" : i.targetResolutionAt ? `due ${withWeekday(i.targetResolutionAt.slice(0, 10))}` : "";
       const busy = inFlight.has(i.id);
       return `<div class="rls-row ${i.id === selectedId ? "is-selected" : ""} b-${c.bucket} ${busy ? "is-busy" : ""}" data-id="${esc(i.id)}" role="button" tabindex="0">
         <div class="rls-row-top">
           <span class="rls-row-reg">Reg ${esc(i.register || "?")}${roleTag(i.register) ? ` <span class="rls-role">${esc(roleTag(i.register))}</span>` : ""}</span>
           <span class="rls-row-amt ${i.type}">${esc(money(i.amountCents))}</span>
-          <span class="rls-row-date">${esc(i.date || "?")}</span>
+          <span class="rls-row-date">${esc(withWeekday(i.date || "?"))}</span>
           ${busy ? `<span class="badge badge-info">completing…</span>` : `<span class="badge v-${esc(c.verdict)}">${esc(c.label)}${c.video ? " · 🎥" : ""}</span>${state.causes?.[i.id] ? ` <span class="badge badge-warn" title="Cause picked: TR# ${esc(state.causes[i.id].transNum)}">cause picked</span>` : ""}`}
         </div>
         ${c.why ? `<div class="rls-row-why">${esc(c.why)}</div>` : ""}
@@ -317,9 +318,9 @@ export async function mount(host, container) {
       </div>`;
     };
     const other = (o) => {
-      const sla = o.isOverDue ? "overdue" : o.targetResolutionAt ? `due ${o.targetResolutionAt.slice(0, 10)}` : "";
+      const sla = o.isOverDue ? "overdue" : o.targetResolutionAt ? `due ${withWeekday(o.targetResolutionAt.slice(0, 10))}` : "";
       return `<div class="rls-row rls-row-other ${o.id === selectedId ? "is-selected" : ""}" data-id="${esc(o.id)}" role="button" tabindex="0">
-        <div class="rls-row-top"><span class="rls-row-reg">${esc(o.headLine || o.category)}</span><span class="rls-row-amt">${esc(o.potentialValueCents != null ? money(o.potentialValueCents) : "")}</span><span class="rls-row-date">${esc(o.date || "")}</span><span class="badge badge-neutral">${esc(o.sourceApp || o.sourceAppId)}</span></div>
+        <div class="rls-row-top"><span class="rls-row-reg">${esc(o.headLine || o.category)}</span><span class="rls-row-amt">${esc(o.potentialValueCents != null ? money(o.potentialValueCents) : "")}</span><span class="rls-row-date">${esc(withWeekday(o.date || ""))}</span><span class="badge badge-neutral">${esc(o.sourceApp || o.sourceAppId)}</span></div>
         <div class="rls-row-sla ${o.isOverDue ? "overdue" : ""}">${esc(o.category)}${o.view === "assigned" ? " · assigned" : ""}${sla ? ` · ${esc(sla)}` : ""}</div>
       </div>`;
     };
@@ -378,7 +379,7 @@ export async function mount(host, container) {
 
     box.innerHTML = `
       <div class="rls-verdict tone-${tone}">
-        <div class="rls-verdict-top"><span class="rls-verdict-item">Reg ${esc(item.register)} · ${esc(item.date)} · <strong>${esc(money(item.amountCents))}</strong>${item.isOverDue ? " · <strong>overdue</strong>" : ""}</span><span class="badge v-${esc(c.verdict)}">${esc(c.label)}</span></div>
+        <div class="rls-verdict-top"><span class="rls-verdict-item">Reg ${esc(item.register)} · ${esc(withWeekday(item.date))} · <strong>${esc(money(item.amountCents))}</strong>${item.isOverDue ? " · <strong>overdue</strong>" : ""}</span><span class="badge v-${esc(c.verdict)}">${esc(c.label)}</span></div>
         <h2>${esc(think)}</h2>
         ${why.length ? `<div class="rls-why"><div class="rls-why-h">Why</div><ul>${why.map((w) => `<li class="w-${esc(w.kind)}">${esc(w.text)}</li>`).join("")}</ul></div>` : ""}
       </div>
@@ -412,15 +413,15 @@ export async function mount(host, container) {
     for (const k of ev.lookAt || []) {
       if (k === "investigation") {
         const inv = ev.investigation;
-        const cards = inv.candidates.slice(0, 5).map((c, i) => `<div class="rls-block"><h4>${i + 1}. ${esc(c.time || "Time unknown")} · TR# ${esc(c.transNum)} · operator ${esc(c.opNum || "?")}${c.opName ? " " + esc(c.opName) : ""} ${vlinks(c.video)} ${causeBtn(c)} ${c.raw && receiptUpcs(c.raw).length ? `<button class="btn btn-sm btn-ghost" type="button" data-action="pantry-from-tx" data-tr="${esc(c.transNum)}" title="Put every item on this receipt on the store's pantry list">+ Pantry list</button>` : ""}</h4>${(() => { const x = (ev.cftTx || []).find((y) => String(y.tx.transNum) === String(c.transNum)); return x ? `<p class="${x.cft ? "" : "rls-hot"}"><strong>${x.cft ? "CFT keyed for this ticket" : "Associate pantry run — no CFT keyed"}</strong>${x.storeUse ? ` · ${esc(x.storeUse.repeats.join(", "))}` : ""}${x.cft ? ` · ${esc(x.cft.inputDate || "")} ${esc(x.cft.inputTime || "")} ${esc(x.cft.accountDesc || "")} → ${esc(x.cft.recipient || "")}` : ""}</p>` : ""; })()}<p>${esc(c.hypothesis)}</p><ul class="rls-list">${c.supporting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>Potential cash discrepancy ${esc(money(c.possibleLossCents))}; remaining shortage under that hypothesis ${esc(money(c.residualCents))}${c.residualCents < 0 ? " (candidate exceeds shortage)" : ""}. Confirmed explained: $0.00.</p><p>${esc(c.check)}</p><details><summary>Receipt and conflicting evidence</summary><ul class="rls-list">${c.conflicting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>TC# ${esc(c.tcNum || "?")} · total ${esc(money(c.totalCents))} · cash ${esc(money(c.cashTendCents))} · change ${esc(money(c.changeDueCents || 0))}</p><pre>${esc(c.raw || "Raw receipt unavailable")}</pre></details></div>`).join("");
+        const cards = inv.candidates.slice(0, 5).map((c, i) => `<div class="rls-block"><h4>${i + 1}. ${esc(c.time || "Time unknown")} · TR# ${esc(c.transNum)} · operator ${esc(c.opNum || "?")}${c.opName ? " " + esc(c.opName) : ""} ${vlinks(c.video)} ${causeBtn(c)} ${c.raw && receiptUpcs(c.raw).length ? `<button class="btn btn-sm btn-ghost" type="button" data-action="pantry-from-tx" data-tr="${esc(c.transNum)}" title="Put every item on this receipt on the store's pantry list">+ Pantry list</button>` : ""}</h4>${(() => { const x = (ev.cftTx || []).find((y) => String(y.tx.transNum) === String(c.transNum)); return x ? `<p class="${x.cft ? "" : "rls-hot"}"><strong>${x.cft ? "CFT keyed for this ticket" : "Associate pantry run — no CFT keyed"}</strong>${x.storeUse ? ` · ${esc(x.storeUse.repeats.join(", "))}` : ""}${x.cft ? ` · ${esc(withWeekday(x.cft.inputDate || ""))} ${esc(x.cft.inputTime || "")} ${esc(x.cft.accountDesc || "")} → ${esc(x.cft.recipient || "")}` : ""}</p>` : ""; })()}<p>${esc(c.hypothesis)}</p><ul class="rls-list">${c.supporting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>Potential cash discrepancy ${esc(money(c.possibleLossCents))}; remaining shortage under that hypothesis ${esc(money(c.residualCents))}${c.residualCents < 0 ? " (candidate exceeds shortage)" : ""}. Confirmed explained: $0.00.</p><p>${esc(c.check)}</p><details><summary>Receipt and conflicting evidence</summary><ul class="rls-list">${c.conflicting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>TC# ${esc(c.tcNum || "?")} · total ${esc(money(c.totalCents))} · cash ${esc(money(c.cashTendCents))} · change ${esc(money(c.changeDueCents || 0))}</p><pre>${esc(c.raw || "Raw receipt unavailable")}</pre></details></div>`).join("");
         parts.push(sec("Investigate the shortage — cause unconfirmed", `<p>${esc(inv.method)}</p><p>${inv.gaps.map(esc).join(" ")}</p><p>${inv.candidates.length} completed cash transactions ranked; showing up to five. Review the till timeline alongside these transactions.</p>${cards || "<p>No eligible completed cash transactions. Check source coverage and till handling.</p>"}`));
       } else if (k === "tills") {
         const t = ev.tills; if (!t) continue;
-        const adv = (t.advances || []).map((a) => `<li class="${a.kind === "advance_missing" ? "hit" : ""}">${esc(a.advance.time)} · ${esc(a.advance.action)} ${esc(money(a.advance.amountCents))} by ${esc(a.advance.associate || a.advance.associateId)} → ${a.kind === "advance_flip" ? `over on reg ${esc(a.landedOn.registerNbr)} ${esc(a.landedOn.date)} (${esc(money(a.landedOn.amountCents))})` : "never surfaced as an overage"}</li>`).join("");
-        const mv = (t.moves || []).map((m) => `<li>${esc(m.date)} · ${esc(m.associate || m.associateId)} out of reg ${esc(m.fromRegister)} ${esc(m.outTime)} → into reg ${esc(m.toRegister)} ${esc(m.inTime)}${m.override ? " (override)" : ""}</li>`).join("");
-        const tl = (t.events || []).map((e) => `<tr class="${e.date === item.date ? "" : "rls-dim"}"><td>${esc(e.date)} ${esc(e.time)}</td><td>${esc(e.action)}</td><td>${esc(money(e.amountCents))}</td><td>${esc(e.associate || e.associateId)} <span class="rls-muted">${esc(e.associateId)}</span></td></tr>`).join("");
+        const adv = (t.advances || []).map((a) => `<li class="${a.kind === "advance_missing" ? "hit" : ""}">${esc(a.advance.time)} · ${esc(a.advance.action)} ${esc(money(a.advance.amountCents))} by ${esc(a.advance.associate || a.advance.associateId)} → ${a.kind === "advance_flip" ? `over on reg ${esc(a.landedOn.registerNbr)} ${esc(withWeekday(a.landedOn.date))} (${esc(money(a.landedOn.amountCents))})` : "never surfaced as an overage"}</li>`).join("");
+        const mv = (t.moves || []).map((m) => `<li>${esc(withWeekday(m.date))} · ${esc(m.associate || m.associateId)} out of reg ${esc(m.fromRegister)} ${esc(m.outTime)} → into reg ${esc(m.toRegister)} ${esc(m.inTime)}${m.override ? " (override)" : ""}</li>`).join("");
+        const tl = (t.events || []).map((e) => `<tr class="${e.date === item.date ? "" : "rls-dim"}"><td>${esc(withWeekday(e.date))} ${esc(e.time)}</td><td>${esc(e.action)}</td><td>${esc(money(e.amountCents))}</td><td>${esc(e.associate || e.associateId)} <span class="rls-muted">${esc(e.associateId)}</span></td></tr>`).join("");
         const qf = (t.flags || []).filter((f) => f.kind === "quick_recheck").map((f) => `<li class="hit">${esc(f.text)}</li>`).join("");
-        parts.push(sec("Till log — who handled this register", `${qf ? `<div><strong>Till re-checked in with less cash</strong><ul class="rls-list">${qf}</ul></div>` : ""}${adv ? `<div><strong>Cash advances near the amount</strong><ul class="rls-list">${adv}</ul></div>` : ""}${mv ? `<div><strong>Tills moved between registers</strong><ul class="rls-list">${mv}</ul></div>` : ""}<table class="rls-table"><thead><tr><th>When</th><th>Action</th><th>Amount</th><th>Associate</th></tr></thead><tbody>${tl || `<tr><td colspan="4" class="rls-muted">no till events for this register on ${esc(item.date)} ±1 day</td></tr>`}</tbody></table>`, ((t.advances || []).some((a) => a.kind === "advance_missing") || qf) ? "hot" : ""));
+        parts.push(sec("Till log — who handled this register", `${qf ? `<div><strong>Till re-checked in with less cash</strong><ul class="rls-list">${qf}</ul></div>` : ""}${adv ? `<div><strong>Cash advances near the amount</strong><ul class="rls-list">${adv}</ul></div>` : ""}${mv ? `<div><strong>Tills moved between registers</strong><ul class="rls-list">${mv}</ul></div>` : ""}<table class="rls-table"><thead><tr><th>When</th><th>Action</th><th>Amount</th><th>Associate</th></tr></thead><tbody>${tl || `<tr><td colspan="4" class="rls-muted">no till events for this register on ${esc(withWeekday(item.date))} ±1 day</td></tr>`}</tbody></table>`, ((t.advances || []).some((a) => a.kind === "advance_missing") || qf) ? "hot" : ""));
       } else if (k === "video") {
         const v = ev.videoCandidates[0];
         parts.push(sec("Watch this transaction — did the cash go in the drawer?", `<div class="rls-video"><div class="rls-video-big">${esc(v.time)} · TR# ${esc(v.transNum)} ${vlinks(v.video)} ${causeBtn(v)}</div><div>${esc(v.why.join(", "))}${v.opNum ? ` · operator ${esc(v.opNum)}${v.opName ? " " + esc(v.opName) : ""}` : ""}</div><div class="rls-muted">TC# ${esc(v.tcNum || "?")} · total ${esc(money(v.totalCents))} · cash tendered ${esc(money(v.cashTendCents))}${v.changeDueCents ? ` · change ${esc(money(v.changeDueCents))}` : ""}${v.tenders?.length ? ` · tenders: ${esc(v.tenders.map((t) => `${t.label} ${money(t.cents)}`).join(", "))}` : ""}</div></div>`, "hot"));
@@ -428,7 +429,7 @@ export async function mount(host, container) {
         parts.push(sec(`${ev.cashMatches.length} transactions recorded cash near the amount`, `<ul class="rls-list">${ev.cashMatches.slice(0, 8).map((x) => `<li>${esc(x.time)} · TR# ${esc(x.transNum)} · op ${esc(x.opNum || "?")}${x.opName ? " " + esc(x.opName) : ""} · ${esc(x.why.join(", "))} ${vlinks(x.video)} ${causeBtn(x)}</li>`).join("")}</ul>`));
       } else if (k === "cft") {
         const rows = ev.cftNear || [];
-        parts.push(sec("Cash fund transfers near the amount (reference)", `<p class="rls-muted">CFT cash is dispensed by the recycler, not taken from a register, so a CFT does not by itself explain a register shortage. Listed so the amount and the person are in front of you if the journal or video points at a payout.</p><table class="rls-table"><thead><tr><th>Business date</th><th>Keyed</th><th>Amount</th><th>Recipient</th><th>Account</th><th>Reason</th></tr></thead><tbody>${rows.map((c) => `<tr class="${c.keyedLate ? "hit" : ""}"><td>${esc(c.businessDate)}${c.businessDate === item.date ? " ◀" : ""}</td><td>${esc(c.inputDate || "?")} ${esc(c.inputTime || "")}${c.keyedLate ? ' <span class="badge badge-warn">late</span>' : ""}</td><td>${esc(money(c.amountCents))}</td><td>${esc(c.recipient || "?")}</td><td>${esc(c.accountDesc || "")} <span class="rls-muted">${esc(c.accountNbr || "")}</span></td><td>${esc(c.reason || "")}</td></tr>`).join("")}</tbody></table>`));
+        parts.push(sec("Cash fund transfers near the amount (reference)", `<p class="rls-muted">CFT cash is dispensed by the recycler, not taken from a register, so a CFT does not by itself explain a register shortage. Listed so the amount and the person are in front of you if the journal or video points at a payout.</p><table class="rls-table"><thead><tr><th>Business date</th><th>Keyed</th><th>Amount</th><th>Recipient</th><th>Account</th><th>Reason</th></tr></thead><tbody>${rows.map((c) => `<tr class="${c.keyedLate ? "hit" : ""}"><td>${esc(withWeekday(c.businessDate))}${c.businessDate === item.date ? " ◀" : ""}</td><td>${esc(withWeekday(c.inputDate || "?"))} ${esc(c.inputTime || "")}${c.keyedLate ? ' <span class="badge badge-warn">late</span>' : ""}</td><td>${esc(money(c.amountCents))}</td><td>${esc(c.recipient || "?")}</td><td>${esc(c.accountDesc || "")} <span class="rls-muted">${esc(c.accountNbr || "")}</span></td><td>${esc(c.reason || "")}</td></tr>`).join("")}</tbody></table>`));
       } else if (k === "drawer") {
         const d = ev.drawer; if (!d?.rows?.length) continue;
         const rows = [...d.rows].sort((a, b) => (b.near ? 1 : 0) - (a.near ? 1 : 0) || String(a.time).localeCompare(String(b.time)));
@@ -441,7 +442,7 @@ export async function mount(host, container) {
         parts.push(sec("Ledger flags", `<ul class="rls-list">${ev.ledgerFlags.map((f) => `<li>${esc(f.text)}</li>`).join("")}</ul>`));
       } else if (k === "ledger") {
         const rows = ev.ledgerRows || [];
-        parts.push(sec("Cash Research — register history", rows.length ? `<table class="rls-table"><thead><tr><th>Day</th><th>Finalized L/S</th><th>Advances</th><th>Pickups</th><th>In / Out</th></tr></thead><tbody>${rows.map((r) => `<tr class="${r.date === item.date ? "is-day" : ""}"><td>${esc(r.date)}${r.date === item.date ? " ◀" : ""}</td><td class="${r.finalizedLsCents < 0 ? "neg" : r.finalizedLsCents > 0 ? "pos" : ""}">${esc(money(r.finalizedLsCents))}</td><td>${esc(money(r.advancesCents))}</td><td>${esc(money(r.pickupsCents))}</td><td>${r.tillCheckins} / ${r.tillCheckouts}</td></tr>`).join("")}</tbody></table>` : `<div class="rls-muted">No ledger rows.</div>`));
+        parts.push(sec("Cash Research — register history", rows.length ? `<table class="rls-table"><thead><tr><th>Day</th><th>Finalized L/S</th><th>Advances</th><th>Pickups</th><th>In / Out</th></tr></thead><tbody>${rows.map((r) => `<tr class="${r.date === item.date ? "is-day" : ""}"><td>${esc(withWeekday(r.date))}${r.date === item.date ? " ◀" : ""}</td><td class="${r.finalizedLsCents < 0 ? "neg" : r.finalizedLsCents > 0 ? "pos" : ""}">${esc(money(r.finalizedLsCents))}</td><td>${esc(money(r.advancesCents))}</td><td>${esc(money(r.pickupsCents))}</td><td>${r.tillCheckins} / ${r.tillCheckouts}</td></tr>`).join("")}</tbody></table>` : `<div class="rls-muted">No ledger rows.</div>`));
       }
     }
     const day = ev.sections?.find((s) => s.key === "day");
@@ -460,7 +461,7 @@ export async function mount(host, container) {
     const kv = (rows) => `<table class="rls-table rls-kv"><tbody>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</tbody></table>`;
     box.innerHTML = `
       <div class="rls-verdict tone-muted">
-        <div class="rls-verdict-top"><span class="rls-verdict-item">${esc(o.sourceApp)} · ${esc(o.category)} · ${esc(o.date || "")}${o.periodTo && o.periodTo !== o.date ? ` → ${esc(o.periodTo)}` : ""}${o.isOverDue ? " · <strong>overdue</strong>" : ""}</span></div>
+        <div class="rls-verdict-top"><span class="rls-verdict-item">${esc(o.sourceApp)} · ${esc(o.category)} · ${esc(withWeekday(o.date || ""))}${o.periodTo && o.periodTo !== o.date ? ` → ${esc(withWeekday(o.periodTo))}` : ""}${o.isOverDue ? " · <strong>overdue</strong>" : ""}</span></div>
         <h2>${esc(o.headLine || o.category)}</h2>
         <p class="rls-muted">${esc(o.description || "")} Not a register item — no long/short analysis. Work it in APPRISS.</p>
       </div>
@@ -592,13 +593,13 @@ export async function mount(host, container) {
   host.ui.delegate(container, "click", "[data-action='refresh-tills']", async (ev) => {
     await commitStore();
     const d = await run("refresh_tills", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`Till log: ${d.rows} events, ${d.dateMin} → ${d.dateMax}`);
+    if (d) host.ui.toast(`Till log: ${d.rows} events, ${withWeekday(d.dateMin)} → ${withWeekday(d.dateMax)}`);
     await load();
   });
   host.ui.delegate(container, "click", "[data-action='refresh-cft']", async (ev) => {
     await commitStore();
     const d = await run("refresh_cft", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`Cash fund transfers: ${d.rows} transfers, ${d.dateMin} → ${d.dateMax}`);
+    if (d) host.ui.toast(`Cash fund transfers: ${d.rows} transfers, ${withWeekday(d.dateMin)} → ${withWeekday(d.dateMax)}`);
     await load();
   });
   host.ui.delegate(container, "click", "[data-action='analyze-all']", async (ev) => {
@@ -622,7 +623,7 @@ export async function mount(host, container) {
     const reasonLabel = sug.reasonLabel || $("[data-cause]")?.value || "";
     if (!reasonLabel) { host.ui.toast("Pick the cause you found first.", { kind: "error" }); return; }
     pending = { id: selectedId, reasonLabel };
-    $("[data-verify-item]").innerHTML = `Work item <strong>${esc(item.id)}</strong> · Reg ${esc(item.register)} · ${esc(item.date)} · <strong>${esc(money(item.amountCents))}</strong> · ${esc(item.category)}`;
+    $("[data-verify-item]").innerHTML = `Work item <strong>${esc(item.id)}</strong> · Reg ${esc(item.register)} · ${esc(withWeekday(item.date))} · <strong>${esc(money(item.amountCents))}</strong> · ${esc(item.category)}`;
     $("[data-verify-reason]").textContent = reasonLabel;
     $("[data-verify-text]").value = text;
     $("[data-verify-ack]").checked = false;

@@ -103,7 +103,7 @@ never written.
 {
   rawData: Array<{
     t: string, n: string,
-    "Pick Date": string, "Store #": string, "Min. First Scan": string,
+    "Pick Date": string, "Store #": string, "Min. First Scan": string, "Max. Last Scan": string,
     "FTP Expected": number, "FTP Actual": number,
     "Pick Rate": number, "Pick Hours": number,
     "Picked As Req Qty": number, "Substitution Qty": number, "Nil Pick Qty": number,

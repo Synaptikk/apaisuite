@@ -102,6 +102,40 @@ a 40+ item manned order" are what separate real misses.
   the server pads 30 s before / 120 s after). `lib/video.js` builds it from
   the receipt's trailing timestamp. The Open Drawer route (id per TR#) only
   covers drawer-opens, i.e. cash, so it was dropped from this module.
+- **A ▶ Video click is checked before it opens (2026-09-27).** The links used to
+  be plain anchors, and on a signed-out Secure session the CCTV app 302s the
+  request to its OWN origin, `web-prd-wus2-arp-cctv.azurewebsites.net/walmart-usa/video/login`,
+  which answers `Error 403 - Forbidden · The web app you have attempted to reach
+  has blocked your access` — a tab that reads like a missing CCTV entitlement
+  and offers no way in. It is not one: the same account plays store 1458 /
+  register 25 the moment the platform session exists. So `.bl-video` clicks now
+  go through `open_video` in the SW, which probes the register's camera list
+  (`lib/video.js::probeCameras`) through `apprissAuthGate`, signs Secure back in
+  silently, and only then opens the tab. Measured on a cold session: 9.4 s for
+  the reauth + open, 4.1 s warm. Three things the probe had to learn:
+  · `redirect: "follow"` is required — with the platform session alive the CCTV
+  app's own login round-trip completes by itself, so `manual` would read a
+  self-healing call as signed out (verified by deleting only
+  `.AspNetCore.Cookies`, the app's own cookie, scoped to `/walmart-usa/video`).
+  · `web-prd-wus2-arp-cctv.azurewebsites.net` had to be added to
+  `manifest.json::host_permissions` — the SW cannot follow that login redirect
+  without it, and every cold click failed with "Failed to fetch" even after a
+  successful reauth.
+  · A register with no camera is `400 text/plain "No cameras found for the store
+  1458, POS 47."`, not an empty array (1458: lanes 25/30, Money Center 63 and
+  office 9999 answer 200; 47/99 do not). That one still opens the tab, with the
+  reason as a warning toast. A 401 or a landing on the blocked host is a dead
+  session (reauth); a **403 from `apps.apprissretail.com` itself** is the
+  entitlement — that one carries no `loginUrl` so the gate does not waste an SSO
+  tab, and the message points at `http://wmlink/securestore` (verified: it 302s
+  to `${APPRISS_BASE}/signin/sso/saml2` → pfedprod → the portal, the same chain
+  as `APPRISS_HOME`). Covered by `lib/tests/video.test.mjs`.
+- **A stale Secure tab makes the reauth a no-op (noticed 2026-09-27).** Not
+  fixed, and shared by every APPRISS caller: `apprissReauthInBackground` ADOPTS
+  an APPRISS tab the analyst already has open and deliberately never navigates
+  it — so when the session dies under an open Secure tab, the gate waits out its
+  30 s and the analyst gets the "sign in at wmlink/securestore" message instead
+  of a silent fix. Graceful, but a reload of the adopted tab would fix it.
 - **APPRISS signs itself back in (2026-09-25).** `link_video` and
   `lookup_names` go through `apprissAuthGate({ moduleId: "boblisa" })`
   (`shared/appriss.js`): an `AUTH` / `AUTH_OR_HTTP` result drives ONE

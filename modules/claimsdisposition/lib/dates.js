@@ -48,7 +48,9 @@ export function formatDateFmt(date, pattern) {
 }
 
 export function formatDate(d) {
-  return formatDateFmt(d, "MMM d, yyyy");
+  const dt = asDate(d);
+  if (!dt) return "";
+  return `${DAY_NAMES[dt.getDay()]}, ${formatDateFmt(dt, "MMM d, yyyy")}`;
 }
 
 export function formatDateShort(d) {

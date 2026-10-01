@@ -9,6 +9,7 @@ import { h, replace } from "../lib/dom.js";
 import { dailyStoreSeries, hourSeries, summarize, byUserAtStore, fmtMoney, fmtPct } from "../lib/metrics.js";
 import { detectUserOutliers, scoreUsersAtStore } from "../lib/outliers.js";
 import { formatHour, formatDateShort } from "../lib/dates.js";
+import { withWeekday } from "../../../shared/dates.js";
 import { createLineChart } from "../lib/chart.js";
 import { getNameSync, lookupName, warmCache, subscribe as subscribeDirectory } from "../../../shared/associateLookup.js";
 import { sellThroughTier, cvpForWindow } from "../lib/cvp.js";
@@ -136,7 +137,7 @@ export function createDetailDrawer({ getHost, onClose }) {
               h("li", {
                 style: { display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid var(--apai-border-soft)" },
               },
-                h("span", null, d.dateIso),
+                h("span", null, withWeekday(d.dateIso)),
                 h("span", { class: "cd-muted" },
                   `${d.total.toLocaleString()} events · ${fmtMoney(d.value)}`),
               ),

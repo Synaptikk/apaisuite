@@ -63,6 +63,7 @@ doc is worth reading and which one to trust when two contradict.
 | File | Status | When to read | Notes |
 |---|---|---|---|
 | `HOOPS_FINDINGS.md` | CURRENT_TASKS | When working on the Sell-Through integration | 2026-06-02 — endpoint + query captured. |
+| `CX_FINDINGS.md` | ACTIVE_REFERENCE | Before touching `modules/cx` — or any other module that needs Medallia or the AI gateway | 2026-09-25. The three `metric.cx.*` Hoops procedures and their timeType quirks; Medallia's reporting GraphQL (CSRF only in the page HTML, 200-wrapping-401, `matchingTaggings(filters:)` plural, `[TaggingFilter!]!` list, ISO dates instead of IntervalId) with measured paging costs; the puppy-backend gateway's CORS and token-expiry constraints. |
 | `DIRECTORY_FINDINGS.md` | ACTIVE_REFERENCE | When resuming user-directory lookup work | 2026-05-31. Most endpoints dead-ended; documents the one viable lead (Workvivo `/users/lookup`). |
 
 ## Per-module READMEs (`modules/<slug>/...`)

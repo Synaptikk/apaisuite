@@ -18,6 +18,7 @@
 // ledger (misses + second-transaction dollars per manned-lane operator).
 
 import { TYPES, registerType as regTypeOf, isManned } from "./lib/registers.js";
+import { withWeekday } from "../../shared/dates.js";
 import { videoUrl } from "./lib/video.js";
 import { CAUSES, OUTCOMES, VIDEO_REVIEW, draftNote, ledgerRows, pairFromRecord, pairFromTraining } from "./lib/misses.js";
 
@@ -177,8 +178,8 @@ export async function mount(host, container) {
       ["train", (state.trainings || []).length, "training receipts", `${(state.trainings || []).filter((t) => t.paid.length).length} traced to a paid sale, ${unpaidRows().length} unpaid`],
     ];
     els.summary.innerHTML = tiles.map(([k, n, l, s]) => `<div class="bl-sum bl-sum-${k}"><div class="bl-sum-n">${n}</div><div class="bl-sum-l">${esc(l)}</div><div class="bl-sum-s">${esc(s)}</div></div>`).join("")
-      + (failedDays.length ? `<div class="bl-failed">Not pulled: ${failedDays.map((d) => `<span title="${esc(d.error || "")}">${esc(d.date)}</span>`).join(", ")}</div>` : "")
-      + (state.dropped ? `<div class="bl-failed">The range is ${state.dropped} day${state.dropped === 1 ? "" : "s"} longer than the ${state.maxDays}-day limit: only ${esc(state.range.from)} to ${esc((state.days || []).at(-1)?.date || state.range.to)} is pulled. Move the From date forward for the rest.</div>` : "")
+      + (failedDays.length ? `<div class="bl-failed">Not pulled: ${failedDays.map((d) => `<span title="${esc(d.error || "")}">${esc(withWeekday(d.date))}</span>`).join(", ")}</div>` : "")
+      + (state.dropped ? `<div class="bl-failed">The range is ${state.dropped} day${state.dropped === 1 ? "" : "s"} longer than the ${state.maxDays}-day limit: only ${esc(withWeekday(state.range.from))} to ${esc(withWeekday((state.days || []).at(-1)?.date || state.range.to))} is pulled. Move the From date forward for the rest.</div>` : "")
       + (!pulledDays && state.store ? `<div class="bl-empty">No journal days cached for store ${esc(state.store)} in this range. Pull journal to start.</div>` : "");
 
     paintTrainings();
@@ -223,7 +224,7 @@ export async function mount(host, container) {
         return `<div class="bl-chain"><b>Paid</b> ${esc(s.time)} · reg ${s.reg}${typeTag(s.type)} · TR ${esc(s.tr)} · ${MONEY(s.total)} ${esc(s.tender)}${s.hasToken ? "" : " · no token"} ${videoBtn(t.date, s.reg, s.tr, s.time)}${s.prev ? `<br><b>Same card earlier</b> ${esc(s.prev.time)} · reg ${s.prev.reg}${typeTag(s.prev.type)} · op ${esc(s.prev.op)} · TR ${esc(s.prev.tr)} · ${s.prev.items} items ${MONEY(s.prev.total)} ${videoBtn(t.date, s.prev.reg, s.prev.tr, s.prev.time)}` : `<br><span class="bl-muted">No earlier same-card sale in the journal: name the first transaction's operator when documenting.</span>`}</div>${docBlock(existing || tp)}`;
       }).join("")
         : `<div class="bl-chain bl-muted">No paid sale with this item within 15 minutes — the item may have been handed back.</div>`;
-      return `<div class="bl-tcard"><div class="bl-tcard-h">${esc(t.date)} · ${esc(t.time)} · reg ${t.reg} · op ${esc(t.op)} · TR ${esc(t.tr)}</div><div class="bl-tcard-items">${items}</div>${paid}</div>`;
+      return `<div class="bl-tcard"><div class="bl-tcard-h">${esc(withWeekday(t.date))} · ${esc(t.time)} · reg ${t.reg} · op ${esc(t.op)} · TR ${esc(t.tr)}</div><div class="bl-tcard-items">${items}</div>${paid}</div>`;
     }).join("");
     els.trainings.innerHTML = head + (list.length ? `<div class="bl-tcards">${cards}</div>`
       : `<p class="bl-muted">All ${all.length} paid training receipt${all.length === 1 ? " is" : "s are"} documented or cleared. "Show reviewed" brings them back.</p>`);
@@ -231,11 +232,15 @@ export async function mount(host, container) {
 
   const typeTag = (type) => `<span class="bl-type">${esc(type)}</span>`;
   // APPRISS CCTV by store + register + time window: no transaction id needed
-  // (lib/video.js). Opens as an ordinary tab on the user's own SSO cookie.
+  // (lib/video.js). The href is real — copy/middle-click still work — but a
+  // plain click goes through `open_video` in the SW, which checks Secure is
+  // signed in first: a signed-out click used to land on the CCTV app's blocked
+  // origin ("Error 403 - Forbidden"), which reads like a missing entitlement.
+  // `data-reg` is what the camera-list check needs.
   function videoBtn(date, reg, tr, time = "") {
     const href = state?.store && time ? videoUrl(state.store, reg, date, time) : null;
     if (!href) return "";
-    return `<a class="btn btn-sm btn-ghost bl-video" href="${esc(href)}" target="_blank" rel="noopener" title="APPRISS CCTV, register ${reg}, around ${esc(time)}">▶ Video</a>`;
+    return `<a class="btn btn-sm btn-ghost bl-video" href="${esc(href)}" data-reg="${esc(String(reg))}" target="_blank" rel="noopener" title="APPRISS CCTV, register ${reg}, around ${esc(time)}">▶ Video</a>`;
   }
 
   function paintControls(cat) {
@@ -279,7 +284,7 @@ export async function mount(host, container) {
       ].join(" ");
       const items = p.t2.items.map((it) => `${esc(it.desc)} <span class="bl-mono">${MONEY(it.cents)}</span>${it.onT1 ? ` <span class="bl-also">also on first</span>` : ""}${it.service ? ` <span class="bl-also">money service</span>` : ""}`).join("<br>");
       return `<tr class="bl-row${open ? " is-open" : ""}${isDone(p.key) ? " bl-done" : ""}" data-key="${esc(p.key)}" tabindex="0">
-        <td class="bl-mono">${esc(p.date.slice(5).replace("-", "/"))}<span class="bl-subl">${esc(p.t1.time)}</span></td>
+        <td class="bl-mono">${esc(withWeekday(p.date.slice(5).replace("-", "/"), p.date))}<span class="bl-subl">${esc(p.t1.time)}</span></td>
         <td><span class="bl-reg">Reg ${p.t1.reg}</span>${typeTag(p.t1.type)}<span class="bl-subl">op ${esc(p.t1.op)}${opName(p.t1.op) ? ` ${esc(opName(p.t1.op))}` : ""} · TR ${esc(p.t1.tr)}</span></td>
         <td class="bl-num">${p.t1.items} · ${MONEY(p.t1.total)}</td>
         <td class="bl-t2"><span class="bl-reg">Reg ${p.t2.reg}</span>${typeTag(p.t2.type)}<span class="bl-subl">${esc(p.t2.time)} · op ${esc(p.t2.op)} · TR ${esc(p.t2.tr)}</span></td>
@@ -315,24 +320,24 @@ export async function mount(host, container) {
   const recFor = (key) => state?.misses?.[key] || null;
   const pairFor = (key) => (state?.pairs || []).find((p) => p.key === key) || ui.trainPairs.get(key) || pairFromRecord(recFor(key));
   const sel = (name, opts, cur) => `<select class="input" name="${name}">${Object.entries(opts).map(([k, l]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
-  const fmtAt = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso || "") : d.toLocaleString(undefined, { month: "2-digit", day: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }); };
-  const mmdd = (iso) => esc(String(iso || "").slice(5).replace("-", "/"));
+  const fmtAt = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso || "") : d.toLocaleString(undefined, { weekday: "short", month: "2-digit", day: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+  const mmdd = (iso) => esc(withWeekday(String(iso || "").slice(5).replace("-", "/"), iso));
 
   // APPRISS links on the transaction id (from link_video), like the L/S triage.
-  function apprissLinks(v, label) {
+  function apprissLinks(v, label, reg) {
     if (!v?.cctvUrl) return "";
-    return `<a class="btn btn-sm btn-primary bl-video" href="${esc(v.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV on this transaction id">▶ ${esc(label)} video</a><a class="btn btn-sm btn-secondary bl-video" href="${esc(v.receiptUrl)}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a>${v.byTime ? `<span class="bl-muted" title="This sale never opened the drawer, so APPRISS has no id for it; this is the nearest drawer open on the same register within 90 s">matched by time</span>` : ""}`;
+    return `<a class="btn btn-sm btn-primary bl-video" href="${esc(v.cctvUrl)}" data-reg="${esc(String(reg ?? ""))}" target="_blank" rel="noopener" title="APPRISS CCTV on this transaction id">▶ ${esc(label)} video</a><a class="btn btn-sm btn-secondary bl-video" href="${esc(v.receiptUrl)}" data-reg="${esc(String(reg ?? ""))}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a>${v.byTime ? `<span class="bl-muted" title="This sale never opened the drawer, so APPRISS has no id for it; this is the nearest drawer open on the same register within 90 s">matched by time</span>` : ""}`;
   }
 
   function videoBlock(p) {
     const v = ui.video[p.key];
     const saved = recFor(p.key)?.videoIds;
-    if (!v && saved && (saved.t1 || saved.t2)) return `<div class="bl-vidrow">${apprissLinks(saved.t1, "First")}${apprissLinks(saved.t2, "Second")}<button class="btn btn-sm btn-ghost bl-vid-find" data-key="${esc(p.key)}">Look up again</button></div>`;
+    if (!v && saved && (saved.t1 || saved.t2)) return `<div class="bl-vidrow">${apprissLinks(saved.t1, "First", p.t1.reg)}${apprissLinks(saved.t2, "Second", p.t2.reg)}<button class="btn btn-sm btn-ghost bl-vid-find" data-key="${esc(p.key)}">Look up again</button></div>`;
     if (!v) return `<div class="bl-vidrow"><button class="btn btn-sm btn-secondary bl-vid-find" data-key="${esc(p.key)}">Find APPRISS video</button><span class="bl-muted">transaction-id CCTV and receipt links through Open Drawer, like the L/S triage; the ▶ Video buttons above play the register by time</span></div>`;
     if (v.busy) return `<div class="bl-vidrow bl-muted">Looking up Open Drawer for reg ${p.t1.reg}${String(p.t2.reg) !== String(p.t1.reg) ? ` and reg ${p.t2.reg}` : ""} on ${mmdd(p.date)}…</div>`;
     if (!v.ok) return `<div class="bl-vidrow"><span class="bl-warn">${esc(v.error || "Open Drawer lookup failed.")}</span>${v.loginUrl ? `<a href="${esc(v.loginUrl)}" target="_blank" rel="noopener">Sign in to APPRISS</a>` : ""}<button class="btn btn-sm btn-ghost bl-vid-find" data-key="${esc(p.key)}">Retry</button></div>`;
     const none = (reg) => `<span class="bl-muted">reg ${reg}: ${v.empty?.includes(String(reg)) ? "no drawer opens that day in Open Drawer (outside APPRISS's 60-day window, or none)" : "no transaction id"}</span>`;
-    return `<div class="bl-vidrow">${v.t1 ? apprissLinks(v.t1, "First") : none(p.t1.reg)}${v.t2 ? apprissLinks(v.t2, "Second") : none(p.t2.reg)}${v.explorer ? `<a class="bl-muted" href="${esc(v.explorer)}" target="_blank" rel="noopener">Open Drawer in APPRISS</a>` : ""}</div>`;
+    return `<div class="bl-vidrow">${v.t1 ? apprissLinks(v.t1, "First", p.t1.reg) : none(p.t1.reg)}${v.t2 ? apprissLinks(v.t2, "Second", p.t2.reg) : none(p.t2.reg)}${v.explorer ? `<a class="bl-muted" href="${esc(v.explorer)}" target="_blank" rel="noopener">Open Drawer in APPRISS</a>` : ""}</div>`;
   }
 
   function docBlock(p) {
@@ -379,7 +384,7 @@ export async function mount(host, container) {
     const body = records.map((r) => {
       const p = pairFromRecord(r);
       const items = (r.t2?.items || []).map((it) => `${esc(it.desc)} <span class="bl-mono">${MONEY(it.cents)}</span>`).join("<br>");
-      const vid = r.videoIds?.t1?.cctvUrl ? `<a class="btn btn-sm btn-primary bl-video" href="${esc(r.videoIds.t1.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV on the first transaction${r.videoIds.t1.byTime ? " (matched by time)" : ""}">▶ Video</a>` : videoBtn(r.date, r.t1.reg, r.t1.tr, r.t1.time);
+      const vid = r.videoIds?.t1?.cctvUrl ? `<a class="btn btn-sm btn-primary bl-video" href="${esc(r.videoIds.t1.cctvUrl)}" data-reg="${esc(String(r.t1?.reg ?? ""))}" target="_blank" rel="noopener" title="APPRISS CCTV on the first transaction${r.videoIds.t1.byTime ? " (matched by time)" : ""}">▶ Video</a>` : videoBtn(r.date, r.t1.reg, r.t1.tr, r.t1.time);
       return `<tr class="bl-docrow" data-key="${esc(r.key)}">
         <td class="bl-mono">${mmdd(r.date)}<span class="bl-subl">${esc(r.t1.time)}</span></td>
         <td>op ${esc(r.cashier.op)}${r.cashier.name ? `<span class="bl-subl">${esc(r.cashier.name)}</span>` : ""}</td>
@@ -404,7 +409,7 @@ export async function mount(host, container) {
     }
     const value = (t) => t.items.reduce((sum, i) => sum + (Number(i.cents) || 0), 0);
     table.innerHTML = `<thead><tr><th>Date</th><th>Time</th><th>Register · operator</th><th>TR#</th><th>Items on the training receipt</th><th class="bl-num">Value</th><th>Review</th></tr></thead><tbody>` + rows.map((t) => `<tr class="${isDone(t.key) ? "bl-done" : ""}">
-      <td class="bl-mono">${esc(t.date.slice(5).replace("-", "/"))}</td><td class="bl-mono">${esc(t.time)}</td>
+      <td class="bl-mono">${esc(withWeekday(t.date.slice(5).replace("-", "/"), t.date))}</td><td class="bl-mono">${esc(t.time)}</td>
       <td><span class="bl-reg">Reg ${t.reg}</span>${typeTag(regTypeOf(t.reg))}<span class="bl-subl">op ${esc(t.op)}</span></td><td class="bl-mono">${esc(t.tr)}</td>
       <td class="bl-items">${t.items.map((i) => `${esc(i.desc)} <span class="bl-mono bl-muted">${esc(i.code)}</span> <span class="bl-mono">${MONEY(i.cents)}</span>`).join("<br>")}</td>
       <td class="bl-money">${MONEY(value(t))}</td><td class="bl-flags">${videoBtn(t.date, t.reg, t.tr, t.time)}${isCleared(t.key) ? `<span class="badge badge-neutral bl-clrd" title="${esc(clearedTitle(t.key))}">Cleared</span>` : ""}${reviewBtns(t.key, false)}</td></tr>`).join("") + `</tbody>`;
@@ -450,9 +455,9 @@ export async function mount(host, container) {
   const unsubs = [];
   unsubs.push(host.messaging.on("progress", (msg) => {
     const p = msg?.payload || msg || {};
-    if (p.phase === "pull") els.progress.textContent = `Pulling ${p.date} (${p.i + 1} of ${p.n})…`;
-    else if (p.phase === "done") { els.progress.textContent = `${p.date}: ${p.records} records, ${p.pairs} pairs (${p.i + 1} of ${p.n})`; refresh(); }   // each day is saved as it lands — show it
-    else if (p.phase === "error") els.progress.textContent = `${p.date}: ${p.error}`;
+    if (p.phase === "pull") els.progress.textContent = `Pulling ${withWeekday(p.date)} (${p.i + 1} of ${p.n})…`;
+    else if (p.phase === "done") { els.progress.textContent = `${withWeekday(p.date)}: ${p.records} records, ${p.pairs} pairs (${p.i + 1} of ${p.n})`; refresh(); }   // each day is saved as it lands — show it
+    else if (p.phase === "error") els.progress.textContent = `${withWeekday(p.date)}: ${p.error}`;
     else if (p.phase === "names") els.progress.textContent = `APPRISS: op ${p.op} (${p.i + 1} of ${p.n})…`;
   }));
   unsubs.push(host.messaging.on("state_changed", () => { if (!busy && Date.now() > ignoreStateChangedUntil) refresh(); }));
@@ -531,8 +536,29 @@ export async function mount(host, container) {
     host.ui.toast(res?.ok ? `${res.rows} cashier${res.rows === 1 ? "" : "s"} saved to Downloads\\${String(res.filename).replace(/\//g, "\\")}` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
   });
   unsubs.push(host.ui.delegate(container, "keydown", ".bl-row", (e, el) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }));
-  // Video links are plain anchors; stop the row from toggling when one is clicked.
-  unsubs.push(host.ui.delegate(container, "click", ".bl-video", (e) => { e.stopPropagation(); }));
+  // Video links look like anchors but are checked before they open: the SW
+  // asks Secure for the register's camera list, silently reauthenticates if the
+  // session is cold, and only then opens the tab. Without this a signed-out
+  // click ended on the CCTV app's blocked origin ("Error 403 - Forbidden · The
+  // web app you have attempted to reach has blocked your access") with no way
+  // to sign in — which looked like missing CCTV permissions. Ctrl/middle-click
+  // is left alone so the raw href still works.
+  unsubs.push(host.ui.delegate(container, "click", ".bl-video", async (e, el) => {
+    e.stopPropagation();
+    if (!el.href || e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    if (el.dataset.busy) return;
+    const label = el.textContent;
+    el.dataset.busy = "1"; el.setAttribute("aria-busy", "true"); el.textContent = "Checking Secure…";
+    try {
+      const res = await host.messaging.sendRaw("open_video", { url: el.href, reg: el.dataset.reg || null }, { timeoutMs: 90_000 })
+        .catch((err) => ({ ok: false, error: String(err?.message || err) }));
+      if (res?.ok) { if (res.warn) host.ui.toast(res.warn, { kind: "warn", durationMs: 8000 }); }
+      else host.ui.toast(res?.error || "Could not open the video.", { kind: "error", durationMs: 12_000 });
+    } finally {
+      delete el.dataset.busy; el.removeAttribute("aria-busy"); el.textContent = label;
+    }
+  }));
 
   // ── documented misses ─────────────────────────────────────────
   unsubs.push(host.ui.delegate(container, "click", ".bl-doc-open", (e, el) => {
@@ -600,7 +626,7 @@ export async function mount(host, container) {
   unsubs.push(host.ui.delegate(container, "click", ".bl-doc-remove", async (e, el) => {
     e.stopPropagation();
     const key = el.dataset.key, rec = recFor(key);
-    if (!rec || !window.confirm(`Remove the documented miss for op ${rec.cashier.op} on ${rec.date}?`)) return;
+    if (!rec || !window.confirm(`Remove the documented miss for op ${rec.cashier.op} on ${withWeekday(rec.date)}?`)) return;
     const res = await host.messaging.sendRaw("delete_miss", { key });
     if (!res?.ok) { host.ui.toast(res?.error || "Could not remove.", { kind: "error" }); return; }
     state.misses = res.misses; state.cashiers = res.cashiers || state.cashiers; ui.editing.delete(key);

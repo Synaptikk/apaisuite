@@ -1,13 +1,14 @@
 // modules/digitalmetrics/lib/pages/insights.js
 
-import { section, empty, esc, table, statCard, statRow } from "./_shared.js";
+import { section, empty, esc, table, statCard, statRow, nextSort, compareBy } from "./_shared.js";
 import {
   dailyPicks, digitalTone, distribution,
   storeHelpPeakHours, formatHour, lateStarts, helpVsExpress,
 } from "../data/insights.js";
 import { weekPickBreakdown, actualPickHoursByName, exceptionSplit, dateKey } from "../data/adherence.js";
-import { firstHourStarts, clockText } from "../data/first_pick.js";
+import { firstHourStarts, clockText, rangesText, CLOCK_GRACE_MIN, PICK_START_GRACE_MIN, MOVED_MIN } from "../data/first_pick.js";
 import { dayShortfall, underPickLeaders, longMeals, capacityRow } from "../data/shortfall.js";
+import { withWeekday } from "../../../../shared/dates.js";
 
 const WEEKDAY = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric" });
 const h = (n) => `${n.toFixed(1)}h`;
@@ -313,16 +314,31 @@ function shortfallSections(ctx, daily) {
   return { glance, shortfall, underPick, lunches, longLunchCount: meals.length };
 }
 
-// ── First-hour pick starts ───────────────────────────────────────────────
-// Everyone whose first hour on the board is Pick: scheduled start, clock-in
-// (Global Time & Attendance, pulled on demand), first pick scan.
+// ── Pick starts and stops ────────────────────────────────────────────────
+// Everyone scheduled to pick: scheduled start and end, clock-in and clock-out
+// (Global Time & Attendance), first and last pick scan. Total late per
+// associate is minutes late to the clock, summed over the week (the user,
+// 2026-09-27); early stops compare the last pick and the clock-out with the
+// scheduled end when the last hour is Pick.
 
 const signed = (m) => (m == null ? "—" : m === 0 ? "on time" : m > 0 ? `+${m} min` : `${m} min`);
-const lateTone = (m) => (m == null ? "" : m > 5 ? "is-bad" : m > 0 ? "is-warn" : "is-good");
+const lateTone = (m) => (m == null ? "" : m > CLOCK_GRACE_MIN ? "is-bad" : m > 0 ? "is-warn" : "is-good");
+
+/** Header sort for the Pick Starts table: total late first, like the default order. */
+const STARTS_SORT_DEFAULT = "total";
+function startsSort(ui = {}) {
+  const key = ui.startsSort || STARTS_SORT_DEFAULT;
+  // Numbers read best-first (descending); names read A→Z.
+  const natural = key === "name" ? "asc" : "desc";
+  const dir = ui.startsRev ? (natural === "asc" ? "desc" : "asc") : natural;
+  return { key, dir };
+}
 
 function firstPickSection(ctx) {
   if (!ctx.assignmentsByDate) return "";
-  const { days, people, totals } = firstHourStarts(ctx.assignmentsByDate, ctx.rawData, ctx.clockIns);
+  const { days, people: unsorted, totals } = firstHourStarts(ctx.assignmentsByDate, ctx.rawData, ctx.clockIns);
+  const sort = startsSort(ctx.ui);
+  const people = [...unsorted].sort(compareBy(sort.key, sort.dir));
   const pull = ctx.clockPull;
   const when = pull?.at
     ? new Date(pull.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
@@ -337,27 +353,75 @@ function firstPickSection(ctx) {
       <button class="btn" data-dm-pull-clockins ${pull?.running ? "disabled" : ""}>Pull clock-ins</button>
       ${note ? `<span class="muted">${esc(note)}</span>` : ""}
     </div>`;
-  if (!days.length) return bar + empty("No one assigned Pick in their first hour has a clock-in or first scan this week.");
+  if (!days.length) return bar + empty("No one scheduled to pick has a punch or a pick scan this week.");
 
+  const mins = (m) => (m ? `${m} min` : "—");
+  // Week totals read as hours (8,728 min is 145.5 h); the minutes stay in
+  // the note so the two never disagree (the user, 2026-09-27).
+  const hrs = (m) => `${(m / 60).toFixed(1)} h`;
+  const minNote = (m, rest) => `${m.toLocaleString()} min · ${rest}`;
   const cards = statRow([
     statCard("Associates", totals.associates),
-    statCard("Late Clock-ins", totals.lateClockDays, { tone: totals.lateClockDays ? "warn" : "" }),
-    statCard("Avg Clock → Pick", totals.avgClockToPick == null ? "—" : `${totals.avgClockToPick} min`),
-    statCard("Time Lost", `${totals.lostMinutes} min`, { tone: "warn", note: "scheduled start → first pick" }),
+    statCard("Total", hrs(totals.idleMinutes), { tone: totals.idleMinutes ? "warn" : "", note: minNote(totals.idleMinutes, `on the clock, not picking: start gap + end gap, each ≤ ${MOVED_MIN} min`) }),
+    statCard("Off Board", hrs(totals.movedMinutes), { note: minNote(totals.movedMinutes, `${totals.movedDays} gap day(s) over ${MOVED_MIN} min — most likely another role, board not updated`) }),
+    statCard("Start Gap", hrs(totals.lostMinutes), { tone: "warn", note: minNote(totals.lostMinutes, `clock-in → first pick, over ${PICK_START_GRACE_MIN} min`) }),
+    statCard("End Gap", hrs(totals.endGapMinutes), { tone: totals.endGapMinutes ? "warn" : "", note: minNote(totals.endGapMinutes, `last pick → clock-out, over ${PICK_START_GRACE_MIN} min`) }),
+    statCard("Total Late", hrs(totals.lateMinutes), { tone: totals.lateMinutes ? "warn" : "", note: minNote(totals.lateMinutes, `${totals.lateClockDays} clock-in(s) over the ${CLOCK_GRACE_MIN}-min grace`) }),
+    statCard("Left Early", hrs(totals.earlyOutMinutes), { tone: totals.earlyOutMinutes ? "warn" : "", note: minNote(totals.earlyOutMinutes, `${totals.earlyOutDays} clock-out(s) over the ${CLOCK_GRACE_MIN}-min grace`) }),
   ]);
+  // One small grid per person instead of a sentence per day: the sentence
+  // wrapped into an unreadable block on the right (the user, 2026-09-27).
+  // Minutes over a grace are red; inside it they are shown plain so the
+  // number is still there without reading as a problem.
+  const flag = (m, over = 0) => m == null ? "—" : m > over ? `<strong class="is-bad">${m}</strong>` : m > 0 ? String(m) : "0";
+  // A gap over MOVED_MIN is shown muted with a marker rather than red: it is
+  // most likely another role, and it is not in the person's total.
+  const gap = (m, moved) => moved
+    ? `<span class="dm-moved" title="over ${MOVED_MIN} min: most likely another role, board not updated; not counted">${m}*</span>`
+    : flag(m);
+  const dailyRow = (d) => `<tr>
+      <td>${esc(WEEKDAY(d.date))}</td>
+      <td>${esc(clockText(d.schedStart))}–${esc(clockText(d.schedEnd))}</td>
+      <td>${esc(rangesText(d.pickRanges))}</td>
+      <td>${esc(clockText(d.clockIn))}</td>
+      <td class="is-right">${d.clockLate == null ? "—" : d.clockLate <= 0 ? "0" : flag(d.clockLate, CLOCK_GRACE_MIN)}</td>
+      <td>${esc(clockText(d.firstPick))}</td>
+      <td class="is-right">${d.firstPick == null ? "—" : gap(d.lost, d.startMoved)}</td>
+      <td>${esc(clockText(d.lastPick))}</td>
+      <td class="is-right">${d.lastPick == null ? "—" : gap(d.endGap, d.endMoved)}</td>
+      <td>${esc(clockText(d.clockOut))}</td>
+      <td class="is-right">${d.earlyOut == null ? "—" : d.earlyOut <= 0 ? "0" : flag(d.earlyOut, CLOCK_GRACE_MIN)}</td>
+      <td class="is-right">${flag(d.total)}</td>
+    </tr>`;
+  // Fixed column widths so every person's grid lines up with the one above
+  // it; styles.css then shows the sub-header on the first row only.
+  const COLS = [8, 15, 12, 8, 5, 9, 5, 9, 8, 9, 6, 6];
+  const colgroup = `<colgroup>${COLS.map((w) => `<col style="width:${w}%">`).join("")}</colgroup>`;
+  // The sub-header lives in the OUTER table's header cell, which is sticky,
+  // so it stays put while the rows scroll (the user, 2026-09-27). Same
+  // colgroup as the per-person grids, so the columns line up.
+  const dailyHead = `<table class="dm-daily dm-daily-head">${colgroup}<thead><tr>
+      <th>Day</th><th>Sched</th><th>Pick hours</th><th>In</th><th class="is-right">Late</th>
+      <th>First pick</th><th class="is-right">Lost</th><th>Last pick</th><th class="is-right">Unpicked</th>
+      <th>Out</th><th class="is-right">Early</th><th class="is-right">Total</th>
+    </tr></thead></table>`;
+  const dailyGrid = (p) => `<table class="dm-daily">${colgroup}<tbody>${p.days.map(dailyRow).join("")}</tbody></table>`;
   const summary = table([
     { label: "Associate", key: "name" },
     { label: "Days", key: "dayCount", align: "right" },
-    { label: "Avg Clock-in", key: "avgClockLate", align: "right",
-      format: (p) => `<span class="${lateTone(p.avgClockLate)}">${esc(signed(p.avgClockLate))}</span>` },
-    { label: "Avg Clock → Pick", key: "avgClockToPick", align: "right",
-      format: (p) => esc(p.avgClockToPick == null ? "—" : `${p.avgClockToPick} min`) },
-    { label: "Min Lost", key: "totalLost", align: "right" },
-    { label: "Daily", key: "days", sortable: false,
-      format: (p) => `<ul class="dm-issues">${p.days.map((d) =>
-        `<li>${esc(WEEKDAY(d.date))} — sched ${esc(clockText(d.schedStart))}, in ${esc(clockText(d.clockIn))}` +
-        `, first pick ${esc(clockText(d.firstPick))}${d.lost ? ` <strong class="is-bad">(${esc(d.lost)} min)</strong>` : ""}</li>`).join("")}</ul>` },
-  ], people);
+    { label: "Total", key: "total", align: "right",
+      format: (p) => `<strong class="${p.total ? "is-bad" : "is-good"}">${esc(mins(p.total))}</strong>` },
+    { label: "Start Gap", key: "totalLost", align: "right", format: (p) => esc(mins(p.totalLost)) },
+    { label: "End Gap", key: "totalEndGap", align: "right", format: (p) => esc(mins(p.totalEndGap)) },
+    { label: "Off Board", key: "moved", align: "right",
+      format: (p) => p.moved ? `<span class="dm-moved" title="gaps over ${MOVED_MIN} min on ${p.movedDays} day(s): most likely another role, board not updated">${esc(mins(p.moved))}</span>` : "—" },
+    { label: "Total Late", key: "totalLate", align: "right",
+      format: (p) => `<span class="${p.totalLate ? "is-bad" : "is-good"}">${esc(mins(p.totalLate))}</span>` },
+    { label: "Late Days", key: "lateClockDays", align: "right" },
+    { label: "Left Early", key: "totalEarlyOut", align: "right",
+      format: (p) => `<span class="${p.totalEarlyOut ? "is-bad" : ""}">${esc(mins(p.totalEarlyOut))}</span>` },
+    { label: "Daily (minutes)", labelHtml: dailyHead, key: "days", sortable: false, format: dailyGrid },
+  ], people, { sort });
   return bar + cards + summary;
 }
 
@@ -367,7 +431,21 @@ export function wire(ctx, el) {
   const btns = [...el.querySelectorAll("[data-dm-pull-clockins]")];
   const onClick = () => ctx.onPullClockIns?.();
   for (const b of btns) b.addEventListener("click", onClick);
-  return () => { for (const b of btns) b.removeEventListener("click", onClick); };
+  // Header clicks on the Pick Starts table: same convention as the
+  // leaderboard — click a column to sort by it, click again to flip.
+  const offSort = ctx.host?.ui?.delegate?.(el, "click", "[data-dm-sort]", (_e, h) => {
+    ctx.onUiChange?.(nextSort({
+      clicked: h.dataset.dmSort,
+      current: ctx.ui?.startsSort || STARTS_SORT_DEFAULT,
+      rev: ctx.ui?.startsRev,
+      keyField: "startsSort",
+      revField: "startsRev",
+    }));
+  });
+  return () => {
+    for (const b of btns) b.removeEventListener("click", onClick);
+    offSort?.();
+  };
 }
 
 export function render(ctx) {
@@ -381,7 +459,7 @@ export function render(ctx) {
 
   // ── Daily volume ───────────────────────────────────────────────────────
   const dailyTable = table([
-    { label: "Date",       key: "date" },
+    { label: "Date",       key: "date", format: (d) => esc(withWeekday(d.date)) },
     { label: "Total",      key: "total",        align: "right",
       format: (d) => esc(d.total.toLocaleString()) },
     { label: "Digital",    key: "digitalTotal", align: "right",
@@ -405,7 +483,7 @@ export function render(ctx) {
   ], daily, { emptyMessage: "No dated rows in this week." });
 
   const range = daily.length
-    ? `${daily[daily.length - 1].date} – ${daily[0].date} · ${daily.length} days`
+    ? `${withWeekday(daily[daily.length - 1].date)} – ${withWeekday(daily[0].date)} · ${daily.length} days`
     : "";
 
   const expressCardList = [
@@ -451,7 +529,7 @@ export function render(ctx) {
         statCard("Correlation", hve.r == null ? "—" : hve.r,
                  { note: hve.r == null ? "needs 3+ compared days" : rText.replace(/^[-\d.]+ — /, "") }),
       ]) + table([
-        { label: "Date", key: "date" },
+        { label: "Date", key: "date", format: (d) => esc(withWeekday(d.date)) },
         { label: "Store Help Hours", key: "storeHelpHours", align: "right",
           format: (d) => esc(d.storeHelpHours ? h(d.storeHelpHours) : "—") },
         { label: "Express Hours", key: "expressRateHours", align: "right",
@@ -499,7 +577,7 @@ export function render(ctx) {
           format: (p) => esc(p.lostPicks.toLocaleString()) },
         { label: "Daily", key: "days",
           format: (p) => `<ul class="dm-issues">${p.days
-            .map((d) => `<li>${esc(d.date)} — 5:${esc(String(d.minutes).padStart(2, "0"))}${
+            .map((d) => `<li>${esc(withWeekday(d.date))} — 5:${esc(String(d.minutes).padStart(2, "0"))}${
               d.minutes > 5 ? " ⚠" : ""}</li>`).join("")}</ul>` },
       ], late.people.slice(0, 5))
     : empty("No 5am associates in this week.");
@@ -525,7 +603,7 @@ export function render(ctx) {
         store help onto picking; it is a pattern over few days, not proof.</p>
       ${helpExpressSection}`),
     fold("Store Help Peak Hours", peakSection),
-    fold("First-Hour Pick Starts", firstPickSection(ctx)),
+    fold("Pick Starts and Stops — on the clock but not picking, per associate", firstPickSection(ctx)),
     fold("5am Late Starts", lateSection),
     fold("Pick Hours — Assigned vs Actual", pickHoursSection(ctx)),
     fold("Exceptions vs Picking", exceptionSection(ctx)),

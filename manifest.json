@@ -50,6 +50,7 @@
     "https://app.us.auror.co/*",
     "https://*.auror.co/*",
     "https://apps.apprissretail.com/*",
+    "https://web-prd-wus2-arp-cctv.azurewebsites.net/*",
     "https://workvivo.walmart.com/*",
     "https://www.walmart.com/*",
     "https://one.walmart.com/*",
@@ -87,12 +88,16 @@
     "https://securetoken.googleapis.com/*",
     "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/*",
     "https://timesheet.cloud.wal-mart.com/*",
+    "https://teams.wal-mart.com/*",
     "https://wismo-dashboard.walmart.com/*",
     "https://uat.riskonnectclearsight.com/*",
     "https://www.riskonnectclearsight.com/*",
     "http://127.0.0.1/*",
     "https://wismo.walmart.com/*",
-    "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*"
+    "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*",
+    "https://walmart.medallia.com/*",
+    "https://puppy-backend.walmart.com/*",
+    "https://puppy.walmart.com/*"
   ],
   "content_scripts": [
     {
@@ -318,6 +323,25 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "https://puppy.walmart.com/*"
+      ],
+      "js": [
+        "modules/cx/content/puppy_auth_hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://puppy.walmart.com/*"
+      ],
+      "js": [
+        "modules/cx/content/puppy_auth_relay.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [

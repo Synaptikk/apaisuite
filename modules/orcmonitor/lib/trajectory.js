@@ -138,7 +138,7 @@ function corridorAlignmentBonus(timedPoints, targetLat, targetLon) {
 
 // ── Main card builder ─────────────────────────────────────────────────────────
 
-export function buildThreatCard(personId, profile, feedResp, targetLat, targetLon) {
+export function buildThreatCard(personId, profile, feedResp, targetLat, targetLon, { marketStores = null, marketLabel = "your market" } = {}) {
   const hero     = profile.heroCardView         ?? {};
   const details  = profile.personDetailsCardView ?? {};
   const appear   = profile.appearanceCardView    ?? {};
@@ -207,7 +207,8 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
       eventsByStore[site]  = [...(eventsByStore[site]  ?? []), rec];
 
       if (matched) {
-        timedPoints.push({ date, lat:matched.lat, lon:matched.lon,
+        timedPoints.push({ date, lat:matched.lat, lon:matched.lon, eventId: eid,
+                           time: (p.LocalOccurredAt ?? "").slice(11, 16),
                            dist:matched.dist, site:matched.name, type, value:val });
       }
     }
@@ -229,7 +230,7 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
   const etaDays     = approaching ? traj.etaDays : null;
   const milesPerDay = traj.milesPerDay ?? 0;
   const etaDate     = etaDays != null
-    ? new Date(Date.now() + etaDays * 86400000).toLocaleDateString("en-US",{month:"short",day:"numeric"})
+    ? new Date(Date.now() + etaDays * 86400000).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})
     : "Unknown";
 
   // ── ORC corridors ─────────────────────────────────────────────────────────
@@ -264,10 +265,16 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
   } catch {}
 
   // ── Time-of-day ───────────────────────────────────────────────────────────
+  // heatmapData keys are "<day>_<hour>"; day is a name or a 0-6 index.
   const hourCounts = new Array(24).fill(0);
+  const dayHour = Array.from({ length: 7 }, () => new Array(24).fill(0));
   for (const [key, cnt] of Object.entries(heatmap)) {
-    const h = parseInt(key.split("_")[1], 10);
-    if (!isNaN(h)) hourCounts[h] += cnt;
+    const [dRaw, hRaw] = key.split("_");
+    const h = parseInt(hRaw, 10);
+    if (isNaN(h) || h < 0 || h > 23) continue;
+    hourCounts[h] += cnt;
+    const d = _dayIndex(dRaw);
+    if (d != null) dayHour[d][h] += cnt;
   }
   const peakHour  = hourCounts.indexOf(Math.max(...hourCounts));
   const peakHoursLabel = _fmtHour(peakHour);
@@ -276,22 +283,48 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
   const totalValue = (hero.totalMoneyValue?.value ?? hero.totalMoneyValueAtOrganization?.value ?? 0);
 
   // ── Risk score ────────────────────────────────────────────────────────────
+  // base (what they are and where) × recency (when they last offended).
+  // Recency multiplies rather than adds, so nobody quiet for two months can
+  // score "high" just by living near the store. Recency is the last dated
+  // EVENT, not hero.lastActivity (which moves when anyone edits the profile).
+  const lastEventDate = timedPoints.length ? timedPoints[timedPoints.length - 1].date : null;
+  const lastOffenceDays = lastEventDate
+    ? Math.max(0, Math.round((Date.now() - Date.parse(lastEventDate + "T12:00:00")) / 86400000))
+    : lastSeenDays;
+  const recency = lastOffenceDays == null ? 0.3
+    : lastOffenceDays <= 7 ? 1 : lastOffenceDays <= 14 ? 0.9 : lastOffenceDays <= 30 ? 0.75
+    : lastOffenceDays <= 45 ? 0.55 : lastOffenceDays <= 60 ? 0.4 : lastOffenceDays <= 90 ? 0.25 : 0.1;
+  const cutoff90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const events90 = timedPoints.filter(p => p.date >= cutoff90).length;
   const corridorBonus = corridorAlignmentBonus(timedPoints, targetLat, targetLon);
-  let score = 0;
-  score += Math.max(0, 40 - Math.floor(currentLoc.dist / 10));    // proximity
-  if (etaDays != null) score += Math.max(0, 25 - Math.floor(etaDays * 3)); // ETA
-  if (lastSeenDays != null) {
-    if (lastSeenDays <= 7)  score += 20;
-    else if (lastSeenDays <= 14) score += 15;
-    else if (lastSeenDays <= 30) score += 10;
-    else if (lastSeenDays <= 45) score += 5;
-  }
-  if (approaching)              score += Math.round((traj.confidence ?? 0) * 10); // trajectory quality
-  if (vehicles.some(v=>v.identityGroupPrimaryIdentifier)) score += 2;
-  if (accomplices.length >= 2)  score += 3;
-  score += corridorBonus;        // interstate alignment
-  if (traj.reason === "local_operator") score = Math.min(score, 20); // cap local operators
+  const siteNum = n => String(n ?? "").match(/^\s*walmart\s+(\d{1,5})\b/i)?.[1];
+  const marketEvents90 = marketStores
+    ? timedPoints.filter(p => p.date >= cutoff90 && marketStores.has(String(Number(siteNum(p.site))))).length : 0;
+  const why = [];
+  const pts = {
+    proximity: Math.round(30 * Math.max(0, 1 - currentLoc.dist / 250)),
+    market:    Math.min(15, marketEvents90 * 5),
+    activity:  Math.min(20, events90 * 5),
+    loss:      Math.min(15, Math.round(Math.log10(1 + totalValue) * 4)),
+    threat:    hero.behaviorCounts?.length ? 10 : 0,
+    crew:      (accomplices.length >= 2 ? 5 : 0) + (vehicles.some(v => v.identityGroupPrimaryIdentifier) ? 3 : 0),
+    corridor:  Math.round(corridorBonus * 0.5),
+    approach:  0,
+  };
+  const base = Object.values(pts).reduce((a, b) => a + b, 0);
+  let score = Math.round(Math.min(100, base) * recency);
+  if (traj.reason === "local_operator") score = Math.min(score, 20); // far-away local operator
   score = Math.min(100, Math.max(0, score));
+  why.push(lastOffenceDays != null
+    ? `Last offence ${lastOffenceDays}d ago (×${recency})`
+    : "No dated offence (×0.3)");
+  if (pts.proximity) why.push(`${Math.round(currentLoc.dist)} mi from store (+${pts.proximity})`);
+  if (pts.market)    why.push(`${marketEvents90} hit${marketEvents90 === 1 ? "" : "s"} in ${marketLabel} in 90 days (+${pts.market})`);
+  if (pts.activity)  why.push(`${events90} event${events90 === 1 ? "" : "s"} in 90 days (+${pts.activity})`);
+  if (pts.loss)      why.push(`$${Math.round(totalValue).toLocaleString("en-US")} on file (+${pts.loss})`);
+  if (pts.threat)    why.push("Threatening behavior (+10)");
+  if (pts.crew)      why.push(`Crew/vehicle known (+${pts.crew})`);
+  if (pts.corridor)  why.push(`Works your interstate (+${pts.corridor})`);
 
   // ── 300-mile store history cap ────────────────────────────────────────────
   const distantCount = storeDists.filter(s => s.dist > 300).length;
@@ -329,6 +362,9 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
     primaryMo:        _fmtType(primaryMo),
     moBreakdown:      Object.fromEntries(Object.entries(eventTypes).map(([k,v])=>[_fmtType(k),v])),
     productsTargeted: Object.keys(products).slice(0, 6),
+    products:         Object.entries(products).map(([name, count]) => ({ name, count: +count || 0 }))
+                        .sort((a, b) => b.count - a.count).slice(0, 12),
+    dayHour,
     accompliceCount:  accomplices.length,
     accomplices:      accomplices.map(a => a.identityGroupPrimaryIdentifier ?? a.entityIdentityGroupId ?? "?").slice(0, 3),
     vehicles:         vehicles.map(v => v.identityGroupPrimaryIdentifier ?? "Unknown vehicle").filter(Boolean).slice(0, 3),
@@ -357,6 +393,9 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
     distantStoreCount: distantCount,
     timedPoints,
     riskScore:        score,
+    riskWhy:          why,
+    lastOffenceDays,
+    lastOffenceDate:  lastEventDate,
     aurorUrl:         `https://app.us.auror.co/person/${personId}`,
   };
 }
@@ -370,6 +409,14 @@ function _fmtType(t) {
     BreachOfTrespass:"Trespass", DeniedEntry:"Denied Entry",
   };
   return m[t] ?? t;
+}
+
+const _DAYS = ["sun","mon","tue","wed","thu","fri","sat"];
+function _dayIndex(raw) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (/^\d$/.test(s)) return Number(s) % 7;
+  const i = _DAYS.indexOf(s.slice(0, 3));
+  return i >= 0 ? i : null;
 }
 
 function _fmtHour(h) {

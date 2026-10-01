@@ -13,12 +13,34 @@
 // so the view sends the filter selection and gets back a finished analysis.
 
 import { escapeHtml, toast } from "../../shared/ui.js";
+import { withWeekday } from "../../shared/dates.js";
 import { SUBSCORES } from "./lib/hoops.js";
+import { generateCxPdf } from "./lib/report.js";
 
 /** Comments rendered per page in the evidence list. */
 const COMMENT_PAGE = 30;
 
 export async function mount(host, container) {
+  // Inject the module stylesheet and WAIT for it. The shell's app.html links
+  // only the suite-wide sheets, so a module that skips this renders as a plain
+  // vertical stack of text — which is exactly what the first end-to-end run
+  // produced. Awaiting matters as much as injecting: without it the first paint
+  // lands before the sheet applies and the grids lay out as blocks until
+  // something forces a reflow. (Same shape as digitalrollup and vizpick.)
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = host.url("styles.css");
+  link.dataset.module = host.id;
+  const cssReady = new Promise((resolve) => {
+    if (link.sheet) return resolve();
+    link.addEventListener("load", resolve, { once: true });
+    // Never block the module on a missing stylesheet — unstyled beats absent.
+    link.addEventListener("error", resolve, { once: true });
+    setTimeout(resolve, 3000);
+  });
+  document.head.appendChild(link);
+  await cssReady;
+
   container.innerHTML = await (await fetch(host.url("view.html"))).text();
 
   const $ = (sel) => container.querySelector(sel);
@@ -33,11 +55,15 @@ export async function mount(host, container) {
     analysis: null,
     coverage: null,
     scores: null,
+    market: null,
+    // Hoops' 50-row stopgap, present only when Medallia could not be read.
+    fallback: null,
     lastRun: null,
     openThemes: new Set(),
     commentQuery: "",
     commentRating: "",
     commentLimit: COMMENT_PAGE,
+    commentTotal: 0,
     busy: false,
   };
 
@@ -45,14 +71,35 @@ export async function mount(host, container) {
 
   // ── Messaging ─────────────────────────────────────────────────────────
 
-  const send = (type, payload = {}) => host.messaging.send(type, payload);
+  // sendRaw, not send: several handlers here answer `{ ok: false, reason }` as
+  // flow control ("no data yet", "no gateway token"), and `send` REJECTS on a
+  // falsy `ok`. Those are states the panel renders, not exceptions.
+  //
+  // The timeout matters too: a full 52-week pull is eight Medallia requests over
+  // roughly two minutes, and sendRaw's default 60 s would abandon it half way.
+  const TIMEOUTS = { refresh: 600_000, narrate: 180_000 };
+  const send = (type, payload = {}) =>
+    host.messaging.sendRaw(type, payload, { timeoutMs: TIMEOUTS[type] ?? 60_000 });
 
   unsubscribers.push(
-    host.messaging.on("cx.refresh.start", () => setBusy(true, "Reading…")),
-    host.messaging.on("cx.refresh.progress", ({ fetched, total, page }) => {
+    host.messaging.on("refresh_start", () => setBusy(true, "Reading…")),
+    host.messaging.on("market_progress", ({ done, total, store }) => {
+      const el = $("[data-market-sub]");
+      if (el) el.textContent = `reading store ${store} — ${done} of ${total}`;
+    }),
+    // The Hoops half lands seconds into a pull while Medallia takes minutes, so
+    // the scorecard paints as soon as it is there.
+    host.messaging.on("scores_ready", () => { void loadState(); }),
+    host.messaging.on("signin_stage", ({ stage }) => {
+      const el = $("[data-token-status]");
+      if (!el) return;
+      el.textContent = stage === "waiting" ? "finish the sign-in in the tab that opened…" : "opening sign-in…";
+      el.className = "cx-token-status";
+    }),
+    host.messaging.on("refresh_progress", ({ fetched, total, page }) => {
       setBusy(true, `Comments: ${fmt(fetched)} of ${fmt(total)} (page ${page})`);
     }),
-    host.messaging.on("cx.refresh.done", async ({ outcome }) => {
+    host.messaging.on("refresh_done", async ({ outcome }) => {
       state.lastRun = outcome;
       setBusy(false);
       await loadState();
@@ -78,11 +125,18 @@ export async function mount(host, container) {
       case "export-comments":return exportComments();
       case "clear-history":  return clearHistory();
       case "copy-diagnostics": return copyDiagnostics();
+      case "pull-market":    return doPullMarket();
+      case "signin-gateway": return doSignIn();
+      case "signout-gateway":return doSignOut();
+      case "export-pdf":     return doExportPdf();
       case "toggle-theme": {
         const id = el.dataset.themeId;
         if (state.openThemes.has(id)) state.openThemes.delete(id);
         else state.openThemes.add(id);
-        return renderThemes();
+        renderThemes();
+        // Persisted so a theme left open survives a route change — the drilled-in
+        // topic table is usually what someone came back to look at again.
+        return send("setPrefs", { patch: { openThemes: [...state.openThemes] } });
       }
       default: return undefined;
     }
@@ -105,14 +159,14 @@ export async function mount(host, container) {
   search?.addEventListener("input", debounce(() => {
     state.commentQuery = search.value.trim().toLowerCase();
     state.commentLimit = COMMENT_PAGE;
-    renderComments();
+    void renderComments();
   }, 180));
 
   const ratingSelect = $("[data-comment-rating]");
   ratingSelect?.addEventListener("change", () => {
     state.commentRating = ratingSelect.value;
     state.commentLimit = COMMENT_PAGE;
-    renderComments();
+    void renderComments();
   });
 
   // Settings inputs write through on change rather than needing a Save — there
@@ -121,6 +175,33 @@ export async function mount(host, container) {
     saveSettings({ windowWeeks: Number(e.target.value) }));
   $("[data-setting-model]")?.addEventListener("change", (e) =>
     saveSettings({ gatewayModel: e.target.value }));
+  $("[data-setting-version]")?.addEventListener("change", (e) =>
+    saveSettings({ gatewayClientVersion: e.target.value.trim() }));
+  // Reading a file the user explicitly picked is the one filesystem route an
+  // extension has — there is no API for opening a path itself. The file is
+  // parsed in the page and only the token is forwarded; the rest of puppy.cfg
+  // (names, model choice, colours) is never looked at or stored.
+  $("[data-setting-cfg]")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";                 // allow re-picking the same file
+    if (!file) return;
+    const status = $("[data-token-status]");
+    try {
+      const text = await file.text();
+      // INI, [puppy] section, key `puppy_token` — confirmed against the real file.
+      const token = /^\s*puppy_token\s*=\s*(.+?)\s*$/m.exec(text)?.[1];
+      if (!token) {
+        status.textContent = "no puppy_token in that file";
+        status.className = "cx-token-status is-bad";
+        return;
+      }
+      await saveSettings({ gatewayToken: token });
+    } catch (err) {
+      status.textContent = `could not read that file: ${err?.message ?? err}`;
+      status.className = "cx-token-status is-bad";
+    }
+  });
+
   $("[data-setting-token]")?.addEventListener("change", (e) => {
     const value = e.target.value.trim();
     // Blank the field immediately: a pasted JWT should not sit visible in the
@@ -137,21 +218,27 @@ export async function mount(host, container) {
 
   return function cleanup() {
     for (const off of unsubscribers) { try { off(); } catch { /* already gone */ } }
+    // The shell unmounts the container but does not touch <head>; without this
+    // the sheet stacks up again on every route back into the module.
+    link.remove();
   };
 
   // ── Loaders ───────────────────────────────────────────────────────────
 
   async function loadState() {
-    const s = await send("getState");
+    const [s, m] = await Promise.all([send("getState"), send("getMarket")]);
+    state.market = m?.market ?? state.market;
     state.storeNbr = s.storeNbr;
     state.prefs = s.prefs;
     state.settings = s.settings;
     state.scores = s.scores;
     state.coverage = s.coverage;
+    state.fallback = s.fallback ?? null;
     state.lastRun = s.lastRun ?? state.lastRun;
     state.openThemes = new Set(s.prefs.openThemes ?? []);
     renderHeader();
     renderScorecard();
+    renderMarket();
     renderGenAi();
     renderSettings();
     renderRunNote();
@@ -166,7 +253,12 @@ export async function mount(host, container) {
     renderThemes();
     renderMovement();
     renderTrend();
-    renderComments();
+    await renderComments();
+    // Rehydrate from the cache before painting: the read is stored in the
+    // service worker, and without this the panel showed it while the PDF
+    // silently left it out after any remount.
+    const cached = await send("getNarrative", {});
+    state.narrative = cached?.narrative ?? null;
     await renderNarrative();
     show("[data-columns]", true);
     show("[data-movement-panel]", true);
@@ -184,21 +276,32 @@ export async function mount(host, container) {
 
   async function saveSettings(patch) {
     const res = await send("setSettings", { patch });
-    if (res?.ok) {
-      state.settings = res.settings;
-      renderSettings();
-      toast("Saved", { kind: "success" });
-    }
+    if (!res?.ok) return;
+    state.settings = res.settings;
+    renderSettings();
+    // The narrative panel's placeholder is written from the token status, so it
+    // has to be repainted here too — otherwise pasting a token leaves "none is
+    // set" sitting on screen, which reads as the paste having failed.
+    await renderNarrative();
+    toast("Saved", { kind: "success" });
   }
 
   async function doRefresh(mode) {
     if (state.busy) return;
     setBusy(true, mode === "full" ? "Full pull…" : "Refreshing…");
     try {
-      await send("refresh", { mode });
+      const outcome = await send("refresh", { mode });
+      // Normally `refresh_done` clears the button and repaints. Some early
+      // returns (no home store set) bail before any broadcast, so clear here
+      // too rather than leaving the button spinning forever.
+      if (!outcome?.ok) {
+        state.lastRun = outcome ?? state.lastRun;
+        renderRunNote();
+      }
     } catch (e) {
-      setBusy(false);
       toast(`Refresh failed: ${e?.message ?? e}`, { kind: "error" });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -209,7 +312,7 @@ export async function mount(host, container) {
     if (!res?.ok) {
       body.innerHTML = `<p class="cx-error">${escapeHtml(res?.error ?? "The written read is unavailable.")}</p>`
         + (res?.reason === "TOKEN" || res?.reason === "EXPIRED"
-          ? `<p class="cx-note">Paste a current token under <strong>Settings</strong>. Everything else on this page works without it.</p>`
+          ? `<p class="cx-note">Use <strong>Settings → Sign in</strong> to get a current token. Everything else on this page works without it.</p>`
           : "");
       return;
     }
@@ -259,6 +362,15 @@ export async function mount(host, container) {
     const sub = state.scores.subscores?.periods ?? [];
     const latestSub = [...sub].reverse().find((p) => Object.values(p.scores).some((s) => s.ty != null)) ?? null;
 
+    // Hoops' pivotRows carry the same figures at month / quarter / year for the
+    // current period, at no extra request. They matter here because the LAST WEEK
+    // in the series is the week in progress, and on a single store that is a
+    // handful of surveys — 4.12 on eleven responses reads like a collapse next to
+    // last year's 4.65. Every tile therefore shows the month beside the week, so
+    // a thin week cannot be mistaken for a trend.
+    const npsMonth = state.scores.nps?.pivots?.[302] ?? null;
+    const subMonth = state.scores.subscores?.pivots?.[302] ?? null;
+
     const tiles = [];
 
     // NPS leads and is given more room than the sub-scores: it is the graded
@@ -266,11 +378,17 @@ export async function mount(host, container) {
     if (latest) {
       tiles.push(`
         <div class="cx-tile cx-tile-hero">
-          <div class="cx-tile-label">NPS <span class="cx-tile-period">${escapeHtml(latest.labelLong ?? latest.label)}</span></div>
+          <div class="cx-tile-label">
+            NPS
+            <span class="cx-tile-period">${escapeHtml(latest.labelLong ?? latest.label)} · in progress</span>
+          </div>
           <div class="cx-tile-value">${latest.ty}</div>
           <div class="cx-tile-meta">
             ${deltaChip(latest.ty, prior?.ty, "vs last week", { higherIsBetter: true })}
             ${deltaChip(latest.ty, latest.ly, "vs last year", { higherIsBetter: true })}
+            ${npsMonth?.ty != null
+              ? `<span class="cx-delta is-period">${npsMonth.ty} <em>${escapeHtml(npsMonth.label)}</em></span>`
+              : ""}
           </div>
           ${sparkline(periods)}
         </div>`);
@@ -279,18 +397,28 @@ export async function mount(host, container) {
     for (const def of SUBSCORES) {
       const cur = latestSub?.scores?.[def.key];
       if (!cur || cur.ty == null) continue;
+      const monthTy = subMonth?.[`${def.key}_ty`];
+      const monthLy = subMonth?.[`${def.key}_ly`];
       tiles.push(`
         <div class="cx-tile cx-scope-${def.scope}">
           <div class="cx-tile-label">${escapeHtml(def.label)}</div>
           <div class="cx-tile-value cx-tile-value-sm">${cur.ty.toFixed(2)}</div>
-          <div class="cx-tile-meta">${deltaChip(cur.ty, cur.ly, "vs LY", { higherIsBetter: true, decimals: 2 })}</div>
+          <div class="cx-tile-meta">
+            ${deltaChip(cur.ty, cur.ly, "vs LY", { higherIsBetter: true, decimals: 2 })}
+            ${monthTy != null
+              ? `<span class="cx-delta is-period" title="${escapeHtml(subMonth.label)}${monthLy != null ? `, last year ${monthLy.toFixed(2)}` : ""}">${monthTy.toFixed(2)} <em>MTD</em></span>`
+              : ""}
+          </div>
         </div>`);
     }
 
     row.innerHTML = tiles.join("")
       + `<p class="cx-note cx-scorecard-note">
-           From the Hoops scorecard for ${escapeHtml(latestSub?.labelLong ?? "the current week")}.
-           Sub-scores are averages out of 5. NPS is published weekly only.
+           From the Hoops scorecard. The big figure is
+           <strong>${escapeHtml(latestSub?.labelLong ?? "the current week")}</strong>, which is still in progress —
+           on one store that can be a handful of surveys, so read it against the
+           <strong>MTD</strong> figure beside it. Sub-scores are averages out of 5;
+           NPS is published weekly, never daily.
          </p>`;
   }
 
@@ -390,7 +518,7 @@ export async function mount(host, container) {
             <ul class="cx-quotes">
               ${examples.map((ex) => `
                 <li>
-                  <span class="cx-quote-meta">${escapeHtml(ex.day ?? "")} · ${escapeHtml(ex.journey ?? "—")} · ${starLabel(ex.score)}</span>
+                  <span class="cx-quote-meta">${escapeHtml(withWeekday(ex.day ?? ""))} · ${escapeHtml(ex.journey ?? "—")} · ${starLabel(ex.score)}</span>
                   <span class="cx-quote-text">${escapeHtml(ex.text)}</span>
                 </li>`).join("")}
             </ul>` : ""}
@@ -407,10 +535,25 @@ export async function mount(host, container) {
       + ` vs ${m.prior.from} to ${m.prior.to} (${fmt(m.prior.count)})`;
 
     const rows = m.movers.filter((x) => x.direction !== "flat" || !x.thin);
+
+    // The direction is spelled out, not just drawn. A ▲/▼ pair at 12px separated
+    // only by colour was genuinely hard to read at a glance — and colour alone
+    // fails anyone who cannot use it. The word carries the meaning; the arrow and
+    // the colour only reinforce it.
+    const DIRECTION = {
+      worse:  { word: "worse",  arrow: "↑" },
+      better: { word: "better", arrow: "↓" },
+      flat:   { word: "flat",   arrow: "→" },
+    };
+
     $("[data-movers]").innerHTML = rows.length
-      ? rows.map((x) => `
+      ? rows.map((x) => {
+        const d = DIRECTION[x.direction] ?? DIRECTION.flat;
+        return `
         <div class="cx-mover cx-mover-${x.direction}${x.thin ? " is-thin" : ""}">
-          <span class="cx-mover-dir" aria-hidden="true">${x.direction === "worse" ? "▲" : x.direction === "better" ? "▼" : "–"}</span>
+          <span class="cx-mover-dir">
+            <span class="cx-mover-arrow" aria-hidden="true">${d.arrow}</span>${escapeHtml(d.word)}
+          </span>
           <span class="cx-mover-name">
             ${escapeHtml(x.label)}
             ${x.thin ? `<span class="cx-mover-thin" title="Too few mentions in either window to read anything into">thin</span>` : ""}
@@ -421,7 +564,8 @@ export async function mount(host, container) {
           </span>
           <span class="cx-mover-delta">${x.deltaRate > 0 ? "+" : ""}${x.deltaRate.toFixed(1)}</span>
           <span class="cx-mover-counts">${fmt(x.priorNegative)} → ${fmt(x.recentNegative)} mentions</span>
-        </div>`).join("")
+        </div>`;
+      }).join("")
       : `<p class="cx-empty">Nothing moved enough to report in this selection.</p>`;
   }
 
@@ -462,50 +606,82 @@ export async function mount(host, container) {
       </div>`;
   }
 
-  function renderComments() {
-    const a = state.analysis;
-    if (!a) return;
+  /**
+   * The evidence list, read from the SW's real filtered set rather than from the
+   * theme cards' example quotes — those are capped at six per theme, so a panel
+   * built from them would be a sample of a sample while looking complete.
+   */
+  async function renderComments() {
+    const list = $("[data-comment-list]");
+    const res = await send("comments", {
+      query: state.commentQuery,
+      rating: state.commentRating,
+      limit: state.commentLimit,
+      offset: 0,
+    });
 
-    // The evidence list works off the theme examples the SW already sent rather
-    // than shipping a year of comments into the page. That is a real limit and
-    // the footer says so instead of implying the list is everything.
-    const pool = new Map();
-    for (const t of a.themes.all) {
-      for (const side of ["negative", "positive", "neutral"]) {
-        for (const ex of t.examples[side] ?? []) {
-          if (!pool.has(ex.id)) pool.set(ex.id, { ...ex, themes: [] });
-          pool.get(ex.id).themes.push(t.label);
-        }
-      }
+    if (!res?.ok) {
+      list.innerHTML = `<p class="cx-empty">No comments stored yet.</p>`;
+      $("[data-comments-sub]").textContent = "";
+      $(".cx-more").hidden = true;
+      return;
     }
 
-    let rows = [...pool.values()];
-    if (state.commentQuery) {
-      rows = rows.filter((r) => r.text.toLowerCase().includes(state.commentQuery));
+    state.commentTotal = res.total;
+    for (const sel of ["[data-comment-search]", "[data-comment-rating]", "[data-action='export-comments']"]) {
+      const el = $(sel);
+      if (el) el.hidden = false;
     }
-    if (state.commentRating === "detractor") rows = rows.filter((r) => r.score >= 1 && r.score <= 3);
-    else if (state.commentRating) rows = rows.filter((r) => r.score === Number(state.commentRating));
-
-    rows.sort((x, y) => (x.day < y.day ? 1 : x.day > y.day ? -1 : 0));
-
-    const page = rows.slice(0, state.commentLimit);
     $("[data-comments-sub]").textContent =
-      `${fmt(rows.length)} quoted comments across ${fmt(a.themes.all.length)} themes`;
+      `${fmt(res.total)} comments match${state.commentQuery || state.commentRating ? " this search" : " the chips above"}`;
 
-    $("[data-comment-list]").innerHTML = page.length
-      ? page.map((r) => `
+    list.innerHTML = res.rows.length
+      ? res.rows.map((r) => `
         <article class="cx-comment cx-rating-${r.score ?? 0}">
           <div class="cx-comment-meta">
             <span class="cx-comment-stars">${starLabel(r.score)}</span>
-            <span>${escapeHtml(r.day ?? "")}</span>
+            <span>${escapeHtml(withWeekday(r.day ?? ""))}</span>
             <span>${escapeHtml(r.journey ?? "—")}</span>
+            <span>${escapeHtml(r.channel ?? "")}</span>
             <span class="cx-comment-themes">${r.themes.map((t) => `<em>${escapeHtml(t)}</em>`).join(" ")}</span>
           </div>
           <p class="cx-comment-text">${escapeHtml(r.text)}</p>
         </article>`).join("")
-      : `<p class="cx-empty">No quoted comments match.</p>`;
+      : `<p class="cx-empty">No comments match.</p>`;
 
-    $("[data-more-comments], .cx-more").hidden = page.length >= rows.length;
+    $(".cx-more").hidden = res.rows.length >= res.total;
+  }
+
+  function renderFallbackComments(box) {
+    const rows = [...box.rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    $("[data-comments-sub]").textContent =
+      `${fmt(rows.length)} from the Ops Portal — no topic tags, through ${escapeHtml(rows[0]?.date ?? "?")}`;
+
+    // The search and rating controls act on the Medallia set; with only the
+    // stopgap loaded they would silently do nothing.
+    for (const sel of ["[data-comment-search]", "[data-comment-rating]", "[data-action='export-comments']"]) {
+      const el = $(sel);
+      if (el) el.hidden = true;
+    }
+
+    $("[data-comment-list]").innerHTML = `
+      <p class="cx-note">
+        Medallia could not be read, so these come from the Ops Portal's own feed:
+        <strong>50 rows, capped, with no topic tags and about a week behind</strong>.
+        That is why the theme breakdown and the trend above are not shown — they
+        cannot be built from this. Fix the Medallia session and press Refresh.
+      </p>`
+      + rows.map((r) => `
+        <article class="cx-comment cx-rating-${r.rating ?? 0}">
+          <div class="cx-comment-meta">
+            <span class="cx-comment-stars">${starLabel(r.rating)}</span>
+            <span>${escapeHtml(r.date ?? "")}</span>
+            <span>${escapeHtml(r.journey ?? "—")}</span>
+          </div>
+          <p class="cx-comment-text">${escapeHtml(r.text)}</p>
+        </article>`).join("");
+
+    $(".cx-more").hidden = true;
   }
 
   async function renderNarrative() {
@@ -518,12 +694,21 @@ export async function mount(host, container) {
 
     if (!n) {
       const st = state.settings?.gatewayTokenStatus;
-      if (st && !st.ok) {
-        body.innerHTML = `<p class="cx-note">
-          The written read needs an AI gateway token — ${escapeHtml(st.reason === "expired" ? "the stored one has expired" : "none is set")}.
-          Add one under <strong>Settings</strong>. Everything else on this page works without it.
-        </p>`;
-      }
+      // Both branches write. An earlier version only wrote the warning, so once
+      // a token was pasted the "none is set" line stayed on screen and read as
+      // the paste having failed.
+      body.innerHTML = (st && !st.ok)
+        ? `<p class="cx-note">
+             The written read needs an AI gateway token — ${escapeHtml(st.reason === "expired" ? "the stored one has expired" : "none is set")}.
+             <strong>Settings → Sign in</strong> sets one up. Everything else on this page works without it.
+           </p>`
+        : `<p class="cx-empty">
+             <strong>Write it up</strong> sends the ranked themes, the movement figures and a
+             handful of verbatims to Walmart's internal AI gateway and gets back a written
+             summary, covering <strong>this store's comments only</strong>. Every number in it
+             is one already on this page — the model is told to use the figures it is given and
+             not to derive any.
+           </p>`;
       stamp.textContent = "";
       return;
     }
@@ -532,16 +717,25 @@ export async function mount(host, container) {
     body.innerHTML = renderMarkdown(n.text);
   }
 
+  /**
+   * Show exactly what went to the gateway, inline. Rendered here rather than in a
+   * dialog because shared/ui.js has no modal helper, and an auditable panel is
+   * more useful open beside the prose it explains than in a box over it.
+   */
   function showFacts() {
     const facts = state.narrative?.facts;
     if (!facts) return;
-    host.ui.modal?.({
-      title: "What was sent to the gateway",
-      body: `<p class="cx-note">These are the figures already on this page, plus the quotes shown under each theme.
-               No token, and nothing the panel is not already displaying.</p>
-             <pre class="cx-facts">${escapeHtml(JSON.stringify(facts, null, 1))}</pre>`,
-    }) ?? toast("Facts are in the console", { kind: "info" });
-    if (!host.ui.modal) console.log("[cx] narrative facts", facts);
+    const existing = container.querySelector("[data-facts-block]");
+    if (existing) { existing.remove(); return; }
+    const block = document.createElement("details");
+    block.className = "cx-facts-block";
+    block.setAttribute("data-facts-block", "");
+    block.open = true;
+    block.innerHTML = `<summary>What was sent to the gateway</summary>
+      <p class="cx-note">The figures already on this page, plus the quotes shown under each theme.
+         No token, and nothing the panel is not already displaying.</p>
+      <pre class="cx-facts">${escapeHtml(JSON.stringify(facts, null, 1))}</pre>`;
+    $("[data-narrative-body]").after(block);
   }
 
   function renderGenAi() {
@@ -556,7 +750,7 @@ export async function mount(host, container) {
     // Dated loudly on purpose: the copy Hoops serves has been frozen since
     // January, and read as current it would contradict everything above.
     $("[data-genai-stamp]").textContent =
-      `generated ${when}${ageDays != null && ageDays > 45 ? ` — ${ageDays} days old` : ""}`;
+      `generated ${withWeekday(when)}${ageDays != null && ageDays > 45 ? ` — ${ageDays} days old` : ""}`;
 
     const s = g.summary;
     $("[data-genai-body]").innerHTML = `
@@ -578,14 +772,27 @@ export async function mount(host, container) {
     if (weeks) weeks.value = String(s.windowWeeks);
     const model = $("[data-setting-model]");
     if (model) model.value = s.gatewayModel;
+    const ver = $("[data-setting-version]");
+    if (ver && document.activeElement !== ver) {
+      ver.value = s.gatewayClientVersion ?? "";
+      ver.placeholder = s.gatewayClientVersionEffective ?? "0.1.70";
+    }
 
     const st = s.gatewayTokenStatus ?? { ok: false, reason: "missing" };
     const el = $("[data-token-status]");
+    const signIn = $("[data-action='signin-gateway']");
+    const signOut = $("[data-action='signout-gateway']");
     if (!el) return;
-    if (!s.gatewayTokenSet) { el.textContent = "not set"; el.className = "cx-token-status"; return; }
-    if (st.reason === "expired") { el.textContent = "expired — paste a fresh one"; el.className = "cx-token-status is-bad"; return; }
+
+    // The button says what it will do next, so an expired token reads as
+    // "sign in again" rather than as a state to puzzle over.
+    if (signIn) signIn.textContent = s.gatewayTokenSet ? "Sign in again" : "Sign in";
+    if (signOut) signOut.hidden = !s.gatewayTokenSet;
+
+    if (!s.gatewayTokenSet) { el.textContent = "not signed in"; el.className = "cx-token-status"; return; }
+    if (st.reason === "expired") { el.textContent = "expired — sign in again"; el.className = "cx-token-status is-bad"; return; }
     const exp = st.expiresAt ? new Date(st.expiresAt).toISOString().slice(0, 10) : null;
-    el.textContent = exp ? `set · expires ${exp}` : "set";
+    el.textContent = exp ? `signed in · expires ${withWeekday(exp)}` : "signed in";
     el.className = `cx-token-status${st.reason === "expiring" ? " is-warn" : " is-ok"}`;
   }
 
@@ -625,8 +832,18 @@ export async function mount(host, container) {
     show("[data-columns]", false);
     show("[data-movement-panel]", false);
     show("[data-trend-panel]", false);
-    show("[data-comments-panel]", false);
     show("[data-filters]", false);
+
+    // With no Medallia history there is still the Ops Portal stopgap. Showing it
+    // beats an empty page, but it is labelled for what it is: 50 rows, no topic
+    // tags, about a week behind — which is why none of the panels above it can
+    // be drawn from it.
+    if (state.fallback?.rows?.length) {
+      renderFallbackComments(state.fallback);
+      show("[data-comments-panel]", true);
+    } else {
+      show("[data-comments-panel]", false);
+    }
     const body = $("[data-narrative-body]");
     if (body) {
       body.innerHTML = `<p class="cx-empty">
@@ -636,6 +853,174 @@ export async function mount(host, container) {
       </p>`;
     }
     show("[data-narrative-panel]", true);
+  }
+
+  async function doSignIn() {
+    const btn = $("[data-action='signin-gateway']");
+    const status = $("[data-token-status]");
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = "Signing in…";
+    try {
+      const res = await send("signInGateway", {});
+      if (!res?.ok) {
+        status.textContent = res?.reason === "CANCELLED" ? "sign-in cancelled" : "sign-in failed";
+        status.className = `cx-token-status${res?.reason === "CANCELLED" ? "" : " is-bad"}`;
+        // The two failure modes look identical from here, so show what the
+        // listener actually observed rather than a generic retry message.
+        await renderAuthDiagnostics(res?.error);
+        return;
+      }
+      $("[data-signin-diag]")?.remove();
+      await loadState();
+      // The narrative panel's placeholder is written from the token status.
+      await renderNarrative();
+      // Said plainly because the auth page may be showing its own "couldn't
+      // reach the CLI" error at this exact moment — that hand-off failing is
+      // expected and unrelated to whether we got the token.
+      toast("Signed in to the AI gateway — ignore any error on the sign-in page", { kind: "success" });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = was;
+    }
+  }
+
+  /** Inline, under the sign-in row, because that is where the question is. */
+  async function renderAuthDiagnostics(message) {
+    const diag = await send("authDiagnostics", {});
+    $("[data-signin-diag]")?.remove();
+
+    const block = document.createElement("div");
+    block.className = "cx-signin-diag";
+    block.setAttribute("data-signin-diag", "");
+
+    const seen = diag?.observed ?? [];
+    block.innerHTML = `
+      <p class="cx-error">${escapeHtml(message ?? "The sign-in did not complete.")}</p>
+      <details>
+        <summary>What the extension saw</summary>
+        <p class="cx-setting-hint">
+          Sign-in page access: <strong>${diag?.authPageGranted ? "granted" : "NOT granted"}</strong>
+          ${diag?.authPageGranted ? "" : " — reload the extension, this is why the page hook never ran"}
+        </p>
+        ${seen.length
+          ? `<table class="cx-topic-table"><thead><tr><th>Reported by the page</th><th>Token len</th><th>In flow</th></tr></thead><tbody>
+              ${seen.map((o) => `<tr>
+                <td>${escapeHtml(new Date(o.at).toLocaleTimeString())}</td>
+                <td>${o.tokenLen ?? "—"}</td>
+                <td>${o.fresh ? "yes" : "no"}</td>
+              </tr>`).join("")}
+            </tbody></table>`
+          : `<p class="cx-setting-hint">
+               <strong>The sign-in page never handed a token to the extension.</strong> The page
+               hook is a content script, and a newly added one only applies to pages loaded after
+               an extension reload — reload it and try again, or use “Paste a token instead”.
+             </p>`}
+      </details>`;
+    $(".cx-signin-row")?.after(block);
+  }
+
+  async function doSignOut() {
+    if (!confirm("Forget the stored AI gateway token on this device?")) return;
+    await send("signOutGateway", {});
+    await loadState();
+    await renderNarrative();
+    toast("Signed out", { kind: "info" });
+  }
+
+  async function doPullMarket() {
+    const body = $("[data-market-body]");
+    const sub = $("[data-market-sub]");
+    body.innerHTML = `<p class="cx-empty">Reading the market…</p>`;
+    const res = await send("pullMarket", {});
+    if (!res?.ok) {
+      sub.textContent = "";
+      body.innerHTML = `<p class="cx-error">${escapeHtml(res?.error ?? "Could not read the market.")}</p>`;
+      return;
+    }
+    state.market = res.market;
+    renderMarket();
+  }
+
+  /**
+   * The market scoreboard. Scores only — Medallia scopes comments to the role,
+   * so there is nothing market-wide to analyse and the panel says so rather than
+   * leaving the reader to infer it from a missing section.
+   */
+  function renderMarket() {
+    const body = $("[data-market-body]");
+    const sub = $("[data-market-sub]");
+    const m = state.market;
+    if (!m?.rows?.length) { if (sub) sub.textContent = ""; return; }
+
+    sub.textContent = `market ${m.marketNbr ?? "—"} · ${m.period ?? ""} · read ${relTime(Date.now() - (m.pulledAt ?? Date.now()))}`;
+
+    const defs = m.subscores ?? SUBSCORES;
+    const home = m.rows.find((r) => r.isHome);
+
+    body.innerHTML = `
+      ${m.market?.nps != null || home ? `
+      <p class="cx-market-lead">
+        ${m.market?.nps != null ? `Market NPS <strong>${m.market.nps}</strong>` : ""}
+        ${m.market?.vsLy != null ? deltaChip(m.market.nps, m.market.npsLy, "vs LY", { higherIsBetter: true }) : ""}
+        ${home?.nps != null ? ` · store ${escapeHtml(home.store)} is <strong>${escapeHtml(ordinal(home.rank))}</strong> of ${m.counts.scored}, ${home.vsMarket >= 0 ? "" : ""}<strong>${signedNum(home.vsMarket)}</strong> against the market` : ""}
+        ${m.medianNps != null ? ` · median store ${m.medianNps}` : ""}
+      </p>` : ""}
+      <div class="cx-market-scroll">
+        <table class="cx-market-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Store</th><th>NPS</th><th>vs LY</th><th>vs market</th>
+              ${defs.map((d) => `<th class="cx-scope-head cx-scope-${d.scope}" title="${escapeHtml(d.label)}">${escapeHtml(shortLabel(d.label))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${m.rows.map((r) => `
+              <tr class="${r.isHome ? "is-home" : ""}">
+                <td>${r.rank ?? "—"}</td>
+                <td class="cx-market-store">${escapeHtml(r.store)}${r.isHome ? ' <span class="cx-home-tag">yours</span>' : ""}</td>
+                <td class="cx-num">${r.ok ? (r.nps ?? "—") : "—"}</td>
+                <td class="cx-num ${cls(r.vsLy)}">${signedNum(r.vsLy)}</td>
+                <td class="cx-num ${cls(r.vsMarket)}">${signedNum(r.vsMarket)}</td>
+                ${defs.map((d) => {
+                  const v = r.scores?.[d.key];
+                  return `<td class="cx-num">${v?.ty == null ? "—" : v.ty.toFixed(2)}</td>`;
+                }).join("")}
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="cx-note">
+        NPS and the eight sub-scores for the latest week each store has published, from the
+        same Hoops scorecard as the panel above — <strong>scores only</strong>. Medallia shows
+        you comments for your own store, so the theme analysis below cannot be produced for
+        the rest of the market.
+      </p>`;
+  }
+
+  async function doExportPdf() {
+    const btn = $("[data-action='export-pdf']");
+    const was = btn.textContent;
+    btn.textContent = "Building…";
+    btn.disabled = true;
+    try {
+      const name = await generateCxPdf({
+        storeNbr: state.storeNbr,
+        generatedAt: Date.now(),
+        // subscoreDefs travels with the scores so the PDF labels the rows from
+        // the same table the panel does.
+        scores: state.scores ? { ...state.scores, subscoreDefs: SUBSCORES } : null,
+        analysis: state.analysis,
+        market: state.market,
+        narrative: state.narrative ?? null,
+      });
+      toast(`Saved ${name}`, { kind: "success" });
+    } catch (e) {
+      toast(`PDF failed: ${e?.message ?? e}`, { kind: "error" });
+    } finally {
+      btn.textContent = was;
+      btn.disabled = false;
+    }
   }
 
   // ── Small helpers ─────────────────────────────────────────────────────
@@ -654,24 +1039,39 @@ export async function mount(host, container) {
     if (el) el.hidden = !visible;
   }
 
+  /**
+   * CSV of everything the current chips select, not just the rows on screen —
+   * asked for a year of comments, the file should hold a year of comments.
+   */
   async function exportComments() {
-    const a = state.analysis;
-    if (!a) return;
-    const rows = [["day", "journey", "rating", "themes", "comment"]];
-    for (const t of a.themes.all) {
-      for (const side of ["negative", "positive", "neutral"]) {
-        for (const ex of t.examples[side] ?? []) {
-          rows.push([ex.day ?? "", ex.journey ?? "", ex.score ?? "", t.label, ex.text ?? ""]);
-        }
+    const first = await send("comments", {
+      query: state.commentQuery, rating: state.commentRating, limit: 200, offset: 0,
+    });
+    if (!first?.ok) { toast("Nothing to export yet", { kind: "info" }); return; }
+
+    const rows = [["day", "journey", "source", "rating", "themes", "comment"]];
+    let page = first, offset = 0;
+    // Paged because the handler caps one page at 200. A year is about forty
+    // pages, which keeps any single structured clone small.
+    while (page?.ok && page.rows.length) {
+      for (const r of page.rows) {
+        rows.push([r.day ?? "", r.journey ?? "", r.channel ?? "", r.score ?? "", (r.themes ?? []).join("; "), r.text ?? ""]);
       }
+      offset += page.rows.length;
+      if (offset >= page.total) break;
+      page = await send("comments", {
+        query: state.commentQuery, rating: state.commentRating, limit: 200, offset,
+      });
     }
+
     const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" }));
-    const a2 = document.createElement("a");
-    a2.href = url;
-    a2.download = `cx-comments-${state.storeNbr ?? "store"}-${a.counts.lastDay ?? "latest"}.csv`;
-    a2.click();
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cx-comments-${state.storeNbr ?? "store"}-${state.analysis?.counts.lastDay ?? "latest"}.csv`;
+    link.click();
     URL.revokeObjectURL(url);
+    toast(`Exported ${fmt(rows.length - 1)} comments`, { kind: "success" });
   }
 
   async function copyDiagnostics() {
@@ -792,6 +1192,32 @@ function csvCell(v) {
 }
 
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString());
+
+function signedNum(v, decimals = 0) {
+  if (v == null || Number.isNaN(v)) return "—";
+  const n = Number(v);
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(decimals)}`;
+}
+
+const cls = (v) => (v == null ? "" : v > 0 ? "is-good" : v < 0 ? "is-bad" : "");
+
+export function ordinal(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return String(n);
+  const teens = v % 100;
+  if (teens >= 11 && teens <= 13) return `${v}th`;
+  return `${v}${{ 1: "st", 2: "nd", 3: "rd" }[v % 10] ?? "th"}`;
+}
+
+/** Column headers have to fit ten of them across; the full label is the title. */
+function shortLabel(label) {
+  return label
+    .replace("Associate interactions", "Assoc")
+    .replace("Checkout satisfaction", "Checkout")
+    .replace("Product availability", "Avail")
+    .replace("Overall satisfaction", "Overall")
+    .replace("SCO / pinpad", "SCO");
+}
 
 function relTime(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "just now";

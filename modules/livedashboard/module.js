@@ -27,7 +27,7 @@ export default {
   manifest: {
     id:          "livedashboard",
     name:        "Live Dashboard",
-    description: "Daily AP operational dashboard: callouts, compliance, accident evidence, CVP, register exceptions.",
+    description: "Daily AP operational dashboard: callouts, compliance, accident evidence, CVP, Auror evidence exceptions.",
     version:     "0.1.0",
     status:      "beta",
 
@@ -64,6 +64,8 @@ export default {
         "https://ivrattcloud-prod.wal-mart.com/*",
         // Compliance (Phase 2) — not yet in top-level manifest
         // "https://go.enviance.com/*",
+        // Auror Exceptions — evidence completeness API reads
+        "https://app.us.auror.co/*",
       ],
     },
 
@@ -71,8 +73,20 @@ export default {
     // existing ivr.js declaration).
     contentScripts: [],
 
-    // No webRequest header capture needed — Hoops uses session cookies only.
-    webRequestFilters: [],
+    // Auror JWT capture for the Auror Exceptions source. Same declarative
+    // pattern as aurorbuddy/orcmonitor — the shell stores the header at
+    // chrome.storage.session["livedashboard.auror.jwt"] and the source
+    // reads it via shared/auth.js::getCapturedHeader (with fallbacks to
+    // the aurorbuddy/orcmonitor captures, so any Auror browsing works).
+    webRequestFilters: [
+      {
+        urls: ["https://app.us.auror.co/*", "https://*.auror.co/*"],
+        headerName: "authorization",
+        storageKey: "auror.jwt",
+        ttlMs: 20 * 60 * 1000,
+        predicate: { startsWith: "Bearer " },
+      },
+    ],
   },
 
   async register(_host) {

@@ -26,6 +26,7 @@ import { getPullById,
 import { getUserHomeStore,
          getUserHomeMarket }       from "../../shared/userStore.js";
 import { getMarketRoster }         from "../../shared/marketRoster.js";
+import { withWeekday }             from "../../shared/dates.js";
 
 import { createHeader }            from "./components/header.js";
 import { createFilterBar }         from "./components/filterBar.js";
@@ -359,7 +360,7 @@ export async function mount(host, container) {
 
   function pullLabel(p) {
     const when = new Date(p.pulledAt);
-    const date = formatDateFmt(when, "MMM d, yyyy");
+    const date = withWeekday(formatDateFmt(when, "MMM d, yyyy"), when);
     const hr   = String(when.getHours()).padStart(2, "0");
     const mn   = String(when.getMinutes()).padStart(2, "0");
     const rows = NUMBER_FMT.format(p.totalRows ?? 0);

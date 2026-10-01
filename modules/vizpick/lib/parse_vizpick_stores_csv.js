@@ -791,6 +791,11 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
         skipped: sug - done,
         win: iWin >= 0 ? String(c[iWin] ?? "").trim() || null : null,
         lastSeenAt: ts,
+        // Tableau's own "Location Seen" flag for the day this export describes.
+        // Carried so attribution can be SAME DAY ONLY: a bin whose last scan
+        // was an earlier day is carried-over work, not something anyone left
+        // behind on this day (2026-09-29).
+        seenToday: iSeen >= 0 ? /^yes$/i.test(String(c[iSeen] ?? "").trim()) : null,
       });
     }
   }
@@ -807,15 +812,60 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
  * problem (work not started) from an associate leaving picks behind, and
  * merging the two would inflate whoever happens to sort last.
  */
-export function rollUpSkippedByAssociate(gaps) {
+/**
+ * Local YYYY-MM-DD of a scan timestamp, or null when it cannot be read.
+ *
+ * Tableau writes "9/15/2026 3:20:17 PM", sometimes with a narrow no-break
+ * space before AM/PM that Date() refuses, so the M/D/YYYY head is read
+ * directly first and Date() is only the fallback for ISO values.
+ */
+function scanDayKey(ts) {
+  const m = String(ts || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Was this bin scanned on the day the report describes?
+ *
+ * Tableau's location detail lists every bin with its LAST scan, whenever that
+ * was — so a bin last touched on Sunday is still carrying Sunday's scanner on
+ * Monday's export. Prefers Tableau's own "Location Seen" flag (`seenToday`)
+ * and falls back to the scan date, which is all that gaps stored before
+ * 2026-09-29 have. With no `day` to measure against, nothing is excluded.
+ */
+export function gapScannedOnDay(gap, day) {
+  if (!day) return true;
+  if (gap?.seenToday === true) return true;
+  if (gap?.seenToday === false) return false;
+  if (!gap?.lastSeenAt) return true;
+  const k = scanDayKey(gap.lastSeenAt);
+  return !k || k === day;
+}
+
+/**
+ * Suggested picks left behind, per associate — SAME DAY ONLY when `day` is
+ * given (a `YYYY-MM-DD` local key for the day the card describes).
+ *
+ * Bins whose last scan predates that day come back as `carried`, not charged
+ * to anyone: the person who scanned it two days ago was not in the building,
+ * and putting their name on today's list is a false accusation the report
+ * owner would rightly throw out (2026-09-29).
+ */
+export function rollUpSkippedByAssociate(gaps, { day = null } = {}) {
   const byWin = new Map();
   const unattributed = [];
+  const carried = [];
   for (const g of gaps || []) {
     // Drop malformed entries outright. `!g?.win` is also true for null, so
     // without this a null slips into `unattributed` and is dereferenced when
     // the skipped total is summed.
     if (!g || typeof g !== "object") continue;
     if (!g.win) { unattributed.push(g); continue; }
+    if (!gapScannedOnDay(g, day)) { carried.push(g); continue; }
     const cur = byWin.get(g.win) || { win: g.win, skipped: 0, bins: [] };
     cur.skipped += g.skipped;
     cur.bins.push(g);
@@ -827,9 +877,12 @@ export function rollUpSkippedByAssociate(gaps) {
   for (const a of associates) {
     a.bins.sort((x, y) => y.skipped - x.skipped || x.location.localeCompare(y.location));
   }
+  carried.sort((a, b) => b.skipped - a.skipped || String(a.location).localeCompare(String(b.location)));
   return {
     associates,
     unattributed,
     unattributedSkipped: unattributed.reduce((n, g) => n + g.skipped, 0),
+    carried,
+    carriedSkipped: carried.reduce((n, g) => n + g.skipped, 0),
   };
 }

@@ -31,7 +31,20 @@
     <div class="acc-pnl-controls">
       <label><input type="checkbox" id="acc-pnl-credits"> only refs with a credit back</label>
       <select id="acc-pnl-fy"></select>
+      <button id="acc-email-build" class="acc-btn acc-btn-ghost acc-btn-sm">Email list: charges</button>
     </div>
+    <section id="acc-email" class="acc-email" hidden>
+      <div class="acc-email-head">
+        <strong id="acc-email-title">Charged claims</strong>
+        <label><input type="checkbox" id="acc-email-stmts"> include customer / witness statements</label>
+        <span class="acc-email-spacer"></span>
+        <button id="acc-email-copy" class="acc-btn acc-btn-sm">Copy for Outlook</button>
+        <button id="acc-email-copy-text" class="acc-btn acc-btn-ghost acc-btn-sm">Copy plain text</button>
+        <button id="acc-email-close" class="acc-link">close</button>
+      </div>
+      <div class="acc-email-note" id="acc-email-note"></div>
+      <textarea id="acc-email-text" class="acc-email-text" spellcheck="false"></textarea>
+    </section>
     <table class="acc-table">
       <thead><tr>
         <th>Ref #</th><th>Claimant</th><th>Category</th><th>Status</th>

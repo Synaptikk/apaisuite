@@ -34,6 +34,7 @@
 
 import { gaugeSvg } from "./charts.js";
 import { rollUpSkippedByAssociate } from "./parse_vizpick_stores_csv.js";
+import { withWeekday } from "../../../shared/dates.js";
 
 // Practical ceiling for the whole encoded mailto: URL. Below the ~2000 the
 // shell actually enforces, leaving room for the subject and the scheme.
@@ -94,14 +95,17 @@ export function cardDepts(r, limit = Infinity) {
  * @param {object} [opts]
  * @param {number} [opts.limit=10]
  * @param {(win:string)=>string|null|undefined} [opts.names]  WIN → display name.
+ * @param {string|null} [opts.day]  Local YYYY-MM-DD the card describes. Given,
+ *   bins last scanned before it are carried-over work and charged to nobody —
+ *   the same rule the on-screen card applies, so print and screen agree.
  */
 export function cardAssociates(r, opts = {}) {
   // Tolerate the old positional signature (a bare limit) so a stale caller
   // degrades to "no names" rather than crashing on opts.limit of a number.
-  const { limit = 10, names = null } = typeof opts === "number" ? { limit: opts } : opts;
+  const { limit = 10, names = null, day = null } = typeof opts === "number" ? { limit: opts } : opts;
   const gaps = r?.locations?.gaps;
   if (!Array.isArray(gaps) || !gaps.length) return [];
-  return rollUpSkippedByAssociate(gaps).associates
+  return rollUpSkippedByAssociate(gaps, { day }).associates
     .slice(0, limit)
     .map((a) => {
       const resolved = typeof names === "function" ? names(a.win) : null;
@@ -119,15 +123,15 @@ export function cardAssociates(r, opts = {}) {
  */
 export function cardStamp({ sourceUpdate, capturedAt, isToday, detailAsOf } = {}) {
   const src = sourceUpdate?.iso
-    ? new Date(sourceUpdate.iso).toLocaleString()
+    ? withWeekday(new Date(sourceUpdate.iso).toLocaleString(), sourceUpdate.iso)
     : sourceUpdate?.raw || null;
   // A closed-day card's department / associate detail is that day's last
   // current-day reading, a different moment from the summary's stamp.
   const detail = detailAsOf && !Number.isNaN(new Date(detailAsOf).getTime())
-    ? ` · department and associate detail as of ${new Date(detailAsOf).toLocaleString()} (that day's last current-day reading)`
+    ? ` · department and associate detail as of ${withWeekday(new Date(detailAsOf).toLocaleString(), detailAsOf)} (that day's last current-day reading)`
     : "";
   if (src) return `Data as of ${src} (Tableau's last update)${detail}`;
-  if (capturedAt) return `Captured ${new Date(capturedAt).toLocaleString()}${detail}`;
+  if (capturedAt) return `Captured ${withWeekday(new Date(capturedAt).toLocaleString(), capturedAt)}${detail}`;
   return (isToday ? "Current day — capture time unknown" : "Capture time unknown") + detail;
 }
 
@@ -159,7 +163,7 @@ export function buildCardEmail(r, meta = {}, opts = {}) {
     `  Dept ${d.dept}: ${pct(d.pickPct)} pick` +
     (ratio(d.suggestedPicksCompleted, d.suggestedPicks) ? ` (${ratio(d.suggestedPicksCompleted, d.suggestedPicks)})` : ""));
 
-  const assoc = cardAssociates(r, { names: opts.names });
+  const assoc = cardAssociates(r, { names: opts.names, day: meta.day ?? null });
   const assocLines = assoc.map((a) =>
     `  ${a.name || a.win}: ${a.skipped} left in ${a.bins.length} bin${a.bins.length === 1 ? "" : "s"}`);
 
@@ -375,7 +379,7 @@ export function buildPerformanceHtml(r, meta = {}, opts = {}) {
         </tr>`).join("")}</tbody>
     </table>` : "";
 
-  const assoc = cardAssociates(r, { names: opts.names });
+  const assoc = cardAssociates(r, { names: opts.names, day: meta.day ?? null });
   const assocHtml = assoc.length ? `
     <h2>Associates with picks left behind</h2>
     <table>

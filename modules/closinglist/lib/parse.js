@@ -7,6 +7,8 @@
 // shared/dates.js + shared/strings.js in Phase 4, once a second consumer
 // validates the API surface (per docs/MIGRATION_PLAN.md::Phase 4).
 
+import { withWeekday } from "../../../shared/dates.js";
+
 // --- Timestamp parsing ----------------------------------------------------
 // CaseVisibility shift_*_ts strings are length 16. We've inferred the format
 // is "YYYY/MM/DD HH:MM" but accept several common alternates.
@@ -229,7 +231,7 @@ export function render(model, opts) {
   const store = model.storeNbr || opts.storeNbr || "";
   const date = model.businessDate || opts.businessDate || "";
   const lines = [];
-  lines.push(`Closing List — Store ${store} — ${date}`);
+  lines.push(`Closing List — Store ${store} — ${withWeekday(date)}`);
   lines.push("");
   if (model.associates.length === 0) {
     lines.push("(no associates matched the filters)");

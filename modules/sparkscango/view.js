@@ -6,6 +6,7 @@
 
 import { PAGES, STATUS_UNRESOLVED } from "./lib/pages_registry.js";
 import { pickStrategy, runInvestigation, STRATEGY } from "./lib/investigation_bridge.js";
+import { withWeekday } from "../../shared/dates.js";
 
 export async function mount(host, container) {
   const link = document.createElement("link");
@@ -372,7 +373,7 @@ export async function mount(host, container) {
     push("Register",       row.registerNbr);
     push("Shopper",        row.shopperId);
     push("Source status",  row.sourceStatus);
-    if (row.eventTimestamp) f["Event time"] = new Date(row.eventTimestamp).toISOString();
+    if (row.eventTimestamp) f["Event time"] = withWeekday(new Date(row.eventTimestamp).toISOString());
     return f;
   }
 
@@ -390,9 +391,10 @@ export async function mount(host, container) {
     if (!ms) return "—";
     try {
       return new Intl.DateTimeFormat("en-US", {
-        timeZone: tz || undefined, dateStyle: "short", timeStyle: "short",
+        timeZone: tz || undefined, weekday: "short", year: "2-digit",
+        month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit",
       }).format(new Date(ms));
-    } catch { return new Date(ms).toISOString(); }
+    } catch { return withWeekday(new Date(ms).toISOString()); }
   }
   function escapeHtml(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => (

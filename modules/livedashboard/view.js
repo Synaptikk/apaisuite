@@ -6,6 +6,9 @@
 // wires drill-downs for Callouts + CVP.
 
 import { wmWeek } from "../../shared/wmweek.js";
+import { withWeekday } from "../../shared/dates.js";
+import { explainVideoGap } from "./lib/sources/auror.js";
+import { aurorExceptionsEmail } from "./lib/auror_email.js";
 
 export async function mount(host, container) {
   // 1. Inject CSS
@@ -34,8 +37,7 @@ export async function mount(host, container) {
   const drillClose = $("ld-drill-close");
 
   let lastState = null;   // most recent full state; drill-downs read from this
-  let openDrill = null;   // "absences" | "cvp" | "compliance" | "register" | null
-  const openDrillState = { registerShowAll: false };   // per-drill local UI state
+  let openDrill = null;   // "absences" | "cvp" | "compliance" | "auror" | null
 
   // ── State load + paint ──────────────────────────────────────────
   async function reload() {
@@ -60,7 +62,7 @@ export async function mount(host, container) {
     paintAbsences(state.sources.absences, state.freshness.absences);
     paintCvp(state.sources.cvp, state.freshness.cvp);
     paintCompliance(state.sources.compliance, state.freshness.compliance);
-    paintRegister(state.sources.register, state.freshness.register);
+    paintAuror(state.sources.auror, state.freshness.auror);
     paintAccident(state.sources.accident, state.freshness.accident);
   }
 
@@ -164,17 +166,17 @@ export async function mount(host, container) {
     foot.textContent = freshFootWithError(fresh);
   }
 
-  function paintRegister(src, fresh) {
-    const w = $("ld-w-register");
-    const pill = $("ld-w-register-pill");
-    const prim = $("ld-w-register-primary");
-    const sec  = $("ld-w-register-secondary");
-    const foot = $("ld-w-register-foot");
+  function paintAuror(src, fresh) {
+    const w = $("ld-w-auror");
+    const pill = $("ld-w-auror-pill");
+    const prim = $("ld-w-auror-primary");
+    const sec  = $("ld-w-auror-secondary");
+    const foot = $("ld-w-auror-foot");
     if (!w) return;
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "capturing Power BI report…");
+      setLoadingWidget(w, pill, prim, sec, foot, "checking Auror evidence…");
       return;
     }
     if (!c?.counts) {
@@ -188,22 +190,19 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click to pull from Power BI";
+        sec.textContent  = "click Refresh — needs an Auror sign-in";
         foot.textContent = "no data yet";
       }
       return;
     }
     const counts = c.counts;
-    const headlineCount = (counts.r1 ?? 0) + (counts.suspectFlipCount ?? 0);
-    const baseSev = headlineCount === 0 ? "ok"
-                  : counts.high > 0     ? "fail"
+    const baseSev = (counts.flagged ?? 0) === 0 ? "ok"
+                  : counts.flagged >= 3         ? "fail"
                   : "warn";
     w.dataset.sev = fresh?.isStale ? "stale" : baseSev;
     pill.textContent = fresh?.isStale ? "stale" : sevLabel(baseSev);
-    prim.textContent = String(headlineCount);
-    const r1Part = `${counts.r1 ?? 0} unmatched`;
-    const suspPart = counts.suspectFlipCount > 0 ? ` · ${counts.suspectFlipCount} suspect` : "";
-    sec.textContent  = `${r1Part}${suspPart}${counts.high ? ` · ${counts.high} high` : ""}`;
+    prim.textContent = String(counts.flagged ?? 0);
+    sec.textContent  = `${counts.missingVideo ?? 0} short on video · ${counts.missingStatement ?? 0} no stmt · ${counts.missingPhoto ?? 0} no photo`;
     foot.textContent = freshFootWithError(fresh);
   }
 
@@ -348,7 +347,7 @@ export async function mount(host, container) {
     if (kind === "absences")     return renderAbsencesDrill();
     if (kind === "cvp")          return renderCvpDrill();
     if (kind === "compliance")   return renderComplianceDrill();
-    if (kind === "register")     return renderRegisterDrill();
+    if (kind === "auror")        return renderAurorDrill();
     if (kind === "accident")     return renderAccidentDrill();
   }
 
@@ -366,9 +365,9 @@ export async function mount(host, container) {
       const totalAll = (c.records || []).length;
       drillBody.innerHTML = `
         <div class="ld-empty">
-          <strong>No callouts on file for today (${escapeHtml(today || "—")}).</strong>
+          <strong>No callouts on file for today (${escapeHtml(today ? withWeekday(today) : "—")}).</strong>
           <div style="margin-top:6px">IVR pull succeeded but returned no records for the current day${totalAll ? ` (${totalAll} record${totalAll === 1 ? "" : "s"} for other dates in cache)` : ""}.</div>
-          <div style="margin-top:4px">Captured ${escapeHtml(String(captured))}.
+          <div style="margin-top:4px">Captured ${escapeHtml(withWeekday(String(captured)))}.
           If you expect records, the IVR scraper may have landed before the day's first calls came in — click Refresh to retry.</div>
         </div>`;
       return;
@@ -387,7 +386,7 @@ export async function mount(host, container) {
         <td>${escapeHtml(r.job)}</td>
         <td>${escapeHtml(r.absenceType)}</td>
         <td>${escapeHtml(r.absenceReason)}</td>
-        <td>${escapeHtml(r.callDateTime || "")}</td>
+        <td>${escapeHtml(r.callDateTime ? withWeekday(r.callDateTime) : "")}</td>
         <td>${escapeHtml(r.confirmation || "")}</td>
       </tr>
     `).join("");
@@ -402,8 +401,8 @@ export async function mount(host, container) {
         <tbody>${rows}</tbody>
       </table>
       <div class="ld-empty" style="margin-top:6px">
-        ${todayRows.length} record${todayRows.length === 1 ? "" : "s"} for ${escapeHtml(today)} ·
-        captured ${escapeHtml(c.capturedAt || "?")}
+        ${todayRows.length} record${todayRows.length === 1 ? "" : "s"} for ${escapeHtml(withWeekday(today))} ·
+        captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}
       </div>
     `;
   }
@@ -467,8 +466,8 @@ export async function mount(host, container) {
         ${c.counts.withMissing} with missing evidence ·
         ${c.counts.highPriority} high priority (score ≥7) ·
         ${c.counts.agingOpen} aging ≥14 days
-        — source updated ${escapeHtml(c.sourceDataUpdatedOn || "?")},
-        captured ${escapeHtml(c.capturedAt || "?")}
+        — source updated ${escapeHtml(withWeekday(c.sourceDataUpdatedOn || "?"))},
+        captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}
       </div>
       ${sections}
     `;
@@ -533,7 +532,7 @@ export async function mount(host, container) {
       lastState?.storeNbr ? `Store ${lastState.storeNbr}` : null,
       "Safety Observations — last 7 days",
       weekText || null,
-      c.capturedAt ? `(captured ${c.capturedAt.slice(0, 10)})` : null,
+      c.capturedAt ? `(captured ${withWeekday(c.capturedAt.slice(0, 10))})` : null,
     ].filter(Boolean).join(" · ");
 
     const dataHeader = `<h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;color:#4a4a4a">Safety Observations — last 7 days${weekText ? ` · ${escapeHtml(weekText)}` : ""}</h4>`;
@@ -555,7 +554,7 @@ export async function mount(host, container) {
         * ${escapeHtml(fmtDateShort(todayIso))} is the current day — not live; the 7d totals cover the six completed days.
       </div>
       <div class="ld-empty" style="margin-top:2px">
-        Captured ${escapeHtml(c.capturedAt || "?")}${c.capturedAt ? ` (${escapeHtml(fmtAgo(new Date(c.capturedAt).getTime()))})` : ""}${c.replayed ? " · store-filter replay" : ""}
+        Captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}${c.capturedAt ? ` (${escapeHtml(fmtAgo(new Date(c.capturedAt).getTime()))})` : ""}${c.replayed ? " · store-filter replay" : ""}
         ${fresh?.isStale ? " · <strong>stale</strong>" : ""}
         ${fresh?.lastError ? ` · ⚠ last pull failed: ${escapeHtml(String(fresh.lastError).slice(0, 120))}` : ""}
       </div>
@@ -579,7 +578,7 @@ export async function mount(host, container) {
   function fmtDateShort(iso) {
     if (!iso) return "—";
     const [y, m, d] = iso.split("-");
-    return `${Number(m)}/${Number(d)}/${y}`;
+    return withWeekday(`${Number(m)}/${Number(d)}/${y}`, iso);
   }
 
   function isoTodayLocal() {
@@ -610,99 +609,61 @@ export async function mount(host, container) {
     return map[field] || field;
   }
 
-  function renderRegisterDrill() {
-    drillTitle.textContent = "Register Exceptions — theft + high-risk misses";
-    const c = lastState?.sources?.register?.cache;
-    if (!c?.findings) {
+  function renderAurorDrill() {
+    drillTitle.textContent = "Auror Exceptions — events missing evidence";
+    const c = lastState?.sources?.auror?.cache;
+    if (!c?.records) {
       drillBody.innerHTML = `
         <div class="ld-empty">
-          <strong>No register data yet.</strong>
-          <div style="margin-top:6px">Click <em>Refresh</em> to pull from Power BI.
-          The first pull opens the report in a background tab; subsequent pulls poll every 6h.</div>
+          <strong>No Auror evidence data yet.</strong>
+          <div style="margin-top:6px">Click <em>Refresh</em>. Needs a signed-in Auror tab
+          (the token is captured automatically from your own Auror browsing).</div>
         </div>`;
       return;
     }
-    const findings = c.findings || [];
-    // SURFACE: R1 unmatched + low-confidence flips (suspect concealed loss)
-    const surface = findings.filter((f) => f.displayPriority === "primary");
-    surface.sort((a, b) => {
-      // High severity first; then largest amount; then date desc
-      const sevRank = { high: 0, medium: 1, low: 2 };
-      const sr = sevRank[a.severity] - sevRank[b.severity];
-      if (sr !== 0) return sr;
-      const ar = Math.abs(a.primaryAmountCents) - Math.abs(b.primaryAmountCents);
-      if (ar !== 0) return -ar;
-      return (b.primaryDate || "").localeCompare(a.primaryDate || "");
-    });
-    const watch = findings.filter((f) => f.displayPriority === "watch");
-    const noise = findings.filter((f) => f.displayPriority === "noise");
+    const flagged = (c.records || []).filter((r) => r.missing.length > 0);
+    flagged.sort((a, b) => (b.occurredAt || "").localeCompare(a.occurredAt || ""));
 
-    const showAll = openDrillState.registerShowAll === true;
-    const visible = showAll ? findings : surface.concat(watch);
-
-    const rowsHtml = visible.map((f) => {
-      const sevColor = f.severity === "high" ? "fail" : f.severity === "medium" ? "warn" : "ok";
-      const matchSummary = f.matchType === "none"
-        ? `<span class="ld-cvp-pct" data-sev="fail" style="font-size:12px">UNMATCHED</span>`
-        : f.matchType === "nearby-register-offset"
-          ? `<span style="color:#6f6f6f">reg ${escapeHtml(f.matchedAgainst[0]?.registerNbr || "?")} ${escapeHtml(fmtAmount(f.matchedAgainst[0]?.amountCents))} (${escapeHtml(String(f.matchedAgainst[0]?.daysApart))}d)</span>`
-          : `<span style="color:#6f6f6f">same reg, ${escapeHtml(String(f.matchedAgainst[0]?.daysApart))}d apart</span>`;
-      const confTxt = f.matchType === "none" ? "—" : `${Math.round((f.flipConfidence || 0) * 100)}%`;
-      const ops = (f.primaryOperators || []).map((o) => escapeHtml(o.operatorId)).join(", ") || "—";
+    const rowsHtml = flagged.map((r) => {
+      const missingBits = r.missing.map((m) => ({
+        photo:     "Photo",
+        statement: "Statement",
+        // explainVideoGap names the absent angle when the clip file names allow
+        // it, and falls back to the bare count when they don't.
+        video:     `Video (${explainVideoGap(r).short})`,
+      }[m] || m));
+      const sev = r.missing.length >= 2 ? "fail" : "warn";
       return `
         <tr>
-          <td>${escapeHtml(f.primaryDate)}</td>
-          <td>${escapeHtml(f.primaryRegister)}</td>
-          <td><span class="ld-cvp-pct" data-sev="${sevColor}" style="font-size:12px">${escapeHtml(fmtAmount(f.primaryAmountCents))}</span></td>
-          <td>${matchSummary}</td>
-          <td>${escapeHtml(confTxt)}</td>
-          <td>${escapeHtml(f.severity)}</td>
-          <td>${ops}</td>
+          <td>${escapeHtml(withWeekday((r.occurredAt || "").slice(0, 10)))}</td>
+          <td><a href="https://app.us.auror.co/event/${encodeURIComponent(r.eventId)}" target="_blank" rel="noopener">${escapeHtml(r.title || "e" + r.eventId)}</a></td>
+          <td>${escapeHtml(r.people || "—")}</td>
+          <td>${r.totalValue != null ? "$" + Number(r.totalValue).toFixed(2) : "—"}</td>
+          <td><span class="ld-cvp-pct" data-sev="${sev}" style="font-size:12px">${escapeHtml(missingBits.join(", "))}</span></td>
         </tr>`;
     }).join("");
 
-    const captured = c.capturedAt ? new Date(c.capturedAt).toLocaleString() : "?";
-    const stale = c.replayed ? " (live replay)" : " (capture)";
-
+    const captured = c.capturedAt ? withWeekday(new Date(c.capturedAt).toLocaleString(), c.capturedAt) : "?";
     drillBody.innerHTML = `
       <div class="ld-empty" style="margin-bottom:6px">
-        <strong>${surface.length}</strong> primary
-        ${watch.length ? `· ${watch.length} watch` : ""}
-        ${noise.length ? `· ${noise.length} likely-flip (hidden)` : ""}
-        — ${c.cellCount ?? c.discrepancies?.length ?? "?"} cells, ${c.shiftCount ?? 0} shifts
-        · ${escapeHtml(captured)}${stale}
-        <label style="margin-left:12px;font-size:11px;cursor:pointer">
-          <input type="checkbox" id="ld-reg-show-all" ${showAll ? "checked" : ""}> show all
-        </label>
+        <strong>${flagged.length}</strong> of ${c.records.length} events in the last ${c.days ?? "?"} days
+        are missing required evidence (photo, statement, or the 3 video clips: theft, door, office)
+        · store ${escapeHtml(c.storeNbr || "?")} · ${escapeHtml(captured)}
       </div>
       <table class="ld-table">
         <thead>
-          <tr>
-            <th>Date</th>
-            <th>Reg</th>
-            <th>Amount</th>
-            <th>Match</th>
-            <th>Flip&nbsp;Conf</th>
-            <th>Sev</th>
-            <th>Operator(s)</th>
-          </tr>
+          <tr><th>Date</th><th>Event</th><th>People</th><th>Value</th><th>Missing</th></tr>
         </thead>
-        <tbody>${rowsHtml || `<tr><td colspan="7" class="ld-empty" style="text-align:center;padding:16px">No findings to surface — nothing flagged as theft or high-risk miss. ${noise.length ? `Toggle "show all" to see ${noise.length} likely flips.` : ""}</td></tr>`}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="5" class="ld-empty" style="text-align:center;padding:16px">Every event in the window has a photo, a statement, and 3+ video clips. 🎉</td></tr>`}</tbody>
       </table>
+      <div class="ld-empty" style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <span style="flex:1 1 auto">Click an event to open it in Auror.</span>
+        <button type="button" class="btn btn-sm" data-ld-copy data-ld-copy-builder="auror-exceptions-email"
+          title="Copy an email-ready report that spells out which clip each event is missing">Copy for email</button>
+        <button type="button" class="btn btn-sm" data-ld-email="auror-exceptions"
+          title="Open a new Outlook draft with the report">Open in Outlook</button>
+      </div>
     `;
-
-    // Wire show-all toggle
-    const toggle = $("ld-reg-show-all");
-    if (toggle) toggle.addEventListener("change", (ev) => {
-      openDrillState.registerShowAll = ev.target.checked;
-      renderRegisterDrill();
-    });
-  }
-
-  function fmtAmount(cents) {
-    if (cents == null) return "—";
-    const sign = cents < 0 ? "-" : "+";
-    return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
   }
 
   function renderComplianceDrill() {
@@ -724,7 +685,7 @@ export async function mount(host, container) {
       return `
         <tr class="ld-row-clickable" data-task-idx="${i}" title="Open in Enviance">
           <td><span class="ld-cvp-pct" data-sev="${sev}" style="font-size:12px">${escapeHtml(dueDesc)}</span></td>
-          <td>${escapeHtml(t.dueDate || "?")}</td>
+          <td>${escapeHtml(t.dueDate ? withWeekday(t.dueDate) : "?")}</td>
           <td>${escapeHtml(t.taskName)}</td>
           <td>${escapeHtml(t.category)}</td>
           <td>${escapeHtml(t.facility)}</td>
@@ -740,7 +701,7 @@ export async function mount(host, container) {
       </table>
       <div class="ld-empty" style="margin-top:6px">
         ${c.tasks.length} task${c.tasks.length === 1 ? "" : "s"} ·
-        captured ${escapeHtml(c.capturedAt || "?")}${c.fromReplay ? " (live replay)" : " (from page bootstrap)"}
+        captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}${c.fromReplay ? " (live replay)" : " (from page bootstrap)"}
         · click a row to open in Enviance
       </div>
     `;
@@ -846,9 +807,12 @@ export async function mount(host, container) {
   // scraping the DOM. Without a builder a button falls back to table TSV.
   const COPY_BUILDERS = {
     "safety-obs-chat": () => safetyObsChatText(lastState),
+    "auror-exceptions-email": () => aurorExceptionsEmail(lastState?.sources?.auror?.cache).body,
   };
 
   async function onDrillCopy(ev) {
+    const mail = ev.target.closest("[data-ld-email]");
+    if (mail) { onOpenOutlook(mail); return; }
     const btn = ev.target.closest("[data-ld-copy]");
     if (!btn) return;
     const builder = COPY_BUILDERS[btn.dataset.ldCopyBuilder];
@@ -866,6 +830,30 @@ export async function mount(host, container) {
     if (!text) return;
     const ok = await copyText(text);
     flashButton(btn, ok ? "Copied ✓" : "Copy failed");
+  }
+
+  // Same deeplink closinglist uses. Outlook's compose URL is the only route
+  // that survives without a mail client registered; over ~8k it silently
+  // truncates, so fall back to the clipboard and say so.
+  function onOpenOutlook(btn) {
+    const { subject, body } = aurorExceptionsEmail(lastState?.sources?.auror?.cache);
+    if (!body) { flashButton(btn, "Nothing to send"); return; }
+    const url = `https://outlook.office.com/mail/deeplink/compose` +
+      `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // A full month of exceptions is ~9k once URL-encoded, so the body does not
+    // fit a compose deeplink and never will at this size. Rather than fail,
+    // put the report on the clipboard and open a draft that already has the
+    // subject and recipients line ready, so it is one Ctrl+V from sent.
+    if (url.length > 8000) {
+      const subjectOnly = `https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(subject)}`;
+      copyText(body).then((ok) => {
+        if (ok) host.tabs.create({ url: subjectOnly });
+        flashButton(btn, ok ? "Draft opened — press Ctrl+V" : "Copy failed");
+      });
+      return;
+    }
+    host.tabs.create({ url });
+    flashButton(btn, "Opening Outlook…");
   }
 
   // Chat-shaped: one short line per day, no leading-space alignment and no
@@ -981,8 +969,8 @@ export async function mount(host, container) {
       else                lines.push(`Absences: ${shortErr(r.absences?.error)}`);
       if (r.compliance?.ok) lines.push(`Compliance ${r.compliance.counts?.overdue ?? 0} overdue / ${r.compliance.counts?.dueSoon ?? 0} soon`);
       else                  lines.push(`Compliance: ${shortErr(r.compliance?.error)}`);
-      if (r.register?.ok)   lines.push(`Register ${r.register.counts?.r1 ?? 0} unmatched / ${r.register.counts?.suspectFlipCount ?? 0} suspect`);
-      else                  lines.push(`Register: ${shortErr(r.register?.error)}`);
+      if (r.auror?.ok)      lines.push(`Auror ${r.auror.counts?.flagged ?? 0} missing evidence`);
+      else                  lines.push(`Auror: ${shortErr(r.auror?.error)}`);
       if (r.accident?.ok)   lines.push(`Accident ${r.accident.counts?.withMissing ?? 0} with missing / ${r.accident.counts?.highPriority ?? 0} high`);
       else                  lines.push(`Accident: ${shortErr(r.accident?.error)}`);
       if (r.recognition?.ok) {

@@ -24,6 +24,7 @@ import { WRITER_SOURCE, SCHEMA_VERSION } from "./config.js";
 const METRIC_COLUMNS = [
   "Pick Date", "Store #",
   "Min. First Scan",
+  "Max. Last Scan",   // early stops (data/first_pick.js); the Excel column and Tableau's MAX(Last Scan)
   "FTP Expected", "FTP Actual", "Pick Rate", "Pick Hours",
   "Picked As Req Qty", "Substitution Qty", "Nil Pick Qty",
   "Exception Qty Req to Pick", "Exception Picked As Req Qty",

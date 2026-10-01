@@ -19,6 +19,7 @@
 //   CandidateMatch = { trip, confidence, rationale[], ambiguity[], metrics }
 
 import { computeInStoreWindow } from "./trip.js";
+import { withWeekday } from "../../../shared/dates.js";
 
 export const CONFIDENCE = Object.freeze({
   VERIFIED:    "VERIFIED",
@@ -62,7 +63,7 @@ export function assessConfidence(trip, context = {}) {
 
   if (!win.hasEvents) {
     if (win.arrivedMs) {
-      const arrivedIso = new Date(win.arrivedMs).toISOString();
+      const arrivedIso = withWeekday(new Date(win.arrivedMs).toISOString());
       rationale.push(`Trip in progress — shopper ${win.arrivalSource} at ${arrivedIso}; no PICKED/DISPATCHED yet`);
       ambiguity.push("In-store window is open-ended (arrival → now); register time not yet bracketed");
     } else {

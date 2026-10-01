@@ -33,6 +33,7 @@ export default {
     permissions: {
       needs: ["storage", "tabs", "scripting", "webRequest"],
       hosts: ["https://safeiq.stage.walmart.net/*", "https://safeiq.walmart.net/*",
+              "https://timesheet.cloud.wal-mart.com/*", "https://teams.wal-mart.com/*",
               "https://safeiqcv.stage.walmart.net/*", "https://safeiqcv.walmart.net/*"],
     },
     contentScripts: [],

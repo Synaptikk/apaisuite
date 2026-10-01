@@ -4,6 +4,8 @@
 // digest + statements. No AI involved — this is a re-arrangement of the
 // claim's own words so the analyst can read one paragraph per claim.
 
+import { withWeekday } from "../../../shared/dates.js";
+
 export function composeSummary(digest, stmts = []) {
   if (!digest) return "";
   const bits = [];
@@ -12,7 +14,7 @@ export function composeSummary(digest, stmts = []) {
   const kind = [digest.cause, digest.causeDetail && digest.causeDetail !== digest.cause ? `(${cleanDetail(digest.causeDetail)})` : ""]
     .filter(Boolean).join(" ");
   const where = [digest.spot, digest.area].filter(Boolean).join(", ");
-  const when = [digest.lossDate, digest.lossTime].filter(Boolean).join(" at ");
+  const when = [digest.lossDate && withWeekday(digest.lossDate), digest.lossTime].filter(Boolean).join(" at ");
 
   let lead = who;
   if (kind) lead += ` — ${kind}`;

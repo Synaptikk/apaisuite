@@ -502,6 +502,7 @@ export function scanLedger(entries) {
       } else if ((prev.lastSeenAt || null) !== (b.lastSeenAt || null)) {
         rows.push({
           kind: "scan", at, scanAt: b.lastSeenAt || null, win: b.win || null, prevWin: prev.win || null,
+          prevScanAt: prev.lastSeenAt || null,
           due: b.seen, done: b.done, dDue: b.seen - prev.seen, dDone: b.done - prev.done,
           carriedOpen: Math.max(0, prev.seen - prev.done), firstToday: !isScannedToday(prev, prevEntry),
         });
@@ -585,10 +586,15 @@ export function scanImpact(entries, groupOf) {
       });
     }
   }
+  // SAME DAY ONLY. Tableau's bin list carries each bin's LAST scanner whenever
+  // that scan happened, so a bin untouched since Sunday still reads "Dazaray"
+  // on Monday — and charging Monday's leftovers to someone who was not in the
+  // building is an accusation the report owner would rightly throw out
+  // (2026-09-29). Those picks are carried-over work and belong to no one.
   const last = list[list.length - 1];
   for (const x of last?.bins || []) {
     const open = x.seen - x.done;
-    if (open > 0 && x.win) { const r = bump(nameOf(x.win)); r.openAtClose += open; r.binsOpenAtClose++; }
+    if (open > 0 && x.win && isScannedToday(x, last)) { const r = bump(nameOf(x.win)); r.openAtClose += open; r.binsOpenAtClose++; }
   }
   const rate = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : null);
   for (const r of groups.values()) r.rescanRate = rate(r.rescansGained, r.rescans);
@@ -610,6 +616,51 @@ export function scanImpact(entries, groupOf) {
  * Order is by Tableau data time, not capture time: a merged day interleaves
  * captures made by two installs at different moments.
  */
+/**
+ * Who the day's picks actually grew under, per ASSOCIATE.
+ *
+ * The Associates card ranks people by `openAtClose` — the bin's outstanding
+ * picks charged to whoever scanned it LAST. A digital associate who scans a
+ * bin at 21:40 inherits everything the stocking crew left at 14:00, which is
+ * how one picker ends up owning 88 picks they never caused.
+ *
+ * This is the other number: a scan is credited only with the GROWTH that
+ * appeared under it. If Shane leaves a bin at 12 he owns 12; when Matt scans
+ * it next and it reads 14, Matt owns 2, not 14.
+ *
+ * Deliberately implemented as scanImpact() grouped by WIN rather than by job
+ * group, so this can never disagree with the progression tab's totals — the
+ * same bin-vs-its-own-previous-appearance walk produces both.
+ *
+ * @param {Array} entries  one day's updates, oldest Tableau data first
+ * @returns {{ byWin: Map<string, {win, caused, scans, rescans, firstScans,
+ *             openAtClose, binsOpenAtClose}>,
+ *             unscanned: {bins, gained, picks, rate},
+ *             causedTotal: number }}
+ *   `unscanned` is growth on bins nobody rescanned between updates — nobody
+ *   was on it, so it belongs to no one and is reported, not apportioned.
+ */
+export function causedByAssociate(entries) {
+  const { groups, idle } = scanImpact(entries, (win) => win);
+  const byWin = new Map();
+  let causedTotal = 0;
+  for (const g of groups) {
+    // scanImpact files a scan with no WIN under "Unknown"; it is not a person.
+    if (!g.group || g.group === "Unknown") continue;
+    byWin.set(g.group, {
+      win: g.group,
+      caused: g.picksAdded,
+      scans: g.scans,
+      rescans: g.rescans,
+      firstScans: g.firstScans,
+      openAtClose: g.openAtClose,
+      binsOpenAtClose: g.binsOpenAtClose,
+    });
+    causedTotal += g.picksAdded;
+  }
+  return { byWin, unscanned: idle, causedTotal };
+}
+
 export function cleanDay(entries) {
   const list = [...(entries || [])];
   if (list.length < 2) return { entries: list, foreign: [], duplicates: 0 };
@@ -639,7 +690,11 @@ export function cleanDay(entries) {
 /** CSV of scanLedger(): one line per bin event, for the report owner. */
 export function ledgerCsv(ledger, { person } = {}) {
   const head = ["bin", "event", "tableau_update", "scan_time", "scanner_win", "scanner_name", "scanner_job",
-    "previous_scanner_win", "previous_scanner_name", "picks_done", "picks_due", "due_change", "done_change", "open_carried_over", "first_scan_today"];
+    "previous_scanner_win", "previous_scanner_name", "picks_done", "picks_due", "due_change", "done_change", "open_carried_over", "first_scan_today",
+    // Last column so a reader's saved column order does not shift: it is what
+    // says whether a handover happened on this day or is carried over from an
+    // earlier one (2026-09-29).
+    "previous_scan_time"];
   const lines = [head.join(",")];
   const who = (win) => (win && typeof person === "function" ? (person(win) || {}) : {});
   for (const bin of ledger || []) {
@@ -649,6 +704,7 @@ export function ledgerCsv(ledger, { person } = {}) {
         bin.location, r.kind, r.at, r.scanAt ?? "", r.win ?? "", p.name ?? "", p.job ?? "",
         r.prevWin ?? "", q.name ?? "", r.done, r.due, r.dDue ?? "", r.dDone ?? "",
         r.kind === "scan" ? r.carriedOpen : "", r.kind === "scan" ? (r.firstToday ? "yes" : "no") : "",
+        r.prevScanAt ?? "",
       ].map(csvCell).join(","));
     }
   }

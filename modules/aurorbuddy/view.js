@@ -18,6 +18,7 @@
 //     the donor's ⏱ Scan timings panel
 
 import { mergeTimings } from "./lib/timings.js";
+import { withWeekday } from "../../shared/dates.js";
 
 export async function mount(host, container) {
   // ── 1. Inject stylesheet ────────────────────────────────────────────
@@ -693,7 +694,7 @@ export async function mount(host, container) {
               <td class="mono">POS ${escapeHtml(t.register)}</td>
               <td class="mono">${escapeHtml(t.trans_no)}</td>
               <td class="mono txt-right bold">$${escapeHtml(t.amount)}</td>
-              <td>${escapeHtml(t.datetime)}</td>
+              <td>${escapeHtml(withWeekday(t.datetime))}</td>
               <td class="txt-center">${links}</td>
             </tr>`;
         });
@@ -835,7 +836,7 @@ export async function mount(host, container) {
       }
       awaitingCard.classList.remove("hidden");
       awaitingBody.innerHTML = rows.map((r) => {
-        const ts = r.createdAt ? new Date(r.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+        const ts = r.createdAt ? new Date(r.createdAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
         const cand = (r.transactionTotalCandidate != null)
           ? `$${Number(r.transactionTotalCandidate).toFixed(2)}`
           : "—";

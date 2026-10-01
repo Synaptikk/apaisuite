@@ -7,6 +7,7 @@
     <div class="cx-toolbar">
       <span class="cx-freshness" data-freshness>no data yet</span>
       <button class="cx-linkbtn" data-action="open-settings">Settings</button>
+      <button class="cx-linkbtn" data-action="export-pdf">Export PDF</button>
       <button class="btn" data-action="refresh-full" title="Re-read the whole window from Medallia — eight requests, about two minutes">
         Full pull
       </button>
@@ -30,6 +31,25 @@
     </div>
     <div class="cx-score-row" data-score-row>
       <p class="cx-empty">Click Refresh to read the scorecard.</p>
+    </div>
+  </section>
+
+  <!-- ── The rest of the market. Scores only: Medallia scopes comments to the
+           role, and a Store Manager role sees exactly one store, so there is no
+           market-wide comment data to be had. Said plainly in the panel rather
+           than implied by its absence. ── -->
+  <section class="cx-panel cx-market" data-market-panel>
+    <div class="cx-panel-head">
+      <h2>The market</h2>
+      <span class="cx-panel-sub" data-market-sub></span>
+      <button class="cx-linkbtn" data-action="pull-market">Read the market</button>
+    </div>
+    <div class="cx-market-body" data-market-body>
+      <p class="cx-empty">
+        <strong>Read the market</strong> pulls NPS and the eight sub-scores for every store
+        in your market from the same Hoops scorecard — about a minute. Scores only: the
+        comment analysis below stays your store, because Medallia only shows you yours.
+      </p>
     </div>
   </section>
 
@@ -65,6 +85,7 @@
   <section class="cx-panel cx-narrative" data-narrative-panel hidden>
     <div class="cx-panel-head">
       <h2>The read</h2>
+      <span class="cx-panel-sub">this store's comments only</span>
       <span class="cx-panel-stamp" data-narrative-stamp></span>
       <button class="cx-linkbtn" data-action="narrate">Write it up</button>
       <button class="cx-linkbtn" data-action="narrate-force" hidden>Regenerate</button>
@@ -75,7 +96,10 @@
         <strong>Write it up</strong> sends the ranked themes, the movement figures and a
         handful of verbatims to Walmart's internal AI gateway and gets back a written
         summary. Every number in it is one already on this page — the model is told to
-        use the figures it is given and not to derive any.
+        use the figures it is given and not to derive any. It covers
+        <strong>this store's comments only</strong>: the market scoreboard above is scores,
+        and Medallia shows you one store's comments, so there is no other store's feedback
+        for it to read.
       </p>
     </div>
   </section>
@@ -172,17 +196,60 @@
       </p>
     </div>
     <div class="cx-setting">
-      <label for="cx-gateway-token">AI gateway token</label>
-      <input id="cx-gateway-token" type="password" data-setting-token
-             placeholder="paste your Code Puppy token" autocomplete="off" spellcheck="false">
-      <span class="cx-token-status" data-token-status></span>
+      <label>AI gateway</label>
+      <div class="cx-signin-row">
+        <button class="btn btn-primary" data-action="signin-gateway">Sign in</button>
+        <button class="cx-linkbtn" data-action="signout-gateway" hidden>Sign out</button>
+        <span class="cx-token-status" data-token-status></span>
+      </div>
       <p class="cx-setting-hint">
-        Only needed for <strong>The read</strong>. It is the <code>puppy_token</code> from
-        <code>~/.code_puppy/puppy.cfg</code> — an extension cannot read that file, so it has
-        to be pasted. Stored on this device only, never sent anywhere except
-        <code>puppy-backend.walmart.com</code>, and it expires every few weeks.
+        Only needed for <strong>The read</strong>. <strong>Sign in</strong> opens the gateway's
+        own sign-in page and picks the token up automatically when you finish — the same page
+        and the same token Code Puppy uses, so signing in here does not disturb it.
+      </p>
+      <p class="cx-setting-hint">
+        <strong>That page may flash “Authentication failed — make sure your CLI is
+        running”. Ignore it.</strong> It is trying to hand the token to the Code Puppy CLI on
+        port 8090; if your CLI is not running that hand-off fails, but this extension has
+        already read the token and will close the tab. The status above is what to go by.
+      </p>
+      <p class="cx-setting-hint">
+        The token is stored on this device only, is never sent anywhere except
+        <code>puppy-backend.walmart.com</code>, and expires every few weeks; sign in again when
+        it does.
+      </p>
+      <div class="cx-setting-alt-row">
+        <label class="cx-filebtn">
+          Load from puppy.cfg
+          <input type="file" data-setting-cfg accept=".cfg,.ini,.txt,.conf" hidden>
+        </label>
+        <span class="cx-setting-hint">
+          Pick <code>.code_puppy\puppy.cfg</code> in your user folder and the token is read
+          straight out of it. An extension cannot open files on its own — but it can read one you
+          hand it, and that beats copying a 1,900-character token by hand.
+        </span>
+      </div>
+
+      <details class="cx-setting-alt">
+        <summary>Paste a token instead</summary>
+        <input id="cx-gateway-token" type="password" data-setting-token
+               placeholder="paste the puppy_token from ~/.code_puppy/puppy.cfg"
+               autocomplete="off" spellcheck="false">
+      </details>
+    </div>
+    <div class="cx-setting">
+      <label for="cx-gateway-version">Client version sent to the gateway</label>
+      <input id="cx-gateway-version" type="text" data-setting-version
+             placeholder="0.1.70" autocomplete="off" spellcheck="false">
+      <p class="cx-setting-hint">
+        Sent as <code>x-puppy-version</code>. The gateway refuses clients below a floor —
+        and refuses a request with no version at all — answering with
+        "your Code Puppy CLI is out of date" instead of a result. Measured 2026-09-25:
+        <strong>0.1.61 is blocked, 0.1.70 and above pass.</strong> Leave it blank to use the
+        default; raise it if the gateway starts refusing again.
       </p>
     </div>
+
     <div class="cx-setting">
       <label for="cx-gateway-model">Model</label>
       <select id="cx-gateway-model" data-setting-model>

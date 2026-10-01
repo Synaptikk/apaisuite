@@ -16,6 +16,7 @@ import {
   METRIC_SORTS, DEFAULT_SORT,
 } from "./lib/sorting.js";
 import { barChartSvg, EXPORT_PALETTE } from "./lib/pick_chart.js";
+import { withWeekday } from "../../shared/dates.js";
 
 const UI_PREFS_KEY = "ui.v1";
 
@@ -521,8 +522,8 @@ export async function mount(host, container) {
       : `${snap.dataAge?.text || "captured"} · ${relAge(age)}`;
     el.dataset.state = failed ? "error" : stale ? "stale" : "ok";
     el.title = [
-      snap.refreshedAtFull ? `Board last read GRT: ${snap.refreshedAtFull}` : "",
-      `This browser fetched: ${new Date(snap.capturedAt).toLocaleString()}`,
+      snap.refreshedAtFull ? `Board last read GRT: ${withWeekday(snap.refreshedAtFull)}` : "",
+      `This browser fetched: ${withWeekday(new Date(snap.capturedAt).toLocaleString(), snap.capturedAt)}`,
       snap.dataAge?.tooltip || "",
       snap.via ? `Fetched ${snap.via === "tab" ? "via a background tab" : "directly"}` : "",
     ].filter(Boolean).join("\n");
@@ -537,10 +538,10 @@ export async function mount(host, container) {
     if (stamp) {
       stamp.textContent = snap?.refreshedAt || "—";
       stamp.title = snap?.refreshedAtFull
-        ? `The board last read GRT at ${snap.refreshedAtFull}. This is the source's own stamp, not when this browser fetched.`
+        ? `The board last read GRT at ${withWeekday(snap.refreshedAtFull)}. This is the source's own stamp, not when this browser fetched.`
         : "";
     }
-    if (sub) sub.textContent = snap ? [snap.granularity, snap.reportDateFmt].filter(Boolean).join(" · ") : "";
+    if (sub) sub.textContent = snap ? [snap.granularity, snap.reportDateFmt && withWeekday(snap.reportDateFmt)].filter(Boolean).join(" · ") : "";
 
     if (!tiles) return;
     if (!snap) {
@@ -863,7 +864,7 @@ export async function mount(host, container) {
     body.innerHTML = `
       <p><strong>${esc(dbg.kind || "ERROR")}</strong> — ${esc(dbg.error || "")}</p>
       <p class="dmr-debug-fix">${esc(adviceFor(dbg))}</p>
-      <p><code>market ${esc(dbg.market || "—")}</code> · <code>${esc(new Date(dbg.at).toLocaleString())}</code></p>`;
+      <p><code>market ${esc(dbg.market || "—")}</code> · <code>${esc(withWeekday(new Date(dbg.at).toLocaleString(), dbg.at))}</code></p>`;
   }
 
   // ── Prefs ───────────────────────────────────────────────────────

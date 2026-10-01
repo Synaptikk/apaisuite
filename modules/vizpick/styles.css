@@ -896,3 +896,12 @@
 .module-vizpick .vizpick-case-sub td:first-child { padding-left: 22px; white-space: normal; max-width: 420px; }
 .module-vizpick .vizpick-case-steps { margin: 4px 0 10px; padding-left: 20px; font-size: 12px; line-height: 1.55; max-width: 95ch; }
 .module-vizpick .vizpick-case-steps li + li { margin-top: 3px; }
+
+/* "Caused" — picks that grew while this associate was the bin's scanner, shown
+   beside the last-scanner "picks left" figure so the two can be compared. */
+.vizpick-assoc-caused {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-muted, #6f6f6f);
+  white-space: nowrap;
+}

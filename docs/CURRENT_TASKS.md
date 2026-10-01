@@ -10,6 +10,343 @@ notes live in `QRCallBox/public/extension/releases.json`.
 
 ## In-flight
 
+### 000. Safety Agent: who was on the clock when an alert went out (2026-10-01)
+
+**Asked:** use the alert time + GTA punches to see who was clocked in and did
+not accept; the Store Systems SharePoint camera list says which team gets
+each camera's alert first (3 min, then all TLs + coaches).
+
+**Built:** `modules/safetyagent` "Who was on the clock" section +
+`get_oncall` / `pull_oncall`. Camera → team from the SharePoint list
+(`lib/camteams.js`, new `teams.wal-mart.com` host permission), whole-store
+punches per day from GTA (`lib/gta_store.js`, store team load, ~20 s/day,
+cached locally 60 days), job titles from the Digital Metrics schedule
+(read-only import of its `firestore.js`). Join + roll-ups in `lib/oncall.js`
+(tested, `node --test modules/safetyagent/lib/oncall.test.mjs`). Verified
+live in debug Edge over 2026-09-06 → 10-01.
+
+**Open:** (1) does the camera team's own TL get wave 1? Currently leads are
+wave 2 only. Data says leads/coaches take 70% of accepts, 720 of them inside
+3 min, often on other teams' cameras. (2) Front End wave 1 includes checkout
+cashiers. (3) 1458 schedule docs for 09-06..09-11 hold store 5151's roster;
+handled by falling back to each associate's other days, not repaired.
+
+### 00. Digital Metrics "Pick Hours" tab: the Rollup day graph, kept per day (2026-09-27)
+
+**Asked:** "the daily picks per hour graph, let's begin saving those metrics
+for my store 1458 only; I would like to view previous days' history on the
+Digital Metrics module."
+
+**Built:** Digital Rollup's pull (`modules/digitalrollup/service.js::pull`)
+now upserts each tracked store's `hourlyBars` into a per-board-day archive
+(`lib/pick_days.js`, key `digitalrollup.pickDays.v1`, 120 days per store,
+merge keeps measured hours across a mid-day series reset). The rolling
+series still tracks the HOME store only, which is 1458 here. Digital Metrics
+gained a `get_pick_days` handler and a "Pick Hours" tab
+(`lib/pages/pickhours.js`): day picker, stat row, the same SVG bar chart the
+Rollup card draws (`digitalrollup/lib/pick_chart.js`, big mode with values on
+bars), and a days × hours table (bold = peak, `~` = inside the averaged
+before-recording block, `·` = no reading).
+
+**Open:** recording only started 2026-09-27, so history builds from here
+(this browser only; Auto refresh in Digital Rollup must stay on). Backfilling
+earlier days from Tableau MetricOverviewandHourly is possible but not done.
+Verified with node tests and a static render harness; not yet exercised in
+the loaded extension.
+
+### 0. Digital Metrics: pick starts AND stops, total late per associate (2026-09-27)
+
+**Asked:** "is late start checking clock-in punches properly?", then "total
+late per associate if they're scheduled to pick", then early stops: "scheduled
+to pick 4-5pm, last pick 4:15, clocked out 4:51".
+
+**Checked:** the punch path is sound. Against real 1458 data (7 days, 115
+timesheet matches, 801 shift-days) every first-hour picker with a resolved
+name had a clock-in; the only gaps were unresolved board names (four of
+them) and today's shifts not yet started. No clock
+lateness outside −120..+180 min anywhere.
+
+**Changed** (`lib/data/first_pick.js`, `lib/pages/insights.js`): the
+population is everyone with a Pick slot (`scheduledPickers`); per associate
+`totalLate` = late clock-in minutes summed over the week, `totalEarlyOut` =
+clock-out before scheduled end, `totalEndGap` = last pick → scheduled end
+when the LAST hour is Pick (a last scan >3 h early is "moved off picking",
+not an early stop). First-pick figures stay first-hour-Pick only. The
+Insights section is now "Pick starts and stops", sorted by total late.
+
+**Rules added later the same day:** a 9-minute grace on both punches
+(`CLOCK_GRACE_MIN`: a clock-in ≤9 late or a clock-out ≤9 early is not
+counted; over it, the full minutes count), and lost pick time measured from
+clock-in + 3 min (`PICK_START_GRACE_MIN`). Table headers sort
+(`ui.startsSort` / `ui.startsRev`, leaderboard convention). The per-day
+detail is a fixed-column grid per person (`.dm-daily`, sub-header shown on
+the first row only) — the sentence-per-day version wrapped unreadably.
+
+**Per-associate TOTAL (user, later 2026-09-27):** start gap + end gap,
+where the 3-minute figure is a cutoff, not a deduction ("in 7:00, first
+pick 7:20 → +20; last pick 3:15, out 3:50 → +35; 55 total"). Gaps are
+measured against the person's PICK BLOCK (first Pick slot → last Pick
+slot): from the clock-in / to the clock-out when the block starts / ends
+the shift (breaks and the "30" tail aside), else from / to the block's own
+slots. This is what made one associate's 9/22 visible — DISP all day, Pick 6–8pm,
+last pick 6:30 — and why some "last pick" cells are blank: that person's
+last hour was DISP/STAGE, so no end figure applies. The 3-hour "moved to
+another job" caps on both ends are gone; the board's Pick block is the
+guard now. The daily sub-header rides inside the outer sticky header
+(`table()` gained `labelHtml`), so it holds while rows scroll.
+
+**Refined once more (another 9/22 shift):** gaps count only minutes inside the
+person's scheduled PICK HOURS (`pickRanges`, merged slot runs), so DISP
+hours between two Pick blocks are not charged; when the Pick hours open /
+close the shift, minutes between the punch and the block count too. The
+grid shows the Pick hours per day ("8a–10a, 3p–4p"); the week cards read
+in hours with the minutes in the note.
+
+**Meals and the 50-minute line (user, 2026-09-27, last):** the punched
+meal window (`mealOut`/`mealIn`, already stored by syncClockIns) is taken
+out of any gap it falls in, wherever the board had put lunch (15-minute
+breaks are not punched and stay in). A gap over `MOVED_MIN` (50) at either
+end is most likely another role with the board not updated — bad actors
+hide for less — so it is shown muted with `*`, summed per person and per
+week as "Off Board", and kept out of the total. No per-associate prep or
+dispense metric exists in any reachable source (checked every dashboard in
+the Store Fulfillment Scorecard workbook, CORT, GTA punches, the GIF feed);
+the only role signals per associate are Pick Hours and SFS pack hours
+(the latter still dropped by `codec.js` METRIC_COLUMNS).
+
+**Associates tab, per-day Adherence column was "—" on every row:** the
+2026-09-23 fix keyed `dailyDetails` by ISO date but the breakdown rows keep
+Tableau's "9/25/26" label; `lib/pages/associates.js` now runs both sides
+through `dateKey`. Verified live (Quang, WK34: 37/71/71/43/77%).
+
+**Data:** `Max. Last Scan` (Tableau `MAX(Last Scan)`, same as the Associate
+By Day Excel column) was in the feed all along but dropped by
+`codec.js::METRIC_COLUMNS`; kept now. `pull_store` takes `lookback` (days,
+max 31); store 1458 re-pulled 10 days (09-17..09-26) so those rows carry it.
+Older days show no early-stop figures until re-pulled.
+
+### 0. Daily Board: the board is now copied onto the 1458 grid (2026-09-27)
+
+**Why:** 09-25, 09-26 and 09-27 had no assignment documents at all; the
+grid showed suggestion ghosts instead. The 30-minute board sync had been
+failing since 09-24 with "not signed in to OneDrive" (the SharePoint
+FedAuth cookie expired) and nothing re-established the session. Under the
+old rules a suggestion-filled or app-edited day also kept its cells
+("newest edit wins", plus a 50%-fill lock on past days).
+
+**What changed:** (1) `mergeBoard(…, { mirror: true })` — each board row's
+cells become exactly the board's, whatever the app held; rows the board
+does not list, and an explicit Finalize, are untouched. (2) A past day is
+re-applied when its sheet changed since it was applied. (3) On the sign-in
+error the sync opens the file's metadata endpoint in a background tab (SSO
+completes there without a prompt), then retries once
+(`daily_board_source.js::refreshSession`). Missing days were written from
+the debug Edge on 09-27 (three unmatched names remain flagged on 09-27).
+
+**Left to verify:** the session refresh on a real expiry in the user's
+normal Edge (the debug Edge was already signed in when tested).
+
+### 0. Digital Metrics: manual sync closes the scheduler tab early in normal Edge (2026-09-27)
+
+**Reported:** "manual refreshing seems to be broken entirely, the scheduler
+page closes almost as soon as it opens." Reproduced in the debug Edge (CDP,
+same code as the repo): it does NOT happen there — the scheduler pull ran
+clean in 31 s (SAML bounce `/saml?redirect=/scheduler` included), and the
+whole 8-day sync in 4 m 30 s. Nothing in the suite closes tabs by URL; the
+idle reaper only touches registered session tabs. The normal Edge's stored
+`lastResult` cannot be read from outside (LevelDB blocks are snappy-packed)
+and that profile has no CDP port, so the failing run's own error text is
+what is needed next. The sync pill now keeps every failure reason in its
+tooltip (`view.js::refreshPullState`) so the next failed run can be quoted.
+
+**Landed alongside:** Express Pickup days pull three at a time and the
+Tableau driver polls for rows instead of sleeping 6 s — a cold 8-day sync's
+Express step went from 144 s to 41 s (debug Edge, values verified against
+independent loads). Sync now no longer forces all eight lookback days
+(only the two volatile ones, like an alarm run), and the Tableau lock wraps
+only the Tableau steps with a 2-minute cap for a click — the scheduler and
+timesheet no longer queue behind VizPick. A warm manual sync: 4 m 30 s →
+1 m 56 s. Tab reuse through the Tableau JS API was probed and is dead; see
+`dev/DIGITALMETRICS_PULL_FINDINGS.md` ("Where a sync's minutes go").
+
+### 0-. Live Dashboard: Register Exceptions card → Auror Exceptions (2026-09-25)
+
+**What changed:** the home-page Register Exceptions widget/drill is gone (user
+request). In its place: **Auror Exceptions** — flags home-store Auror events
+from the last 30 days missing an evidence photo, a statement, or at least 3
+video clips (the theft, the door, the office). New source
+`modules/livedashboard/lib/sources/auror.js`; JWT captured declaratively
+(module.js webRequestFilters, key `livedashboard.auror.jwt`, with fallbacks to
+the aurorbuddy/orcmonitor captures). Statement detection = evidenceType
+`NarrativeStatement` (a plain PDF like a receipt does not count).
+GeneralIntel / DeniedEntry / PersonOfInterest / BreachOfTrespass are exempt.
+
+**Careful:** `modules/registerls` still imports
+`livedashboard/lib/sources/register.js` and needs
+`content/powerbi_register_capture.js` — the register source files and their
+manifest.json content-script entry are load-bearing for registerls and were
+NOT removed. Only the dashboard card wiring is gone.
+
+**Left to verify:** data path validated over CDP (dev scratch e2e); the card
+itself needs an extension reload + a look at the drill in the live shell.
+
+### 0--. Cx module — NPS, Cx scores and what the comments say (2026-09-25)
+
+**Why:** The store's NPS slid 14 points over 13 weeks (72 at WM26 WK21 to 58 at
+WK34, crossing below last year's 62 at WK32) and nothing on hand said why. The
+Hoops scorecard gives the number and eight sub-scores but no reasons; Medallia
+holds the reasons but shows them as an undifferentiated comment stream, and the
+Ops Portal's own GenAI summary of them has been frozen since 2026-01-31.
+
+**Where it stands:** `modules/cx` is registered and working end to end against
+store 1458. Three sources, each failing independently so one being cold never
+blanks the panel:
+
+- **Hoops** (`lib/hoops.js`) — `metric.cx.megaCard.nps` (weekly only; day and
+  the 201 variant return null for every row), `metric.cx.megaCard.inStore` (the
+  eight 1-5 sub-scores, TY and LY, which *do* publish daily) and
+  `metric.cx.genAiSummary` (gzip+base64 inside the tRPC row). Plain
+  cookie-authenticated GETs like `costinventory/lib/itr.js`, with the
+  ops-portal-tab replay as fallback.
+- **Medallia** (`lib/medallia.js`) — `getComments` on the `feedback` connection,
+  run inside a `walmart.medallia.com` tab because the required `x-csrf-token` is
+  only ever rendered in the page HTML (not a cookie, not on `window`), and
+  because an unauthenticated POST answers **HTTP 200 wrapping a 401 body**. The
+  role is discovered from the landing URL, never configured. 52 weeks = 7,949
+  records in 8 pages of 1,000, about two minutes; after that a Refresh is
+  incremental with a deliberate 14-day overlap, because Medallia applies
+  sentiment and topic tags asynchronously after a response lands.
+- **AI gateway** (`lib/narrative.js`) — `puppy-backend.walmart.com/anthropic`
+  writes the read-out, and is handed only figures `lib/aggregate.js` already
+  computed, so the prose cannot contradict the table above it. Optional: the
+  token must be pasted in Settings (an extension cannot read
+  `~/.code_puppy/puppy.cfg`) and it expires every few weeks.
+
+The analysis (`lib/aggregate.js`, `lib/topics.js`, 33 tests in
+`lib/tests/aggregate.test.mjs`) makes three calls that are each load-bearing and
+were each verified against the real 1,989-comment 90-day pull:
+
+- Medallia runs **parallel topic taxonomies** across its three tag pools, down
+  to identical subthemes ("Attitude" under both `Interaction` and `Associate
+  Interaction`, "Refunds" under both `Service Desk` and `Returns`). Ranked raw,
+  one problem appears as two half-sized rows and the top of the list is wrong.
+  Topics fold to a canonical key; the raw names are kept on the row.
+- **Movement is per 100 comments**, recent window against the one before, both
+  the same length. Raw counts would read a light week as an improvement — a case
+  the tests pin.
+- Only **42% of comments carry topic tags**, so every themed figure prints its
+  tagged count and the rating mix is computed over all records instead.
+
+**Anchor-tab hardening (2026-09-25, second pass).** The first real run in the
+user's own Edge failed with a 90 s `executeScript` timeout on a fresh full pull —
+the same frozen-tab class as before, but on a tab the module had just opened.
+Three changes, all verified:
+
+- **A dead anchor is replaced, not repaired.** The pull now re-anchors (opens a
+  fresh tab of its own, closing the old one if it owned it) and retries the same
+  cursor, up to twice. Reloading was measured at 193 s and still failed, and a
+  borrowed tab is not ours to reload anyway.
+- **Readiness is the CSRF token, not the URL.** The landing page differs per
+  profile: the debug profile lands on `/sso/walmart/applications/…`, a plain
+  session on `/sso/walmart/pages/?roleId=…`. The old check required
+  `/applications/` and would have declared the second shape a dead session.
+- **`EXEC_TIMEOUT_MS` 90 s → 45 s**, now that a stall is recoverable rather than
+  fatal. A real 1,000-record page measures 14 s.
+
+Also ruled out for good: doing this without a tab. The service worker *does* hold
+the Medallia cookies (`JSESSIONID`, `SameSite=no_restriction`) and a credentialed
+SW fetch of `/sso/walmart/` returns 200 on a roleId-bearing URL — but fetching an
+actual reporting page from the SW redirects to `samlRequest.do`, because the
+reporting session needs the SAML round-trip only a browsing context completes.
+See `dev/CX_FINDINGS.md`.
+
+When Medallia is unreachable the Ops Portal's 50-row feed is now **shown**, not
+just mentioned — stored under its own key, never merged into the real history
+(no ids, no tags, a week behind), with the theme and trend panels hidden because
+they cannot honestly be built from it.
+
+**Market view + PDF (2026-09-25, third pass).**
+
+- **The market scoreboard** (`lib/market.js`) reads NPS and the eight sub-scores
+  for every store in the home market, plus the market itself — `buType 5` is a
+  MARKET, so the benchmark line is Hoops' own published figure rather than an
+  average of store averages we invented. 2N+2 plain cookie GETs, four at a time,
+  under a minute for market 120. A failed store is reported as a failed row and
+  does not lose the other nine; a store with no published week is unranked rather
+  than shown as a zero. The home market is taken from Settings, falling back to
+  whichever roster contains the home store — no reason to send someone to
+  Settings when `shared/marketRoster.js` already knows.
+- **Scores only, and the panel says so.** Medallia scopes comments to the role
+  and this role covers one store (1000/1000 of an unfiltered September sample
+  was 1458), so there is no market-wide comment data to be had. Stated on the
+  panel and in the PDF rather than left to be inferred from a missing section.
+- **Export PDF** (`lib/report.js`) — scorecard, market table, themes, movers,
+  verbatims and the written read. Uses the pdfmake already vendored under
+  `modules/vizpick/vendor/` by runtime URL rather than shipping a third copy.
+  Note: pdfmake's own `.download()` **silently writes nothing** from an extension
+  page — the callback fires and no file appears — so it takes `getBlob` and hands
+  it to `chrome.downloads`.
+- **"What changed" now spells out the direction.** A ▲/▼ pair at 12px separated
+  only by colour was hard to read and useless without colour; it is now a
+  word-pill ("↑ worse" / "↓ better") with the colour as reinforcement.
+
+First market read, WM26 WK34: store 1458 is **8th of 10, seven points below the
+market**, and one of only two stores down on its own last year. Its Associate
+interactions (4.12) and Product availability (4.10) are the **lowest in the
+market** — 1089 and 756 are at 5.00 — while its OPD scores are mid-pack. The
+problem is in-store, not digital, which the store-only view could not have shown.
+
+**Gateway sign-in, no paste (2026-09-25, fourth pass).** The token used to have
+to be copied out of `~/.code_puppy/puppy.cfg` by hand, every few weeks. It does
+not any more: `lib/puppy_auth.js` opens the gateway's own sign-in page with
+`callback_url` pointed at a dead localhost port and reads `puppy_token` out of
+the form POST the page makes back to it, via `webRequest`'s `requestBody`. The
+listener fires before the connection is attempted, so nothing has to be
+listening — no native host, no file read, and Code Puppy does not have to be
+running. It only keeps a token while a flow started in the panel is armed
+(5-minute window), so the same POST from someone's own terminal auth is ignored.
+Paste remains available behind a disclosure. See `dev/CX_FINDINGS.md` section 3.
+
+**Three ways in, and a self-inflicted outage (2026-09-25, fifth pass).** The
+token lives in `~/.code_puppy/puppy.cfg` (INI, `[puppy]`, `puppy_token`) and an
+extension cannot read a file on its own. What shipped:
+
+- **Load from puppy.cfg** — a file the user picks, parsed in the page, only the
+  token forwarded. No install, no helper. **Verified against the real file.**
+- **Sign in** — in-page interception of the auth page's token POST. The
+  `webRequest` approach it replaced cannot work at all: the sign-in page is a
+  public HTTPS origin posting to `localhost`, which **Private Network Access**
+  preflights, and with nothing listening the POST is never sent. Measured 0
+  observations from the real origin against 1 from an extension page — and every
+  earlier "verification" ran from an extension page, which is PNA-exempt. The
+  relay → service-worker hop is still unverified.
+- **Paste** — unchanged, behind a disclosure.
+
+`dev/cx-load-check.mjs` was added after a self-inflicted outage: an edit deleted
+two constants but left references to them, which is a ReferenceError at module
+evaluation, which fails the `_registry.js` import, which takes the whole shell
+down — the extension would not open at all. Every syntax check passed throughout,
+because `node --check` does not evaluate. The script imports every cx module
+against a stubbed `chrome` and is the check that would have caught it.
+
+**Open:**
+- The live sign-in has not been exercised end to end — doing so mints a token on
+  the user's account, which is theirs to trigger. The capture half is tested
+  (armed / unarmed / stale). If the auth site turns out to reject a callback URL
+  with no server behind it, the flow times out and the paste field still works.
+- A market-level Medallia role would make the theme analysis market-wide. Worth
+  asking for; nothing in the module needs to change but the scoping.
+- `Pricing Accuracy` is mapped to the `price` theme, whose scope reads
+  "company"; shelf-price-vs-register accuracy is actually store-controllable. 3
+  mentions in 90 days, so left alone rather than given its own theme.
+- The `scoPinpad` sub-score is flat at ~4.55 all year while checkout comments
+  move — worth checking whether it is a real store measure or a chain constant.
+- Nothing writes to Firestore: the comment history is `chrome.storage.local` on
+  one device. Fine for one store; a market roll-up would need the backend.
+- The frozen-anchor-tab failure is handled (liveness probe + reload, per-call
+  `executeScript` deadline) but only for Medallia and Hoops in this module —
+  `dev/CX_FINDINGS.md` records the measurements.
+
 ### 0-. Daily Board live sync → Digital Metrics assignments (2026-09-23)
 
 **Why:** Store 1458 plans each day's digital tasks in a hand-kept OneDrive
@@ -437,6 +774,20 @@ per claim, and which Evidence Collection items are still missing.
     background tab via `auth.clickSso`; probe `Favorite.mvc` to test the
     session. Retired lookup codes decode as `! Invalid Code ( NN: label )` —
     `clearsight_read.js::cleanCode` strips them.
+
+**Email list of charges (2026-09-27):** the Charges (P&L) tab has
+"Email list: charges" — every Ref # with a net charge > 0 in the chosen
+FY, open or closed (a closed claim still hit the P&L; the first cut listed
+Open only and "wasn't showing all incidents with charges"), minus claims
+Clearsight marks `Denied` and refs whose charge was fully reversed — with
+each claim's situation: who, what happened and when only (the user cut
+evidence state, Clearsight status, case manager and attachment count).
+`service.js::resolve_refs` batch-resolves the refs first (the SSO tab
+flow re-runs when needed: an expired session answers **500 + JSON "Your
+session is no longer valid"**, now treated as signed-out in
+`clearsight_read.js::getJson`). "Copy for Outlook" writes text/html (a
+table) + text/plain; composer is pure in `lib/email.js`, checked by
+`dev/accidents-check.mjs`.
 - **SW dispatcher gotcha (cost a debugging round):** handlers returning
   `{ ok, ... }` are passed through **unwrapped**; bare values get wrapped as
   `{ ok: true, data }`. And `host.messaging.send` REJECTS on `ok: false` —

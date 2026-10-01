@@ -22,6 +22,7 @@ import {
 } from "./metrics.js";
 import { detectOutliers, scoreStores, riskFlagFromScore } from "./outliers.js";
 import { formatDate, formatDateFmt } from "./dates.js";
+import { withWeekday } from "../../../shared/dates.js";
 import { createLineChart } from "./chart.js";
 import { DISPOSITION_TYPES } from "../data/schema.js";
 import { RULE_REFERENCE, SEVERITY_LADDER } from "../components/outlierPanel.js";
@@ -705,7 +706,7 @@ function formatStamp(d) {
 function formatGeneratedAt(d) {
   // "2026-05-28 20:35 EDT" — long enough to be unambiguous, short enough
   // not to wrap.
-  const date = formatDateFmt(d, "MMM d, yyyy");
+  const date = withWeekday(formatDateFmt(d, "MMM d, yyyy"), d);
   const hh = String(d.getHours()).padStart(2, "0");
   const mn = String(d.getMinutes()).padStart(2, "0");
   // Best-effort TZ abbreviation from the user's locale.

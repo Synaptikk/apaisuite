@@ -14,6 +14,8 @@
 // AurorBuddy scan uses. A bespoke direct call here would diverge over
 // time; passing through the SW handler keeps the two surfaces consistent.
 
+import { withWeekday } from "../../shared/dates.js";
+
 const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
@@ -74,7 +76,7 @@ function renderSuspect(suspect, homeStore, name) {
           const links  = [ccLink, rcLink].filter(Boolean).join(" · ");
           return `
             <tr class="${home ? "at-home" : ""}">
-              <td class="dt">${escapeHtml(fmtDateTime(t.datetime))}</td>
+              <td class="dt">${escapeHtml(withWeekday(fmtDateTime(t.datetime)))}</td>
               <td>${escapeHtml(t.store || "")}${home ? '<span class="pill home">home</span>' : ""}</td>
               <td>${escapeHtml(t.register || "")}</td>
               <td>${escapeHtml(t.cashier || "")}</td>

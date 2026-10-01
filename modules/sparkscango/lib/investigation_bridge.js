@@ -18,6 +18,7 @@
 
 import { extractIdentifiers } from "./models.js";
 import { detectQueryType } from "../../../shared/sparkInvestigation/input_detect.js";
+import { withWeekday } from "../../../shared/dates.js";
 
 export const STRATEGY = Object.freeze({
   NONE:         "none",
@@ -118,7 +119,7 @@ function toSourceFacts(row) {
   push("Shopper",        row.shopperId);
   push("Source status",  row.sourceStatus);
   if (row.eventTimestamp) {
-    facts["Event time"] = new Date(row.eventTimestamp).toISOString();
+    facts["Event time"] = withWeekday(new Date(row.eventTimestamp).toISOString());
   }
   return facts;
 }

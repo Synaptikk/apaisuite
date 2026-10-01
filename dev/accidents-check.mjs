@@ -6,6 +6,7 @@ import { parseAccidentHtml } from "../modules/livedashboard/lib/sources/accident
 import { parsePnl, rollupPnl } from "../modules/accidents/lib/cas.js";
 import { composeSummary } from "../modules/accidents/lib/summary.js";
 import { claimDigest, evidenceChecklist } from "../modules/accidents/lib/clearsight_read.js";
+import { composeEmail, chargedRefs } from "../modules/accidents/lib/email.js";
 
 let html;
 if (process.argv[2]) html = fs.readFileSync(process.argv[2], "utf-8");
@@ -44,6 +45,23 @@ if (fs.existsSync(probePath)) {
   console.log("\n--- sample summary ---\n" + s + "\n----------------------");
 } else {
   console.log("(skip digest checks — dev/.claim-probe/resp-009.json not present)");
+}
+
+
+// email list: every ref with a net charge, minus denied
+{
+  const data = { store: "1458", sourceUpdatedOn: ev.sourceDataUpdatedOn, evidence: ev.records, pnl: { charges, refs }, claims: {}, refDetails: {} };
+  const want = chargedRefs(data);
+  check("email charged refs", want.length > 0 && want.every((r) => refs.find((x) => x.ref === r).total > 0), `${want.length} of ${refs.length} refs`);
+  check("email includes closed claims", want.some((r) => refs.find((x) => x.ref === r).status === "Closed"));
+  const fake = (over) => ({ ref: "x", digest: { claimant: "T", status: "Open", denied: false, ...over }, summary: "T — fell.", attachments: 0 });
+  if (want.length >= 2) {
+    data.refDetails[want[0]] = fake({});
+    data.refDetails[want[1]] = fake({ denied: true });
+  }
+  const e = composeEmail(data);
+  check("email drops denied only", e.rows.length === Math.max(0, want.length - 1), `${e.rows.length} rows of ${want.length}`);
+  check("email has situation + status", e.text.includes("What happened: T — fell.") && /— (Open|Closed)\n/.test(e.text) && e.html.includes("<table"));
 }
 
 process.exit(fail ? 1 : 0);

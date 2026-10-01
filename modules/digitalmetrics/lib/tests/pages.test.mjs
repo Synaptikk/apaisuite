@@ -15,9 +15,10 @@ import * as classifyPage  from "../pages/classify.js";
 import * as opportunities from "../pages/opportunities.js";
 import * as leaderboard   from "../pages/leaderboard.js";
 import * as faq           from "../pages/faq.js";
+import * as pickhours     from "../pages/pickhours.js";
 import { esc, nextSort, compareBy, flipDir } from "../pages/_shared.js";
 
-const PAGES = { dashboard, comparison, classifyPage, opportunities, leaderboard, faq };
+const PAGES = { dashboard, comparison, classifyPage, opportunities, leaderboard, faq, pickhours };
 
 const assoc = (over = {}) => ({
   name: "JOHN SMITH", ftpr: 90, pick_rate: 100, nil_rate: 5, sub_rate: 5,

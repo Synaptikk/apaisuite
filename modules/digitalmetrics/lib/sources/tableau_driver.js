@@ -11,8 +11,9 @@
 //
 // Runs in the service worker.
 
-const VIZ_READY_MS = 120_000;  // cold SSO + first render
-const SETTLE_MS    = 6_000;    // after the viz registers, before reading
+const VIZ_READY_MS = 180_000;  // cold SSO + first render, with headroom for sharing the browser with another module's capture
+const SETTLE_MS    = 12_000;   // longest we wait for rows after the viz registers
+const READ_POLL_MS = 750;      // between reads while waiting for rows
 const LOAD_MS      = 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -135,21 +136,53 @@ export async function readWorksheetViaTab(url, worksheetName, { onProgress = () 
     onProgress({ phase: "rendering", ...extra });
     await waitForViz(tab.id, VIZ_READY_MS);
 
-    // The viz registers before its data query settles; reading immediately
-    // yields 0 rows on a cold session.
-    await sleep(SETTLE_MS);
-
     onProgress({ phase: "reading", ...extra });
-    const res = await chrome.scripting.executeScript({
-      target: { tabId: tab.id, frameIds: [0] },
-      world: "MAIN",
-      func: readSummaryInPage,
-      args: [worksheetName],
-    });
-    const out = res?.[0]?.result;
+    const out = await readWhenSettled(tab.id, worksheetName);
     if (!out?.ok) throw new Error(out?.reason || "summary read failed");
     return { columns: out.columns, rows: out.rows };
   } finally {
     await chrome.tabs.remove(tab.id).catch(() => {});
   }
+}
+
+/**
+ * Read the worksheet once its data query has settled.
+ *
+ * The viz registers before its query returns; reading immediately yields 0
+ * rows on a cold session. This used to be a flat 6 s sleep, which every tab
+ * paid whether the rows landed in one second or five — and the Express pull
+ * opens one tab per day. Now the sheet is polled: the read is accepted as
+ * soon as it returns rows AND a second read a moment later agrees on the row
+ * count (a guard against catching a query mid-fill).
+ *
+ * An empty sheet gets a LONGER window than the old sleep before it is
+ * believed (12 s vs 6 s). Probing 2026-09-27, a fresh URL-pinned load of a
+ * day with 42 Express orders read 0 rows at the old 6 s mark once in four
+ * loads. An empty read on a real day is not harmless: pullExpressDay's
+ * unfiltered check then finds the store-day and records it as ZERO orders,
+ * permanently for anything older than the volatile window. Quiet days are
+ * rare, so the extra wait costs almost nothing in practice.
+ */
+async function readWhenSettled(tabId, worksheetName) {
+  const readOnce = async () => (await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [0] },
+    world: "MAIN",
+    func: readSummaryInPage,
+    args: [worksheetName],
+  }))?.[0]?.result;
+
+  const deadline = Date.now() + SETTLE_MS;
+  let last = null;
+  let lastCount = -1;
+  while (Date.now() < deadline) {
+    const out = await readOnce();
+    const count = out?.ok ? out.rows.length : -1;
+    if (count > 0 && count === lastCount) return out;
+    last = out;
+    lastCount = count;
+    await sleep(READ_POLL_MS);
+  }
+  // Window exhausted: take the most recent full read (an honest empty, or a
+  // row count that was still moving — the latter has never been observed).
+  return last?.ok ? last : await readOnce();
 }

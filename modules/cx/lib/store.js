@@ -24,6 +24,8 @@ const KEY = {
   settings: "cx.settings.v1",     // gateway token, model, window length
   narrative:"cx.narrative.v1",    // last AI read, keyed by the filters it described
   lastRun:  "cx.lastRun.v1",      // outcome of the last pull, including failures
+  fallback: "cx.fallback.v1",     // Hoops' 50-comment stopgap, when Medallia is unavailable
+  market:   "cx.market.v1",       // market scoreboard (Hoops only — comments are role-scoped)
 };
 
 export const STORAGE_KEYS = KEY;
@@ -39,6 +41,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // Settings — the extension cannot read ~/.code_puppy/puppy.cfg.
   gatewayToken: "",
   gatewayModel: "claude-sonnet-5",
+  // Sent as `x-puppy-version`. The gateway blocks clients below a floor and
+  // treats a missing header as the oldest possible client, so this is not
+  // optional — see lib/narrative.js::DEFAULT_CLIENT_VERSION.
+  gatewayClientVersion: "",
   narrativeEnabled: true,
 });
 
@@ -161,6 +167,43 @@ export async function writeNarrative(fingerprint, payload) {
   const box = { fingerprint, ...payload, generatedAt: Date.now() };
   await chrome.storage.local.set({ [KEY.narrative]: box });
   return box;
+}
+
+// ── Market scoreboard ───────────────────────────────────────────────────
+
+export async function readMarket() {
+  const got = await chrome.storage.local.get(KEY.market);
+  return got[KEY.market] ?? null;
+}
+
+export async function writeMarket(table) {
+  const box = { ...table, pulledAt: Date.now() };
+  await chrome.storage.local.set({ [KEY.market]: box });
+  return box;
+}
+
+// ── Fallback comments ───────────────────────────────────────────────────
+
+/**
+ * Hoops' 50-row comment feed, kept only for when Medallia cannot be reached.
+ *
+ * Stored separately from the real history and never merged into it: it carries
+ * no topic tags, no sentiment and no record ids, trails about a week, and
+ * merging it would quietly corrupt both the counts and the de-duplication.
+ */
+export async function readFallbackComments() {
+  const got = await chrome.storage.local.get(KEY.fallback);
+  return got[KEY.fallback] ?? null;
+}
+
+export async function writeFallbackComments(storeNbr, rows) {
+  const box = { storeNbr: String(storeNbr), rows, pulledAt: Date.now() };
+  await chrome.storage.local.set({ [KEY.fallback]: box });
+  return box;
+}
+
+export async function clearFallbackComments() {
+  await chrome.storage.local.remove(KEY.fallback);
 }
 
 // ── Last-run diagnostics ────────────────────────────────────────────────

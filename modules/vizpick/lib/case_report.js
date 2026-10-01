@@ -23,6 +23,7 @@
 // }
 
 import { scanLedger, ledgerCsv, toCsv } from "./home_history.js";
+import { withWeekday } from "../../../shared/dates.js";
 
 const cell = (v) => {
   const s = v == null ? "" : String(v);
@@ -108,7 +109,7 @@ const num = (text, extra = {}) => td(text, { alignment: "right", ...extra });
 export function caseDocDefinition(model, files = caseAttachments(model)) {
   const pct = (v) => (v == null ? "—" : `${v}%`);
   const content = [
-    { text: `VizPick · store ${model.store} · ${model.day}`, style: "eyebrow" },
+    { text: `VizPick · store ${model.store} · ${withWeekday(model.day)}`, style: "eyebrow" },
     { text: "Digital associates' scans add suggested picks", style: "title" },
     { text: `Generated ${model.generatedAt} from ${model.entries?.length || 0} Tableau updates kept by the APAISuite pick progression.`, style: "meta" },
     { text: model.verdict || "", style: "verdict", margin: [0, 10, 0, 6] },
@@ -196,7 +197,7 @@ export function caseDocDefinition(model, files = caseAttachments(model)) {
     defaultStyle: { font: "Roboto", fontSize: 9, color: INK, lineHeight: 1.2 },
     footer: (page, pages) => ({
       columns: [
-        { text: `VizPick business case · store ${model.store} · ${model.day}`, fontSize: 7, color: MUTED },
+        { text: `VizPick business case · store ${model.store} · ${withWeekday(model.day)}`, fontSize: 7, color: MUTED },
         { text: `Page ${page} of ${pages}`, fontSize: 7, color: MUTED, alignment: "right" },
       ],
       margin: [40, 16, 40, 0],

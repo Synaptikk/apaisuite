@@ -6,6 +6,7 @@ import { toPlaintext, toPrintHtml, toSuggestionText } from "./lib/render.js";
 import { suggestPlan, suggestionAssignments } from "./lib/suggest.js";
 import { SSO_SELECTORS } from "../../shared/auth.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
+import { withWeekday } from "../../shared/dates.js";
 
 const CV_URL     = "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html";
 const CV_MATCH   = /^https:\/\/radapps3\.wal-mart\.com\/Protected\/CaseVisibility\//;
@@ -711,7 +712,7 @@ export async function mount(host, container) {
     rows.sort((a, b) => (b.cph ?? -1) - (a.cph ?? -1));
 
     box.innerHTML =
-      '<p class="muted tiny">Derived from the ' + esc(plan.dateLabel || plan.businessDate) +
+      '<p class="muted tiny">Derived from the ' + esc(plan.dateLabel || withWeekday(plan.businessDate)) +
       " collect for store " + esc(String(plan.storeNbr)) +
       " \u2014 cases divided by the hours CaseVisibility charged for them.</p>" +
       '<table class="sp-help-table sp-help-rate-table"><thead><tr>' +
@@ -768,7 +769,7 @@ export async function mount(host, container) {
     const text     = suggestion ? toSuggestionText(plan, suggestion) : toPlaintext(plan, assignments);
     const storeNbr = validStoreNbr($("sp-storeNbr").value) || plan.storeNbr;
     const date     = $("sp-businessDate").value || todayIso();
-    const subject  = `Stocking Plan — Store ${storeNbr} — ${date}`;
+    const subject  = `Stocking Plan — Store ${storeNbr} — ${withWeekday(date)}`;
     const url =
       `https://outlook.office.com/mail/deeplink/compose` +
       `?subject=${encodeURIComponent(subject)}` +

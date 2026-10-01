@@ -7,9 +7,81 @@
 .om-header h1    { font-size:var(--fs-xl,18px); font-weight:var(--fw-bold,700); color:var(--apai-ink,#1A1A1A); }
 .om-controls     { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px; }
 
-.om-main-layout  { display:flex; overflow:hidden; gap:0; }
-.om-map-panel    { width:36%; min-width:260px; height:480px; flex-shrink:0; border-right:1px solid var(--apai-border,#E5E7EB); }
-.om-cards-panel  { flex:1; height:480px; overflow-y:auto; padding:0 14px 14px; }
+.om-main-layout  { display:flex; gap:0; border:1px solid var(--apai-border,#E5E7EB); border-radius:var(--rad-md,8px); overflow:hidden; background:var(--apai-bg-elev,#fff); }
+.om-map-wrap     { position:relative; width:52%; min-width:320px; flex-shrink:0; border-right:1px solid var(--apai-border,#E5E7EB); display:flex; flex-direction:column; }
+.om-map-panel    { height:600px; }
+.om-side         { flex:1; min-width:0; display:flex; flex-direction:column; height:630px; }
+.om-panel        { flex:1; overflow-y:auto; padding:10px 14px 14px; }
+@media (max-width: 1100px) {
+  .om-main-layout { flex-direction:column; }
+  .om-map-wrap    { width:100%; min-width:0; border-right:none; border-bottom:1px solid var(--apai-border,#E5E7EB); }
+  .om-map-panel   { height:420px; }
+  .om-side        { height:auto; max-height:none; }
+}
+
+/* ── Map chrome ── */
+.om-map-note { position:absolute; top:8px; left:50px; right:50px; z-index:500; font-size:11px; padding:5px 9px; border-radius:6px;
+               background:var(--apai-warn-bg,#FEF3C7); color:var(--apai-warn,#92400E); border:1px solid var(--apai-warn,#D97706); }
+.om-legend   { display:flex; flex-wrap:wrap; gap:4px 12px; padding:6px 10px; font-size:10.5px; color:var(--apai-ink-soft,#374151); border-top:1px solid var(--apai-border-soft,#F0F1F4); }
+.om-legend span { display:inline-flex; align-items:center; gap:5px; }
+.om-lg-dot   { width:9px; height:9px; border-radius:50%; display:inline-block; border:1px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
+.om-lg-ring  { width:9px; height:9px; border-radius:50%; display:inline-block; border:2px solid #7C3AED; background:#fff; }
+.om-lg-line  { width:18px; height:0; border-top:3px solid #0071CE; display:inline-block; }
+.om-lg-dash  { border-top:2px dashed #7C3AED; }
+.leaflet-tooltip.om-map-label { background:rgba(255,255,255,.92); border:1px solid #CBD5E1; border-radius:4px; padding:0 4px; font-size:10px; font-weight:700; color:#1F2937; box-shadow:none; }
+.leaflet-tooltip.om-map-label::before { display:none; }
+.om-rank-icon { width:20px; height:20px; border-radius:50%; background:#fff; border:2.5px solid #7C3AED; color:#5B21B6;
+                font:700 10px/15px system-ui,sans-serif; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+.om-stop-icon { width:22px; height:22px; line-height:18px !important; font-size:10px !important; border-radius:50%; background:#0071CE; border:2px solid #fff; color:#fff;
+                font:700 9px/14px system-ui,sans-serif; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.35); }
+
+/* ── Tabs ── */
+.om-tabs      { display:flex; gap:2px; padding:6px 8px 0; border-bottom:1px solid var(--apai-border,#E5E7EB); background:var(--apai-bg-soft,#F9FAFB); }
+.om-tab       { border:none; background:none; padding:8px 12px; font-size:12.5px; font-weight:600; color:var(--apai-muted,#6B7280); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+.om-tab:hover { color:var(--apai-ink,#1A1A1A); }
+.om-tab.is-active { color:var(--apai-blue,#0071CE); border-bottom-color:var(--apai-blue,#0071CE); }
+.om-tab-count { font-weight:500; color:var(--apai-muted,#6B7280); font-size:11px; }
+
+/* ── Stores at risk ── */
+.om-intro     { font-size:11.5px; color:var(--apai-muted,#6B7280); margin:2px 0 10px; line-height:1.45; }
+.om-risk-row  { display:grid; grid-template-columns:34px 1fr 92px; gap:10px; align-items:start; padding:9px 8px; border-bottom:1px solid var(--apai-border-soft,#F0F1F4); cursor:pointer; border-radius:6px; }
+.om-risk-row:hover, .om-risk-row.is-selected { background:var(--apai-info-bg,#E8EEF9); }
+.om-risk-rank { width:26px; height:26px; border-radius:50%; border:2.5px solid #7C3AED; color:#5B21B6; font-weight:700; font-size:12px; display:flex; align-items:center; justify-content:center; background:#fff; }
+.om-risk-name { font-weight:700; font-size:13px; color:var(--apai-ink,#1A1A1A); }
+.om-risk-name .om-you { font-size:10px; font-weight:700; color:var(--apai-success,#1A7F37); background:var(--apai-success-bg,#E3F5E8); border-radius:4px; padding:1px 5px; margin-left:4px; }
+.om-risk-why  { font-size:11px; color:var(--apai-ink-soft,#374151); margin-top:3px; line-height:1.45; }
+.om-risk-why b { font-weight:600; }
+.om-bar       { height:6px; border-radius:3px; background:var(--apai-border,#E5E7EB); overflow:hidden; margin-top:6px; }
+.om-bar > i   { display:block; height:100%; background:#7C3AED; border-radius:3px; }
+.om-risk-idx  { text-align:right; font-size:18px; font-weight:700; color:#5B21B6; line-height:1; }
+.om-risk-idx small { display:block; font-size:9px; font-weight:600; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.3px; margin-top:3px; }
+
+/* ── Groups ── */
+.om-group        { border:1px solid var(--apai-border,#E5E7EB); border-radius:var(--rad-md,8px); margin-bottom:10px; background:var(--apai-bg-elev,#fff); cursor:pointer; box-shadow:var(--shadow-1); }
+.om-group.is-selected { box-shadow:0 0 0 2px var(--apai-blue,#0071CE); }
+.om-group-head   { display:flex; gap:10px; align-items:flex-start; padding:9px 12px; }
+.om-group-photos { display:flex; }
+.om-group-photos img, .om-group-photos .om-ph { width:36px; height:36px; border-radius:50%; object-fit:cover; border:2px solid #fff; margin-left:-8px; background:var(--apai-bg-soft,#F3F4F6); display:flex; align-items:center; justify-content:center; font-size:15px; }
+.om-group-photos > :first-child { margin-left:0; }
+.om-group-title  { font-weight:700; font-size:13px; }
+.om-group-sub    { font-size:11px; color:var(--apai-muted,#6B7280); margin-top:2px; }
+.om-mode         { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; text-transform:uppercase; letter-spacing:.3px; }
+.om-mode-traveling { background:#EDE9FE; color:#5B21B6; }
+.om-mode-circuit   { background:var(--apai-info-bg,#E8EEF9); color:var(--apai-blue,#0071CE); }
+.om-mode-single    { background:var(--apai-bg-soft,#F3F4F6); color:var(--apai-muted,#6B7280); }
+.om-group-body   { padding:0 12px 10px; font-size:11.5px; color:var(--apai-ink-soft,#374151); }
+.om-sec          { font-size:9.5px; font-weight:700; color:var(--apai-muted,#6B7280); text-transform:uppercase; letter-spacing:.5px; margin:8px 0 3px; }
+.om-legs         { list-style:none; margin:0; padding:0; }
+.om-legs li      { display:grid; grid-template-columns:1fr auto; gap:6px; padding:3px 0; border-bottom:1px dashed var(--apai-border-soft,#F0F1F4); }
+.om-legs li:last-child { border-bottom:none; }
+.om-legs .om-route { color:var(--apai-blue,#0071CE); font-weight:600; }
+.om-next         { display:flex; flex-wrap:wrap; gap:5px; }
+.om-next span    { font-size:11px; border:1px solid #C4B5FD; background:#F5F3FF; color:#4C1D95; border-radius:6px; padding:2px 7px; }
+.om-next span b  { font-weight:700; }
+
+/* ── Detail list inside people cards ── */
+.om-route-line   { font-size:11px; color:var(--apai-blue,#0071CE); margin-top:4px; }
+.om-empty        { padding:24px; font-size:12.5px; color:var(--apai-muted,#6B7280); }
 
 /* ── Progress ── */
 .om-progress-wrap  { margin-bottom:6px; display:flex; align-items:center; gap:10px; }
@@ -100,3 +172,57 @@
 /* ── Pills / tags ── */
 .om-mo-pill      { font-size:10px; background:var(--apai-bg-soft,#F9FAFB); border:1px solid var(--apai-border,#E5E7EB); border-radius:var(--rad-sm,4px); padding:1px 6px; color:var(--apai-ink-soft,#374151); }
 .om-corridor-tag { font-size:9px; background:var(--apai-info-bg,#E8EEF9); border:1px solid var(--apai-blue,#0071CE); color:var(--apai-blue,#0071CE); padding:1px 5px; border-radius:var(--rad-sm,4px); }
+
+/* ── Dark theme: the purple "next store" accents have no token, so restate them ── */
+[data-theme="dark"] .om-risk-rank,
+[data-theme="dark"] .om-rank-icon    { background:#1E1B2E; color:#C4B5FD; border-color:#A78BFA; }
+[data-theme="dark"] .om-risk-idx     { color:#C4B5FD; }
+[data-theme="dark"] .om-bar > i      { background:#A78BFA; }
+[data-theme="dark"] .om-next span    { background:#2A2440; border-color:#5B4B8A; color:#DDD6FE; }
+[data-theme="dark"] .om-mode-traveling { background:#2A2440; color:#C4B5FD; }
+[data-theme="dark"] .om-lg-ring      { border-color:#A78BFA; background:transparent; }
+[data-theme="dark"] .om-lg-dash      { border-top-color:#A78BFA; }
+
+.om-scope { margin:0 0 8px; }
+/* Leaflet's layer-switch icon is a PNG we don't bundle: draw it inline. */
+.module-orcmonitor .leaflet-control-layers-toggle,
+.leaflet-control-layers-toggle {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M12 3 2 8l10 5 10-5z'/%3E%3Cpath d='m2 13 10 5 10-5'/%3E%3C/svg%3E") !important;
+  background-size:22px 22px !important;
+}
+
+.om-home-btn { display:flex !important; align-items:center; justify-content:center; color:#374151; }
+.om-home-btn:hover { color:var(--apai-blue,#0071CE); }
+
+/* ── Simple basemap + focus mode ── */
+.om-map-panel.om-map-simple { background:#DCE7EF; }
+.leaflet-tooltip.om-city-label { background:transparent; border:none; box-shadow:none; padding:0; font:600 10px/1 system-ui,sans-serif; color:#475569;
+                 text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff; }
+.leaflet-tooltip.om-city-label::before { display:none; }
+.om-map-focus .leaflet-tile-pane { opacity:.35; }
+.om-map-focus .om-city-label { opacity:.55; }
+.om-arrow { width:18px; height:18px; display:flex; align-items:center; justify-content:center; }
+.om-arrow svg { filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff); }
+.leaflet-tooltip.om-stop-label { background:#fff; border:1px solid #0B5CAD; color:#0B3E75; border-radius:4px; padding:1px 5px; font:600 10px/1.3 system-ui,sans-serif; box-shadow:0 1px 2px rgba(0,0,0,.15); }
+.leaflet-tooltip.om-stop-label::before { display:none; }
+.leaflet-tooltip.om-next-label { background:#F5F3FF; border:1px solid #7C3AED; color:#4C1D95; border-radius:4px; padding:1px 5px; font:600 10px/1.3 system-ui,sans-serif; }
+.leaflet-tooltip.om-next-label::before { display:none; }
+.om-route-key { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:10.5px; color:var(--apai-muted,#6B7280); margin:4px 0 2px; }
+[data-theme="dark"] .leaflet-tooltip.om-next-label { background:#2A2440; color:#DDD6FE; border-color:#A78BFA; }
+[data-theme="dark"] .leaflet-tooltip.om-stop-label { background:#0F2236; color:#BFDBFE; border-color:#60A5FA; }
+
+.om-why { font-size:10.5px; color:var(--apai-muted,#6B7280); margin-top:4px; line-height:1.4; }
+.om-why b { color:var(--apai-ink-soft,#374151); font-weight:600; }
+.om-group.om-inactive { opacity:.62; }
+.om-group.om-inactive.is-selected { opacity:1; }
+
+.om-full { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--apai-muted,#6B7280); cursor:pointer; align-self:center; }
+.om-saved { font-size:11.5px; color:var(--apai-muted,#6B7280); margin:2px 0 6px; }
+
+/* ── Market focus ── */
+.om-mkt-line { font-size:11px; margin-top:4px; color:var(--apai-ink-soft,#374151); }
+.om-mkt-line.is-hot { color:var(--apai-error,#B91C1C); font-weight:600; }
+.om-next span.om-mk { border:1.5px solid var(--apai-error,#B91C1C); background:var(--apai-error-bg,#FCEAEA); color:#7F1D1D; }
+.om-mk-key { font-weight:600; text-transform:none; letter-spacing:0; color:var(--apai-error,#B91C1C); margin-left:6px; }
+.om-mkt-store { width:10px; height:10px; background:#fff; border:2px solid #334155; transform:rotate(45deg); box-shadow:0 0 0 1px #fff; }
+[data-theme="dark"] .om-next span.om-mk { background:#3B1111; color:#FECACA; border-color:#F87171; }

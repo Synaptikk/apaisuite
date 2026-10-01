@@ -147,9 +147,9 @@ export function localIsoDate(now = new Date()) {
  *   FRI … TUE → the past 5 days  (mode "backfill")
  *   THURSDAY  → tomorrow OR last Thursday — ambiguous
  *
- * Backfill fills a past day ONCE: a date we have already applied is never
- * applied again, so the midnight lock holds (and the service also refuses a
- * day the grid already treats as finalized).
+ * Backfill applies a past day once, and again only if its sheet changes
+ * afterwards (a correction on the board). The service still refuses a day
+ * that was explicitly finalized in the app.
  *
  * The ambiguous sheet is settled by what we applied last time: identical to
  * our copy of the past date → still the old plan; different → tomorrow's. On
@@ -178,8 +178,11 @@ export function planDates(sheets, today, snapshotFor, chooseAmbiguous = () => nu
       out.push({ date, skip: `the ${WEEKDAYS[weekdayOf(date)]} sheet was not updated for this day` });
       return;
     }
-    if (mode === "backfill" && snapshotFor(date)) {
-      out.push({ date, skip: "already filled from the board; past days are locked" });
+    // A past day already applied is re-applied only when its sheet changed
+    // since (the board is the record; a correction there should land). An
+    // unchanged sheet is a no-op and is reported as such.
+    if (mode === "backfill" && snapshotFor(date)?.fp === fp) {
+      out.push({ date, skip: "already filled from the board and unchanged since" });
       return;
     }
     out.push({ date, mode, cells, fp });
@@ -559,9 +562,14 @@ export function learnFromHistory(days, opts = {}) {
  * @param {object|null} p.previousNames  { boardName: name it was filed under } from that pull
  * @param {string} p.boardModifiedAt  the workbook's last-modified time (ISO)
  * @param {Array}  p.schedule      that date's schedule associates, for shifts
+ * @param {boolean} [p.mirror]     the board is authoritative: each board row's
+ *   cells become exactly the board's, whatever the app held and whenever it
+ *   was edited (store 1458's rule since 2026-09-27). Rows the board does not
+ *   list are untouched. Without it: newest edit wins on first sight, and
+ *   later only cells the board itself changed replace app edits.
  * @returns {{ associates, changedCells, addedRows, renamedRows }}
  */
-export function mergeBoard(doc, { cells, matched, previous, previousNames = null, boardModifiedAt, schedule }) {
+export function mergeBoard(doc, { cells, matched, previous, previousNames = null, boardModifiedAt, schedule, mirror = false }) {
   const associates = (doc?.associates || []).map((a) => ({ ...a, slots: { ...(a.slots || {}) } }));
   const byName = new Map(associates.map((a) => [String(a.name).toUpperCase(), a]));
   const sched = new Map((schedule || []).map((s) => [String(s.name).toUpperCase(), s]));
@@ -633,11 +641,13 @@ export function mergeBoard(doc, { cells, matched, previous, previousNames = null
     }
 
     const prev = previous ? previous[key] || {} : null;
-    const keys = new Set([...Object.keys(slots), ...Object.keys(prev || {})]);
+    const keys = new Set([...Object.keys(slots), ...Object.keys(prev || {}),
+                          ...(mirror ? Object.keys(row.slots) : [])]);
     for (const k of keys) {
       const now = slots[k];
       let apply;
-      if (prev) apply = now !== prev[k];                 // the board changed it
+      if (mirror) apply = true;                          // the row is the board's
+      else if (prev) apply = now !== prev[k];            // the board changed it
       else apply = boardIsNewer ? true : !row.slots[k];  // first sight
       if (!apply || row.slots[k] === now) continue;
       if (now) row.slots[k] = now; else delete row.slots[k];

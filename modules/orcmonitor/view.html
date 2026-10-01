@@ -5,7 +5,7 @@
     <h1>ORC Corridor Monitor</h1>
     <span id="om-token-badge" class="om-badge om-badge-warn">⏳ Open Auror in Edge to connect</span>
   </div>
-  <p class="muted">Identifies ORC actors moving toward your store along SE interstate corridors. Scans all 8 SE Business Unit regions.</p>
+  <p class="muted">ORC groups ranked by risk to your store and market: where they have hit, the interstate routes they drive between hits, which way they are heading, and which of your market's stores are likely next. Scans all 8 SE Business Unit regions.</p>
 </div>
 
 <div class="om-controls card">
@@ -23,6 +23,9 @@
     </span>
   </label>
   <button id="om-btn-analyze" class="btn btn-primary btn-pill" disabled>Analyze</button>
+  <label class="om-full" title="Re-download every event and profile instead of only what is new since the last run">
+    <input id="om-full" type="checkbox"> Full refresh
+  </label>
   <button id="om-btn-export"  class="btn btn-secondary-sm" disabled>Export PDF</button>
 </div>
 
@@ -36,9 +39,26 @@
 <div id="om-summary-pills" class="cluster" style="margin:6px 0"></div>
 
 <div class="om-main-layout">
-  <div id="om-map" class="om-map-panel"></div>
-  <div class="om-cards-panel">
-    <div id="om-cards-container">
+  <div class="om-map-wrap">
+    <div id="om-map" class="om-map-panel"></div>
+    <div id="om-map-note" class="om-map-note hidden"></div>
+    <div class="om-legend">
+      <span><i class="om-lg-dot" style="background:#B91C1C"></i>High</span>
+      <span><i class="om-lg-dot" style="background:#D97706"></i>Medium</span>
+      <span><i class="om-lg-dot" style="background:#CA8A04"></i>Low</span>
+      <span><i class="om-lg-ring"></i>Likely next store</span>
+      <span><i class="om-mkt-store" style="display:inline-block;transform:rotate(45deg) scale(.8)"></i>Your market's stores</span>
+      <span><i class="om-lg-line"></i>Route driven</span>
+      <span><i class="om-lg-line om-lg-dash"></i>Projected</span>
+    </div>
+  </div>
+  <div class="om-side">
+    <div class="om-tabs" role="tablist">
+      <button class="om-tab is-active" data-tab="groups" role="tab">Groups <span id="om-count-groups" class="om-tab-count"></span></button>
+      <button class="om-tab" data-tab="stores" role="tab">Stores at risk <span id="om-count-stores" class="om-tab-count"></span></button>
+      <button class="om-tab" data-tab="people" role="tab">People <span id="om-count-people" class="om-tab-count"></span></button>
+    </div>
+    <div id="om-panel" class="om-panel">
       <p class="muted" style="padding:24px">Enter a store number and click Analyze.<br><br>
       <strong>First time?</strong> Make sure Auror is open in Edge — the extension captures your session automatically.</p>
     </div>
