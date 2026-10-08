@@ -19,6 +19,7 @@ import registerls        from "./registerls/module.js";
 import boblisa           from "./boblisa/module.js";
 import doorcatch         from "./doorcatch/module.js";
 import safetyagent       from "./safetyagent/module.js";
+import safetyobs         from "./safetyobs/module.js";
 import sparkfraud        from "./sparkfraud/module.js";
 import sparkrisk         from "./sparkrisk/module.js";
 import sparkscango       from "./sparkscango/module.js";
@@ -34,6 +35,7 @@ import digitaldashboard  from "./digitaldashboard/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
 import costinventory     from "./costinventory/module.js";
 import accidents         from "./accidents/module.js";
+import punchlookup       from "./punchlookup/module.js";
 import cx                from "./cx/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
@@ -56,11 +58,13 @@ export default [
   doorcatch,         // Door Catches — door-host barcode scans of items not on the receipt (qrcallbox.com/door)
   boblisa,           // BoB and Lisa — missed-item finder (same card, second sale minutes later)
   safetyagent,       // Safety Agent Dashboard — SafeIQ CV hazard alerts by camera / tag / associate
+  safetyobs,         // Safety Observations — sentence → survey form, 4:45 coach nudge, behind ledger
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,
   sparkrisk,         // Pre-checkout timing analysis
   sparkscango,       // Spark & Scan&Go exceptions/audits
   accidents,         // Accident Details — CAS evidence + PNL charges × Clearsight claim summaries
+  punchlookup,       // Punch Lookup — one associate's GTA punches for a range, print/email/CSV
   claimsdisposition,
   digitallocks,
   workvivo,

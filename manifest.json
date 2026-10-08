@@ -52,6 +52,8 @@
     "https://apps.apprissretail.com/*",
     "https://web-prd-wus2-arp-cctv.azurewebsites.net/*",
     "https://workvivo.walmart.com/*",
+    "https://forms.office.com/*",
+    "https://forms.cloud.microsoft/*",
     "https://www.walmart.com/*",
     "https://go-upc.com/*",
     "https://www.upcitemdb.com/*",

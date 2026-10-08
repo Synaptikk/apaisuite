@@ -63,6 +63,13 @@ STRIP_MODULES=(
   "assocpurchases:https://sf-reports-ui.walmart.com/*,https://sf-reports-api.walmart.com/*"
 )
 
+# Local-only modules, as in release.sh (keep in step with
+# validate-package.mjs::LOCAL_ONLY_MODULES): un-registered and deleted here.
+for id in incidentintake punchlookup; do
+  sed -i -E "/^[[:space:]]*import[[:space:]]+$id[[:space:]]+from/d; /^[[:space:]]*$id,/d" "$EXT/modules/_registry.js"
+  rm -rf "$EXT/modules/$id"
+done
+
 echo "[2/7] stripping modules excluded from the store build ..."
 node "$(to_node_path "$SCRIPT_DIR/strip-modules.mjs")" "$(to_node_path "$EXT")" "${STRIP_MODULES[@]}"
 

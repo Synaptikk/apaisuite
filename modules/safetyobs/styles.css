@@ -1,0 +1,38 @@
+/* modules/safetyobs/styles.css
+   Safety Observations: entry + review card, coach check, ledger, history.
+   APAISuite design tokens only; every selector scoped under .module-safetyobs. */
+
+.module-safetyobs .so { padding: var(--sp-5) var(--sp-6); display: grid; gap: var(--sp-4); max-width: 1100px; }
+.module-safetyobs .so-header h1 { margin: 0; font-size: var(--fs-xl); }
+.module-safetyobs .so-sub { margin: var(--sp-1) 0 0; color: var(--apai-muted); font-size: var(--fs-sm); max-width: 75ch; }
+.module-safetyobs .so-card { border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: var(--sp-4); background: var(--apai-bg-elev); display: grid; gap: var(--sp-3); }
+.module-safetyobs .so-card h2 { margin: 0; font-size: var(--fs-md); display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.module-safetyobs .so-card summary { cursor: pointer; font-weight: var(--fw-semi); }
+.module-safetyobs .so-row { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.module-safetyobs .so-entry { display: flex; gap: var(--sp-3); align-items: stretch; }
+.module-safetyobs .so-entry textarea { flex: 1; resize: vertical; font-size: var(--fs-md); }
+.module-safetyobs .so-muted { color: var(--apai-muted); font-size: var(--fs-xs); font-weight: normal; }
+.module-safetyobs .so-status { padding: var(--sp-2) var(--sp-3); border-radius: var(--rad-md); font-size: var(--fs-sm); border: 1px solid var(--apai-border-soft); }
+.module-safetyobs .so-status.error { color: var(--apai-error); border-color: var(--apai-error); }
+.module-safetyobs .so-status.ok { color: var(--apai-success, #22A06B); border-color: currentColor; }
+.module-safetyobs .so-review { display: grid; gap: var(--sp-3); }
+.module-safetyobs .so-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--sp-3); }
+.module-safetyobs .so-field { display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--apai-ink-soft); }
+.module-safetyobs .so-field.wide { grid-column: 1 / -1; }
+.module-safetyobs .so-field.need .input { border-color: var(--apai-error); }
+.module-safetyobs .so-field.guess .input { border-color: var(--apai-warn); }
+.module-safetyobs .so-flag { font-size: var(--fs-xs); color: var(--apai-warn); }
+.module-safetyobs .so-field.need .so-flag { color: var(--apai-error); }
+.module-safetyobs .so-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+.module-safetyobs .so-check { display: grid; gap: var(--sp-2); font-size: var(--fs-sm); }
+.module-safetyobs .so-pre { white-space: pre-wrap; font-family: inherit; margin: 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--apai-border-soft); }
+.module-safetyobs .so-table-wrap { overflow-x: auto; }
+.module-safetyobs table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.module-safetyobs th { text-align: left; padding: var(--sp-2) var(--sp-3); color: var(--apai-ink-soft); font-weight: var(--fw-semi); border-bottom: 1px solid var(--apai-border-soft); }
+.module-safetyobs td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--apai-border-soft); vertical-align: top; }
+.module-safetyobs td.num, .module-safetyobs th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.module-safetyobs .bad { color: var(--apai-error); font-weight: var(--fw-semi); }
+.module-safetyobs .good { color: var(--apai-success, #22A06B); }
+.module-safetyobs .so-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); align-items: end; font-size: var(--fs-sm); }
+.module-safetyobs .so-settings label { display: grid; gap: 4px; }
+.module-safetyobs .so-settings label.so-inline { display: flex; align-items: center; gap: var(--sp-2); }

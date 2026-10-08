@@ -1,0 +1,53 @@
+<div class="pl">
+  <header class="pl-header">
+    <div>
+      <h1>Punch Lookup</h1>
+      <p class="pl-sub">Look up an associate's Global Time &amp; Attendance punches (needs GTA access), then <b>Start shared case</b> to work a wage &amp; hour review with other investigators. A case lives in your OneDrive; only people you share it with can open it, and everyone's notes appear live.</p>
+    </div>
+  </header>
+
+  <section id="punchlookup-cases" class="pl-cases">
+    <div class="pl-cases-head">
+      <h2>Cases</h2>
+      <span class="pl-spacer"></span>
+      <input id="punchlookup-case-link" class="input pl-case-link" placeholder="Paste a case link someone shared with you">
+      <button id="punchlookup-open-link" class="btn btn-secondary btn-sm" type="button">Open</button>
+    </div>
+    <div id="punchlookup-cases-list" class="pl-cases-list"></div>
+  </section>
+
+  <section id="punchlookup-case" hidden></section>
+
+  <div id="punchlookup-lookup">
+    <h2 class="pl-h2">Look up punches</h2>
+    <form id="punchlookup-form" class="pl-toolbar" autocomplete="off">
+      <label class="pl-field pl-grow">Associate <input id="punchlookup-q" class="input" type="search" placeholder="e.g. brook, abernathy, or a WIN" required></label>
+      <label class="pl-field">From <input id="punchlookup-from" class="input" type="date" required></label>
+      <label class="pl-field">To <input id="punchlookup-to" class="input" type="date" required></label>
+      <div class="pl-presets" role="group" aria-label="Quick ranges">
+        <button type="button" class="btn btn-sm btn-secondary" data-days="7">7 days</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-days="14">14</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-days="30">30</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-days="90">90</button>
+      </div>
+      <button id="punchlookup-find" class="btn btn-primary" type="submit">Find</button>
+    </form>
+
+    <div id="punchlookup-msg" class="pl-status" hidden></div>
+    <div id="punchlookup-matches" class="pl-matches" hidden></div>
+
+    <section id="punchlookup-result" hidden>
+      <div class="pl-actions">
+        <label class="pl-check"><input id="punchlookup-hide-empty" type="checkbox" checked> Hide days off</label>
+        <label class="pl-check"><input id="punchlookup-hide-carry" type="checkbox"> Hide midnight carry-overs</label>
+        <span class="pl-spacer"></span>
+        <button id="punchlookup-print" class="btn btn-secondary btn-sm" type="button">Print / PDF</button>
+        <button id="punchlookup-copy" class="btn btn-secondary btn-sm" type="button">Copy for email</button>
+        <button id="punchlookup-mail" class="btn btn-secondary btn-sm" type="button">New email</button>
+        <button id="punchlookup-csv" class="btn btn-secondary btn-sm" type="button">CSV</button>
+        <button id="punchlookup-start-case" class="btn btn-primary btn-sm" type="button" title="Put these days' punches into a case folder in your OneDrive and share it with investigators">Start shared case</button>
+      </div>
+      <div id="punchlookup-paper" class="pl-paper"></div>
+    </section>
+  </div>
+</div>

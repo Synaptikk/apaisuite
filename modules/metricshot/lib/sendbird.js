@@ -66,7 +66,7 @@ const SBKEY_GLOBAL = "__APAISUITE_METRICSHOT_SBKEY";
  * Send a text-only message to a channel.
  * @returns {Promise<{ok:boolean, path:"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
  */
-export async function postTextToWorkvivo({ channelName, text, reuseOnly = false }) {
+export async function postTextToWorkvivo({ channelName, text, reuseOnly = false, mentionedUserIds = [] }) {
   if (!text || typeof text !== "string") return { ok: false, path: "none", errorClass: "INPUT", error: "missing text" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
@@ -74,7 +74,7 @@ export async function postTextToWorkvivo({ channelName, text, reuseOnly = false 
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
   try {
-    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "text", channelName, text }]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "text", channelName, text, mentionedUserIds }]);
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
@@ -101,6 +101,25 @@ export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileNam
     const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "file", channelName, pngBase64, fileName, caption }]);
     step("rest-post-done", { ok: !!r?.ok, errorClass: r?.errorClass });
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
+  } finally {
+    await _closeIfOwn(tabId, openedFresh);
+  }
+}
+
+/**
+ * A channel's members, for @mentions. Workvivo writes a mention as
+ * `@[Nickname](person:<user_id>)` in the text plus mentioned_user_ids
+ * (read off a real mention 2026-10-08); the ids are these user_ids.
+ * @returns {Promise<{ok:boolean, channelUrl?:string, members?:Array<{userId:string, nickname:string}>, error?:string, errorClass?:string}>}
+ */
+export async function listChannelMembers({ channelName, reuseOnly = false }) {
+  if (!channelName) return { ok: false, errorClass: "INPUT", error: "missing channelName" };
+  const tabRes = await _ensureWorkvivoTab({ reuseOnly });
+  if (!tabRes.ok) return { ok: false, errorClass: tabRes.errorClass, error: tabRes.error };
+  const { tabId, openedFresh } = tabRes;
+  try {
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "members", channelName }]);
+    return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
   }
@@ -533,10 +552,28 @@ async function IN_PAGE_SB(arg) {
     return { ok: true, selfUserId: String(c.userId), channelUrl: channel.channel_url, messages };
   }
 
+  if (arg.action === "members") {
+    const all = [];
+    let token = "";
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const r = await sbFetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) +
+        "/members?limit=" + PAGE_SIZE + (token ? "&token=" + encodeURIComponent(token) : ""), { method: "GET" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return { ok: false, errorClass: classify(r.status), error: "members " + r.status + ": " + (j.message || "") };
+      for (const m of j.members || []) all.push({ userId: String(m.user_id), nickname: String(m.nickname || "") });
+      token = j.next;
+      if (!token) break;
+    }
+    return { ok: true, channelUrl: channel.channel_url, members: all };
+  }
+
   if (arg.action === "text") {
+    const msgBody = { message_type: "MESG", user_id: c.userId, message: String(arg.text) };
+    const mentioned = Array.isArray(arg.mentionedUserIds) ? arg.mentionedUserIds.map(String).filter(Boolean) : [];
+    if (mentioned.length) { msgBody.mention_type = "users"; msgBody.mentioned_user_ids = mentioned; }
     const r = await sbFetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {
       method: "POST",
-      body: JSON.stringify({ message_type: "MESG", user_id: c.userId, message: String(arg.text) }),
+      body: JSON.stringify(msgBody),
     }, { "Content-Type": "application/json; charset=utf-8" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {

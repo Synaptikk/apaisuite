@@ -2,12 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Modules that run on the owner's own unpacked install only and must never
+// reach a distributed build; release.sh un-registers and deletes them in the
+// staged copy, and this check fails the build if one slips through.
+//   incidentintake — prototype, gitignored, needs a local helper
+//   punchlookup    — one associate's punches + device GPS; owner's use only
+export const LOCAL_ONLY_MODULES = ['incidentintake', 'punchlookup'];
+
 export function validatePackage(root) {
   const errors = [];
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   const registry = fs.readFileSync(path.join(root, 'modules/_registry.js'), 'utf8');
-  if (/^\s*(?:import .*incidentintake|incidentintake\s*,)/m.test(registry)) errors.push('Local-only incidentintake is registered');
-  if (fs.existsSync(path.join(root, 'modules/incidentintake'))) errors.push('Local-only incidentintake is packaged');
+  for (const id of LOCAL_ONLY_MODULES) {
+    if (new RegExp(`^\\s*(?:import\\s+${id}\\b|${id}\\s*,)`, 'm').test(registry)) errors.push(`Local-only ${id} is registered`);
+    if (fs.existsSync(path.join(root, 'modules', id))) errors.push(`Local-only ${id} is packaged`);
+  }
   const refs = [manifest.background.service_worker, ...Object.values(manifest.icons || {}),
     ...(manifest.content_scripts || []).flatMap(c => c.js || [])];
   const seen = new Set();

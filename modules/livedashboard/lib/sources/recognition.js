@@ -65,6 +65,36 @@ const TYPE_PROP = "Is_this_safety_observation_engagement_or_recognition";
 // ── Public entry point ─────────────────────────────────────────────
 
 export async function fetchRecognition(storeNbr) {
+  return withReportTab((tabId) => runRecognitionPipeline(tabId, storeNbr));
+}
+
+/**
+ * Observations at a store per submitter and day, fromIso..toIso inclusive:
+ * [{ dateIso, name, email, type, count }]. The survey records who filled it in, so this is how the Safety
+ * Observations module (modules/safetyobs) tells which coaches have done their
+ * two today. Same tab, transport and autonomous reauth as fetchRecognition.
+ */
+export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
+  return withReportTab(async (tabId) => {
+    const transport = await pollForTransport(tabId, CAPTURE_WAIT_MS, CAPTURE_POLL_MS);
+    if (!transport) {
+      return { ok: false, errorClass: "NO_CAPTURE", error: "No Power BI request captured from the Safety Observations page." };
+    }
+    const body = buildSubmitterQuery({ modelId: transport.modelId, store: padStore(storeNbr), dateIso: fromIso });
+    const res = await runQuery(tabId, transport, body, "Submitter");
+    if (!res.ok) return res;
+    const rows = decodeRows(res.json)
+      .map((r) => ({ ...r, dateIso: epochToIsoDate(r.Date) }))
+      .filter((r) => r.dateIso && r.dateIso >= fromIso && r.dateIso <= toIso)
+      .map((r) => ({
+        dateIso: r.dateIso, name: String(r.Name ?? "").trim(), email: String(r.Email ?? "").trim(),
+        type: String(r.Type ?? ""), count: Math.max(1, Math.round(Number(r.Count) || 1)),
+      }));
+    return { ok: true, fromIso, toIso, store: padStore(storeNbr), rows, capturedAt: new Date().toISOString() };
+  });
+}
+
+async function withReportTab(pipeline) {
   const opened = await findOrOpenReportTab();
   if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI Field_Dashboard tab." };
   const { tab, didOpen } = opened;
@@ -75,14 +105,14 @@ export async function fetchRecognition(storeNbr) {
   // not registered with shared/tabSessions.js, so the idle reaper cannot see
   // them either: nothing was cleaning them up.
   try {
-    return await runFetchRecognition(tab, storeNbr);
+    return await runWithReauth(tab, pipeline);
   } finally {
     // Only ours. A tab the user already had open stays open.
     if (didOpen) await chrome.tabs.remove(tab.id).catch(() => {});
   }
 }
 
-async function runFetchRecognition(tab, storeNbr) {
+async function runWithReauth(tab, pipeline) {
   await waitForTabLoad(tab.id, 25_000);
 
   // After an extension reload, an existing tab's document_start content
@@ -93,7 +123,7 @@ async function runFetchRecognition(tab, storeNbr) {
     await waitForTabLoad(tab.id, 25_000);
   }
 
-  let result = await runRecognitionPipeline(tab.id, storeNbr);
+  let result = await pipeline(tab.id);
   let reauthAttempts = 0;
   while (result && !result.ok && result.errorClass === "AUTH" && reauthAttempts < MAX_REAUTH_ATTEMPTS) {
     reauthAttempts++;
@@ -110,7 +140,7 @@ async function runFetchRecognition(tab, storeNbr) {
       console.log(`[livedashboard recognition] reauth reload failed: ${reloaded.reason}`);
       break;
     }
-    result = await runRecognitionPipeline(tab.id, storeNbr);
+    result = await pipeline(tab.id);
   }
 
   if (reauthAttempts > 0 && result && typeof result === "object") {
@@ -156,6 +186,13 @@ async function runRecognitionPipeline(tabId, storeNbr) {
 
 async function queryObservations(tabId, transport, store, type, since) {
   const body = buildObservationQuery({ modelId: transport.modelId, store, type, since });
+  const res = await runQuery(tabId, transport, body, type);
+  if (!res.ok) return res;
+  return { ok: true, rows: expandObservations(decodeRows(res.json)) };
+}
+
+/** POST a built query in-tab; classify auth, parse, refuse a truncated window. */
+async function runQuery(tabId, transport, body, type) {
   const res = await replayInTab(tabId, transport.url, JSON.stringify(body), transport.headers);
 
   const authStatus = classifyAuthResponse({
@@ -182,10 +219,10 @@ async function queryObservations(tabId, transport, store, type, since) {
   if (!complete) {
     return {
       ok: false, errorClass: "TRUNCATED",
-      error: `${type} observations for store ${store} exceeded ${MAX_WINDOW.toLocaleString("en-US")} rows; refusing a partial count.`,
+      error: `${type} observations exceeded ${MAX_WINDOW.toLocaleString("en-US")} rows; refusing a partial count.`,
     };
   }
-  return { ok: true, rows: expandObservations(decodeRows(json)) };
+  return { ok: true, json };
 }
 
 // ── Query + row shaping (pure; exported for tests) ─────────────────
@@ -206,6 +243,25 @@ export function buildObservationQuery({ modelId, store, type, since }) {
       whereIn(column("s", "fascility_nbr_padded"), [store]),
       whereIn(column("h", TYPE_PROP), [type]),
       whereDateRange(column("c", "GREGORIAN_DATE"), since),
+    ],
+  });
+}
+
+/** Per-submitter, per-day rows from dateIso on (Name/Email come from the form's own identity capture). */
+export function buildSubmitterQuery({ modelId, store, dateIso }) {
+  return buildQuery({
+    modelId,
+    from: FROM,
+    select: [
+      ["Date", column("c", "GREGORIAN_DATE")],
+      ["Name", column("h", "Name")],
+      ["Email", column("h", "Email")],
+      ["Type", column("h", TYPE_PROP)],
+      ["Count", aggregate("h", TYPE_PROP, AGG.COUNT_NON_NULL)],
+    ],
+    where: [
+      whereIn(column("s", "fascility_nbr_padded"), [store]),
+      whereDateRange(column("c", "GREGORIAN_DATE"), dateIso),
     ],
   });
 }
