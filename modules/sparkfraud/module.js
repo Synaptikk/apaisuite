@@ -12,6 +12,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "sparkfraud",
+    group:       "ap",
     name:        "SparkFraud",
     description: "Correlate register events to candidate Spark/Express delivery trips and order items.",
     version:     "0.1.0",

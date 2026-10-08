@@ -13,6 +13,7 @@ import { rowSourceUpdate, stampSpread } from "./lib/store_stamp.js";
 import { getUserHomeMarket, getUserHomeStore, onUserMarketChange } from "../../shared/userStore.js";
 import { rollUpSkippedByAssociate } from "./lib/parse_vizpick_stores_csv.js";
 import { buildPerformanceHtml, buildPickListHtml, buildCardEmail } from "./lib/card_report.js";
+import { reportHtmlToPng } from "./lib/card_image.js";
 import { timeline as historyTimeline, toCsv as historyCsv, indexSchedule, matchPerson, unseenBins, firstSeenEvents, diffDepts, updateGaps,
   scanLedger, scanImpact, ledgerCsv, cleanDay, causedByAssociate, isScannedToday, localDayKey } from "./lib/home_history.js";
 import { isDigitalJob } from "../digitalmetrics/lib/data/job_classify.js";
@@ -60,12 +61,6 @@ const TODAY_NOTE =
   "Source: the VizPick Details view, refreshed through the current business day. Tableau warns it can run 1–2 hours behind upstream systems.";
 const DAY_NOTE =
   "Source: the VizPick summary view, which Tableau refreshes once daily for the day prior.";
-
-/** Local YYYY-MM-DD, so day keys never shift across a UTC boundary. */
-function localDayKey(d) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 /**
  * Name a stored day relative to now: the most recent closed day reads
@@ -448,7 +443,7 @@ export async function mount(host, container) {
   // Home store only — home history keeps per-bin series for that store alone.
   // Loaded lazily for the day on screen, then render() once, mirroring
   // refreshTitles(): `causedRun` stops a repaint from re-entering the fetch.
-  let causedFor = { day: null, byWin: null };
+  let causedFor = { day: null, byWin: null, nobody: 0 };
   let causedRun = null;
 
   function causedKeyForActiveTab() {
@@ -463,21 +458,21 @@ export async function mount(host, container) {
       try {
         const res = await host.messaging.send("home_history", key === "today" ? {} : { day: key });
         const entries = cleanDay(res?.entries || []).entries;
-        causedFor = { day: key, byWin: causedByAssociate(entries).byWin };
+        const c = causedByAssociate(entries);
+        causedFor = { day: key, byWin: c.byWin, nobody: c.openOwnedByNobody };
         render();
       } catch {
         // A day with no kept history just shows no caused figure.
-        causedFor = { day: key, byWin: null };
+        causedFor = { day: key, byWin: null, nobody: 0 };
       }
     })().finally(() => { causedRun = null; });
     return causedRun;
   }
 
-  /** The caused figure for one associate on the card being drawn, or null. */
-  function causedForWin(store, win) {
+  /** The home store's caused records for the day on screen, or null. */
+  function causedRecordsFor(store) {
     if (!isHomeStore(store) || !causedFor.byWin || causedFor.day !== causedKeyForActiveTab()) return null;
-    const rec = causedFor.byWin.get(win) || causedFor.byWin.get(normalizeWin(win));
-    return rec ? rec.caused : null;
+    return causedFor.byWin;
   }
 
   function refreshTitles() {
@@ -651,7 +646,7 @@ export async function mount(host, container) {
     const store = d.cardPrint ?? d.cardPicklist ?? d.cardEmail;
     const row = rowsForActiveTab().find((x) => String(x.store) === String(store));
     if (!row) return;
-    if (d.cardEmail != null) { emailCard(row).catch(() => {}); return; }
+    if (d.cardEmail != null) { emailCard(row); return; }
     // Opened HERE, synchronously, while the click's user activation is still
     // live — printCard awaits name resolution and by then it would be blocked.
     const w = window.open("", "_blank", "width=820,height=900");
@@ -1494,12 +1489,30 @@ export async function mount(host, container) {
     if (!Array.isArray(gaps) || !gaps.length) return { shown: [], hidden: 0, unattributed: [], unattributedSkipped: 0, carried: [], carriedSkipped: 0 };
     const { associates, unattributed, unattributedSkipped, carried, carriedSkipped } =
       rollUpSkippedByAssociate(gaps, { day: reportDayKey(r) });
+    // Home store, once its history has loaded: only picks the associate CAUSED
+    // and nobody ever pulled (lib/home_history.js::causedStillOpen). Last-
+    // scanner "picks left" charges a closer with everything the day left on
+    // the bins they touched; this is the list the report owner actually wants
+    // (2026-10-01). Other stores have no per-bin history and keep picks left.
+    const recs = causedRecordsFor(r.store);
+    if (recs) {
+      const scanAt = new Map(gaps.map((g) => [g.location, g.lastSeenAt]));
+      const list = [...recs.values()].filter((c) => c.causedOpen > 0).map((c) => ({
+        win: c.win, causedOpen: c.causedOpen, caused: c.caused,
+        bins: c.causedOpenBins.map((b) => ({ ...b, lastSeenAt: scanAt.get(b.location) || null })),
+      })).sort((a, b) => b.causedOpen - a.causedOpen || b.caused - a.caused);
+      return {
+        mode: "caused", shown: list.slice(0, TOP_ASSOCIATES), hidden: Math.max(0, list.length - TOP_ASSOCIATES),
+        nobody: causedFor.nobody || 0, unattributed: [], unattributedSkipped: 0, carried: [], carriedSkipped: 0,
+      };
+    }
     return {
-      shown: associates.slice(0, TOP_ASSOCIATES),
+      mode: "left", shown: associates.slice(0, TOP_ASSOCIATES),
       hidden: Math.max(0, associates.length - TOP_ASSOCIATES),
       unattributed, unattributedSkipped, carried, carriedSkipped,
     };
   }
+
 
   /**
    * Why some rows are a WIN and not a name.
@@ -1554,7 +1567,11 @@ export async function mount(host, container) {
       return `<p class="vizpick-dept-none">No suggested picks outstanding — every located pick was pulled.</p>`;
     }
 
-    const { shown, hidden, unattributed, unattributedSkipped, carried, carriedSkipped } = topAssociatesFor(r);
+    const { mode, shown, hidden, nobody, unattributed, unattributedSkipped, carried, carriedSkipped } = topAssociatesFor(r);
+    const causedMode = mode === "caused";
+    if (causedMode && !shown.length) {
+      return `<p class="vizpick-dept-none">No picks caused by an associate were left unpicked${nobody ? ` — the ${nobody} still open grew with no scan behind them, or were already there at the day's first update` : ""}.</p>`;
+    }
     const store = String(r.store);
     const idsNote = nameResolveNote(shown);
 
@@ -1579,11 +1596,12 @@ export async function mount(host, container) {
         <tr class="vizpick-assoc-bin">
           <td class="vizpick-assoc-bin-id">${escapeHtml(b.location)}</td>
           <td class="vizpick-assoc-bin-meta">
-            <span class="vizpick-assoc-bin-left">${escapeHtml(String(b.skipped))} of ${escapeHtml(String(b.picksSeen))} left</span>
+            <span class="vizpick-assoc-bin-left">${causedMode
+              ? `${escapeHtml(String(b.open))} of ${escapeHtml(String(b.caused))} caused never picked`
+              : `${escapeHtml(String(b.skipped))} of ${escapeHtml(String(b.picksSeen))} left`}</span>
             <span class="vizpick-assoc-when" title="${escapeHtml(b.lastSeenAt || "no scan recorded")}">${escapeHtml(shortWhen(b.lastSeenAt))}</span>
           </td>
         </tr>`).join("");
-      const caused = causedForWin(store, a.win);
       return `
         <tbody class="vizpick-assoc-group">
           <tr class="vizpick-assoc-row">
@@ -1593,8 +1611,7 @@ export async function mount(host, container) {
                 <span class="vizpick-assoc-caret">${open ? "▾" : "▸"}</span>
                 ${digital}<span class="vizpick-assoc-name">${label}</span>
                 ${title}
-                <span class="vizpick-assoc-count">${a.skipped} left · ${a.bins.length} bin${a.bins.length === 1 ? "" : "s"}</span>
-                ${caused == null ? "" : `<span class="vizpick-assoc-caused" title="Picks that grew while ${escapeHtml(label)} was the bin's scanner">caused ${caused}</span>`}
+                <span class="vizpick-assoc-count">${causedMode ? a.causedOpen : a.skipped} ${causedMode ? "unpicked" : "left"} · ${a.bins.length} bin${a.bins.length === 1 ? "" : "s"}</span>
               </button>
             </td>
           </tr>
@@ -1603,7 +1620,7 @@ export async function mount(host, container) {
     }).join("");
 
     const more = hidden
-      ? `<p class="vizpick-dept-none">${hidden} more associate${hidden === 1 ? "" : "s"} with fewer picks left, not shown.</p>`
+      ? `<p class="vizpick-dept-none">${hidden} more associate${hidden === 1 ? "" : "s"} with fewer picks ${causedMode ? "unpicked" : "left"}, not shown.</p>`
       : "";
     const orphan = unattributed.length
       ? `<p class="vizpick-dept-none">${unattributedSkipped} pick${unattributedSkipped === 1 ? "" : "s"} in ${unattributed.length} bin${unattributed.length === 1 ? "" : "s"} nobody scanned — not started, rather than left behind.</p>`
@@ -1619,13 +1636,16 @@ export async function mount(host, container) {
 
     return `
       <table class="vizpick-dept-table vizpick-assoc-table">
-        <thead><tr><th>Associate</th><th>Picks left</th><th title="Picks that appeared while this associate was the bin's scanner. A scan owns only the growth under it, not the running total.">Caused</th></tr></thead>
+        <thead><tr><th>Associate</th>${causedMode
+          ? `<th colspan="2" title="Picks that appeared under this associate's scan and were still open at the day's last update. Picks are taken as pulled oldest first, so leftovers count against the newest growth.">Caused, never picked</th>`
+          : `<th colspan="2">Picks left</th>`}</tr></thead>
         ${rowsHtml}
       </table>
       ${idsNote ? `<p class="vizpick-dept-none">${idsNote}</p>` : ""}
       ${more}
       ${orphan}
-      ${carriedNote}`;
+      ${carriedNote}
+      ${causedMode && nobody ? `<p class="vizpick-dept-none">${nobody} more pick${nobody === 1 ? "" : "s"} still open grew with no scan behind them or were there at the day's first update — charged to nobody.</p>` : ""}`;
   }
 
   /** "8/22/2026 6:12:55 AM" -> "6:12 AM". Full value stays in the title. */
@@ -1739,14 +1759,10 @@ export async function mount(host, container) {
       // repaint. Cheap when everything is already known: refreshDirectory()
       // returns immediately once every shown WIN has a name. The pick list
       // carries no names, so it never waits.
-      if (kind !== "picklist") {
-        const changed = await withDeadline(refreshDirectory(), REPORT_NAME_WAIT_MS);
-        if (changed) render();
-      }
-      const meta = cardMeta(r);
+      if (kind !== "picklist") await resolveForReport();
       const html = kind === "picklist"
-        ? buildPickListHtml(r, meta)
-        : buildPerformanceHtml(r, meta, { names: nameResolver() });
+        ? buildPickListHtml(r, cardMeta(r))
+        : performanceHtml(r);
       // open() resets the stream. The placeholder was written without a
       // close(), so the document is still open and a bare write() would
       // APPEND the report to "Preparing…" rather than replace it.
@@ -1773,16 +1789,78 @@ export async function mount(host, container) {
     `<body style="font:14px -apple-system,'Segoe UI',sans-serif;color:#555;margin:2rem">` +
     `Preparing the report…</body>`;
 
-  async function emailCard(r) {
-    if (await withDeadline(refreshDirectory(), REPORT_NAME_WAIT_MS)) render();
-    const { subject, body, truncated } = buildCardEmail(r, cardMeta(r), { names: nameResolver() });
-    // Opens the user's mail client with a DRAFT. Nothing is sent from here —
-    // the recipient list and the send are theirs.
-    window.open(
-      `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
-      "_self",
-    );
-    log.emit("card_emailed", { store: String(r?.store ?? ""), tab: activeTab, truncated });
+  /** Names + digital roster, bounded so a report always gets built. */
+  async function resolveForReport() {
+    const [names, digital] = await Promise.all([
+      withDeadline(refreshDirectory(), REPORT_NAME_WAIT_MS),
+      withDeadline(refreshDigital(), REPORT_NAME_WAIT_MS),
+    ]);
+    if (names || digital) render();
+  }
+
+  /** WIN → digital associate? Same test the card's "D" chip uses. */
+  function digitalResolver(store) {
+    return (win) => {
+      const who = dirGet(win);
+      return !!((who?.name && isDigital(store, who.name)) || (who?.title && isDigitalJob(who.title)));
+    };
+  }
+
+  function performanceHtml(r) {
+    return buildPerformanceHtml(r, cardMeta(r), { names: nameResolver(), digital: digitalResolver(r?.store) });
+  }
+
+  /**
+   * Email = the performance report as an IMAGE. A mailto: body is plain text
+   * and cannot carry an attachment, so the picture goes on the clipboard and
+   * the draft says to paste it.
+   *
+   * MUST be called synchronously from the click: clipboard.write() is issued
+   * right away with a PROMISE of the PNG (Chrome holds the write open until it
+   * resolves), because by the time names have resolved the click's activation
+   * and the page's focus may both be gone. The old version awaited first and
+   * then launched mailto: — Chrome refuses an external-protocol launch without
+   * a live user gesture, which is why the button "did nothing".
+   */
+  function emailCard(r) {
+    const store = String(r?.store ?? "");
+    renderTodayBar(null, `Building the store ${store} report image…`);
+    const png = resolveForReport().then(() => reportHtmlToPng(performanceHtml(r)));
+    let copied;
+    try {
+      copied = navigator.clipboard.write([new ClipboardItem({ "image/png": png })]).then(() => true, () => false);
+    } catch {
+      copied = Promise.resolve(false);
+    }
+    Promise.all([png, copied]).then(([blob, ok]) => {
+      const { subject } = buildCardEmail(r, cardMeta(r), { names: nameResolver() });
+      if (!ok) {
+        // Clipboard refused (page lost focus, policy): hand over a file instead.
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `VizPick store ${store}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+      }
+      const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+        ok ? "(Ctrl+V here to paste the report image)" : "(Attach the downloaded report image)")}`;
+      renderTodayBar(null, ok
+        ? `Store ${store} report image copied — paste it into the email with Ctrl+V. `
+        : `Store ${store} report image downloaded — attach it to the email. `);
+      // A real link: the automatic launch below can be refused once the
+      // click's activation has expired, and a click on this always works.
+      const statusEl = container.querySelector("[data-today-status]");
+      if (statusEl) {
+        const link = document.createElement("a");
+        link.href = mailto;
+        link.textContent = "Open email draft";
+        statusEl.append(link);
+      }
+      try { window.open(mailto, "_self"); } catch { /* the link above covers it */ }
+      log.emit("card_emailed", { store, tab: activeTab, image: true, copied: ok });
+    }).catch((e) => {
+      renderTodayBar(null, `Could not build the report image: ${e?.message ?? e}`);
+    });
   }
 
   function storeCardHtml(r) {
@@ -1895,7 +1973,7 @@ export async function mount(host, container) {
                     title="Print pick list — the bins that still need pulling, in walk order"
                     aria-label="Print pick list for store ${escapeHtml(r.store)}">📋</button>
             <button class="vizpick-card-action" data-card-email="${escapeHtml(r.store)}"
-                    title="Email this card as a summary"
+                    title="Email this card — copies the performance report as an image to paste into the draft"
                     aria-label="Email store ${escapeHtml(r.store)}">✉</button>
           </div>
           <span class="vizpick-store-card-grip" aria-hidden="true" title="Drag to rearrange">⠿</span>

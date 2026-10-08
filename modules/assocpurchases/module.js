@@ -20,6 +20,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "assocpurchases",
+    group:       "ap",
     name:        "Associate Purchases",
     description: "Detect associates who mark items down then purchase them (or buy just-marked items within 1 hour). Pulls from MUMD report + APPRISS discount-card search.",
     version:     "0.1.0",

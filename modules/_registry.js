@@ -17,6 +17,7 @@ import stockingplan      from "./stockingplan/module.js";
 import aurorbuddy        from "./aurorbuddy/module.js";
 import registerls        from "./registerls/module.js";
 import boblisa           from "./boblisa/module.js";
+import doorcatch         from "./doorcatch/module.js";
 import safetyagent       from "./safetyagent/module.js";
 import sparkfraud        from "./sparkfraud/module.js";
 import sparkrisk         from "./sparkrisk/module.js";
@@ -29,7 +30,7 @@ import orcmonitor        from "./orcmonitor/module.js";
 import market120         from "./market120/module.js";
 import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
-import digitalrollup     from "./digitalrollup/module.js";
+import digitaldashboard  from "./digitaldashboard/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
 import costinventory     from "./costinventory/module.js";
 import accidents         from "./accidents/module.js";
@@ -37,7 +38,8 @@ import cx                from "./cx/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
-// Order in this array == order in the sidebar (for "fullpage" kinds).
+// Order in this array == order within each sidebar group (manifest.group,
+// see shared/moduleGroups.js) for "fullpage" kinds.
 // `livedashboard` uses kind: "home-header" — it's hidden from the
 // sidebar and mounts above the module-card grid on the home screen.
 // Keep it in the registry so its SW handlers + alarms load on SW boot.
@@ -46,11 +48,12 @@ export default [
   market120,         // Market 120 Clearance & ISA Review — Pass 1 skeleton
   metricshot,        // Scheduled screenshots → Workvivo
   vizpick,           // VizPick Market Rollup — every store in a market at once
-  digitalrollup,     // Digital Market Rollup — live OPD fulfilment, same layout
+  digitaldashboard,  // Digital Dashboard — GIF store metrics (repurposed from digitalrollup)
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
   cx,                // Cx — store NPS + Medallia comment themes, what's going right/wrong
   aurorbuddy,
   registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ
+  doorcatch,         // Door Catches — door-host barcode scans of items not on the receipt (qrcallbox.com/door)
   boblisa,           // BoB and Lisa — missed-item finder (same card, second sale minutes later)
   safetyagent,       // Safety Agent Dashboard — SafeIQ CV hazard alerts by camera / tag / associate
   orcmonitor,        // ORC Corridor Intelligence Monitor

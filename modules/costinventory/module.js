@@ -18,6 +18,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "costinventory",
+    group:       "storeops",
     name:        "Cost Inventory",
     description: "Fills the monthly Fresh cost inventory worksheet from OneWalmart, the Ops Portal ITR, CaseVisibility and GDP Connect — and exports it as the store's own xlsx.",
     version:     "0.1.0",

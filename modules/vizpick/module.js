@@ -46,6 +46,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "vizpick",
+    group:       "storeops",
     name:        "VizPick Market Rollup",
     description: "Every store's VizPick backroom health for a chosen market, pulled from Tableau — no per-store search required.",
     version:     "0.1.0",

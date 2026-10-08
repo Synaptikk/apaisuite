@@ -4,6 +4,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "stockingplan",
+    group:       "storeops",
     name:        "StockingPlan",
     description: "Overnight stocking plan: CaseVisibility freight by area/dept/aisle, sized against Stock 2 + Overnight hours and tomorrow's Stock 1 crew, and drafted in the four-block shape the store sends.",
     version:     "0.3.2",

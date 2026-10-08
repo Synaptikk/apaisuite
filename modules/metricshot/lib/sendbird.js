@@ -66,11 +66,11 @@ const SBKEY_GLOBAL = "__APAISUITE_METRICSHOT_SBKEY";
  * Send a text-only message to a channel.
  * @returns {Promise<{ok:boolean, path:"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
  */
-export async function postTextToWorkvivo({ channelName, text }) {
+export async function postTextToWorkvivo({ channelName, text, reuseOnly = false }) {
   if (!text || typeof text !== "string") return { ok: false, path: "none", errorClass: "INPUT", error: "missing text" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
-  const tabRes = await _ensureWorkvivoTab();
+  const tabRes = await _ensureWorkvivoTab({ reuseOnly });
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
   try {
@@ -116,6 +116,29 @@ export async function resolveChannel(channelName) {
   const { tabId, openedFresh } = tabRes;
   try {
     const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "resolve", channelName }]);
+    return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
+  } finally {
+    await _closeIfOwn(tabId, openedFresh);
+  }
+}
+
+/**
+ * Read a channel's messages newer than `afterTs` (ms), oldest first. Built for
+ * a poller (Digital Dashboard's !command listener), so it defaults to
+ * reuseOnly: it never opens or foregrounds a Workvivo tab of its own — with no
+ * signed-in Workvivo tab open it returns errorClass NO_TAB_OPEN and the caller
+ * skips that tick.
+ * @returns {Promise<{ok:boolean, selfUserId?:string, channelUrl?:string,
+ *   messages?: Array<{messageId:string, createdAt:number, userId:string, nickname:string, text:string}>,
+ *   error?:string, errorClass?:string}>}
+ */
+export async function readChannelMessages({ channelName, afterTs, limit = 50, reuseOnly = true }) {
+  if (!channelName) return { ok: false, errorClass: "INPUT", error: "missing channelName" };
+  const tabRes = await _ensureWorkvivoTab({ reuseOnly });
+  if (!tabRes.ok) return { ok: false, errorClass: tabRes.errorClass, error: tabRes.error };
+  const { tabId, openedFresh } = tabRes;
+  try {
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "messages", channelName, afterTs: Number(afterTs) || Date.now(), limit }]);
     return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
@@ -190,7 +213,7 @@ export async function readNetlogFromOpenTab() {
  * caller (_closeIfOwn) closes it after posting. We never reuse the user's tab
  * (avoids hijacking their session).
  */
-async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
+async function _ensureWorkvivoTab({ waitMs = 30_000, onStep, reuseOnly = false } = {}) {
   const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
 
   // A Workvivo tab the user already has open, whose sniffer has already seen a
@@ -208,6 +231,11 @@ async function _ensureWorkvivoTab({ waitMs = 30_000, onStep } = {}) {
       step("tab-reused", { tabId: t.id });
       return { ok: true, tabId: t.id, openedFresh: false };
     }
+  }
+
+  // Pollers must not open (and possibly foreground) a tab every tick.
+  if (reuseOnly) {
+    return { ok: false, errorClass: "NO_TAB_OPEN", error: "no signed-in Workvivo tab open (open workvivo.walmart.com in a tab)" };
   }
 
   step("tab-create");
@@ -331,7 +359,7 @@ function IN_PAGE_INTROSPECT() {
  * forbids anyway. All helpers are nested; nothing outside this function is
  * referenced.
  *
- * actions: "resolve" | "text" | "file"
+ * actions: "list" | "resolve" | "text" | "file" | "messages"
  */
 async function IN_PAGE_SB(arg) {
   const w = /** @type any */ (globalThis);
@@ -479,6 +507,30 @@ async function IN_PAGE_SB(arg) {
 
   if (arg.action === "resolve") {
     return { ok: true, channelUrl: channel.channel_url, name: channel.name };
+  }
+
+  if (arg.action === "messages") {
+    // Messages strictly after afterTs, oldest first. message_ts + next_limit
+    // pages forward from a timestamp; prev_limit=0 drops the anchor's past.
+    const url = base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages" +
+      "?message_ts=" + encodeURIComponent(String(arg.afterTs)) +
+      "&prev_limit=0&next_limit=" + Math.max(1, Math.min(200, Number(arg.limit) || 50)) +
+      "&include=false&reverse=false&message_type=MESG";
+    const r = await sbFetch(url, { method: "GET" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return { ok: false, errorClass: classify(r.status), error: "messages " + r.status + ": " + (j.message || ""), keyAgeMs: c.ageMs };
+    }
+    const messages = (j.messages || [])
+      .filter((m) => Number(m.created_at) > Number(arg.afterTs))
+      .map((m) => ({
+        messageId: String(m.message_id),
+        createdAt: Number(m.created_at),
+        userId: String((m.user && m.user.user_id) || ""),
+        nickname: String((m.user && m.user.nickname) || ""),
+        text: String(m.message || ""),
+      }));
+    return { ok: true, selfUserId: String(c.userId), channelUrl: channel.channel_url, messages };
   }
 
   if (arg.action === "text") {

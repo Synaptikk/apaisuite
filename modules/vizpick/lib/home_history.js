@@ -642,14 +642,18 @@ export function scanImpact(entries, groupOf) {
  */
 export function causedByAssociate(entries) {
   const { groups, idle } = scanImpact(entries, (win) => win);
+  const { byWin: openByWin, nobody } = causedStillOpen(entries);
   const byWin = new Map();
-  let causedTotal = 0;
+  let causedTotal = 0, causedOpenTotal = 0;
   for (const g of groups) {
     // scanImpact files a scan with no WIN under "Unknown"; it is not a person.
     if (!g.group || g.group === "Unknown") continue;
+    const still = openByWin.get(g.group);
     byWin.set(g.group, {
       win: g.group,
       caused: g.picksAdded,
+      causedOpen: still?.open || 0,
+      causedOpenBins: still?.bins || [],
       scans: g.scans,
       rescans: g.rescans,
       firstScans: g.firstScans,
@@ -657,8 +661,67 @@ export function causedByAssociate(entries) {
       binsOpenAtClose: g.binsOpenAtClose,
     });
     causedTotal += g.picksAdded;
+    causedOpenTotal += still?.open || 0;
   }
-  return { byWin, unscanned: idle, causedTotal };
+  return { byWin, unscanned: idle, causedTotal, causedOpenTotal, openOwnedByNobody: nobody };
+}
+
+/**
+ * Of the picks each associate CAUSED, how many were never picked out.
+ *
+ * Per bin, every growth in suggested picks is a layer owned by whoever's scan
+ * it appeared under (scanImpact's rule) — or by nobody, for what the bin held
+ * at the first update and growth with no new scan. Picks are assumed pulled
+ * oldest first, so the bin's picks still open at the last update are charged
+ * to the NEWEST layers. Shane causes 12, Matt causes 2, 10 get pulled, 4 are
+ * left: Matt owns 2 of them, Shane 2.
+ *
+ * A drop in suggested picks (the list shrank without a pick) trims the oldest
+ * layers too, so the layers always add up to the bin's current total.
+ *
+ * @returns {{ byWin: Map<string, {open, bins: Array<{location, open, caused, due, done}>}>, nobody: number }}
+ */
+export function causedStillOpen(entries) {
+  const list = entries || [];
+  const chain = new Map(); // location → { prev bin, layers [{ win, n }] }
+  for (const e of list) {
+    for (const x of e.bins || []) {
+      const c = chain.get(x.location);
+      if (!c) { chain.set(x.location, { prev: x, layers: x.seen > 0 ? [{ win: null, n: x.seen }] : [] }); continue; }
+      const dDue = x.seen - c.prev.seen;
+      const scanned = (c.prev.lastSeenAt || null) !== (x.lastSeenAt || null);
+      if (dDue > 0) c.layers.push({ win: scanned && x.win ? x.win : null, n: dDue });
+      for (let cut = -dDue; cut > 0 && c.layers.length;) {
+        const take = Math.min(cut, c.layers[0].n);
+        c.layers[0].n -= take; cut -= take;
+        if (!c.layers[0].n) c.layers.shift();
+      }
+      c.prev = x;
+    }
+  }
+  const byWin = new Map();
+  let nobody = 0;
+  for (const [location, { prev, layers }] of chain) {
+    let left = Math.max(0, prev.seen - prev.done);
+    const mine = new Map();
+    for (let i = layers.length - 1; i >= 0 && left > 0; i--) {
+      const take = Math.min(left, layers[i].n);
+      left -= take;
+      if (!layers[i].win) { nobody += take; continue; }
+      const m = mine.get(layers[i].win) || { open: 0, caused: 0 };
+      m.open += take;
+      mine.set(layers[i].win, m);
+    }
+    for (const l of layers) if (l.win && mine.has(l.win)) mine.get(l.win).caused += l.n;
+    for (const [win, m] of mine) {
+      let r = byWin.get(win);
+      if (!r) byWin.set(win, r = { open: 0, bins: [] });
+      r.open += m.open;
+      r.bins.push({ location, open: m.open, caused: m.caused, due: prev.seen, done: prev.done });
+    }
+  }
+  for (const r of byWin.values()) r.bins.sort((a, b) => b.open - a.open || a.location.localeCompare(b.location));
+  return { byWin, nobody };
 }
 
 export function cleanDay(entries) {

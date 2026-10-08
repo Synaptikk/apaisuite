@@ -43,6 +43,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "cx",
+    group:       "frontend",
     name:        "Cx",
     description: "Store NPS, customer-service scores and what the comments say is going right and wrong.",
     version:     "0.1.0",

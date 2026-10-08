@@ -14,6 +14,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "closinglist",
+    group:       "storeops",
     name:        "ClosingList",
     description: "Closing-shift email draft from CaseVisibility schedule + IVR call-offs.",
     version:     "0.2.1",

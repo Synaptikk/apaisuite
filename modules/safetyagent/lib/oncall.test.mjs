@@ -88,3 +88,19 @@ test('team mapping keeps leads out of wave 1', () => {
   assert.equal(teamForJob('Auto Care Ctr Serv Tech'), 'Auto Care Center');
   assert.equal(teamForJob('Digital Personal Shopper'), null);
 });
+
+test('a TA promoted to TL counts as team before the promotion and as a lead after', () => {
+  const at = (iso, hhmm, assoc, ack) => { const r = row(hhmm, assoc, ack); r[0] = `${iso} ${hhmm}`; r[9] = iso; return r; };
+  const day = (benJob) => ({ sched: sched.map((s) => [s.name, s.name === 'BEN COLE' ? benJob : s.jobName, s.shiftStart, s.shiftEnd]), punch: punches.map((p) => [p.gtaName, p.punches.map((x) => [x.kind, x.min, x.code || ''])]) });
+  const cache = {
+    camTeam: parseCamList({ value: [{ Camera_x0020_NAME: 'SAL_TOYS', Supercenter_x0020_Team: 'Seasonal', InScope: 'Yes' }] }),
+    days: { '2026-09-29': day('Seasonal TA'), '2026-09-30': day('Seasonal TL') },
+  };
+  const a = analyzeOncall([at('2026-09-29', '14:00', 'BEN COLE', 1), at('2026-09-30', '14:00', 'BEN COLE', 1)], cache, COL);
+  assert.equal(a.takenBy.team, 1);
+  assert.equal(a.takenBy.leader, 1);
+  const ben = a.people.find((p) => p.name === 'BEN COLE');
+  assert.equal(ben.offered, 1);
+  assert.equal(ben.nowJob, 'Seasonal TL');
+  assert.equal(ben.nowSince, '2026-09-30');
+});

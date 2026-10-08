@@ -96,3 +96,40 @@ test("an empty or single-update day yields nothing rather than throwing", () => 
   assert.equal(causedByAssociate([]).byWin.size, 0);
   assert.equal(causedByAssociate([E("2026-09-28T09:00:00Z", [B("a", 5, 0, "SHANE", "t1")])]).causedTotal, 0);
 });
+
+test("caused-and-still-open charges leftovers to the newest growth first", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("010/010", 0, 0, null, null)]),
+    E("2026-09-28T13:00:00Z", [B("010/010", 12, 0, "SHANE", "t1")]),
+    E("2026-09-28T17:00:00Z", [B("010/010", 14, 0, "MATT", "t2")]),
+    // 10 pulled with no new scan: oldest picks go first.
+    E("2026-09-28T21:00:00Z", [B("010/010", 14, 10, "MATT", "t2")]),
+  ];
+  const { byWin } = causedByAssociate(day);
+  assert.equal(byWin.get("MATT").causedOpen, 2);
+  assert.equal(byWin.get("SHANE").causedOpen, 2);
+  assert.deepEqual(byWin.get("SHANE").causedOpenBins, [{ location: "010/010", open: 2, caused: 12, due: 14, done: 10 }]);
+});
+
+test("caused picks that were all pulled leave nothing charged", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("011/011", 0, 0, null, null)]),
+    E("2026-09-28T13:00:00Z", [B("011/011", 8, 0, "SHANE", "t1")]),
+    E("2026-09-28T20:00:00Z", [B("011/011", 8, 8, "MATT", "t2")]),
+  ];
+  const { byWin, causedOpenTotal } = causedByAssociate(day);
+  assert.equal(byWin.get("SHANE").caused, 8);
+  assert.equal(byWin.get("SHANE").causedOpen, 0);
+  assert.equal(byWin.get("MATT").causedOpen, 0);
+  assert.equal(causedOpenTotal, 0);
+});
+
+test("what the bin held at the first update and idle growth stay with nobody", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("012/012", 5, 0, "SHANE", "t0")]),
+    E("2026-09-28T13:00:00Z", [B("012/012", 9, 0, "SHANE", "t0")]),
+  ];
+  const { byWin, openOwnedByNobody } = causedByAssociate(day);
+  assert.equal(byWin.get("SHANE")?.causedOpen ?? 0, 0);
+  assert.equal(openOwnedByNobody, 9);
+});

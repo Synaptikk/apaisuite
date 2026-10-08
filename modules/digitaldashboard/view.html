@@ -1,0 +1,57 @@
+<div class="dmr-root" data-dd-root>
+  <header class="dmr-head">
+    <div class="dmr-head-main">
+      <h1 class="dmr-title">Digital Dashboard <span class="dmr-store">Store 1458</span></h1>
+      <p class="dmr-sub" data-asof>—</p>
+    </div>
+    <div class="dmr-head-actions">
+      <span class="dmr-emu" data-emu title="GIF emulator / daemon state">daemon …</span>
+      <button class="dmr-btn" data-action="refresh">Refresh</button>
+    </div>
+  </header>
+
+  <p class="dmr-note" data-note hidden></p>
+
+  <section class="dmr-tiles" data-tiles>
+    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="pph">—</span><span class="dmr-tile-lbl" data-tile-lbl="pph">picks / hr (last hour)</span></div>
+    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="avg">—</span><span class="dmr-tile-lbl">avg / closed hour</span></div>
+    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="day">—</span><span class="dmr-tile-lbl">picked today</span></div>
+    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="ready">—</span><span class="dmr-tile-lbl">ready to pick</span></div>
+  </section>
+
+  <section class="dmr-panel">
+    <h2 class="dmr-h2">Picks per hour</h2>
+    <div class="dmr-chart" data-chart>No readings yet — hit Refresh.</div>
+  </section>
+
+  <section class="dmr-panel">
+    <h2 class="dmr-h2">Express per hour <span class="dmr-hint">estimate — orders drop in until :15 past</span></h2>
+    <div class="dmr-express" data-express>—</div>
+  </section>
+
+  <section class="dmr-panel">
+    <div class="dmr-panel-head">
+      <h2 class="dmr-h2">Break watch <span class="dmr-hint" data-break-limit>over 18 min</span></h2>
+      <button class="dmr-btn dmr-btn-sm" data-action="check-breaks">Check now</button>
+    </div>
+    <div class="dmr-breaks" data-breaks>Checks who the grid has on PICK this hour against who is not active in GIF. On demand.</div>
+  </section>
+
+  <details class="dmr-settings">
+    <summary>Settings</summary>
+    <div class="dmr-set-grid">
+      <label class="dmr-set-row"><span>GIF daemon URL</span><input type="text" data-set="daemonUrl" spellcheck="false"></label>
+      <label class="dmr-set-row"><span>Workvivo chat (leadership)</span><input type="text" data-set="channel" spellcheck="false"></label>
+      <label class="dmr-set-check"><input type="checkbox" data-set="autoSample"><span>Auto-read GIF on a timer during store hours (keeps the emulator up)</span></label>
+      <label class="dmr-set-row dmr-set-sub"><span>…every</span><input type="number" min="5" max="60" data-set="sampleMin"><span>min</span></label>
+      <label class="dmr-set-check"><input type="checkbox" data-set="listen"><span>Answer <code>!pph</code> / <code>!express</code> / <code>!summary</code> / <code>!breaks</code> in that chat</span></label>
+      <label class="dmr-set-check"><input type="checkbox" data-set="autoBreakAlert"><span>Auto-post "out of a pick walk &gt; 18 min" to that chat (names, duration only)</span></label>
+      <label class="dmr-set-row dmr-set-sub"><span>…re-alert no sooner than</span><input type="number" min="5" max="120" data-set="reAlertMin"><span>min</span></label>
+      <div class="dmr-set-actions">
+        <button class="dmr-btn dmr-btn-sm" data-action="save-settings">Save</button>
+        <button class="dmr-btn dmr-btn-sm dmr-btn-ghost" data-action="stop-emulator">Stop emulator</button>
+        <span class="dmr-set-note" data-set-note></span>
+      </div>
+    </div>
+  </details>
+</div>

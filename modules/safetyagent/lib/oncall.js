@@ -310,12 +310,16 @@ export function analyzeOncall(rows, oncall, COL, today = null) {
 
   // Who accepted, by role — the routing check: if leaders take most alerts
   // inside 3 minutes, they are being offered alerts before the escalation.
-  const jobByKey = {};
-  for (const ppl of Object.values(days)) for (const p of ppl) if (p.job) for (const k of nameKeys(p.name)) jobByKey[k] ??= p.job;
+  // The alert day's title, not any day's: a TA promoted to TL mid-window
+  // counts as team before the promotion and as a lead after it.
+  const jobOn = (date, name) => {
+    const keys = new Set(nameKeys(name));
+    return (days[date] || []).find((p) => p.job && nameKeys(p.name).some((k) => keys.has(k)))?.job || "";
+  };
   const takenBy = { team: 0, teamLate: 0, leader: 0, leaderEarly: 0, other: 0, unknown: 0 };
   for (const o of offers) {
     if (o.skip || !o.accepter) continue;
-    const job = nameKeys(o.accepter).map((k) => jobByKey[k]).find(Boolean) || roster[nameKeys(o.accepter)[0]] || "";
+    const job = jobOn(o.date, o.accepter) || nameKeys(o.accepter).map((k) => roster[k]).find(Boolean) || "";
     o.accepterJob = job;
     if (!job) takenBy.unknown++;
     else if (isLeader(job)) { takenBy.leader++; if (o.outcome === "taken") takenBy.leaderEarly++; }
@@ -324,9 +328,24 @@ export function analyzeOncall(rows, oncall, COL, today = null) {
   }
 
   const jobOf = {};
-  for (const ppl of Object.values(days)) for (const p of ppl) if (p.job) jobOf[p.name] = p.job;
+  for (const iso of Object.keys(days).sort()) for (const p of days[iso]) if (p.job) jobOf[p.name] = p.job;
   const people = rollupPeople(offers, Object.fromEntries(Object.entries(jobOf).map(([n, job]) => [n, { job }])));
-  for (const p of people) { p.key = p.name; p.rows = p.alerts.map((i) => rows[i]); }
+  // Latest title across every cached day (not just this window), and the
+  // first day it appeared: flags associates who have since become leads.
+  const latest = {};
+  for (const iso of Object.keys(raw).sort()) {
+    if (!raw[iso].good) continue;
+    for (const s of raw[iso].schedule) {
+      if (!s.jobName) continue;
+      const n = String(s.name || "").toUpperCase(), cur = latest[n];
+      if (!cur || cur.job !== s.jobName) latest[n] = { job: s.jobName, since: iso };
+    }
+  }
+  for (const p of people) {
+    p.key = p.name; p.rows = p.alerts.map((i) => rows[i]);
+    const l = latest[p.name];
+    if (p.offered && l && isLeader(l.job)) { p.nowJob = l.job; p.nowSince = l.since; }
+  }
 
   const ok = offers.filter((o) => !o.skip);
   const summary = {

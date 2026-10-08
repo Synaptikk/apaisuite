@@ -17,6 +17,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "market120",
+    group:       "market",
     name:        "Market 120 Clearance & ISA",
     description: "Executive Overview combining Tableau Clearance/Deleted (Market 120 aggregate) with Power BI ISA activity, per-family with alerts.",
     version:     "0.1.0",

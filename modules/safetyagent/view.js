@@ -363,7 +363,10 @@ export async function mount(host, container) {
     els.ocTeam.innerHTML = `<option value="">All</option>` + teams.map((t) => `<option${t === cur ? " selected" : ""}>${esc(t)}</option>`).join("");
     els.ocTeam.disabled = ui.ocWave === 2;
     const team = els.ocTeam.value, min = Number(els.ocMin.value) || 1;
-    const nameCol = { k: "key", h: ui.ocWave === 1 ? "Associate" : "Lead / coach", v: (r) => r.name, cell: (r) => `<td>${esc(r.name)}</td>` };
+    // Wave 1 counts only the days they were hourly; a since-promoted lead says so.
+    const promoted = (r) => ui.ocWave === 1 && r.nowJob
+      ? ` <span class="sa-muted" title="Counts here are from the days before the promotion. Escalations since ${esc(r.nowSince)} are on the Leads &amp; coaches tab.">· ${esc(r.nowJob)} since ${esc(r.nowSince.slice(5))}</span>` : "";
+    const nameCol = { k: "key", h: ui.ocWave === 1 ? "Associate" : "Lead / coach", v: (r) => r.name, cell: (r) => `<td>${esc(r.name)}${promoted(r)}</td>` };
     if (ui.ocWave === 1) {
       const cols = [nameCol,
         { k: "team", h: "Team", v: (r) => r.team || "", cell: (r) => `<td class="sa-dept">${esc(r.team || "")}</td>` },

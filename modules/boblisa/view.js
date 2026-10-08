@@ -367,8 +367,12 @@ export async function mount(host, container) {
       <label class="bl-field">Cause ${sel("cause", CAUSES, cause)}</label>
       <label class="bl-field">How it was caught ${sel("outcome", OUTCOMES, outcome)}</label>
       <label class="bl-field">Video ${sel("video", VIDEO_REVIEW, video)}</label>
-      ${p.manualCashier ? `<label class="bl-field">First transaction op <input class="input" name="t1op" value="${esc(p.t1.op || "")}" required inputmode="numeric" placeholder="operator number" title="The cashier who rang the customer's first transaction: this miss is charged to them"></label>
-      <label class="bl-field">First transaction register <input class="input" name="t1reg" value="${esc(p.t1.reg === "" || p.t1.reg == null ? "" : p.t1.reg)}" inputmode="numeric" placeholder="register (optional)" title="Blank counts as a manned lane"></label>` : ""}
+      ${p.manualCashier ? `<label class="bl-field">First transaction register <input class="input" name="t1reg" value="${esc(p.t1.reg === "" || p.t1.reg == null ? "" : p.t1.reg)}" inputmode="numeric" placeholder="register" title="Blank counts as a manned lane"></label>
+      <label class="bl-field">Date <input class="input" type="date" name="t1date" value="${esc(p.date || "")}"></label>
+      <label class="bl-field">Time <input class="input" type="time" step="1" name="t1time" value="${esc(p.t1.time || "")}" title="About when the customer was rung up: EJ lists the sales on that register just before and after"></label>
+      <div class="bl-field"><span>&nbsp;</span><button type="button" class="btn btn-sm btn-secondary bl-find-op" title="Pull that register's journal from EJ Viewer and list the operators who rang sales around that time">Find operator in EJ</button></div>
+      <div class="bl-field bl-field-wide bl-opfind" data-opfind></div>
+      <label class="bl-field">First transaction op <input class="input" name="t1op" value="${esc(p.t1.op || "")}" required inputmode="numeric" placeholder="operator number" title="The cashier who rang the customer's first transaction: this miss is charged to them"></label>` : ""}
       <label class="bl-field">Cashier name <input class="input" name="cashierName" value="${esc(name)}" placeholder="op ${esc(p.t1.op)}" title="${fromJournal ? "From the journal's sign-on banner, as EJ prints it" : ""}"><span class="bl-muted bl-namehint">${ui.nameLookup[String(p.t1.op)] === "busy" ? "looking the name up in APPRISS…" : ui.nameLookup[String(p.t1.op)] === "none" && !name ? "not in APPRISS (no drawer open) and no sign-on banner in the journal for the cached days" : ""}</span></label>
       <label class="bl-field bl-field-wide">Note <textarea class="input" name="note" data-auto="${rec ? "0" : "1"}">${esc(rec ? rec.note : draftNote(p, { cause, name }))}</textarea></label>
       <div class="bl-doc-actions"><button type="submit" class="btn btn-sm btn-primary">${rec ? "Save changes" : "Save"}</button><button type="button" class="btn btn-sm btn-ghost bl-doc-cancel" data-key="${esc(p.key)}">Cancel</button></div>
@@ -597,8 +601,44 @@ export async function mount(host, container) {
     const form = el.closest("[data-docform]"), note = form.querySelector("[name=note]");
     if (note.dataset.auto !== "1") return;
     const p = pairFor(form.dataset.docform);
-    if (p?.manualCashier && form.t1op) p.t1.op = form.t1op.value.trim();
+    if (p?.manualCashier && form.t1op) {
+      p.t1.op = form.t1op.value.trim();
+      if (p.t1.picked && p.t1.picked !== p.t1.op) p.t1 = { ...p.t1, tr: "", time: "", items: null, total: 0, tender: "", picked: "" };
+    }
     if (p) note.value = draftNote(p, { cause: form.cause.value, name: form.cashierName.value });
+  }));
+  // Paid training receipt with no earlier same-card sale: register + date + time
+  // → the sales EJ has on that register around then; picking one fills the op.
+  const opFind = new Map();   // form key → candidates from find_operator
+  const signed = (sec) => `${sec < 0 ? "−" : "+"}${Math.floor(Math.abs(sec) / 60)}:${String(Math.abs(sec) % 60).padStart(2, "0")}`;
+  unsubs.push(host.ui.delegate(container, "click", ".bl-find-op", async (e, el) => {
+    e.preventDefault(); e.stopPropagation();
+    const form = el.closest("[data-docform]"), out = form.querySelector("[data-opfind]");
+    const msg = { date: form.t1date.value, reg: form.t1reg.value.trim(), time: form.t1time.value };
+    el.disabled = true; out.innerHTML = `<span class="bl-muted">Pulling register ${esc(msg.reg)} from EJ Viewer…</span>`;
+    const res = await host.messaging.sendRaw("find_operator", msg, { timeoutMs: 2 * 60_000 }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    el.disabled = false;
+    if (!res?.ok) { out.innerHTML = `<span class="bl-muted">${esc(res?.error || "EJ lookup failed.")}${res?.loginUrl ? ` <a href="${esc(res.loginUrl)}" target="_blank" rel="noopener">Open EJ Viewer</a>` : ""}</span>`; return; }
+    opFind.set(form.dataset.docform, res.candidates);
+    if (!res.candidates.length) { out.innerHTML = `<span class="bl-muted">No sales on register ${esc(msg.reg)} within 30 minutes of ${esc(msg.time)} (${res.records} journal records that day).</span>`; return; }
+    out.innerHTML = `<span class="bl-muted">Sales on register ${esc(msg.reg)} nearest ${esc(msg.time)}: pick the customer's transaction</span>` + res.candidates.map((c, i) =>
+      `<button type="button" class="btn btn-sm btn-ghost bl-pick-op" data-i="${i}">${esc(c.time)} (${signed(c.deltaSec)}) · op ${esc(c.op)}${c.name ? ` ${esc(c.name)}` : ""} · TR ${esc(c.tr)} · ${c.items} item${c.items === 1 ? "" : "s"} ${MONEY(c.total)} ${esc(c.tender)}</button>`).join("");
+  }));
+  unsubs.push(host.ui.delegate(container, "click", ".bl-pick-op", (e, el) => {
+    e.preventDefault(); e.stopPropagation();
+    const form = el.closest("[data-docform]"), key = form.dataset.docform;
+    const c = opFind.get(key)?.[Number(el.dataset.i)], p = pairFor(key);
+    if (!c || !p) return;
+    form.t1op.value = c.op; form.t1reg.value = c.reg;
+    if (c.name && !form.cashierName.value.trim()) form.cashierName.value = c.name;
+    // The picked sale is the first transaction: keep its TR#, time and total on the record.
+    p.t1 = { ...p.t1, op: String(c.op), reg: c.reg, type: regTypeOf(c.reg, state?.registers), tr: c.tr, time: c.time, items: c.items, total: c.total, tender: c.tender, picked: String(c.op) };
+    const sec = (t) => { const [h, m, x] = String(t || "").split(":").map(Number); return Number.isFinite(h) ? h * 3600 + (m || 0) * 60 + (x || 0) : null; };
+    const a = sec(c.time), b = sec(p.t2?.time);
+    if (form.t1date.value === p.date && a != null && b != null) { p.gapSec = b - a; p.gapMin = Math.round(p.gapSec / 60); }
+    for (const b of form.querySelectorAll(".bl-pick-op")) b.classList.toggle("is-picked", b === el);
+    const note = form.querySelector("[name=note]");
+    if (note.dataset.auto === "1") note.value = draftNote(p, { cause: form.cause.value, name: form.cashierName.value });
   }));
   unsubs.push(host.ui.delegate(container, "submit", "[data-docform]", async (e, el) => {
     e.preventDefault(); e.stopPropagation();

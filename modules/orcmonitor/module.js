@@ -11,6 +11,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "orcmonitor",
+    group:       "ap",
     name:        "ORC Corridor Monitor",
     description: "Tracks ORC groups along the interstate network — routes driven between hits, heading, and the stores most likely to be hit next — with a market PDF brief.",
     version:     "0.2.0",

@@ -50,6 +50,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "metricshot",
+    group:       "market",
     name:        "Metric Shots",
     description: "Scheduled store metric cards, rendered locally from VizPick data and posted to Workvivo channels using your existing authenticated tab.",
     version:     "0.1.0",

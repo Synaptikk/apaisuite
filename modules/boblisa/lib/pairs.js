@@ -222,3 +222,20 @@ export function analyzeDay(records, dateIso, opts = DEFAULT_OPTS, regCfg = DEFAU
     operators: operatorNames(records),
   };
 }
+
+/**
+ * The sales rung on one register closest to a time the analyst typed — how a
+ * paid training receipt with no same-card earlier sale finds the first
+ * transaction's cashier (user, 2026-10-07: "put in the register, the date and
+ * the time, pull the operator from EJ, before or after"). `tx` is
+ * compactRecords() of that register-day; `atSec` seconds since midnight.
+ * Returns up to `each` sales before and `each` after inside `windowSec`,
+ * nearest first, each with `deltaSec` (negative = before the typed time).
+ */
+export function nearestSales(tx, atSec, { each = 3, windowSec = 30 * 60 } = {}) {
+  const sales = (tx || []).filter((x) => x.isSale && !x.isTraining && Math.abs(x.t - atSec) <= windowSec)
+    .map((x) => ({ time: x.time, reg: x.reg, op: x.op, tr: x.tr, items: x.items.length, total: x.total, tender: x.tender, deltaSec: x.t - atSec }));
+  const before = sales.filter((x) => x.deltaSec <= 0).sort((a, b) => b.deltaSec - a.deltaSec).slice(0, each);
+  const after = sales.filter((x) => x.deltaSec > 0).sort((a, b) => a.deltaSec - b.deltaSec).slice(0, each);
+  return [...before, ...after].sort((a, b) => Math.abs(a.deltaSec) - Math.abs(b.deltaSec));
+}

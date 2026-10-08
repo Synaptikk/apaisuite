@@ -15,6 +15,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "safetyagent",
+    group:       "safety",
     name:        "Safety Agent Dashboard",
     description: "SafeIQ camera hazard alerts by camera, disposition tag, associate and hour — which cameras keep firing on nothing, who closes them, and how fast.",
     version:     "0.1.0",

@@ -14,6 +14,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "sparkrisk",
+    group:       "ap",
     name:        "SparkRisk",
     description: "Timing review queue for recorded Spark Shop & Deliver trips",
     version:     "2.0.0",

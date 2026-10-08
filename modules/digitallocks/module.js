@@ -40,6 +40,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "digitallocks",
+    group:       "ap",
     name:        "Digital Locks",
     description: "Triage digital lock unlock events for daily AP review. Imports Power BI CSV/XLSX exports, scores events against configurable risk rules, and tracks per-event review status locally.",
     version:     "0.1.0",

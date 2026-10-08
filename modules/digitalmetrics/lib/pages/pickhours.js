@@ -14,8 +14,8 @@
 // (view.js::loadPickDays fills pickDays; ui.pickDay is the selected day key).
 
 import { section, empty, esc, table, statCard, statRow } from "./_shared.js";
-import { barChartSvg } from "../../../digitalrollup/lib/pick_chart.js";
-import { hoursByClock, peakHour } from "../../../digitalrollup/lib/pick_days.js";
+import { barChartSvg } from "../../../digitaldashboard/lib/pick_chart.js";
+import { hoursByClock, peakHour } from "../../../digitaldashboard/lib/pick_days.js";
 
 const HOUR = 3600e3;
 const dayText = (key) => new Date(`${key}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric" });

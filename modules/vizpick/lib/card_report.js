@@ -310,6 +310,17 @@ function pageShell({ title, heading, stamp, body }) {
   .box { display: inline-block; width: 11px; height: 11px; border: 1.5px solid #555; border-radius: 2px; }
   .group-head { background: #eef1f5; font-weight: 700; font-size: 11px; }
   .lead { font-size: 12px; color: #333; margin: 0 0 12px 0; }
+  .dig { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.4px;
+         color: #fff; background: #0053e2; border-radius: 3px; padding: 1px 4px; vertical-align: 1px; }
+  .dig-row td { background: #eaf1ff; }
+  .assoc-row td { border-bottom: none; }
+  .bins-row td { padding: 0 8px 6px 18px; border-bottom: 1px solid #ddd; }
+  .bin { display: inline-block; font-size: 11px; font-variant-numeric: tabular-nums;
+         border: 1px solid #ddd; border-radius: 3px; padding: 1px 5px; margin: 2px 4px 0 0; background: #fff; }
+  .bin b { color: #c53030; }
+  .bin-t { color: #888; }
+  /* Backgrounds are dropped from print by default; keep the highlight. */
+  .dig, .dig-row td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* Chrome and Edge add their own URL/timestamp headers to "Save as PDF" and
      there is no way to suppress them from here — see the note in
      modules/claimsdisposition/styles.css. These pages are designed to read
@@ -318,6 +329,7 @@ function pageShell({ title, heading, stamp, body }) {
     body { margin: 0.4in; }
     h2 { break-after: avoid; }
     tr { break-inside: avoid; }
+    .assoc-row { break-after: avoid; }
     thead { display: table-header-group; }   /* repeat headers across pages */
   }
 </style></head><body>
@@ -342,8 +354,9 @@ function headingFor(store, market, suffix) {
  *
  * @param {object} r
  * @param {object} [meta] { sourceUpdate, capturedAt, isToday, market }
- * @param {object} [opts] { names }. `names` is a WIN → display-name resolver;
- *   without it every associate prints as a bare id. The caller triggers the
+ * @param {object} [opts] { names, digital }. `names` is a WIN → display-name
+ *   resolver; without it every associate prints as a bare id. `digital` is a
+ *   WIN → boolean; true rows are tagged DIGITAL and highlighted. The caller triggers the
  *   print dialog — see pageShell().
  */
 export function buildPerformanceHtml(r, meta = {}, opts = {}) {
@@ -379,20 +392,30 @@ export function buildPerformanceHtml(r, meta = {}, opts = {}) {
         </tr>`).join("")}</tbody>
     </table>` : "";
 
-  const assoc = cardAssociates(r, { names: opts.names, day: meta.day ?? null });
+  // Every associate, not the on-screen top 10 — this page is the full list.
+  const assoc = cardAssociates(r, { names: opts.names, day: meta.day ?? null, limit: 200 });
+  // opts.digital is the view's WIN → "is a digital associate" test (Digital
+  // Metrics roster, else Workday title). The report cannot know it on its own.
+  const isDig = (a) => { try { return !!opts.digital?.(a.win); } catch { return false; } };
+  const digCount = assoc.filter(isDig).length;
   const assocHtml = assoc.length ? `
     <h2>Associates with picks left behind</h2>
+    ${digCount ? `<p class="lead"><span class="dig">DIGITAL</span> ${digCount} of ${assoc.length} are digital associates.</p>` : ""}
     <table>
       <thead><tr><th>Associate</th><th class="num">Picks left</th><th class="num">Bins</th></tr></thead>
       <tbody>${assoc.map((a) => `
-        <tr>
-          <td>${escapeHtml(a.name || a.win)}</td>
+        <tr class="assoc-row${isDig(a) ? " dig-row" : ""}">
+          <td>${isDig(a) ? '<span class="dig">DIGITAL</span> ' : ""}${escapeHtml(a.name || a.win)}</td>
           <td class="num bad">${escapeHtml(String(a.skipped))}</td>
           <td class="num">${escapeHtml(String(a.bins.length))}</td>
+        </tr>
+        <tr class="bins-row${isDig(a) ? " dig-row" : ""}">
+          <td colspan="3">${a.bins.map((b) =>
+            `<span class="bin">${escapeHtml(String(b.location))} <b>${escapeHtml(String(b.skipped))}</b>` +
+            `<span class="bin-t"> · ${escapeHtml(shortTime(b.lastSeenAt))}</span></span>`).join("")}</td>
         </tr>`).join("")}</tbody>
     </table>
-    <p class="none">Attributed to whoever last scanned the bin. A bin nobody scanned is
-    counted as work not started, not as anyone's miss.</p>` : "";
+    <p class="none">Under each associate: bin, picks left, time of the last scan.</p>` : "";
 
   return pageShell({
     title: `VizPick Performance — Store ${store}`,

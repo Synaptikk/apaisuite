@@ -12,6 +12,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "registerls",
+    group:       "frontend",
     name:        "Register L/S Triage",
     description: "Register long/short triage: WorkView queue × Power BI grid × Cash Research × EJ — flips and bouncebacks out, video-worthy shortages up.",
     version:     "0.1.0",

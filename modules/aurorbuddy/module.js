@@ -43,6 +43,7 @@ if (IS_SERVICE_WORKER && typeof chrome !== "undefined" && chrome.alarms?.onAlarm
 export default {
   manifest: {
     id:          "aurorbuddy",
+    group:       "ap",
     name:        "AurorBuddy",
     description: "Cross-reference Auror suspects against APPRISS/Secure activity, save evidence, and pre-fill Auror events.",
     version:     "0.1.62",

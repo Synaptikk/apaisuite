@@ -338,3 +338,80 @@ html[data-sidebar="collapsed"] .shell-sidebar-toggle-arrow {
 @media (prefers-reduced-motion: reduce) {
   .shell-sidebar-toggle-arrow { transition: none; }
 }
+
+/* ── Module groups ───────────────────────────────────────────────────────
+   shared/moduleGroups.js sets --group-tint on each .shell-nav-group and
+   .home-group. Everything here mixes it down so it reads as a hint, not a
+   colour scheme: a dot on the header, a hairline beside the links, and a
+   wash on the home cards. */
+.shell-nav-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  margin-top: var(--sp-1);
+}
+.shell-nav-group-head:hover { color: var(--apai-ink); }
+.shell-nav-group-head::after {
+  content: "";
+  margin-left: auto;
+  width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+  opacity: 0.7;
+}
+.shell-nav-group.is-closed .shell-nav-group-head::after { transform: rotate(-45deg); }
+.shell-nav-group-count {
+  font-weight: var(--fw-regular, 400);
+  opacity: 0.7;
+}
+.shell-nav-group-dot {
+  flex: none;
+  width: 7px; height: 7px;
+  border-radius: var(--rad-pill);
+  background: color-mix(in srgb, var(--group-tint) 70%, transparent);
+}
+.shell-nav-group-items {
+  margin-left: var(--sp-2);
+  border-left: 2px solid color-mix(in srgb, var(--group-tint) 28%, transparent);
+}
+.shell-nav-group.is-closed .shell-nav-group-items { display: none; }
+
+/* The icon rail has no headers, so a closed group would be unreachable.
+   Show every group's icons and mark the boundary with a tinted rule. */
+html[data-sidebar="collapsed"] .shell-nav-group.is-closed .shell-nav-group-items { display: block; }
+html[data-sidebar="collapsed"] .shell-nav-group-items {
+  margin-left: 0;
+  border-left: 0;
+  border-top: 2px solid color-mix(in srgb, var(--group-tint) 35%, transparent);
+  padding-top: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.home-group { gap: var(--sp-3); }
+.home-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm, 0.875rem);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--apai-muted);
+}
+.home-group-head .shell-nav-group-dot { width: 9px; height: 9px; }
+.home-group .module-card {
+  border-top: 3px solid color-mix(in srgb, var(--group-tint) 45%, transparent);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--group-tint) 6%, transparent),
+    transparent 60%);
+}

@@ -15,6 +15,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "boblisa",
+    group:       "frontend",
     name:        "BoB and Lisa",
     description: "Missed-item finder: a purchase followed minutes later by a second small purchase on the same card. Likely a large item missed at the register and caught at the door; also flags door-host training receipts.",
     version:     "0.2.0",

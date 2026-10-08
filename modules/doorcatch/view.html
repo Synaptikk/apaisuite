@@ -1,0 +1,71 @@
+<div class="dc">
+  <header class="dc-header">
+    <div class="dc-title">
+      <h1>Door Catches</h1>
+      <p class="dc-sub">Items door hosts found at the exit that were not on the receipt. Hosts scan each barcode on their phone at the store's door link; every catch shows up here with the time, who caught it, the UPCs and quantities.</p>
+    </div>
+    <div class="dc-toolbar">
+      <label class="dc-field">From <input id="doorcatch-from" class="input" type="date"></label>
+      <label class="dc-field">To <input id="doorcatch-to" class="input" type="date"></label>
+      <label class="dc-field">Show
+        <select id="doorcatch-status" class="input">
+          <option value="new">Open</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="all">All</option>
+        </select>
+      </label>
+      <label class="dc-field">Host <select id="doorcatch-host" class="input"><option value="">Everyone</option></select></label>
+      <button id="doorcatch-refresh" class="btn btn-primary">Refresh</button>
+      <button id="doorcatch-export" class="btn btn-secondary btn-sm">Export CSV</button>
+    </div>
+  </header>
+
+  <div id="doorcatch-status-msg" class="dc-status" hidden></div>
+
+  <section id="doorcatch-summary" class="dc-summary"></section>
+
+  <div class="dc-tabs" role="tablist">
+    <button class="dc-tab" role="tab" data-tab="catches" aria-selected="true">Catches <small id="doorcatch-cnt-catches"></small></button>
+    <button class="dc-tab" role="tab" data-tab="hosts" aria-selected="false">Door hosts <small id="doorcatch-cnt-hosts"></small></button>
+  </div>
+
+  <div id="doorcatch-panel-catches" class="dc-table-wrap">
+    <table class="dc-table">
+      <thead><tr><th>Caught</th><th>Door host</th><th>Items not on receipt</th><th>Status</th><th>Review</th></tr></thead>
+      <tbody id="doorcatch-rows"></tbody>
+    </table>
+  </div>
+
+  <div id="doorcatch-panel-hosts" class="dc-table-wrap" hidden>
+    <table class="dc-table dc-hosts">
+      <thead><tr><th>Door host</th><th class="num">Catches</th><th class="num">Items</th><th class="num">Value</th><th class="num">Open</th><th class="num">Reviewed</th><th class="num">Dismissed</th><th class="num">Withdrawn</th><th>Last catch</th></tr></thead>
+      <tbody id="doorcatch-host-rows"></tbody>
+    </table>
+    <p class="dc-muted dc-hosts-foot">Totals for the dates above, every status. Value = Walmart online price × quantity; withdrawn catches are counted separately and add no value. Click a host to see their catches.</p>
+  </div>
+
+  <details id="doorcatch-setup" class="dc-setup">
+    <summary>Setup: store, keys, door link, host names</summary>
+    <div class="dc-setup-grid">
+      <form id="doorcatch-settings" class="dc-card">
+        <h2>Connection</h2>
+        <label class="dc-field">Store <input id="doorcatch-store" class="input dc-store" inputmode="numeric" placeholder="1458"></label>
+        <label class="dc-field">Review key <input id="doorcatch-review-key" class="input" type="password" autocomplete="off" placeholder="saved"></label>
+        <label class="dc-field">Door key <input id="doorcatch-submit-key" class="input" type="password" autocomplete="off" placeholder="only to build the door link"></label>
+        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        <div id="doorcatch-link-box" class="dc-link" hidden>
+          <div class="dc-muted">Door host link (post it as a QR code at the door):</div>
+          <code id="doorcatch-link"></code>
+          <button id="doorcatch-copy" class="btn btn-secondary btn-sm" type="button">Copy</button>
+        </div>
+      </form>
+      <form id="doorcatch-hosts-form" class="dc-card">
+        <h2>Door host names</h2>
+        <p class="dc-muted">One per line. Hosts tap their name when they open the page; anyone not listed can type theirs.</p>
+        <textarea id="doorcatch-hosts" class="input" rows="8"></textarea>
+        <button class="btn btn-primary btn-sm" type="submit">Save names</button>
+      </form>
+    </div>
+  </details>
+</div>

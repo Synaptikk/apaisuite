@@ -21,6 +21,9 @@
 //                       the cashier ledger (boblisa.cashiers.<store>): misses
 //                       and second-transaction dollars per manned-lane
 //                       operator, rebuilt from the records on every save
+//   find_operator       register + date + time → the EJ sales rung on that
+//                       register around then (op, banner name, TR#): names the
+//                       cashier for a paid training receipt with no earlier same-card sale
 //
 // EJ access: lib/ej_day.js opens a fresh ej.walmart.com tab for the range,
 // then fetches AND analyzes each whole store-day
@@ -34,7 +37,7 @@ import { withKeepAwake } from "../../shared/sw_keepalive.js";
 import { EJ_HOME, fetchReceipts } from "../registerls/lib/ej.js";
 import { operatorNames } from "../registerls/lib/ej_parse.js";
 import { fetchDayAnalysis, openEjDayTab } from "./lib/ej_day.js";
-import { DEFAULT_OPTS } from "./lib/pairs.js";
+import { DEFAULT_OPTS, compactRecords, nearestSales } from "./lib/pairs.js";
 import { DEFAULT_REGISTERS } from "./lib/registers.js";
 import { buildRecord, buildCashierLedger, cashiersCsv, missesCsv, pairFromRecord } from "./lib/misses.js";
 import { getIdentity } from "../../shared/identity.js";
@@ -358,6 +361,29 @@ export const handlers = {
     await set(KEYS.review(store.storeNbr), doc);
     broadcast("state_changed", { storeNbr: store.storeNbr });
     return { ok: true, review: doc.items };
+  },
+
+  // The miss form for a paid training receipt with no same-card earlier sale:
+  // the analyst types the first transaction's register, date and time and EJ
+  // names the operator(s) who rang sales on that register around then.
+  // msg: { storeNbr?, date: "YYYY-MM-DD", reg, time: "HH:MM[:SS]" }
+  //   → { ok, candidates: [{ time, reg, op, name, tr, items, total, tender, deltaSec }] }
+  async find_operator(msg = {}) {
+    const store = await resolveStore(msg);
+    if (!store.storeNbr) return { ok: false, error: "No store number." };
+    const date = String(msg.date || "").slice(0, 10), reg = String(msg.reg ?? "").trim();
+    const m = String(msg.time || "").match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Enter the date of the first transaction." };
+    if (!/^\d{1,4}$/.test(reg)) return { ok: false, error: "Enter the register number." };
+    if (!m) return { ok: false, error: "Enter the time of the first transaction." };
+    const atSec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] || 0);
+    const res = await fetchReceipts(store.storeNbr, date, reg);
+    if (!res.ok) return { ok: false, error: res.error, errorClass: res.errorClass, loginUrl: res.loginUrl };
+    const banner = operatorNames(res.records);
+    const { names } = await loadOperators(store.storeNbr);
+    const candidates = nearestSales(compactRecords(res.records), atSec)
+      .map((c) => ({ ...c, name: banner[String(c.op)] || names[String(c.op)] || "" }));
+    return { ok: true, candidates, records: res.records.length };
   },
 
   // ── operator names from APPRISS ────────────────────────────────

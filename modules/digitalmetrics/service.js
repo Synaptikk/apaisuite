@@ -37,7 +37,7 @@ import { withWeekday } from "../../shared/dates.js";
 // day (its lib/pick_days.js). The "Pick Hours" tab here only reads that
 // archive; importing the key and the pure reader keeps one source of truth
 // for its shape rather than a copied constant that would drift.
-import { PICK_DAYS_KEY, listDays as listPickDays } from "../digitalrollup/lib/pick_days.js";
+import { PICK_DAYS_KEY, listDays as listPickDays } from "../digitaldashboard/lib/pick_days.js";
 
 const ALIAS_KEY = "digitalmetrics.aliases";
 
@@ -1179,7 +1179,7 @@ export const handlers = {
 
   /**
    * { store } → the archived picks-per-hour days for that store, newest
-   * first (see ../digitalrollup/lib/pick_days.js for the record shape).
+   * first (see ../digitaldashboard/lib/pick_days.js for the record shape).
    * Digital Rollup writes the archive for the HOME store only, while its Auto
    * refresh is on, so any other store comes back empty — and so does this
    * browser for days it was not running. Local to this device, like clock-ins.

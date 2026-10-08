@@ -24,6 +24,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "sparkscango",
+    group:       "ap",
     name:        "Spark & Scan&Go",
     description: "Spark and Scan & Go exceptions, audits, and metrics — one-click investigation into SparkFraud driver/order lookups.",
     version:     "0.1.0",

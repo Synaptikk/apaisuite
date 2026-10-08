@@ -53,6 +53,8 @@
     "https://web-prd-wus2-arp-cctv.azurewebsites.net/*",
     "https://workvivo.walmart.com/*",
     "https://www.walmart.com/*",
+    "https://go-upc.com/*",
+    "https://www.upcitemdb.com/*",
     "https://one.walmart.com/*",
     "https://sf-reports-ui.walmart.com/*",
     "https://sf-reports-api.walmart.com/*",

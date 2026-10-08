@@ -17,6 +17,7 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "accidents",
+    group:       "safety",
     name:        "Accident Details",
     description: "Every claim and charge for the store: what happened (from Clearsight), what evidence is still missing, and what the P&L was charged — credits flagged as reversed charges.",
     version:     "0.1.0",

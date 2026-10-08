@@ -79,6 +79,7 @@ export default {
     version:     "0.1.0",
     accent:      "#0071CE",                   // optional; sets --module-accent
     status:      "active",                    // "active" | "beta" | "deprecated"
+    group:       "ap",                        // sidebar/home group; ids + order in shared/moduleGroups.js
 
     ui: {
       kind: "fullpage",

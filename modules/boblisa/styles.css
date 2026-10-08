@@ -142,3 +142,8 @@
 /* "Show more" row: pair tables render ROW_CAP rows at a time (view.js) */
 .module-boblisa .bl-more td { text-align: center; padding: var(--sp-3); }
 .module-boblisa .bl-more .bl-muted { margin-left: var(--sp-2); }
+.module-boblisa .bl-opfind { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
+.module-boblisa .bl-opfind:empty { display: none; }
+.module-boblisa .bl-opfind > .bl-muted { flex-basis: 100%; }
+.module-boblisa .bl-pick-op { font-variant-numeric: tabular-nums; flex-basis: 100%; min-width: 0; white-space: normal; text-align: left; justify-content: flex-start; height: auto; }
+.module-boblisa .bl-pick-op.is-picked { outline: 2px solid var(--apai-blue); }

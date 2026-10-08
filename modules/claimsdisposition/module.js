@@ -21,6 +21,7 @@ import { handlers as serviceHandlers } from "./service.js";
 export default {
   manifest: {
     id:          "claimsdisposition",
+    group:       "ap",
     name:        "Claims Disposition",
     description: "Live shrink-claims analytics: pulls per-store data on demand from the Looker Studio embed, caches up to 30 pulls in IndexedDB, exports per-store CSVs.",
     version:     "0.3.0",

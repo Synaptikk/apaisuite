@@ -39,6 +39,7 @@ if (IS_SERVICE_WORKER) {
 export default {
   manifest: {
     id:          "digitalmetrics",
+    group:       "digital",
     name:        "Digital Metrics",
     description: "Digital fulfilment performance analytics, schedule import, and daily task assignments.",
     version:     "0.1.0",

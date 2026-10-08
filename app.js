@@ -31,6 +31,7 @@ import { showDeviceReadiness } from "./shared/device_readiness.js";
 import { getIdentity, enableProfileEmailIdentity } from "./shared/identity.js";
 import { LAYOUTS, resolveLayoutPref } from "./shared/layoutPref.js";
 import { SIDEBAR, resolveSidebarPref, toggledSidebarPref } from "./shared/sidebarPref.js";
+import { groupOf, groupModules } from "./shared/moduleGroups.js";
 
 const $nav  = $("#shell-nav");
 const $main = $("#shell-main");
@@ -82,6 +83,31 @@ async function saveHiddenModules(ids) {
 function isHiddenModule(mod) {
   return Array.isArray(_cachedHidden) && _cachedHidden.includes(mod?.manifest?.id);
 }
+// Sidebar groups the user has folded shut. Display only, like hidden modules.
+// Storage shape: chrome.storage.sync["shell.closedGroups"] = ["digital", ...]
+const CLOSED_GROUPS_KEY = "shell.closedGroups";
+let _closedGroups = new Set();
+
+async function loadClosedGroups() {
+  try {
+    const got = await chrome.storage.sync.get(CLOSED_GROUPS_KEY);
+    const v = got?.[CLOSED_GROUPS_KEY];
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+async function toggleGroupClosed(groupId) {
+  if (_closedGroups.has(groupId)) _closedGroups.delete(groupId);
+  else _closedGroups.add(groupId);
+  try {
+    await chrome.storage.sync.set({ [CLOSED_GROUPS_KEY]: [..._closedGroups] });
+  } catch (e) {
+    console.warn("[shell] could not persist closed groups:", e?.message);
+  }
+}
+
 const DRAG_MIME        = "application/x-apaisuite-module-id";
 let _cachedOrder = null;   // null until first load completes; treat as "no override"
 
@@ -196,7 +222,12 @@ function reorderIds(currentIds, draggedId, targetId) {
 // Re-render on drop. The home-header surface (Live Dashboard strip) is
 // also re-rendered when home is reshown, so we await renderHome.
 async function onModuleReorder(draggedId, targetId) {
-  const ids = getOrderedModules().map((m) => m.manifest.id);
+  // Groups render in a fixed order, so a drop onto another group's module
+  // would save an order that never shows. Reordering is within a group only.
+  const ordered = getOrderedModules();
+  const byId = new Map(ordered.map((m) => [m.manifest.id, m]));
+  if (groupOf(byId.get(draggedId)).id !== groupOf(byId.get(targetId)).id) return;
+  const ids = ordered.map((m) => m.manifest.id);
   const next = reorderIds(ids, draggedId, targetId);
   await saveModuleOrder(next);
   renderSidebar();
@@ -216,20 +247,14 @@ function renderSidebar() {
     icon: iconHome(),
   }));
 
-  // Section header for tools (only if there's at least one module)
-  if (modules.length) {
-    const h = document.createElement("div");
-    h.className = "shell-nav-section";
-    h.textContent = "Tools";
-    $nav.appendChild(h);
-  }
-
-  // Modules in saved order; deprecated ones go to the bottom in their
-  // own section regardless of where they appear in the saved order.
+  // Modules grouped by manifest.group, in saved order within each group;
+  // deprecated ones go to the bottom in their own section regardless.
   const active     = modules.filter((m) => m.manifest.status !== "deprecated");
   const deprecated = modules.filter((m) => m.manifest.status === "deprecated");
 
-  for (const mod of active) $nav.appendChild(moduleNavItem(mod));
+  for (const { group, modules: mods } of groupModules(active)) {
+    $nav.appendChild(navGroup(group, mods));
+  }
 
   if (deprecated.length) {
     const h2 = document.createElement("div");
@@ -238,6 +263,52 @@ function renderSidebar() {
     $nav.appendChild(h2);
     for (const mod of deprecated) $nav.appendChild(moduleNavItem(mod));
   }
+  markActiveNav();
+}
+
+// One foldable group: a header button plus its module links. The tint is a
+// CSS variable so the faint colouring lives in layout.css, not here.
+function navGroup(group, mods) {
+  const wrap = document.createElement("div");
+  wrap.className = "shell-nav-group";
+  wrap.dataset.group = group.id;
+  wrap.style.setProperty("--group-tint", group.tint);
+  wrap.classList.toggle("is-closed", _closedGroups.has(group.id));
+
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "shell-nav-section shell-nav-group-head";
+  head.setAttribute("aria-expanded", String(!_closedGroups.has(group.id)));
+  head.innerHTML = `<span class="shell-nav-group-dot"></span><span class="shell-nav-group-label"></span><span class="shell-nav-group-count"></span>`;
+  head.querySelector(".shell-nav-group-label").textContent = group.label;
+  head.querySelector(".shell-nav-group-count").textContent = String(mods.length);
+  head.addEventListener("click", async () => {
+    await toggleGroupClosed(group.id);
+    const closed = _closedGroups.has(group.id);
+    wrap.classList.toggle("is-closed", closed);
+    head.setAttribute("aria-expanded", String(!closed));
+  });
+  wrap.appendChild(head);
+
+  const items = document.createElement("div");
+  items.className = "shell-nav-group-items";
+  for (const mod of mods) items.appendChild(moduleNavItem(mod));
+  wrap.appendChild(items);
+  return wrap;
+}
+
+// Highlight the nav link for the current route. Called by route() and after
+// every sidebar rebuild, since the boot-time loaders rebuild the links after
+// the first route has already marked them.
+function markActiveNav() {
+  const head = (location.hash || FALLBACK_ROUTE).replace(/^#\//, "").split("/").filter(Boolean)[0];
+  $$("a.shell-nav-item").forEach((el) => {
+    const isActive = el.dataset.route === `#/${head ?? "home"}`
+                  || (!head && el.dataset.route === "#/home");
+    el.classList.toggle("is-active", isActive);
+  });
+  window.__apaiSyncNavTitles?.(
+    document.documentElement.getAttribute("data-sidebar") === "collapsed");
 }
 
 function navItem({ href, label, icon, statusClass }) {
@@ -278,12 +349,7 @@ async function route() {
   const path = hash.replace(/^#\//, "").split("/").filter(Boolean);
   const [head, ...rest] = path;
 
-  // Highlight active nav item
-  $$("a.shell-nav-item").forEach((el) => {
-    const isActive = el.dataset.route === `#/${head ?? "home"}`
-                  || (!head && el.dataset.route === "#/home");
-    el.classList.toggle("is-active", isActive);
-  });
+  markActiveNav();
 
   // Nav items are (re)built during routing, after the boot-time
   // applySidebar() has already run — so the collapsed tooltips have to be
@@ -532,10 +598,22 @@ async function renderHome() {
         `;
         root.appendChild(empty);
       } else {
-        const grid = document.createElement("div");
-        grid.className = "grid grid-cards";
-        for (const mod of modules) grid.appendChild(moduleCard(mod));
-        root.appendChild(grid);
+        for (const { group, modules: mods } of groupModules(modules)) {
+          const section = document.createElement("section");
+          section.className = "home-group stack";
+          section.dataset.group = group.id;
+          section.style.setProperty("--group-tint", group.tint);
+          const h = document.createElement("h2");
+          h.className = "home-group-head";
+          h.innerHTML = `<span class="shell-nav-group-dot"></span><span></span>`;
+          h.lastElementChild.textContent = group.label;
+          section.appendChild(h);
+          const grid = document.createElement("div");
+          grid.className = "grid grid-cards";
+          for (const mod of mods) grid.appendChild(moduleCard(mod));
+          section.appendChild(grid);
+          root.appendChild(section);
+        }
       }
 
       $main.appendChild(root);
@@ -1344,6 +1422,12 @@ loadHiddenModules().then(async (hidden) => {
   _cachedHidden = hidden;
   renderSidebar();
   if ((location.hash || FALLBACK_ROUTE) === "#/home") await renderHome();
+}).catch(() => {});
+
+loadClosedGroups().then((closed) => {
+  if (!closed) return;
+  _closedGroups = new Set(closed);
+  renderSidebar();
 }).catch(() => {});
 
 loadModuleOrder().then(async (order) => {
