@@ -58,9 +58,9 @@ const GOALS = {
 // Tab ids are "today" or "day:<YYYY-MM-DD>". Today is always leftmost and
 // first; the closed days follow, newest to oldest, out of the rolling history.
 const TODAY_NOTE =
-  "Source: the VizPick Details view, refreshed through the current business day. Tableau warns it can run 1–2 hours behind upstream systems.";
+  "Can run 1–2 hours behind the floor.";
 const DAY_NOTE =
-  "Source: the VizPick summary view, which Tableau refreshes once daily for the day prior.";
+  "Updated once a day for the previous day.";
 
 /**
  * Name a stored day relative to now: the most recent closed day reads
@@ -88,20 +88,21 @@ function dayTabLabel(dataDate) {
 // the `const` further down had not initialised yet — so the module failed to
 // load with "Cannot access 'FIXES' before initialization", but ONLY for users
 // who already had a failed capture stored.
+const GENERIC_FIX = "Couldn't load the data. Try Refresh again; if it keeps failing, use Copy diagnostics and send it in.";
 const FIXES = {
   // SESSION is the fallback when the page couldn't be classified, and is what
   // the Today source reports for a render timeout. It must have a hint too.
-  SESSION:           "Open the Tableau tab that was left open and check what it is showing. If the viz renders there, click Refresh again — the capture will reuse that tab and finish in seconds.",
-  TAB:               "The Tableau tab could not be opened. Check that pop-ups/new tabs aren't blocked for stores.tableau.wal-mart.com, then Refresh.",
-  AUTH:              "Open the Tableau tab that was left open, complete the sign-in, then click Refresh again.",
-  SLOW_RENDER:       "Usually transient. Click Refresh again; if it keeps happening, open the Tableau tab first and let the viz finish loading, then Refresh.",
-  NO_CONTENT_SCRIPT: "Reload the extension at edge://extensions, close every open Tableau tab, then click Refresh.",
-  WRONG_VIEW:        "Close the stray Tableau tab so a fresh one can be opened on the right view, then Refresh.",
-  TABLEAU_ERROR:     "Tableau itself errored. Open the tab that was left open to see its message.",
-  EXPORT_UI:         "Tableau's Download → Crosstab dialog changed or did not open. Check the sheet list in the debug details below.",
-  NO_TOOLBAR:        "A Tableau tab with its toolbar suppressed (:toolbar=n) was adopted — there is no Download button to export through. Close any embedded VizPick Details tabs, then Refresh.",
-  NO_CAPTURE:        "The export was triggered but no CSV came back. Check the captured URLs in the debug details below.",
-  PARSE:             "The CSV was captured but its columns were not what we expect — Tableau may have changed the sheet.",
+  SESSION:           "Check the Tableau tab that opened. If the report shows there, click Refresh again.",
+  TAB:               "Allow pop-ups for Tableau, then Refresh.",
+  AUTH:              "Sign in to Tableau in the tab that opened, then Refresh.",
+  SLOW_RENDER:       "Click Refresh again.",
+  NO_CONTENT_SCRIPT: "Close any open Tableau tabs, reload the suite, then Refresh.",
+  WRONG_VIEW:        "Close any open Tableau tabs, then Refresh.",
+  TABLEAU_ERROR:     GENERIC_FIX,
+  EXPORT_UI:         GENERIC_FIX,
+  NO_TOOLBAR:        GENERIC_FIX,
+  NO_CAPTURE:        GENERIC_FIX,
+  PARSE:             GENERIC_FIX,
 };
 
 // Card order / sort preferences. Versioned so a future shape change can be
@@ -846,18 +847,16 @@ export async function mount(host, container) {
   function noteFor(res, which) {
     if (!res) return null;
     if (res.timedOut) {
-      return `The ${res.label} is taking longer than expected and the page stopped waiting for it. ` +
-             `It may still finish in the background — reopen this module in a minute to see. ` +
-             `If a Tableau tab was left open, check whether it is actually rendering.`;
+      return `Still loading. Check back in a minute.`;
     }
     if (!res.ok) return null;
     if (res.unchanged) {
       const raw = res.sourceUpdate?.raw;
-      return `Already up to date — Tableau hasn't republished${raw ? ` since ${raw}` : ""}. Nothing was re-downloaded.`;
+      return `Already up to date${raw ? ` (as of ${raw})` : ""}.`;
     }
     if (which === "today") return `Captured ${res.storeCount} of ${res.requested} stores.`;
     return res.rolled
-      ? `New data captured — the previous day's snapshot was kept for comparison.`
+      ? `New data loaded.`
       : `Captured ${res.storeCount} stores.`;
   }
 
@@ -928,11 +927,7 @@ export async function mount(host, container) {
     const when = at && !Number.isNaN(at.getTime())
       ? at.toLocaleString(undefined, { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
       : "time unknown";
-    const label = d.sourceUpdate?.iso ? "Tableau update" : "read";
-    const title = "Department and associate detail is the last current-day reading kept for this day; "
-      + "the rings above are the closed-day summary, so the two can differ."
-      + (d.fromHistory ? " Rebuilt from the home-store pick history; percentages are computed." : "");
-    return `<p class="vizpick-dept-none vizpick-daydetail-note" title="${escapeHtml(title)}">As of the day's last ${label}: ${escapeHtml(when)}</p>`;
+    return `<p class="vizpick-dept-none vizpick-daydetail-note">As of ${escapeHtml(when)}</p>`;
   }
 
   function todayRows() {
@@ -1134,19 +1129,19 @@ export async function mount(host, container) {
           if (spread?.differ) {
             const o = new Date(spread.oldest.iso);
             absEl.textContent = `${day} — ${time} (newest store)`;
-            absEl.title = `Stores update at different times. Newest store stamp ${withWeekday(d.toLocaleString(), d)} (${humanAge(Date.now() - d.getTime())} ago), oldest ${withWeekday(o.toLocaleString(), o)} (${humanAge(Date.now() - o.getTime())} ago). Each card shows its own. ${note}`;
+            absEl.title = `Newest store updated ${withWeekday(d.toLocaleString(), d)} (${humanAge(Date.now() - d.getTime())} ago), oldest ${withWeekday(o.toLocaleString(), o)} (${humanAge(Date.now() - o.getTime())} ago). ${note}`;
           } else {
             absEl.textContent = `${day} — ${time}`;
-            absEl.title = `Tableau last updated ${withWeekday(d.toLocaleString(), d)} (${humanAge(Date.now() - d.getTime())} ago). ${note}`;
+            absEl.title = `Updated ${withWeekday(d.toLocaleString(), d)} (${humanAge(Date.now() - d.getTime())} ago). ${note}`;
           }
         } else {
           absEl.textContent = day;
-          absEl.title = `Tableau last updated ${day}. This view publishes a date with no clock time. ${note}`;
+          absEl.title = `Updated ${day}. ${note}`;
         }
       } else {
         absEl.textContent = "date unknown";
         absEl.title = snap.capturedAt
-          ? `Tableau's update stamp could not be read. Captured ${humanAge(Date.now() - new Date(snap.capturedAt).getTime())} ago. ${note}`
+          ? `Update time unknown. ${note}`
           : note;
       }
     }
@@ -1192,10 +1187,10 @@ export async function mount(host, container) {
     const shown = new Set(todayRows().map((r) => String(r.store)));
     const kept = lastRunFailedStores().filter((s) => shown.has(s));
     const keptNote = kept.length
-      ? ` ${kept.length} store${kept.length === 1 ? "" : "s"} (${kept.join(", ")}) did not answer on the last run and ${kept.length === 1 ? "shows its" : "show their"} previous numbers — see each card's Updated time and the capture details below.`
+      ? ` Store${kept.length === 1 ? "" : "s"} ${kept.join(", ")} ${kept.length === 1 ? "shows" : "show"} older numbers.`
       : "";
     const coverageNote = (missing
-      ? ` ${missing} store${missing === 1 ? "" : "s"} could not be captured — see the capture details below.`
+      ? ` ${missing} store${missing === 1 ? "" : "s"} couldn't be loaded.`
       : thin
         ? ` ${thin} store${thin === 1 ? " needs" : "s need"} a data repair — Refresh retries incomplete stores.`
         : "") + keptNote;
@@ -1204,9 +1199,8 @@ export async function mount(host, container) {
       null,
       (n
         ? `Showing ${n} of ${roster} stores in this market.` + coverageNote +
-          " Today is captured one store at a time, so reloading takes a couple of minutes."
-        : `Today's numbers come from Tableau's VizPick Details view, which reports one store at a time. ` +
-          `Loading this market means ${roster} exports, spread across 3 background tabs — about two minutes.`)
+          " Reloading takes a couple of minutes."
+        : `Loading ${roster} stores takes about two minutes.`)
       + " " + todayHealthNote() + " " + autoTodayNote()
     );
   }
@@ -1228,8 +1222,7 @@ export async function mount(host, container) {
     if (f.inFlight) return "";
     if (f.lastError) {
       const since = f.lastSuccess ? humanAge(Date.now() - new Date(f.lastSuccess).getTime()) : null;
-      return `⚠ These numbers are from the last successful capture${since ? ` ${since} ago` : ""} — ` +
-             `every attempt since has failed. See the capture details below.`;
+      return `⚠ Showing numbers from ${since ? `${since} ago` : "an earlier update"}; refresh failed.`;
     }
     if (f.isStale && f.lastSuccess) {
       return `⚠ Last captured ${humanAge(Date.now() - new Date(f.lastSuccess).getTime())} ago.`;
@@ -1250,14 +1243,13 @@ export async function mount(host, container) {
     if (!a) return "";
     if (a.enabled === false) return "Auto-refresh for Today is switched off.";
     if (!a.market) return `Auto-refresh is idle — ${a.reason}.`;
-    const mine = a.source === "home-market" ? "your home market" : "the market you last loaded";
     // Deliberately "checks", not "refreshes". It reads Tableau's own Updated
     // stamp — now straight off the dashboard rather than by exporting a sheet
     // — and only reloads when that stamp has moved. The current-day data
     // republishes every few hours, so the check almost always finds nothing to
     // do and costs nothing. Saying "auto-refreshing every 30 minutes" implied a
     // two-minute crawl on the half hour, which is not what happens.
-    return `Checks ${mine} (${a.market}) every ${a.periodMin} min and re-reads only the stores whose own Updated stamp has moved.`;
+    return `Auto-updates every ${a.periodMin} min.`;
   }
 
   function renderTodayBar(progress, message) {
@@ -1389,7 +1381,7 @@ export async function mount(host, container) {
   // rather than rendering an empty table that looks like missing data.
   function deptBreakdownHtml(r) {
     if (!r.isToday && !r.dayDetail) {
-      return `<p class="vizpick-dept-none">No current-day capture was kept for this store on this day, and the daily summary export has no department detail.</p>`;
+      return `<p class="vizpick-dept-none">No detail for this day.</p>`;
     }
     const depts = Array.isArray(r.depts) ? r.depts : [];
     // A kept day with location detail but no department breakout still has its
@@ -1554,11 +1546,11 @@ export async function mount(host, container) {
 
   function associatesHtml(r) {
     if (!r.isToday && !r.dayDetail) {
-      return `<p class="vizpick-dept-none">No current-day capture was kept for this store on this day, and the daily summary export has no per-location data.</p>`;
+      return `<p class="vizpick-dept-none">No detail for this day.</p>`;
     }
     const gaps = r.locations?.gaps;
     if (r.locationsWithheld) {
-      return `<p class="vizpick-dept-none">⚠ Location detail for this store was identical to store ${escapeHtml(String(r.locationsWithheld.store))}'s — a capture landed on the wrong store, so the associate list has been withheld for both. Refresh to re-capture.</p>`;
+      return `<p class="vizpick-dept-none">Associate list unavailable. Refresh to retry.</p>`;
     }
     if (!Array.isArray(gaps)) {
       return `<p class="vizpick-dept-none">No location detail captured for this store.</p>`;
@@ -1698,14 +1690,12 @@ export async function mount(host, container) {
       const time = su.hasTime ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
       const text = sameDay && time ? time
         : `${d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" })}${time ? ` ${time}` : ""}`;
-      const read = r?.capturedAt ? ` Read ${humanAge(now - new Date(r.capturedAt).getTime())} ago` : "";
-      const confirmed = r?.confirmedAt ? `, still current ${humanAge(now - new Date(r.confirmedAt).getTime())} ago` : "";
-      const title = `Tableau last updated store ${r.store} ${withWeekday(d.toLocaleString(), d)} (${humanAge(now - d.getTime())} ago).${read}${confirmed}${read ? "." : ""} Stores update at different times.`;
+      const title = `Updated ${withWeekday(d.toLocaleString(), d)} (${humanAge(now - d.getTime())} ago).`;
       return `<div class="vizpick-store-card-stamp" title="${escapeHtml(title)}">Updated ${escapeHtml(text)}</div>`;
     }
     if (r?.capturedAt) {
       const age = humanAge(now - new Date(r.capturedAt).getTime());
-      return `<div class="vizpick-store-card-stamp" title="Tableau's Updated stamp could not be read for store ${escapeHtml(r.store)}. Read ${escapeHtml(age)} ago.">Read ${escapeHtml(age)} ago</div>`;
+      return `<div class="vizpick-store-card-stamp" title="Update time unknown.">Read ${escapeHtml(age)} ago</div>`;
     }
     return "";
   }
@@ -1804,6 +1794,50 @@ export async function mount(host, container) {
       const who = dirGet(win);
       return !!((who?.name && isDigital(store, who.name)) || (who?.title && isDigitalJob(who.title)));
     };
+  }
+
+  /**
+   * Build one store's email image for metricshot (see 5b above). job =
+   * { id, store, day: "today" | "YYYY-MM-DD" }. The tab and market are set
+   * for this mount only — saveUiPrefs() is never called, so the user's own
+   * view is untouched.
+   */
+  async function runReportJob() {
+    let job = null;
+    try { job = JSON.parse(new URLSearchParams(location.search).get("vpReport") || "null"); } catch { /* not a job */ }
+    if (!job?.id) return;
+    const key = `metricshot.reportJob.${job.id}`;
+    const finish = (res) => chrome.storage.local.set({ [key]: { ...res, at: Date.now() } }).catch(() => {});
+    try {
+      const store = String(job.store || homeStore || "");
+      const tab = job.day === "today" ? "today" : `day:${job.day}`;
+      const roster = dayList()[0]?.rows || state?.rows || [];
+      const market = roster.find((r) => String(r.store) === store)?.market;
+      if (!market) throw new Error(`store ${store} is not on the VizPick roster`);
+      if (tab !== "today" && !dayList().some((d) => d.dataDate === job.day)) {
+        throw new Error(`no closed-day VizPick data for ${job.day}`);
+      }
+      activeTab = tab;
+      selectedMarket = market;
+      render();
+      const find = () => rowsForActiveTab().find((r) => String(r.store) === store);
+      if (!find()) throw new Error(`no ${tab === "today" ? "current-day" : job.day} row for store ${store}`);
+      // Home-store "caused" attribution decides which associates are listed,
+      // so it has to land before names are resolved for them.
+      await withDeadline(refreshCaused(), 15_000);
+      await resolveForReport();
+      const r = find();
+      const blob = await reportHtmlToPng(performanceHtml(r));
+      const { subject } = buildCardEmail(r, cardMeta(r), { names: nameResolver() });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      await finish({ ok: true, store, day: job.day, subject, pngBase64: btoa(bin) });
+      log.emit("report_job_done", { store, day: job.day, bytes: bytes.length });
+    } catch (e) {
+      await finish({ ok: false, error: String(e?.message ?? e) });
+      log.emit("report_job_failed", { error: String(e?.message ?? e) });
+    }
   }
 
   function performanceHtml(r) {
@@ -2004,7 +2038,7 @@ export async function mount(host, container) {
     body.innerHTML = clean ? "" : renderDebug(dbg);
 
     const heading = section.querySelector(".vizpick-section-heading");
-    if (heading) heading.textContent = clean ? "Diagnostics" : "Last capture details";
+    if (heading) heading.textContent = clean ? "Diagnostics" : "Couldn't refresh";
     const dismiss = section.querySelector('[data-action="dismiss-error"]');
     if (dismiss) dismiss.hidden = clean;
   }
@@ -2027,29 +2061,21 @@ export async function mount(host, container) {
     const noBuild = !dbg.build;
     if (stale || fromOldBuild || noBuild) {
       parts.push(
-        `<p class="vizpick-debug-stale"><strong>This is a saved result from an earlier capture` +
+        `<p class="vizpick-debug-stale"><strong>From an earlier attempt` +
         (dbg.capturedAt ? ` (${humanAge(age)} ago)` : "") +
-        `, not something that just happened.</strong>` +
-        ((fromOldBuild || noBuild)
-          ? ` It was written by an older build of the extension, so its wording may not match the current code.`
-          : "") +
-        ` Dismiss it, or click Refresh to run a fresh capture.</p>`
+        `.</strong> Dismiss or Refresh.</p>`
       );
     }
 
-    if (dbg.errorClass) parts.push(`<code>${escapeHtml(dbg.errorClass)}</code>`);
-    if (dbg.error) parts.push(`<br><span class="vizpick-debug-error">${escapeHtml(String(dbg.error))}</span>`);
-    const fix = FIXES[dbg.errorClass];
-    if (fix) parts.push(`<p class="vizpick-debug-fix"><strong>What to do:</strong> ${escapeHtml(fix)}</p>`);
+    if (dbg.errorClass || dbg.error) console.warn("[vizpick] last capture failed:", dbg.errorClass, dbg.error, dbg.debug);
+    const fix = FIXES[dbg.errorClass] || (dbg.errorClass || dbg.error ? GENERIC_FIX : "");
+    if (fix) parts.push(`<p class="vizpick-debug-fix">${escapeHtml(fix)}</p>`);
     // Per-store reasons in plain sight — an ok run that lost stores has no
     // errorClass, and the reasons used to be reachable only inside the JSON.
     const perStore = (dbg.debug?.failures || []).filter((f) => !f.soft);
     if (perStore.length) {
       parts.push(`<p class="vizpick-debug-fix"><strong>Stores this run could not read</strong> (they keep their previous numbers):</p><ul>` +
         perStore.map((f) => `<li><strong>${escapeHtml(String(f.store))}</strong> — ${escapeHtml(String(f.reason))}</li>`).join("") + `</ul>`);
-    }
-    if (dbg.debug) {
-      parts.push(`<details><summary>Capture debug</summary><pre>${escapeHtml(JSON.stringify(dbg.debug, null, 2))}</pre></details>`);
     }
     return parts.join("");
   }
@@ -2320,8 +2346,7 @@ export async function mount(host, container) {
 
     if (!histData?.ok || !entries.length) {
       histEl.innerHTML = `${head("Home store — pick progression")}
-        <p class="vizpick-hist-empty">No updates kept yet. The home store is captured every 30 minutes
-        from 5 AM to 11 PM, or click <strong>Capture now</strong>.</p>`;
+        <p class="vizpick-hist-empty">No updates yet today.</p>`;
       return;
     }
 
@@ -2404,13 +2429,9 @@ export async function mount(host, container) {
         </tr>`).join("");
       const gap = gapAt.get(i);
       const gapRow = gap
-        ? `<tbody><tr class="vizpick-hist-muted"><td colspan="8">No update kept for Tableau data between ${escapeHtml(clock(gap.from))} and ${escapeHtml(clock(gap.to))} (${Math.floor(gap.minutes / 60)} h ${gap.minutes % 60} min).</td></tr></tbody>`
+        ? `<tbody><tr class="vizpick-hist-muted"><td colspan="8">No update between ${escapeHtml(clock(gap.from))} and ${escapeHtml(clock(gap.to))} (${Math.floor(gap.minutes / 60)} h ${gap.minutes % 60} min).</td></tr></tbody>`
         : "";
-      const stampFlag = e.stampUnverified
-        ? ` <span class="vizpick-hist-flag" title="Recorded under the market crawl's Updated time before per-store stamps; this store's own stamp later showed different data at the same time.">time unverified</span>`
-        : e.relabeledFrom
-          ? ` <span class="vizpick-hist-flag" title="First recorded as ${escapeHtml(e.relabeledFrom)}; this store's own stamp showed the data belongs to this earlier update.">moved from ${escapeHtml(clock(e.relabeledFrom))}</span>`
-          : "";
+      const stampFlag = "";
       return `${gapRow}<tbody class="${late ? "vizpick-hist-after" : ""}">
         <tr class="vizpick-hist-row" data-hist-toggle="${i}">
           <td>${escapeHtml(clock(dataTime(e)))}${stampFlag}</td>
@@ -2430,7 +2451,7 @@ export async function mount(host, container) {
 
     const timelineHtml = `
       <p class="vizpick-hist-summary">
-        ${entries.length} update${entries.length === 1 ? "" : "s"} kept, Tableau data from ${escapeHtml(clock(dataTime(first)))} to ${escapeHtml(clock(dataTime(last)))}.
+        ${entries.length} update${entries.length === 1 ? "" : "s"}, data from ${escapeHtml(clock(dataTime(first)))} to ${escapeHtml(clock(dataTime(last)))}.
         Suggested picks <strong>${first.totals.seen} → ${last.totals.seen}</strong>;
         <strong>${addedAfter}</strong> added and <strong>${doneAfter}</strong> completed after ${escapeHtml(histCutoff)}.
         <strong>${last.totals.open}</strong> open in <strong>${openBins.length}</strong> bins${unscannedOpen ? `, ${unscannedOpen} of them in bins nobody has scanned` : ""}.
@@ -2466,7 +2487,7 @@ export async function mount(host, container) {
 
       <h3 class="vizpick-hist-sub">First scans today — bins nobody had scanned at the previous update (${firsts.length})</h3>
       ${firsts.length ? `<div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
-        <thead><tr><th>Tableau data as of</th><th>Location</th><th class="num">Picks appeared</th><th class="num">Cases seen</th><th>Scanned by</th><th>Job (shift)</th><th>Scan time</th></tr></thead>
+        <thead><tr><th>As of</th><th>Location</th><th class="num">Picks appeared</th><th class="num">Cases seen</th><th>Scanned by</th><th>Job (shift)</th><th>Scan time</th></tr></thead>
         <tbody>${firsts.map((f) => `<tr>
           <td>${escapeHtml(clock(f.dataTime))}</td>
           <td>${escapeHtml(f.location)}</td>
@@ -2501,17 +2522,17 @@ export async function mount(host, container) {
           <td class="num">${d.casesAfter == null ? "—" : signed(d.casesAfter)}</td>
         </tr>`).join("")}</tbody></table></div>`
         : `<p class="vizpick-hist-note">No department breakout kept yet — it starts with the next capture.</p>`}
-      <p class="vizpick-hist-note">Bin group is the first part of a location code (the 024 in 024/002). It is not a department; the export has no department per bin.</p>
+      <p class="vizpick-hist-note">Bin group = first part of the location code (the 024 in 024/002).</p>
 
       <h3 class="vizpick-hist-sub">Updates through the day</h3>
       <div class="vizpick-hist-scroll">
         <table class="vizpick-hist-table">
-          <thead><tr><th>Tableau data as of</th><th>Captured</th><th class="num">Picks seen</th><th class="num">Done</th><th class="num">Open</th><th class="num">Added</th><th class="num">Completed</th><th class="num">Removed</th></tr></thead>
+          <thead><tr><th>As of</th><th>Captured</th><th class="num">Picks seen</th><th class="num">Done</th><th class="num">Open</th><th class="num">Added</th><th class="num">Completed</th><th class="num">Removed</th></tr></thead>
           ${tl}
         </table>
       </div>
       ${histPollNote(histData?.polls || [])}
-      <p class="vizpick-hist-note">Click an update to see which bins changed. Shaded rows are Tableau data from after the cutoff (the source runs 1–2 h behind the floor).
+      <p class="vizpick-hist-note">Click an update to see which bins changed. Shaded rows are after the cutoff.
       VizPick assigns picks to locations, not people: the scanner shown is whoever scanned the bin last, so a scan after the cutoff inherits whatever was left there.
       Job and shift come from Digital Metrics' schedule for the selected day, matched by name.</p>`;
 
@@ -2557,7 +2578,6 @@ export async function mount(host, container) {
     const entries = cleaned.entries;
     const setAside = [
       cleaned.foreign.length ? `${cleaned.foreign.length} update${cleaned.foreign.length === 1 ? "" : "s"} whose bins weren't this store's` : "",
-      cleaned.duplicates ? `${cleaned.duplicates} repeat capture${cleaned.duplicates === 1 ? "" : "s"} of the same Tableau update` : "",
     ].filter(Boolean).join(" and ");
     if (entries.length < 2) {
       histCaseText = "";
@@ -2651,7 +2671,7 @@ export async function mount(host, container) {
       : "";
     const addsHtml = digAdds.length
       ? `${associatesHtml}<div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
-          <thead><tr><th>Tableau data as of</th><th>Bin</th><th>Scanned by</th><th>Scan</th><th>Scanned before by</th><th class="num">Picks added</th><th class="num">Done / due after</th></tr></thead>
+          <thead><tr><th>As of</th><th>Bin</th><th>Scanned by</th><th>Scan</th><th>Scanned before by</th><th class="num">Picks added</th><th class="num">Done / due after</th></tr></thead>
           <tbody>${digAdds.map((r) => `<tr><td>${escapeHtml(clock(r.at))}</td>${scanRow(r).replace(/^<tr>/, "").replace(/<\/tr>$/, "")}</tr>`).join("")}</tbody></table></div>`
       : `<p class="vizpick-hist-note">No digital scan added picks on this day.</p>`;
 
@@ -2687,14 +2707,15 @@ export async function mount(host, container) {
           <td class="num">${r.done} / ${r.due}</td>
           <td class="num">${r.dDue == null ? "starting point" : `${r.dDue ? `<span class="vizpick-ledger-up">${signed(r.dDue)} due</span>` : "+0 due"}${r.dDone ? `, <span class="vizpick-ledger-done">${signed(r.dDone)} done</span>` : ""}`}</td>
         </tr>`).join("");
-      methodHtml = `
-        <h3 class="vizpick-hist-sub">How this is measured</h3>
+      methodHtml = `<details class="vizpick-case-method">
+        <summary class="vizpick-hist-sub">How this is measured</summary>
         <ol class="vizpick-case-steps">${steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
         <p class="vizpick-hist-summary"><strong>Worked example, bin ${escapeHtml(example.location)}.</strong> ${escapeHtml(narrative)}</p>
         <div class="vizpick-hist-scroll"><table class="vizpick-hist-table">
-          <thead><tr><th>Tableau update</th><th>Bin's last scan</th><th>Scanned by</th><th class="num">Done / due</th><th class="num">Change since the row above</th></tr></thead>
+          <thead><tr><th>Update</th><th>Bin's last scan</th><th>Scanned by</th><th class="num">Done / due</th><th class="num">Change since the row above</th></tr></thead>
           <tbody>${rows}</tbody></table></div>
-        <p class="vizpick-hist-note">What this can't show: who pulled a pick ("done" is the bin's total, not a person's), which screen or filter was open on the device, or a second scan inside the same update window. The counts on a scan row are the next update's, so they can include work finished shortly after the scan.</p>`;
+        <p class="vizpick-hist-note">What this can't show: who pulled a pick ("done" is the bin's total, not a person's), which screen or filter was open on the device, or a second scan inside the same update window. The counts on a scan row are the next update's, so they can include work finished shortly after the scan.</p>
+        </details>`;
       methodLines.push("", "How this is measured:");
       steps.forEach((s, i) => methodLines.push(`${i + 1}. ${s}`));
       if (narrative) methodLines.push("", `Worked example, bin ${example.location}: ${narrative}`);
@@ -2784,9 +2805,7 @@ export async function mount(host, container) {
       <h3 class="vizpick-hist-sub">Every digital scan that added picks (${digAdds.length})</h3>
       ${addsHtml}
 
-      ${methodHtml}
-
-      <p class="vizpick-hist-note">Limits: Tableau keeps only each bin's last scan per update, so a second scan inside the same update window is invisible. A scan's counts are the next update's, up to an hour later. The data shows whose scan it was, not which filter was active on the device. Jobs come from the Digital Metrics schedule for the selected day.</p>`;
+      ${methodHtml}`;
   }
 
   // ── Bin by bin: every bin's scans across the day ───────────────────────────
@@ -2803,7 +2822,7 @@ export async function mount(host, container) {
         <button class="vizpick-linkbtn" data-hist-ledger-export>Export bin history CSV</button>
         <span class="vizpick-hist-muted" data-hist-ledger-count></span>
       </div>
-      <p class="vizpick-hist-note">Each scan row shows who scanned the bin, when, and the bin's picks done / due at the next Tableau update, with the change since the row above. "No scan" rows are updates where the counts changed but nobody had rescanned the bin.</p>
+      <p class="vizpick-hist-note">Each scan row shows who scanned the bin, when, and the bin's picks done / due at the next update, with the change since the row above. "No scan" rows are updates where the counts changed but nobody had rescanned the bin.</p>
       <div class="vizpick-ledger-list" data-hist-ledger-list></div>`;
   }
 
@@ -2886,19 +2905,11 @@ export async function mount(host, container) {
   function histPollNote(polls) {
     if (!polls.length) return "";
     const lastPoll = polls[polls.length - 1];
-    const said = {
-      unchanged: `Tableau still showed data as of ${clock(lastPoll.stamp)}`,
-      added: `a new update was kept (Tableau data as of ${clock(lastPoll.stamp)})`,
-      confirmed: `same data as the newest update kept`,
-      rejected: `the capture was refused because its bins were not this store's`,
-      failed: `the check failed (${lastPoll.error || "no data"})`,
-    }[lastPoll.outcome] || String(lastPoll.outcome || "");
-    const failed = polls.filter((p) => !p.ok);
-    const failedText = failed.length
-      ? ` ${failed.length} failed: ${failed.slice(-6).map((p) => `${clock(p.at)} (${p.error || "no data"})`).join("; ")}.`
-      : " None failed.";
-    return `<p class="vizpick-hist-note">Last checked ${escapeHtml(clock(lastPoll.at))}: ${escapeHtml(said)}. ${polls.length} check${polls.length === 1 ? "" : "s"} logged this day.${escapeHtml(failedText)}</p>`;
+    if (!lastPoll.ok) console.warn("[vizpick] last home-store check failed:", lastPoll.outcome, lastPoll.error);
+    const failed = lastPoll.ok === false || lastPoll.outcome === "failed" ? " Last check failed." : "";
+    return `<p class="vizpick-hist-note">Last checked ${escapeHtml(clock(lastPoll.at))}.${failed}</p>`;
   }
+
 
   container.querySelector('[data-action="open-history"]')?.addEventListener("click", () => {
     if (!histDialog) return;
@@ -3048,6 +3059,12 @@ export async function mount(host, container) {
   const unsubHistDone = host.messaging.on("source_complete", scheduleHistory);
   // The home-store poll runs on its own alarm, outside any crawl.
   const unsubHistPoll = host.messaging.on("home_history", () => loadHomeHistory());
+
+  // Headless report job. metricshot opens app.html?vpReport=<json>#/vizpick in
+  // a background tab to email the same picture the ✉ button builds; the result
+  // goes back through storage, which the SW polls. Started last so every const
+  // in this mount is initialised before the job reaches it.
+  runReportJob();
 
   // 8. Cleanup — MUST be called by shell when navigating away.
   return () => {

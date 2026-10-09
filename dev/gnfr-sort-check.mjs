@@ -1,0 +1,27 @@
+// dev/gnfr-sort-check.mjs — Supply Orders: header sorting on every table + the Orders sort control (raw CDP).
+import { openTab, sleep } from "./_cdp.mjs";
+const t = await openTab("chrome-extension://fchnolphfaklbpdgnofhblfhcailkpdb/app.html#/gnfr");
+await sleep(7000);
+const ev = (js) => t.evalJs(js);
+const col = (n) => `[...document.querySelectorAll("#gnfr-pane table[data-st] tbody tr")].slice(0,4).map(r => (r.cells[${n}]?.innerText||"").split(String.fromCharCode(10))[0]).join(" | ")`;
+const click = (txt) => ev(`[...document.querySelectorAll("#gnfr-pane [data-tsort]")].find(b => b.textContent.trim().startsWith(${JSON.stringify(txt)}))?.click() ?? "missing"`);
+const tab = async (n) => { await ev(`document.querySelector('.gn-tabs [data-tab="${n}"]').click()`); await sleep(500); };
+await tab("people");
+await click("Spend"); console.log("people spend ▼:", await ev(col(3)));
+await click("Spend"); console.log("people spend ▲:", await ev(col(3)));
+await click("Person"); console.log("people name A-Z:", await ev(col(0)));
+await click("Last order"); console.log("people last ▼:", await ev(col(5)));
+await ev(`document.querySelector('[data-by="job"]').click()`); await sleep(300);
+await click("Job title"); console.log("jobs A-Z:", await ev(col(0)));
+await tab("regulars");
+await click("Last ordered"); console.log("regs last ▼:", await ev(col(3)));
+await click("Rhythm"); console.log("regs rhythm ▼:", await ev(col(2)));
+await tab("spend");
+await click("This month"); console.log("budget mtd ▼:", await ev(col(2)), "| total row last:", await ev(`[...document.querySelectorAll(".gn-budget tbody tr")].at(-1).className`));
+await tab("orders");
+await ev(`(s => { s.value = "total"; s.dispatchEvent(new Event("change", { bubbles: true })); })(document.querySelector("[data-order-sort]"))`); await sleep(400);
+console.log("orders by total:", await ev(`[...document.querySelectorAll(".gn-cart-total")].slice(0,4).map(e=>e.textContent).join(" | ")`));
+await ev(`document.querySelector(".gn-cart-head").click()`); await sleep(300);
+await click("Total"); console.log("cart lines total ▼:", await ev(col(3)));
+await ev(`(s => { s.value = "new"; s.dispatchEvent(new Event("change", { bubbles: true })); })(document.querySelector("[data-order-sort]"))`);
+t.close(); process.exit(0);

@@ -124,9 +124,24 @@ export function scoreSessions(sessions, context) {
       excess_minutes: Math.round(excessMinutes * 10) / 10,
       priority_score: contextScore,
       history_coverage: historyCoverage,
-      explanation: `Timing review only. Compared with a fixed ${BASE_SECONDS_PER_ITEM}-second-per-item reference (an arbitrary constant, not a calibrated threshold) and ${baseline.count} prior recorded session(s) for this driver at this store. Peer comparison is unavailable — no peer source has been mapped. Picked and dispatched are source statuses, not verified register arrival or store exit. This score ranks a review queue; it is not a probability of fraud.`
+      explanation: explainSession(excessMinutes, session.combined_items, baseline.count, driverDeviation)
     };
   });
+}
+
+// Plain-language summary shown on the session detail panel.
+function explainSession(excessMinutes, items, priorCount, deviation) {
+  const m = Math.round(Math.abs(excessMinutes));
+  const pace = excessMinutes >= 0
+    ? `Took ${m} min longer than expected for ${items || 0} items.`
+    : `Took ${m} min less than expected for ${items || 0} items.`;
+  const trips = `${priorCount} earlier trip${priorCount === 1 ? "" : "s"}`;
+  const history = deviation == null
+    ? `Not enough history to compare with this driver's usual pace (${trips}).`
+    : deviation > 0
+      ? `Slower than this driver's usual pace (${trips}).`
+      : `In line with this driver's usual pace (${trips}).`;
+  return `${pace} ${history} A high score means review first, not proof.`;
 }
 
 function calculateBaseScore(session) {

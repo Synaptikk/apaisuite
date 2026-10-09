@@ -32,7 +32,7 @@ const COLUMNS = [
     // Rendered specially below — colored cell based on tier (cvp.js).
     // Value is a fraction (0–1) so the table's default fmtPct works for sort.
     format: (v) => null,
-    title: "Sell-through ratio (CVP units sold ÷ CVP units active) over the same date window as the filter. Capped at 8 weeks — Hoops returns at most 8 weeks of history.",
+    title: "Share of clearance (CVP) units sold. Up to 8 weeks.",
   },
   { key: "outlierScore",  label: "Outlier Score", numeric: true,  format: (v) => String(v ?? 0) },
   { key: "userFlagCount", label: "Assoc. Flags",  numeric: true,
@@ -155,9 +155,9 @@ export function createStoreTable({ onSelectStore }) {
                 // Two distinct "no value" cases get different tooltips so the
                 // analyst can tell whether to widen the filter or run a pull.
                 const why = !lastState.cvpByStore || !lastState.cvpByStore[r.storeNumber]
-                  ? "Hoops CVP data not loaded for this pull."
+                  ? "No clearance data."
                   : r.cvpWeeksUsed === 0
-                    ? `Filter window doesn't overlap the 8-week CVP history Hoops returned. Try widening the date range or pulling fresh.`
+                    ? "No clearance data for these dates. Try a wider range or Pull again."
                     : "No CVP data for this store this window.";
                 return h("td", { class: "cd-table-num cd-muted", title: why }, "—");
               }
@@ -165,17 +165,10 @@ export function createStoreTable({ onSelectStore }) {
               const cls  = tier === "good"  ? "cd-pill-normal"
                          : tier === "amber" ? "cd-pill-watch"
                          : "cd-pill-critical";
-              const weeksLabel = r.cvpWeeksUsed === 1 ? "1 week" : `${r.cvpWeeksUsed} weeks`;
-              const rangeLabel = lastState.filters?.dateRange?.from && lastState.filters?.dateRange?.to
-                ? ` — matches filter ${formatDate(lastState.filters.dateRange.from)} – ${formatDate(lastState.filters.dateRange.to)}`
-                : "";
-              const cappedNote = r.cvpCapped
-                ? "\nNote: Hoops returns at most 8 weeks of CVP history; longer filters show all 8."
-                : "";
               return h("td", { class: "cd-table-num" },
                 h("span", {
                   class: `cd-pill cd-pill-static ${cls}`,
-                  title: `${(r.sellThrough * 100).toFixed(1)}% over ${weeksLabel} of CVP data (${r.cvpSalesQty.toLocaleString()} sold / ${r.cvpTotalQty.toLocaleString()} units)${rangeLabel}. Green ≥ 25%, amber 15–25%, red < 15%.${cappedNote}`,
+                  title: `${(r.sellThrough * 100).toFixed(1)}% sold (${r.cvpSalesQty.toLocaleString()} of ${r.cvpTotalQty.toLocaleString()} units)`,
                 }, fmtPct(r.sellThrough)),
               );
             }

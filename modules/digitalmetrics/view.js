@@ -31,6 +31,18 @@ import { isFinalized, defaultDate, dayName } from "./lib/data/grid.js";
 import { leadershipForJob, byLeadershipFirst, isDigitalJob } from "./lib/data/job_classify.js";
 import { weekLabel } from "../../shared/wmweek.js";
 
+// Plain wording for a sync error's scope; the raw error goes to console.warn.
+function syncErrorText(scope = "") {
+  const store = (scope.match(/\d+/) || [])[0];
+  const where = store ? ` for store ${store}` : "";
+  if (scope.startsWith("express")) return `Couldn't sync Express Pickup${where}. Try again.`;
+  if (scope.startsWith("metrics")) return `Couldn't sync metrics${where}. Try again.`;
+  if (scope === "schedule") return "Couldn't sync the schedule. Sign in to the scheduler and try again.";
+  if (scope === "clock-ins") return "Couldn't update clock-ins. Sign in to the timesheet site and try again.";
+  if (scope === "classify") return "Couldn't sort associates by job title. Try again.";
+  return "Part of the sync failed. Try again.";
+}
+
 const PAGES = {
   dashboard,
   insights,
@@ -156,7 +168,7 @@ export async function mount(host, container) {
     const page = PAGES[state.page];
     if (!page) {
       el.innerHTML = `<div class="dm-todo"><strong>${host.ui.escapeHtml(state.page)}</strong>` +
-                     ` — not yet ported from the standalone app.</div>`;
+                     ` — coming soon.</div>`;
       return;
     }
 
@@ -391,10 +403,10 @@ export async function mount(host, container) {
       setStatus(`adding store ${store}…`);
       const added = await call("add_store", { store });
       if (!added) return;
-      setStatus(`pulling store ${store}… this opens a background tab`);
+      setStatus(`loading store ${store}…`);
       const pulled = await call("pull_store", { store, force: true });
       if (pulled) {
-        host.ui.toast(`Store ${store}: ${(pulled.rows ?? 0).toLocaleString()} rows imported.`);
+        host.ui.toast(`Store ${store} loaded.`);
       }
       await loadStores();
       return;
@@ -1086,13 +1098,14 @@ export async function mount(host, container) {
       const failed = errors.length;
       const abandoned = state.lastResult?.abandoned;
       setPullStatus(abandoned
-                      ? `last sync died ${when} — run Sync now`
+                      ? `last sync didn't finish (${when}) — run Sync now`
                       : `synced ${when}${failed ? ` · ${failed} failed` : ""}`,
                     { kind: abandoned || failed ? "warn" : "ok" });
       // The toasts that named each failure are gone by the time anyone asks
       // "what failed?"; keep the reasons on the pill itself.
       const pill = $("#dm-pull-status");
-      if (pill) pill.title = errors.map((e) => `${e.scope}: ${e.error}`).join("\n");
+      if (failed) console.warn("[digitalmetrics] last sync errors", errors);
+      if (pill) pill.title = errors.map((e) => syncErrorText(e.scope)).join("\n");
     } else {
       setPullStatus("never synced");
     }
@@ -1116,10 +1129,9 @@ export async function mount(host, container) {
         return;
       }
 
-      const rows = (res.metrics || []).reduce((n, m) => n + (m.rows || 0), 0);
       const storesDone = (res.metrics || []).filter((m) => !m.skipped).length;
       const parts = [];
-      if (storesDone) parts.push(`${rows.toLocaleString()} rows from ${storesDone} store${storesDone === 1 ? "" : "s"}`);
+      if (storesDone) parts.push(`${storesDone} store${storesDone === 1 ? "" : "s"} synced`);
       const expressDays = (res.metrics || []).reduce((n, m) => n + (m.express?.pulled || 0), 0);
       if (expressDays) parts.push(`${expressDays} Express Pickup day${expressDays === 1 ? "" : "s"}`);
       if (res.schedule) parts.push(`${res.schedule.shifts} shifts`);
@@ -1130,7 +1142,8 @@ export async function mount(host, container) {
       // Surface every failure individually — one broken source must not read
       // as a total failure, and a silent partial is worse than either.
       for (const e of res.errors || []) {
-        host.ui.toast(`${e.scope}: ${e.error}`, { kind: "error" });
+        console.warn("[digitalmetrics] sync error", e.scope, e.error);
+        host.ui.toast(syncErrorText(e.scope), { kind: "error" });
       }
       for (const w of res.schedule?.warnings || []) {
         host.ui.toast(w, { kind: "error" });

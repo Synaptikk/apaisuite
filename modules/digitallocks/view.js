@@ -37,6 +37,14 @@ import { withWeekday }                             from "../../shared/dates.js";
 
 const POWER_BI_URL = "https://app.powerbi.com/groups/me/reports/a118e7e7-9431-4240-b630-04575d36cc37/217785fb10b56ddae020?ctid=3cbcc3d3-094d-4006-9849-0d11d61f484d&experience=power-bi";
 
+// Turn a stored import source ("Power BI: store 1458", "Daily refresh: store
+// 1458", or an uploaded file name) into a label a store leader reads.
+function displaySource(name) {
+  if (!name) return "(unknown)";
+  const m = /^(?:Power BI|Daily refresh):\s*store\s+(\S+)/i.exec(name);
+  return m ? `Store ${m[1]}` : name;
+}
+
 const ACTIVE_KEY  = "activeImportId";   // host.storage.local
 const MAPPING_KEY = "activeMappingId";  // host.storage.local
 
@@ -167,13 +175,8 @@ export async function mount(host, container) {
     }),
     h("button", {
       type: "button", class: "btn btn-primary",
-      title: "Pull this store's data from Power BI automatically",
       onClick: onSearchByStore,
     }, "Search"),
-    h("button", { type: "button", class: "btn btn-secondary",
-                  title: "Open the source Power BI report in a new tab",
-                  onClick: openPowerBi },
-      "Open Power BI report"),
     h("button", { type: "button", class: "btn btn-secondary",
                   title: "Manage case-item mapping (what items are in each case)",
                   onClick: openCaseMapPicker },
@@ -326,7 +329,7 @@ export async function mount(host, container) {
     // Also persist for SW daily-refresh alarm.
     host.storage.local.set("homeStore", storeNumber).catch(() => {});
     host.usage.record("search_store");
-    showImportProgress(`Querying Power BI for store ${storeNumber}…`);
+    showImportProgress(`Loading store ${storeNumber}…`);
     try {
       // V1.5: the SW takes auth + modelId from a captured Power BI request
       // (MAIN-world content script) and issues its OWN query, filtered to this
@@ -340,10 +343,10 @@ export async function mount(host, container) {
       const daxRows = resp.rows || [];
       if (!daxRows.length) {
         showImportProgress(null);
-        alert(`Power BI returned 0 rows for store ${storeNumber}. Either the store has no lock events in the current date range, or Power BI doesn't have data for that store.`);
+        alert(`No lock events found for store ${storeNumber} in this date range.`);
         return;
       }
-      showImportProgress(`Got ${daxRows.length} rows from Power BI — scoring…`);
+      showImportProgress(`Reviewing ${daxRows.length} events…`);
       // The DSR decoder keys rows by column Property name ("Lock Name",
       // "store", "USER ID", ...) — these match parseLockEvents' HEADER_ALIASES
       // so normalize() handles them unchanged.
@@ -471,18 +474,13 @@ export async function mount(host, container) {
       h("div", { class: "modal-head" }, "Case-item mapping"),
       h("div", { class: "modal-body" },
         h("p", { class: "dl-muted", style: { marginTop: 0 } },
-          "Maps lock names to the items stored inside each case. Used to cross-check online orders when a digital associate opens a case."),
+          "What's inside each case."),
         active
           ? h("div", { class: "dl-case-map-active" },
               h("strong", null, "Active: "), active.sourceFileName || "(unknown)",
               h("span", { class: "dl-muted" }, ` · ${active.summary?.itemCount ?? "?"} items · ${active.summary?.lockCount ?? "?"} locks · imported ${withWeekday(new Date(active.importedAt).toLocaleString(), active.importedAt)}`),
             )
           : h("p", { class: "dl-muted" }, "No case map loaded."),
-        h("p", null,
-          h("strong", null, "Expected CSV columns: "),
-          "zoneName, lockName, upc (required) · itemNumber, description, store (optional)"),
-        h("p", { class: "dl-muted", style: { fontSize: "12px" } },
-          "Zone and lock names must match the InVue system exactly (e.g. \"72-ELECTRONICS-TIER 1\", \"K6-1\"). UPCs accepted in any standard format."),
         state.mappingsIndex.length > 0
           ? h("table", { class: "dl-table", style: { marginTop: "12px" } },
               h("thead", null, h("tr", null,
@@ -531,7 +529,9 @@ export async function mount(host, container) {
             await exportInvueCaseMap();
           },
         }, "Create Locking Case Map"),
-        h("label", { class: "btn btn-primary", style: { cursor: "pointer" } },
+        h("label", { class: "btn btn-primary", style: { cursor: "pointer" },
+          title: "Columns: zoneName, lockName, upc (required); itemNumber, description, store (optional). " +
+                 "Zone and lock names must match InVue exactly (e.g. \"72-ELECTRONICS-TIER 1\", \"K6-1\")." },
           "Import CSV / Excel",
           h("input", {
             type: "file", accept: ".csv,.xlsx,.xlsm", style: { display: "none" },
@@ -658,7 +658,7 @@ export async function mount(host, container) {
               h("tbody", null, ...state.importsIndex.map((imp) =>
                 h("tr", null,
                   h("td", null, withWeekday(new Date(imp.importedAt).toLocaleString(), imp.importedAt)),
-                  h("td", null, imp.sourceFileName || "(unknown)"),
+                  h("td", null, displaySource(imp.sourceFileName)),
                   h("td", null, String(imp.summary?.rowCount ?? "")),
                   h("td", null, imp.importId === state.activeImportId ? "✓" : ""),
                   h("td", null,
@@ -670,7 +670,7 @@ export async function mount(host, container) {
                     h("button", {
                       class: "btn btn-sm btn-danger",
                       onClick: async () => {
-                        if (!confirm(`Delete import "${imp.sourceFileName}" (${imp.summary?.rowCount} rows)? Status history for these events stays in local storage.`)) return;
+                        if (!confirm(`Delete "${displaySource(imp.sourceFileName)}" (${imp.summary?.rowCount} events)?`)) return;
                         await deleteImport(imp.importId);
                         state.importsIndex = await listImports();
                         if (state.activeImportId === imp.importId) {
@@ -719,10 +719,10 @@ export async function mount(host, container) {
     els.importBanner.classList.remove("dl-hidden");
     replace(els.importBanner,
       h("div", null,
-        h("strong", null, `Active import: ${imp.sourceFileName || "(unknown)"}`),
+        h("strong", null, displaySource(imp.sourceFileName)),
         " ",
         h("span", { class: "dl-banner-meta" },
-          `imported ${when} · ${imp.summary?.rowCount ?? "?"} rows · ${imp.summary?.dateRange?.min ? withWeekday(imp.summary.dateRange.min) : "?"} → ${imp.summary?.dateRange?.max ? withWeekday(imp.summary.dateRange.max) : "?"} · ${(imp.summary?.stores || []).join(", ") || "no store info"}`),
+          `updated ${when} · ${imp.summary?.rowCount ?? "?"} events · ${imp.summary?.dateRange?.min ? withWeekday(imp.summary.dateRange.min) : "?"} → ${imp.summary?.dateRange?.max ? withWeekday(imp.summary.dateRange.max) : "?"} · ${(imp.summary?.stores || []).join(", ") || "no store info"}`),
       ),
     );
   }
@@ -757,11 +757,11 @@ export async function mount(host, container) {
     const topStore = mostBy(allActive, (e) => e.store);
 
     replace(els.summary,
-      summaryCard("Active events",         allActive.length,   "needs review"),
-      summaryCard("Critical",              critical,           "score ≥ 75",  "dl-card-critical"),
-      summaryCard("High",                  high,               "score 50-74", "dl-card-high"),
+      summaryCard("Active events",         allActive.length,   ""),
+      summaryCard("Critical",              critical,           "",  "dl-card-critical"),
+      summaryCard("High",                  high,               "", "dl-card-high"),
       summaryCard("After-hours",           afterHours,         "11pm-7am"),
-      summaryCard("Role/zone mismatch",    mismatch,           "needs context"),
+      summaryCard("Role/zone mismatch",    mismatch,           ""),
       summaryCard("Most active user",      topUser?.key || "—", topUser ? `${topUser.count} events` : ""),
       summaryCard("Highest-volume store",  topStore?.key || "—", topStore ? `${topStore.count} events` : ""),
       summaryCard("Cleared today",         clearedToday,       ""),
@@ -837,7 +837,7 @@ export async function mount(host, container) {
       type: "button", class: "btn btn-sm btn-secondary",
       title: days === null
         ? "Show all imported events"
-        : `Last ${days} days of imported data (anchored to ${maxIso || "the latest event"})`,
+        : `Last ${days} days`,
       onClick: () => applyDatePreset(days),
     }, label);
 
@@ -921,10 +921,7 @@ export async function mount(host, container) {
       els.content.classList.add("dl-hidden");
       replace(els.empty,
         h("div", null,
-          h("p", null, h("strong", null, "No imports yet."), " Type a store number above and click ", h("em", null, "Search"), " — the extension will pull the data directly from Power BI."),
-          h("div", { class: "dl-empty-actions" },
-            h("button", { class: "btn btn-secondary", onClick: openPowerBi }, "Open Power BI"),
-          ),
+          h("p", null, "Enter a store number and click ", h("em", null, "Search"), "."),
         ),
       );
       return;
@@ -1062,9 +1059,7 @@ export async function mount(host, container) {
       ),
       table,
       h("p", { class: "dl-muted dl-case-note" },
-        "Every opening is listed here, including events already cleared or marked non-malicious — ",
-        "the Status and Risk level filters deliberately do not apply to this tab. ",
-        "Counts are a record of access, not an allegation."),
+        "Shows every opening, including cleared ones."),
     );
   }
 
@@ -1194,8 +1189,7 @@ export async function mount(host, container) {
       h("h3", null, "Items in this case"));
     if (!state.caseMapping) {
       section.appendChild(h("p", { class: "dl-muted" },
-        "No case map loaded. Click ", h("strong", null, "Case Map…"), " in the header to import one — ",
-        "that's what turns a lock name into the merchandise behind it."));
+        "No case map loaded. Click ", h("strong", null, "Case Map…"), " in the header to import one."));
       return section;
     }
     const items = lookupCaseItems(state.caseMapping.items, {
@@ -1792,7 +1786,7 @@ export async function mount(host, container) {
     if (!isDigitalAssoc) {
       section.appendChild(
         h("p", { class: "dl-muted dl-drawer-hint" },
-          "Order cross-check applies to digital / OGP associates only."),
+          "Order check applies to digital associates only."),
       );
       return section;
     }
@@ -1846,9 +1840,7 @@ export async function mount(host, container) {
     section.appendChild(
       h("div", { class: `dl-order-result ${matchClass}` },
         h("span", { class: `dl-chip dl-chip-${anyMatch ? "success" : "warn"}` }, matchLabel),
-        !anyMatch && W > 0
-          ? h("span", { class: "dl-muted" }, ` +${W} to risk score`)
-          : h("span", { class: "dl-muted" }, ` (${ctx.results?.length ?? 0} UPC${ctx.results?.length === 1 ? "" : "s"} checked)`),
+        h("span", { class: "dl-muted" }, ` (${ctx.results?.length ?? 0} item${ctx.results?.length === 1 ? "" : "s"} checked)`),
         h("button", { class: "btn btn-sm btn-secondary", style: { marginLeft: "8px" },
           onClick: () => retriggerOrderLookup(e, caseItems) }, "Refresh"),
       ),
@@ -1917,8 +1909,6 @@ export async function mount(host, container) {
   function renderDrawerTenure(e) {
     const section = h("div", { class: "dl-drawer-section" },
       h("h4", null, "Associate tenure"),
-      h("p", { class: "dl-muted dl-drawer-hint", style: { fontSize: "11px", marginTop: 0 } },
-        "Tenure is scheduling context only — recent hires frequently open cases for legitimate reasons."),
     );
 
     if (!e.userId) {
@@ -2009,7 +1999,6 @@ export async function mount(host, container) {
       `Associate: ${name} (ID: ${e.userId || "—"})`,
       `Event time: ${fmtDateTime(e.eventTime)}`,
       `Store: ${e.store || "—"} · Zone: ${e.zoneName || "—"} · Lock: ${e.lockName || "—"}`,
-      `Risk score: ${e.riskScore} (${e.riskLevel})`,
       `Reasons: ${(e.riskReasons || []).join("; ") || "none"}`,
       notes ? `\nReviewer notes:\n${notes}` : "",
     ].filter(Boolean).join("\n");
@@ -2034,7 +2023,6 @@ export async function mount(host, container) {
       `was observed opening case ${e.lockName || "—"} in zone ${e.zoneName || "—"} at store ${e.store || "—"}.`,
       (e.riskReasons || []).length ? `Risk factors: ${e.riskReasons.join("; ")}.` : null,
       currentNotes ? `Reviewer notes: ${currentNotes}` : null,
-      "This event was flagged by the Digital Locks automated review system.",
     ].filter(Boolean).join(" ");
 
     // Confirmation dialog with editable description before opening Auror.
@@ -2176,7 +2164,7 @@ export async function mount(host, container) {
     if ([...reasons].some((r) => r.includes("unusual unlock source"))) {
       out.push("Verify source device/account");
     }
-    if (out.length === 0) out.push("Brief eyeball review");
+    if (out.length === 0) out.push("Quick review");
     return out;
   }
   // Sort the current page's rows by the active sort column. Closure over

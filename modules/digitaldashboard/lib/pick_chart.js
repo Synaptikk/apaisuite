@@ -119,7 +119,7 @@ export function barChartSvg(day, { width = 320, height = 130, palette = SCREEN_P
       parts.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(by + (y0 - by) / 2).toFixed(1)}" dy="0.32em" text-anchor="middle" style="fill:${P.text};font-size:${fs * 0.95}px">${esc(note)}</text>`);
     }
     hits.push({ x: X(day.before.start), w: X(day.before.end) - X(day.before.start),
-      tip: `${clock(day.before.start)}–${clock(day.before.end)}: ${fmt(day.before.picked)} picked, avg ${fmt(day.before.perHour)}/hr (recording had not started, so no hour-by-hour detail)` });
+      tip: `${clock(day.before.start)}–${clock(day.before.end)}: ${fmt(day.before.picked)} picked, avg ${fmt(day.before.perHour)}/hr (before tracking started: average only)` });
   }
 
   // Measured hours, and the current hour so far.

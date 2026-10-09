@@ -14,6 +14,7 @@
 import { reportHtml, reportText, reportCsv } from "./lib/report.js";
 import { printHtml } from "./review_view.js";
 import { openCase, AP_TEAM } from "./case_view.js";
+import { mountAudit } from "./audit_view.js";
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const OPENED = "openedCases";
@@ -41,6 +42,7 @@ export async function mount(host, container) {
     startCase: $("#punchlookup-start-case"), lookup: $("#punchlookup-lookup"),
     cases: $("#punchlookup-cases"), casesList: $("#punchlookup-cases-list"), caseLink: $("#punchlookup-case-link"),
     openLink: $("#punchlookup-open-link"), casePane: $("#punchlookup-case"),
+    audit: $("#punchlookup-audit"),
   };
 
   let alive = true;
@@ -48,6 +50,7 @@ export async function mount(host, container) {
   let matches = [];
   let mine = [];         // my cases (with their case.json)
   let closeCase = null;  // cleanup of the open case screen
+  const closeAudit = mountAudit(host, els.audit);   // store punch-edit review (audit_view.js)
 
   function setRange(days) {
     const to = new Date(); const from = new Date(); from.setDate(to.getDate() - (days - 1));
@@ -100,12 +103,12 @@ export async function mount(host, container) {
   }
 
   async function showCase(ref) {
-    els.lookup.hidden = true; els.cases.hidden = true; els.casePane.hidden = false;
+    els.lookup.hidden = true; els.cases.hidden = true; els.audit.hidden = true; els.casePane.hidden = false;
     closeCase?.();
     closeCase = await openCase(host, els.casePane, ref, async () => {
       closeCase?.(); closeCase = null;
       els.casePane.hidden = true; els.casePane.innerHTML = "";
-      els.lookup.hidden = false; els.cases.hidden = false;
+      els.lookup.hidden = false; els.cases.hidden = false; els.audit.hidden = false;
       await renderCases();
     });
     window.scrollTo?.(0, 0);
@@ -146,8 +149,8 @@ export async function mount(host, container) {
     els.startCase.disabled = false;
     if (!res.ok) { host.ui.toast(res.error, { kind: "error" }); render(); return; }
     host.ui.toast(res.shareError ? `Case created, but sharing with your AP team failed: ${res.shareError} Use Share… to retry.`
-      : res.shared ? `Case created and shared with your AP team (${team.map((p) => p.name).join(", ")}). OneDrive emailed them the link.`
-      : "Case created in your OneDrive. Use Share… to add investigators, and ☆ them to share every new case automatically.", { kind: res.shareError ? "error" : "ok" });
+      : res.shared ? `Case created and shared with ${team.map((p) => p.name).join(", ")}.`
+      : "Case created. Use Share… to add investigators.", { kind: res.shareError ? "error" : "ok" });
     showCase(res.ref);
   });
   renderCases();
@@ -255,5 +258,5 @@ export async function mount(host, container) {
   });
 
   els.q.focus();
-  return () => { alive = false; closeCase?.(); link.remove(); data = null; };
+  return () => { alive = false; closeCase?.(); closeAudit(); link.remove(); data = null; };
 }

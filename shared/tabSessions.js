@@ -151,7 +151,10 @@ async function reapIdleTabsImpl(now = Date.now()) {
       continue;
     }
 
-    if ([...activeOperations.values()].some(Boolean) || idle < (entry?.idleMs ?? DEFAULT_IDLE_MS)) {
+    // Hold only the tabs of a module with a request in flight. A global hold let
+    // one hung withSessionTabs call (cx, workvivo, associateLookup...) pin every
+    // other module's tabs: 28 VizPick capture tabs were never reaped 2026-10-08.
+    if (activeOperations.get(entry?.moduleId) || idle < (entry?.idleMs ?? DEFAULT_IDLE_MS)) {
       kept++;
       continue;
     }

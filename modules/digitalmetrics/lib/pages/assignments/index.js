@@ -94,7 +94,7 @@ function boardPanel(ctx) {
       <div class="dm-controls dm-board">
         <strong>Daily Board</strong>
         <input class="dm-input dm-board-link" id="dm-board-link" type="url"
-               placeholder="Paste the Daily Board OneDrive share link">
+               placeholder="Paste the Daily Board link">
         <button class="btn" id="dm-board-link-save">Save link</button>
         <span class="dm-stat-note">Store ${esc(b.store)} only. Syncs every 30 minutes once saved.</span>
       </div>`;
@@ -115,7 +115,7 @@ function boardPanel(ctx) {
     `${matchedCount} of ${day.rows} board names matched to the schedule` +
     (day.changedCells ? `, ${day.changedCells} cells updated` : ", no changes") +
     (day.noSchedule ? " — no schedule pulled for this day yet, so names could not be checked" : "") + ".";
-  else if (s) dayNote = "The board fills the past six days (once each), today, and tomorrow once its sheet is updated.";
+  else if (s) dayNote = "";
 
   const fixes = unmatched.map((u) => `
     <div class="dm-board-fix">
@@ -153,13 +153,11 @@ function boardPanel(ctx) {
         full name. They are on the grid as typed, marked <span class="dm-board-flag">?</span>. Pick who each one is:
         ${fixes}</div>` : ""}
       ${guesses.length ? `<div class="status-strip status-strip-info">
-        ${guesses.length} board name${guesses.length === 1 ? " was" : "s were"} matched only by shift hours
-        (the one digital associate whose schedule fits those hours, on every day the name appears), marked
-        <span class="dm-board-flag is-guess">~</span>. Confirm or correct:
+        ${guesses.length} board name${guesses.length === 1 ? " was" : "s were"} guessed from shift hours
+        (<span class="dm-board-flag is-guess">~</span>). Confirm or correct:
         ${guesses.map((g) => `
           <div class="dm-board-fix">
             <strong>${esc(g.boardName)}</strong> is ${esc(g.name)}?
-            <span class="dm-stat-note">${esc(g.how)}</span>
             <button class="btn btn-sm" data-dm-board-alias="${esc(g.boardName)}" data-dm-board-name="${esc(g.name)}">Yes</button>
             ${(g.alt || []).map((n) => `<button class="btn btn-sm" data-dm-board-alias="${esc(g.boardName)}"
               data-dm-board-name="${esc(n)}" title="Named on the board, but scheduled for different hours">${esc(n)}</button>`).join("")}
@@ -299,7 +297,7 @@ export function wire(ctx, root) {
   on("#dm-board-sync", "click", () => onBoardSync?.());
   on("#dm-board-link-save", "click", () => onBoardLink?.(root.querySelector("#dm-board-link")?.value || ""));
   on("#dm-board-unlink", "click", () => {
-    const link = prompt("Paste the Daily Board OneDrive share link (leave empty to stop syncing)");
+    const link = prompt("Paste the Daily Board link (leave empty to stop syncing)");
     if (link !== null) onBoardLink?.(link.trim());
   });
   for (const btn of root.querySelectorAll("[data-dm-board-alias]")) {

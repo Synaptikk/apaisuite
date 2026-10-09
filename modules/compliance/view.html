@@ -1,0 +1,51 @@
+<div class="cp">
+  <header class="cp-header">
+    <div class="cp-title">
+      <h1>Compliance Tasks</h1>
+      <p class="cp-sub">Goal: monthly tasks <b>done by the 10th</b>.</p>
+    </div>
+    <div class="cp-toolbar">
+      <label class="cp-field">Store <input id="compliance-facility" class="input" inputmode="numeric" size="6"></label>
+      <button id="compliance-refresh" class="btn btn-primary">Refresh</button>
+      <button id="compliance-ics" class="btn btn-secondary btn-sm" title="Due dates and the 10th-of-month targets for the next 3 months, for Outlook">Export calendar (.ics)</button>
+      <a id="compliance-portal" class="btn btn-secondary btn-sm" target="_blank" rel="noopener" href="https://go.enviance.com/CustomApp/ddde6520-3955-4d83-b0ab-78f6e5cbaf10/index.html?SystemID=774d2e17-a8fc-409f-9480-e3fa9310c1c5#/page/9108fa2b-5826-48eb-ac95-f5385de025a6">Open Enviance</a>
+    </div>
+  </header>
+
+  <div id="compliance-status" class="cp-status" hidden></div>
+  <section id="compliance-summary" class="cp-summary"></section>
+  <div id="compliance-stale" class="cp-note" hidden></div>
+
+  <div class="cp-tabs" role="tablist">
+    <button class="cp-tab" role="tab" data-tab="calendar" aria-selected="true">Calendar</button>
+    <button class="cp-tab" role="tab" data-tab="tasks" aria-selected="false">Tasks</button>
+    <button class="cp-tab" role="tab" data-tab="forms" aria-selected="false">What to key in</button>
+    <button class="cp-tab" role="tab" data-tab="history" aria-selected="false">Past submissions</button>
+  </div>
+
+  <section id="compliance-panel-calendar" class="cp-panel">
+    <div class="cp-monthbar">
+      <button id="compliance-prev" class="btn btn-secondary btn-sm" aria-label="Previous month">‹</button>
+      <h2 id="compliance-month"></h2>
+      <button id="compliance-next" class="btn btn-secondary btn-sm" aria-label="Next month">›</button>
+      <span class="cp-legend">
+        <span class="cp-chip s-done">done</span><span class="cp-chip s-open">open</span>
+        <span class="cp-chip s-pastTarget">past the 10th</span><span class="cp-chip s-overdue">overdue</span>
+        <span class="cp-chip s-upcoming">not created yet</span><span class="cp-chip k-target">aim</span>
+      </span>
+    </div>
+    <div id="compliance-grid" class="cp-grid"></div>
+  </section>
+
+  <section id="compliance-panel-tasks" class="cp-panel" hidden>
+    <div id="compliance-tasks"></div>
+  </section>
+
+  <section id="compliance-panel-forms" class="cp-panel" hidden>
+    <div id="compliance-forms"></div>
+  </section>
+
+  <section id="compliance-panel-history" class="cp-panel" hidden>
+    <div id="compliance-history"></div>
+  </section>
+</div>

@@ -71,13 +71,12 @@ test('history_coverage reports baseline depth and never claims confidence', asyn
   assert.ok(r.sessions.every(s => !('confidence' in s)), 'the confidence field is gone');
 });
 
-test('the explanation states the reference is arbitrary and peer data is missing', async () => {
+test('the explanation is a plain summary of the timing and history', async () => {
   const r = await rebuild([], [order('a')]);
   const text = r.sessions[0].explanation;
-  assert.match(text, /not a calibrated threshold/);
-  assert.match(text, /Peer comparison is unavailable/);
-  assert.match(text, /not a probability of fraud/);
-  assert.match(text, new RegExp(`${BASE_SECONDS_PER_ITEM}-second-per-item`));
+  assert.match(text, /^Took \d+ min (longer|less) than expected for \d+ items\./);
+  assert.match(text, /0 earlier trips/);
+  assert.match(text, /not proof/);
 });
 
 test('batch size no longer multiplies the score', () => {

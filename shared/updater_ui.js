@@ -108,7 +108,6 @@ async function startUpdate(root, payload) {
   //    them to the right card on chrome://extensions in 2 clicks.
   const help = document.createElement("div");
   help.className = "wv-banner-help";
-  const extId = chrome.runtime.id;
   help.innerHTML = `
     <strong>Update page opened in a new tab.</strong>
     On that page:
@@ -116,10 +115,9 @@ async function startUpdate(root, payload) {
       <li>Click <strong>Download to folder</strong> and pick your <em>existing</em> APAISuite install folder
           (files are overwritten in place — no ZIP, no extracting).</li>
       <li>Wait for it to report all files written.</li>
-      <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong>
-          (ID: <code>${extId}</code>) and click <strong>Reload</strong>.</li>
+      <li>Open <code>edge://extensions</code>, find <strong>APAISuite</strong> and click <strong>Reload</strong>.</li>
     </ol>
-    The banner will clear automatically once the SW sees you're on v${newVer}.
+    This banner clears after you reload.
   `;
   const primary = root.querySelector("button.is-primary");
   if (primary) {

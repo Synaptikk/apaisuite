@@ -2,7 +2,7 @@
   <header class="bl-header">
     <div class="bl-title">
       <h1>BoB and Lisa</h1>
-      <p class="bl-sub">Finds customers who pay, then come back minutes later to buy one or two more items. That pattern usually means a large item slipped past the register and was caught at the door. Also flags when a door host prints a training receipt to recover it.</p>
+      <p class="bl-sub">Customers who come back minutes later to pay for an item the register missed.</p>
     </div>
     <div class="bl-toolbar">
       <label class="bl-field">Store <input id="boblisa-store" class="input bl-store-input" inputmode="numeric" placeholder="1458"></label>
@@ -31,7 +31,6 @@
 
   <section class="bl-panel" data-panel="documented" hidden>
     <div class="bl-dochead">
-      <div class="status-strip status-strip-info bl-note">Every miss you documented for this store, kept across pulls and cache clears. Open any row in the other tabs and click <b>Document this miss</b> to add one.</div>
       <button id="boblisa-doc-export" class="btn btn-secondary btn-sm" title="One CSV into Downloads\APAISuite\boblisa\&lt;store&gt;">Export CSV</button>
     </div>
     <div id="boblisa-doc-rollup" class="bl-rollup"></div>
@@ -40,8 +39,8 @@
 
   <section class="bl-panel" data-panel="cashiers" hidden>
     <div class="bl-dochead">
-      <div class="status-strip status-strip-info bl-note">The cashier ledger for teaching and training: every miss documented on a manned lane is charged to the cashier who rang the first transaction, with the count and the dollars of the second transaction. Names typed here are kept for the next miss by the same operator.</div>
-      <button id="boblisa-names" class="btn btn-secondary btn-sm" title="Full names and WIN from the APPRISS receipt viewer for every operator in the pulled range (the journal only prints a shortened sign-on banner). Uses Open Drawer, so card-only operators outside APPRISS's window keep the banner name.">Look up names in APPRISS</button>
+      <div class="status-strip status-strip-info bl-note">Documented misses per cashier.</div>
+      <button id="boblisa-names" class="btn btn-secondary btn-sm" title="Fill in full names and WINs">Look up names</button>
       <button id="boblisa-cash-export" class="btn btn-secondary btn-sm" title="One CSV, a row per cashier, into Downloads\APAISuite\boblisa\&lt;store&gt;">Export ledger CSV</button>
     </div>
     <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="cashiers"></table></div>
@@ -54,16 +53,15 @@
   </section>
 
   <section class="bl-panel" data-panel="manned">
-    <div class="status-strip status-strip-info bl-note">Back-to-back sales on the same register under 2 minutes apart are one customer paying twice and are left out. Money Center and Automotive second sales are hidden by default for the same reason.</div>
     <div class="bl-controls" data-controls="manned"></div>
     <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="manned"></table></div>
   </section>
 
   <section class="bl-panel" data-panel="unmanned" hidden>
-    <div class="status-strip status-strip-warn bl-note">A first transaction on a self-checkout or other unmanned register has no cashier to miss the item. Money Center pairs (62–63, 92–94: bill pay, debit loads, money orders) and Automotive (95: tires and service) are hidden by default because they are separate purchases, not merchandise a register missed.</div>
+    <div class="status-strip status-strip-warn bl-note">Self-checkout has no cashier to charge. Money Center and Automotive are hidden by default.</div>
     <div class="bl-controls" data-controls="unmanned"></div>
     <div class="bl-tablewrap"><table class="data-table data-table-compact bl-table" data-table="unmanned"></table></div>
   </section>
 
-  <footer class="bl-foot">Cash customers have no token and only appear through a training receipt that names their item. Click a row for both item lists and APPRISS video links. <b>Clear</b> takes a row you have looked at out of the queue; <b>Document this miss</b> records it against the cashier. Both are kept across pulls. Days are cached per store and only pulled once; "Re-pull all" refreshes them.</footer>
+  <footer class="bl-foot"><b>Clear</b> removes a row; <b>Document this miss</b> charges it to the cashier.</footer>
 </div>

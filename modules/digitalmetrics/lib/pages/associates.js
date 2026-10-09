@@ -165,7 +165,7 @@ export function boardNameChecks(ctx) {
           ? `<span class="dm-board-flag" title="Matched nobody">?</span> not matched`
           : `<span class="dm-board-flag is-guess" title="Matched by hours only">~</span> hours only`}</td>
         <td>${esc([...new Set(e.days)].sort().map(day).join(", "))}</td>
-        <td>${names.length ? esc(names.join(" / ")) + `<div class="dm-stat-note">${esc([...e.how].join("; "))}</div>` : "—"}</td>
+        <td>${names.length ? esc(names.join(" / ")) : "—"}</td>
         <td class="dm-board-actions">
           ${names.length === 1 ? btn(e.boardName, names[0], `Yes, ${names[0]}`) : ""}
           ${options.slice(0, 4).map((n) => btn(e.boardName, n)).join(" ")}
@@ -175,9 +175,7 @@ export function boardNameChecks(ctx) {
     }).join("");
 
   return section("Daily Board names to check", `
-    <p class="dm-stat-note">Board names that could not be tied to one scheduled associate by name.
-      Hours take precedence: a person only counts when their shift covers the hours the board gives them.
-      Picking a name here applies to every day, including ones already filled.</p>
+    <p class="dm-stat-note">Pick who each board name is. Your choice applies to every day.</p>
     <table class="dm-board-table dm-board-checks">
       <thead><tr><th>Board name</th><th>Status</th><th>Days</th><th>Matched to</th><th>Who is it?</th></tr></thead>
       <tbody>${rows}</tbody>

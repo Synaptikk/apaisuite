@@ -93,7 +93,7 @@ export async function getFollowUpSheets(opts = {}) {
       snapshot, replayed: true,
       health: null, metrics: [], deptRings: [],
       errorClass: replay.errorClass || "NO_DATA",
-      error: replay.error || "no rows from either the vizpick snapshot or the headless export",
+      error: replay.error || "No VizPick data available.",
     };
   }
 

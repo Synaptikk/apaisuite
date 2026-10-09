@@ -40,6 +40,8 @@ import { getFollowUpSheets } from "./lib/sources/followup_data.js";
 import { formatUnscannedMessage } from "./lib/format_message.js";
 import { createLogging } from "../../shared/logging.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
+import { JOB_KINDS, runReportMetric } from "./lib/email_jobs.js";
+import { REPORT_JOB_SEEDS } from "./data/defaults.js";
 
 const MODULE_ID    = "metricshot";
 const PFX          = `${MODULE_ID}.`;
@@ -168,6 +170,8 @@ async function ensureSeed() {
       for (const m of current) {
         const name = String(m.destination?.channelName || "").trim().toLowerCase();
         if (!name || name === "@me" || name === "@self" || name === "(me)") continue;
+        // Report jobs are store-specific seeds that name their real channel on purpose.
+        if (JOB_KINDS.has(m.kind)) continue;
         // channelUrl/resolvedAt are a cache of the OLD name — carrying them
         // forward would post to the previous channel on the next run.
         m.destination = { ...m.destination, channelName: "@me", channelUrl: undefined, resolvedAt: undefined };
@@ -281,7 +285,7 @@ async function tick() {
       }
       _running.add(metric.id);
       try {
-        await runOne(metric, { reason: "scheduled", runKey: run.runKey, scheduledAt: run.scheduledAt });
+        await runOne(metric, { reason: "scheduled", runKey: run.runKey, scheduledAt: run.scheduledAt, hhmm: run.scheduledFor.hhmm });
         ran.push({ id: metric.id, runKey: run.runKey });
       } catch (err) {
         log.emit("run-threw", { id: metric.id, runKey: run.runKey, error: String(err?.message ?? err) });
@@ -318,9 +322,12 @@ async function runOne(metric, opts) {
   return withKeepAwake(`metricshot.${metric?.id ?? "run"}`, () => _runOne(metric, opts));
 }
 
-async function _runOne(metric, { reason, runKey, scheduledAt }) {
+async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay }) {
   const at = Date.now();
   const store = await getUserHomeStore().catch(() => null);
+  if (JOB_KINDS.has(metric.kind)) {
+    return _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store });
+  }
   const cap = metric.capture || {};
 
   // Store-required guard: if this metric injects templated parameter values
@@ -557,6 +564,60 @@ async function _runOne(metric, { reason, runKey, scheduledAt }) {
   return status;
 }
 
+// ── Report jobs (closing list / VizPick email) ───────────────────────────
+
+/**
+ * Email + Workvivo report metrics (lib/email_jobs.js). One attempt per run;
+ * the tick's retry policy re-runs a failure, and the parts already delivered
+ * (stored on the postedRuns entry) are skipped so nobody gets the email twice.
+ */
+async function _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store }) {
+  const prior = runKey ? (await loadPostedRuns())[runKey] : null;
+  log.emit("run-start", { id: metric.id, reason, runKey, kind: metric.kind, store });
+  const res = await runReportMetric(metric, {
+    scheduledAt, hhmm, store, reportDay,
+    priorParts: prior?.parts,
+    onStep: (name, extra) => log.emit("run-step", { id: metric.id, step: name, ...(extra || {}) }),
+  });
+  const status = {
+    ok: res.ok, at: Date.now(), reason, runKey, store,
+    kind: metric.kind, subject: res.subject || null, parts: res.parts,
+    ...(res.ok ? {} : { stage: res.stage, error: safeShort(res.error), errorClass: res.errorClass || null }),
+  };
+  await writeStatus(metric.id, status);
+  if (runKey) {
+    if (res.ok) {
+      await markPostedRun(runKey, { status: "ok", at: status.at, parts: res.parts });
+      log.emit("post-ok", { id: metric.id, runKey, kind: metric.kind });
+    } else {
+      const entry = { ...failureEntry(prior, status.at, status), parts: res.parts };
+      await markPostedRun(runKey, entry);
+      log.emit("run-failed", { id: metric.id, runKey, failures: entry.failures, gaveUp: entry.gaveUp, stage: res.stage, reason: safeShort(res.error) });
+    }
+  }
+  return status;
+}
+
+/**
+ * Store-specific report jobs (data/defaults.js::REPORT_JOB_SEEDS). Added once
+ * per install, only when the home store matches — the recipients are that
+ * store's leadership. A metric the user deletes is not re-added.
+ */
+async function ensureReportJobs() {
+  const store = String(await getUserHomeStore().catch(() => "") || "").trim();
+  for (const seed of REPORT_JOB_SEEDS) {
+    if (seed.store !== store) continue;
+    const marker = `${PFX}reportJobSeeded.${seed.metric.id}`;
+    if ((await chrome.storage.local.get(marker))[marker]) continue;
+    const list = await loadMetrics();
+    if (!list.some((m) => m.id === seed.metric.id)) {
+      await saveMetrics([...list, seed.metric]);
+      log.emit("seeded-report-job", { id: seed.metric.id });
+    }
+    await chrome.storage.local.set({ [marker]: Date.now() });
+  }
+}
+
 // ── VizPick follow-up (scrape + text message) ────────────────────────────
 
 /**
@@ -628,7 +689,19 @@ export const handlers = {
 
   async "save-metric"(msg) {
     const list = await loadMetrics();
-    const proposed = readyForSave(msg.metric || {}, list);
+    const incoming = { ...(msg.metric || {}) };
+    // The edit form knows nothing about report jobs (lib/email_jobs.js); keep
+    // their kind, recipients and per-slot report day across a form save.
+    const prev = list.find((m) => m.id === incoming.id);
+    if (prev && JOB_KINDS.has(prev.kind)) {
+      incoming.kind = prev.kind;
+      incoming.email = incoming.email ?? prev.email;
+      incoming.schedules = (incoming.schedules || []).map((sc) => {
+        const was = prev.schedules?.find((p) => p.time === sc.time);
+        return sc.reportDay || !was?.reportDay ? sc : { ...sc, reportDay: was.reportDay };
+      });
+    }
+    const proposed = readyForSave(incoming, list);
     const v = validateMetric(proposed, { existing: list });
     if (!v.ok) return { ok: false, error: v.errors.join("; ") };
     const idx = list.findIndex((m) => m.id === v.normalized.id);
@@ -697,7 +770,7 @@ export const handlers = {
     _running.add(id);
     try {
       const runKey = `${id}:manual-${Date.now()}`;
-      const status = await runOne(metric, { reason: "manual", runKey, scheduledAt: Date.now() });
+      const status = await runOne(metric, { reason: "manual", runKey, scheduledAt: Date.now(), reportDay: msg?.reportDay });
       // Manual run counts as a posted-runs entry so it appears in history.
       if (status.ok) await markPostedRun(runKey, { status: "ok-manual", at: status.at, path: status.path, messageId: status.messageId });
       return { ok: true, status };
@@ -711,6 +784,7 @@ export const handlers = {
     const list = await loadMetrics();
     const metric = list.find((m) => m.id === id);
     if (!metric) return { ok: false, error: "not found" };
+    if (JOB_KINDS.has(metric.kind)) return { ok: false, error: "This is an email report job — use Run now (it emails and posts for real)." };
     log.emit("preview-start", { id });
     try {
       // Watchdog: captureMetric is documented as "never throws", but a hung
@@ -952,6 +1026,7 @@ export const handlers = {
 
 export async function register() {
   await ensureSeed();
+  await ensureReportJobs().catch((e) => log.emit("seed-report-jobs-failed", { error: String(e?.message ?? e) }));
   await installTickAlarm();
 }
 

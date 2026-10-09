@@ -20,9 +20,10 @@ import boblisa           from "./boblisa/module.js";
 import doorcatch         from "./doorcatch/module.js";
 import safetyagent       from "./safetyagent/module.js";
 import safetyobs         from "./safetyobs/module.js";
+import compliance        from "./compliance/module.js";
 import sparkfraud        from "./sparkfraud/module.js";
 import sparkrisk         from "./sparkrisk/module.js";
-import sparkscango       from "./sparkscango/module.js";
+// import sparkscango       from "./sparkscango/module.js";  // hidden until its data sources work
 import claimsdisposition from "./claimsdisposition/module.js";
 import digitallocks      from "./digitallocks/module.js";
 import workvivo          from "./workvivo/module.js";
@@ -33,10 +34,12 @@ import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
 import digitaldashboard  from "./digitaldashboard/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
+import digitalschedule   from "./digitalschedule/module.js";
 import costinventory     from "./costinventory/module.js";
 import accidents         from "./accidents/module.js";
 import punchlookup       from "./punchlookup/module.js";
 import cx                from "./cx/module.js";
+import gnfr              from "./gnfr/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -52,6 +55,7 @@ export default [
   vizpick,           // VizPick Market Rollup — every store in a market at once
   digitaldashboard,  // Digital Dashboard — GIF store metrics (repurposed from digitalrollup)
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
+  digitalschedule,   // Digital Schedule — WFM coverage vs guidance, validated shift edits, fit-to-guidance, undo
   cx,                // Cx — store NPS + Medallia comment themes, what's going right/wrong
   aurorbuddy,
   registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ
@@ -59,10 +63,11 @@ export default [
   boblisa,           // BoB and Lisa — missed-item finder (same card, second sale minutes later)
   safetyagent,       // Safety Agent Dashboard — SafeIQ CV hazard alerts by camera / tag / associate
   safetyobs,         // Safety Observations — sentence → survey form, 4:45 coach nudge, behind ledger
+  compliance,        // Compliance Tasks — Enviance facility tasks: calendar (done by the 10th), paper copy, fill/submit
   orcmonitor,        // ORC Corridor Intelligence Monitor
   sparkfraud,
   sparkrisk,         // Pre-checkout timing analysis
-  sparkscango,       // Spark & Scan&Go exceptions/audits
+  // sparkscango,    // Spark & Scan&Go exceptions/audits — hidden until its data sources work
   accidents,         // Accident Details — CAS evidence + PNL charges × Clearsight claim summaries
   punchlookup,       // Punch Lookup — one associate's GTA punches for a range, print/email/CSV
   claimsdisposition,
@@ -70,6 +75,7 @@ export default [
   workvivo,
   closinglist,
   stockingplan,
+  gnfr,              // Supply Orders — MyGNFR store carts: who ordered what, tracking, regulars not reordered
   costinventory,     // Cost Inventory — monthly Fresh worksheet from ITR / OneWalmart / CV / GDP
   // assocpurchases,
 ];

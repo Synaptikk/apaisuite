@@ -18,7 +18,7 @@ const SEV_ORDER = { high: 0, medium: 1, low: 2, none: 3 };
 const BUCKET = {
   ready:   { title: "Ready to close — nothing found", hint: "Offsetting entries found. Fill the form in APPRISS and complete it." },
   review:  { title: "Needs a look", hint: "No safe classification. The evidence is ordered by what usually settles it." },
-  pending: { title: "Not analyzed yet", hint: "Pull Power BI, then Analyze all." },
+  pending: { title: "Not analyzed yet", hint: "Refresh long/short, then Analyze all." },
   other:   { title: "Other open work items", hint: "Not register items — worked in APPRISS as usual." },
 };
 
@@ -110,7 +110,7 @@ export async function mount(host, container) {
     const a = a0 && !a0.stale ? a0 : null;   // analysed against an older grid → use the live grid verdict
     const v = a?.verdict || i.pre.verdict;
     const sev = a?.severity || i.pre.severity || "none";
-    if (v === "pending") return { bucket: "pending", verdict: v, severity: sev, label: "Power BI not pulled", why: "", analyzed: !!a };
+    if (v === "pending") return { bucket: "pending", verdict: v, severity: sev, label: "Not checked yet", why: "", analyzed: !!a };
     if (NOISE.has(v)) return { bucket: "ready", verdict: v, severity: sev, label: v === "flip" ? "Till flip" : v === "pantry_cft" ? "Pantry run, no CFT" : "Bounceback", why: a?.whyShort || preWhy(i), analyzed: !!a };
     return { bucket: "review", verdict: v, severity: sev, label: v === "unmatched" ? "Unmatched shortage" : v === "unmatched_over" ? "Unmatched overage" : v === "suspect_flip" ? "Weak offset" : v === "suspect_combo" ? "Possible multi-entry offset" : v === "outside_window" ? "Outside reports' window" : "No data", why: a?.whyShort || preWhy(i), video: !!a?.hasVideo, analyzed: !!a };
   }
@@ -118,7 +118,7 @@ export async function mount(host, container) {
   function preWhy(i) {
     const g = i.pre.gridAmountCents;
     const differs = g != null && i.amountCents != null && Math.abs(g - i.amountCents) > Math.max(500, Math.abs(i.amountCents) * 0.05);
-    const pre = differs ? `Power BI finalized ${money(g)} · ` : "";
+    const pre = differs ? `Finalized at ${money(g)} · ` : "";
     return pre + preWhyBody(i);
   }
   function preWhyBody(i) {
@@ -127,7 +127,7 @@ export async function mount(host, container) {
     const m = i.pre.matchedAgainst?.[0];
     if (m) return `${m.registerNbr === i.register ? "same register" : `reg ${m.registerNbr}`} ${money(Math.abs(m.amountCents))} ${m.amountCents < 0 ? "short" : "over"} on ${withWeekday(m.date)}${i.pre.flipConfidence != null ? ` · ${Math.round(i.pre.flipConfidence * 100)}% confidence` : ""}`;
     if (i.pre.verdict === "suspect_combo" && i.pre.combo) return i.pre.combo;
-    if (i.pre.verdict === "outside_window") return "no report reaches this date — only open WorkView items could be matched";
+    if (i.pre.verdict === "outside_window") return "too old to auto-check";
     if (i.pre.verdict === "no_grid") return "no long/short data for this day";
     if (i.pre.verdict === "unmatched" && i.pre.contested) return `reg ${i.pre.contested.registerNbr} ${money(Math.abs(i.pre.contested.amountCents))} over on ${withWeekday(i.pre.contested.date)} is already the other half of reg ${i.pre.contested.wonBy.registerNbr}`;
     if (i.pre.verdict === "unmatched") return "no offsetting entry on a neighbouring register";
@@ -150,10 +150,9 @@ export async function mount(host, container) {
     const info = registersInfo;
     if (!info || !info.registers?.length) { box.hidden = true; return; }
     box.hidden = false;
-    const src = { analyst: "set here", log: "till log", default: "default range", none: "" };
     const overridden = info.registers.filter((r) => r.source === "analyst").length;
     $("[data-registers-meta]").textContent = `${info.registers.length} registers · service desk: ${info.wide.length ? info.wide.join(", ") : "none"} · ${overridden} set by you · store ${info.storeNbr || "?"}`;
-    $("[data-registers-table]").innerHTML = `<table class="rls-table rls-registers-table"><thead><tr><th>Register</th><th>Till log says</th><th>Role</th><th>From</th><th></th></tr></thead><tbody>${info.registers.map((r) => `<tr class="${r.source === "analyst" ? "is-analyst" : ""}"><td>${esc(r.register)}</td><td class="rls-muted">${esc(r.desc || "—")}${r.rows ? ` <span title="till-log rows">(${r.rows})</span>` : ""}</td><td><select class="input rls-role-select" data-register-role data-register="${esc(r.register)}">${Object.entries(info.roles).map(([k, v]) => `<option value="${esc(k)}" ${k === r.role ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></td><td class="rls-muted">${esc(src[r.source] || "")}</td><td>${r.source === "analyst" ? `<button class="btn btn-sm btn-ghost" type="button" data-action="register-reset" data-register="${esc(r.register)}" title="Back to what the till log / defaults say">Reset</button>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    $("[data-registers-table]").innerHTML = `<table class="rls-table rls-registers-table"><thead><tr><th>Register</th><th>Till log says</th><th>Role</th><th></th></tr></thead><tbody>${info.registers.map((r) => `<tr class="${r.source === "analyst" ? "is-analyst" : ""}"><td>${esc(r.register)}</td><td class="rls-muted">${esc(r.desc || "—")}${r.rows ? ` <span title="till-log rows">(${r.rows})</span>` : ""}</td><td><select class="input rls-role-select" data-register-role data-register="${esc(r.register)}">${Object.entries(info.roles).map(([k, v]) => `<option value="${esc(k)}" ${k === r.role ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></td><td>${r.source === "analyst" ? `<button class="btn btn-sm btn-ghost" type="button" data-action="register-reset" data-register="${esc(r.register)}" title="Back to what the till log / defaults say">Reset</button>` : ""}</td></tr>`).join("")}</tbody></table>`;
   }
 
   function paintPantry() {
@@ -178,8 +177,8 @@ export async function mount(host, container) {
     box.hidden = false;
     $("[data-recurring-meta]").textContent = `${r.people.length} on 2+ open shortages · ${r.open} open shortages, ${r.openRound} round amounts`;
     const day = (d) => `<a href="#" class="rls-recur-link" data-select="${esc(d.itemId)}">reg ${esc(d.register)} ${esc(money(d.amountCents))} ${esc(withWeekday(d.date))}${d.round ? " · round" : ""}${d.sole ? " · only cashier" : ""}</a>`;
-    $("[data-recurring-body]").innerHTML = `<div class="rls-muted">People signed on to, or handling the till of, more than one shortage nobody can explain. A round amount is bills, not a keying error; "only cashier" means nobody else was signed on to that register that day. Being on a bad day is not proof — pull their transactions and video. "Seen" is every register-day with a discrepancy this person appears on, good or bad.</div>
-      <table class="rls-table rls-recur-table"><thead><tr><th>Associate</th><th>Open shortages</th><th>Round</th><th>Only cashier</th><th>Seen</th><th>Total short</th><th>Register-days</th></tr></thead><tbody>${r.people.map((p) => `
+    $("[data-recurring-body]").innerHTML = `<div class="rls-muted">On more than one unexplained shortage. Not proof on its own; check the video.</div>
+      <table class="rls-table rls-recur-table"><thead><tr><th>Associate</th><th>Open shortages</th><th title="A round amount is bills, not a keying error">Round</th><th title="Nobody else was signed on to that register that day">Only cashier</th><th title="Every register-day with a discrepancy this person appears on, good or bad">Seen</th><th>Total short</th><th>Register-days</th></tr></thead><tbody>${r.people.map((p) => `
         <tr class="${p.soleCount > 1 || p.roundCount > 1 ? "is-hot" : ""}"><td>${esc(p.name || "")} <span class="rls-muted">${esc(p.id)}</span></td><td>${p.count}</td><td>${p.roundCount}</td><td>${p.soleCount}</td><td>${p.seenDays}</td><td>${esc(money(p.totalCents))}</td><td>${p.days.map(day).join(", ")}</td></tr>`).join("")}</tbody></table>`;
   }
   function recurRow(i) {
@@ -205,7 +204,7 @@ export async function mount(host, container) {
     if (document.activeElement !== fromEl) fromEl.value = cashierRange.from;
     if (document.activeElement !== toEl) toEl.value = cashierRange.to;
     const pantry = cashiers.pantry || [];
-    const pantryHtml = pantry.length ? `<div class="rls-pantry"><h3>Pantry runs cashed out without a CFT — process, not a cashier error</h3><div class="rls-muted">The associate pantry is rung up, cashed out and closed with a CFT to the register. These tickets have no CFT, so the register is short the ticket. Permanent record; who rang it is shown for reference only and nothing is charged to them.</div><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Ticket</th><th>Cash</th><th>Register L/S</th><th>Pantry lines</th><th>Rang by</th><th>Work item</th></tr></thead><tbody>${pantry.map((e) => `<tr><td>${esc(withWeekday(e.date))}</td><td>${esc(e.register)}</td><td>TR# ${esc(e.transNum)} ${esc(e.time)}</td><td>${esc(money(e.cents))}</td><td class="neg">${esc(money(e.shortCents))}</td><td>${e.lines} · ${esc((e.products || []).join(", "))}</td><td>${esc(e.opName || "")} <span class="rls-muted">${esc(e.opNum)}</span></td><td>${String(e.workItemId).startsWith("grid:") ? "grid only" : `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>`}</td></tr>`).join("")}</tbody></table></div>` : "";
+    const pantryHtml = pantry.length ? `<div class="rls-pantry"><h3>Pantry runs cashed out without a CFT — process, not a cashier error</h3><table class="rls-table"><thead><tr><th>Date</th><th>Register</th><th>Ticket</th><th>Cash</th><th>Register L/S</th><th>Pantry lines</th><th>Rang by</th><th>Work item</th></tr></thead><tbody>${pantry.map((e) => `<tr><td>${esc(withWeekday(e.date))}</td><td>${esc(e.register)}</td><td>TR# ${esc(e.transNum)} ${esc(e.time)}</td><td>${esc(money(e.cents))}</td><td class="neg">${esc(money(e.shortCents))}</td><td>${e.lines} · ${esc((e.products || []).join(", "))}</td><td>${esc(e.opName || "")} <span class="rls-muted">${esc(e.opNum)}</span></td><td>${String(e.workItemId).startsWith("grid:") ? "grid only" : `<a href="https://apps.apprissretail.com/walmart-usa/platform/workview#/detail/${esc(e.workItemId)}?id=${esc(e.workItemId)}" target="_blank" rel="noopener">${esc(e.workItemId)}</a>`}</td></tr>`).join("")}</tbody></table></div>` : "";
     const wins = $("[data-receipt-wins]"); if (wins) wins.innerHTML = list.map((c) => `<option value="${esc(c.id)}">${esc(c.name || "")}</option>`).join("");
     const dateEl = $("[data-receipt-form] [name='date']"); if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
     if (!list.length) { $("[data-cashiers-body]").innerHTML = `<div class="rls-muted">No attributed errors in this range.</div>${pantryHtml}`; return; }
@@ -213,7 +212,7 @@ export async function mount(host, container) {
     $("[data-cashiers-body]").innerHTML = `<table class="rls-table rls-cashier-table"><thead><tr><th>Associate</th><th>$ involved</th><th>Events</th><th>Error types</th><th>First → last</th><th></th></tr></thead><tbody>${list.map((c) => `
       <tr class="rls-cashier-row ${openCashier === c.id ? "is-open" : ""}" data-cashier="${esc(c.id)}"><td>${esc(c.name || c.id)} <span class="rls-muted">${esc(c.id)}</span></td><td>${esc(money(c.totalCents))}</td><td>${c.count}</td><td class="rls-chips">${chip(c)}</td><td>${esc(withWeekday(c.first))} → ${esc(withWeekday(c.last))}</td><td><button class="btn btn-sm btn-ghost" data-action="cashier-toggle" data-id="${esc(c.id)}">${openCashier === c.id ? "Hide" : "Details"}</button> <button class="btn btn-sm btn-ghost" data-action="cashier-export" data-id="${esc(c.id)}" title="Write this associate's CSV">Export</button> <button class="btn btn-sm btn-ghost" data-action="cashier-receipt" data-id="${esc(c.id)}" data-name="${esc(c.name || "")}" title="Attach an unpaid training receipt to this associate">Training receipt</button></td></tr>
       ${openCashier === c.id ? `<tr class="rls-cashier-detail"><td colspan="6">${cashierDetail(c)}</td></tr>` : ""}`).join("")}</tbody></table>
-      <div class="rls-muted">Permanent record: an event stays here after its work item is completed and after the till log window moves on. Every entry is an action the till log records this person doing: a till checked in to a register it was not checked out to, a cash advance carried to the wrong register or never surfaced, a till re-checked in with less cash, or a check-in override on a discrepancy day. Being on a register that came up short is not counted.</div>${pantryHtml}`;
+      <div class="rls-muted">Till-handling errors per associate. Being on a short register doesn't count.</div>${pantryHtml}`;
   }
 
   function shortType(k) {
@@ -248,13 +247,13 @@ export async function mount(host, container) {
       if (!e) return [text, cls, href, "open"];
       return [`${text} · refresh failed: ${e.error}`, "pill-warn", e.loginUrl || href, e.loginUrl ? "sign in" : "open"];
     };
-    pill("queue", ...failed("refresh_queue", q ? `WorkView · ${q.items.length + (q.others || []).length} open items${q.totals ? ` (${q.totals.unassigned ?? 0} new, ${q.totals.assigned ?? 0} assigned)` : ""} · ${ago(q.fetchedAt)}` : "WorkView: not pulled", q ? "pill-ok" : "pill-checking", state.links.workview));
+    pill("queue", ...failed("refresh_queue", q ? `Work items · ${q.items.length + (q.others || []).length} open · ${ago(q.fetchedAt)}` : "Work items: not loaded", q ? "pill-ok" : "pill-checking", state.links.workview));
     const t = state.tills;
-    pill("tills", ...failed("refresh_tills", t ? `Till log · ${t.rows} events · ${withWeekday(t.dateMin)} → ${withWeekday(t.dateMax)} · ${ago(t.fetchedAt)}` : "Till log: not pulled", t ? "pill-ok" : "pill-warn", t?.reportUrl || null));
+    pill("tills", ...failed("refresh_tills", t ? `Tills · ${ago(t.fetchedAt)}` : "Tills: not loaded", t ? "pill-ok" : "pill-warn", t?.reportUrl || null));
     const cf = state.cft;
-    pill("cft", ...failed("refresh_cft", cf ? `CFTs · ${cf.rows} transfers · ${withWeekday(cf.dateMin)} → ${withWeekday(cf.dateMax)} · ${ago(cf.fetchedAt)}` : "Cash fund transfers: not pulled", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null));
+    pill("cft", ...failed("refresh_cft", cf ? `Cash transfers · ${ago(cf.fetchedAt)}` : "Cash transfers: not loaded", cf ? "pill-ok" : "pill-warn", cf?.reportUrl || null));
     paintMoves();
-    pill("grid", ...failed("refresh_grid", g && g.capturedAt ? `Power BI · ${g.cellCount} register-days${g.dateMin ? ` · ${withWeekday(g.dateMin)} → ${withWeekday(g.dateMax)}` : ""} · ${ago(g.capturedAt)}` : g?.staleStore ? `Power BI: cached for store ${g.staleStore} — refresh` : "Power BI: not pulled", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi));
+    pill("grid", ...failed("refresh_grid", g && g.capturedAt ? `Long/short · ${ago(g.capturedAt)}` : g?.staleStore ? `Long/short: from store ${g.staleStore} — refresh` : "Long/short: not loaded", g && g.capturedAt ? "pill-ok" : "pill-warn", state.links.powerbi));
   }
 
   function paintMoves() {
@@ -282,7 +281,7 @@ export async function mount(host, container) {
     const cards = [
       { key: "review",  n: n("review"),  label: "need a look",      sub: video ? `${video} with a video candidate` : "unmatched or weak offsets", tone: n("review") ? "warn" : "muted" },
       { key: "ready",   n: n("ready"),   label: "ready to close",   sub: "flips & bouncebacks", tone: n("ready") ? "ok" : "muted" },
-      { key: "pending", n: n("pending"), label: "not analyzed",     sub: "pull Power BI / analyze", tone: "muted" },
+      { key: "pending", n: n("pending"), label: "not analyzed",     sub: "click Analyze all", tone: "muted" },
       { key: "other",   n: (q.others || []).length, label: "other open items", sub: "refunds, scans, WIN match…", tone: "muted" },
     ];
     box.innerHTML = cards.map((c) => `<div class="rls-sum tone-${c.tone}" data-jump="${c.key}"><div class="rls-sum-n">${c.n}</div><div class="rls-sum-l">${esc(c.label)}</div><div class="rls-sum-s">${esc(c.sub)}</div></div>`).join("");
@@ -291,11 +290,12 @@ export async function mount(host, container) {
   function paintQueue() {
     const list = $("[data-queue-list]");
     const q = state.queue;
-    if (!q) { list.innerHTML = `<div class="rls-empty">No WorkView data yet — click <strong>Refresh WorkView</strong>.</div>`; return; }
+    if (!q) { list.innerHTML = `<div class="rls-empty">No work items yet — click <strong>Refresh work items</strong>.</div>`; return; }
     // Items dispositioned in APPRISS only leave this list on a successful
     // pull, so a failed one must say the list may be behind.
     const qe = sourceErrors.get("refresh_queue");
-    const stale = qe ? `<div class="rls-stale">WorkView could not be refreshed (${esc(qe.error)}). This list was pulled ${esc(ago(q.fetchedAt))} and may still show items already dispositioned in APPRISS.${qe.loginUrl ? ` <a href="${esc(qe.loginUrl)}" target="_blank" rel="noopener">Sign in</a>, then click <strong>Refresh WorkView</strong>.` : ""}</div>` : "";
+    if (qe) console.warn("[registerls] work items refresh failed:", qe.error);
+    const stale = qe ? `<div class="rls-stale">Couldn't refresh work items. This list is from ${esc(ago(q.fetchedAt))} and may include items already closed.${qe.loginUrl ? ` <a href="${esc(qe.loginUrl)}" target="_blank" rel="noopener">Sign in</a>, then click <strong>Refresh work items</strong>.` : ""}</div>` : "";
     const groups = { ready: [], review: [], pending: [] };
     for (const i of q.items) groups[classify(i).bucket].push(i);
     groups.review.sort((a, b) => ((classify(b).video ? 1 : 0) - (classify(a).video ? 1 : 0)) || (SEV_ORDER[classify(a).severity] ?? 3) - (SEV_ORDER[classify(b).severity] ?? 3) || (b.amountAbsCents || 0) - (a.amountAbsCents || 0));
@@ -351,16 +351,16 @@ export async function mount(host, container) {
         ? (c.verdict === "no_grid" ? "Can't classify: no long/short data for that day."
           : c.verdict === "unmatched_over" ? "Unmatched overage — no shortage nearby explains it."
           : c.verdict === "suspect_flip" ? "Probably not a clean flip — the candidate offset is weak."
-          : c.verdict === "outside_window" ? "Outside the reports' window — no Power BI, till log or Cash Research data reaches this date, so no offset claim can be made. Go on the journal and video."
+          : c.verdict === "outside_window" ? "Too old to auto-check. Review the journal and video."
           : c.verdict === "suspect_combo" ? "Possible multi-entry offset — two or three entries within a few days add up to this amount. Confirm in Cash Research before filing."
           : (ev?.videoCandidates?.length ? "Shortage worth pursuing — transactions recorded cash near the amount." : ev ? "Unmatched shortage — review transaction and till evidence to establish the cause." : "Unmatched shortage in the grid — analyze to pull the journal."))
-        : "Not analyzed yet — pull Power BI or analyze this item.";
+        : "Not checked yet.";
 
     const actions = [];
     if (inFlight.has(item.id)) actions.push(`<span class="badge badge-info">Completing in APPRISS… you can move on to the next item</span>`);
     else if (sug?.safe) actions.push(`<button class="btn btn-primary" data-action="prefill" title="Verify, then completes the work item in a background tab as ${esc(sug.reasonLabel)}"><span class="btn-label">Complete in APPRISS as ${esc(sug.reasonLabel)}…</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
     else if (sug && !inFlight.has(item.id)) actions.push(`${cause ? `<span class="rls-cause-chip" title="Recorded ${esc(cause.at || "")}">Cause: TR# ${esc(cause.transNum)}${cause.time ? ` at ${esc(cause.time)}` : ""} · ${esc(whoText(cause))} <button class="btn btn-sm btn-ghost" data-action="cause-clear" title="Retract: removes the cause text and the ledger charge">undo</button></span>` : ""}<label class="rls-cause"><span class="rls-muted">Cause found:</span> <select class="input" data-cause><option value="">choose after review…</option>${reasonsFor(item.sourceAppId).map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select></label><button class="btn btn-secondary" data-action="prefill" disabled title="Pick the cause you found first, verify, and the work item is completed in a background tab."><span class="btn-label">Complete in APPRISS…</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
-    actions.push(`<button class="btn ${analysis ? "btn-ghost" : "btn-secondary"}" data-action="analyze"><span class="btn-label">${analysis ? "Re-analyze" : "Analyze (Cash Research + EJ)"}</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
+    actions.push(`<button class="btn ${analysis ? "btn-ghost" : "btn-secondary"}" data-action="analyze"><span class="btn-label">${analysis ? "Re-analyze" : "Analyze"}</span><span class="btn-spinner" hidden aria-hidden="true"></span></button>`);
     const links = [
       `<a href="${esc(item.detailUrl)}" target="_blank" rel="noopener">Work item ${esc(item.id)}</a>`,
       src?.ledger?.explorerUrl ? `<a href="${esc(src.ledger.explorerUrl)}" target="_blank" rel="noopener">Cash Research</a>` : "",
@@ -368,13 +368,13 @@ export async function mount(host, container) {
       `<a href="${esc(state.links.powerbi)}" target="_blank" rel="noopener">Power BI</a>`,
     ].filter(Boolean).join(" · ");
 
-    const sources = src ? `<div class="rls-sources">${srcPill("Power BI", src.grid)}${srcPill("Cash Research", src.ledger)}${srcPill("EJ", src.ej)}${srcPill("Till log", src.tills)}${srcPill("Open Drawer", src.drawer)}${srcPill("CFTs", src.cft)}<span class="rls-muted">analyzed ${esc(ago(analysis.at))}</span></div>` : `<div class="rls-sources"><span class="rls-muted">${c.bucket === "ready" ? "Matched from the long/short entries alone — no journal pull needed to file this." : "Offset check only — analyze to add the cash ledger and the journal."}</span></div>`;
+    const sources = src ? `<div class="rls-sources">${srcPill("Power BI", src.grid)}${srcPill("Cash Research", src.ledger)}${srcPill("EJ", src.ej)}${srcPill("Till log", src.tills)}${srcPill("Open Drawer", src.drawer)}${srcPill("CFTs", src.cft)}<span class="rls-muted">analyzed ${esc(ago(analysis.at))}</span></div>` : "";
 
     const suggestion = sug ? `<div class="rls-block">
         <h3>${sug.safe ? "Disposition to file" : "Investigation notes (become the More Information text once a cause is picked)"}</h3>
         ${sug.safe ? `<div class="rls-sug-reason"><span class="rls-muted">Reason</span> <strong>${esc(sug.reasonLabel)}</strong> <span class="rls-muted">· More Information:</span></div>` : ""}
         <textarea class="rls-sug-text" data-sug-text rows="${cause ? 7 : 4}">${esc(sugText)}</textarea>
-        <div class="rls-muted">${sug.safe ? "Complete in APPRISS asks you to verify, then starts work, picks the reason, pastes this text and clicks Complete in a background tab." : "This item is not dispositioned until the cause is found. Click <em>This was the cause</em> on the transaction that explains it (the text and the cashier ledger update), pick the reason above and Complete in APPRISS; edit the notes first if needed."}</div>
+        ${sug.safe ? "" : `<div class="rls-muted">Click <em>This was the cause</em> on the matching transaction, pick the reason, then Complete.</div>`}
       </div>` : "";
 
     box.innerHTML = `
@@ -400,7 +400,7 @@ export async function mount(host, container) {
     // found no transactions for the day, no video id exists for ANY ticket on
     // it — say that, not "not in Open Drawer".
     const noDrawerDay = !!(src?.drawer?.ok && !ev?.drawer?.rows?.length);
-    const noVideo = noDrawerDay ? `<span class="rls-muted rls-links" title="APPRISS's Open Drawer search returned no transactions for this day; it keeps about 60 days">video unavailable for this date (outside APPRISS's 60-day window)</span>` : `<span class="rls-muted rls-links">no video id (not in Open Drawer)</span>`;
+    const noVideo = noDrawerDay ? `<span class="rls-muted rls-links">Video no longer available (over 60 days)</span>` : `<span class="rls-muted rls-links">No video found</span>`;
     // "This was the cause": the analyst names the ticket. Any transaction
     // shown here can be picked; the pick is stored per work item.
     const cur = state.causes?.[item.id] || null;
@@ -409,12 +409,12 @@ export async function mount(host, container) {
       if (cur && String(cur.transNum) === String(t.transNum)) return `<span class="badge badge-warn">cause ✓</span>`;
       return `<button class="btn btn-sm btn-secondary" data-action="cause-tx" data-tr="${esc(t.transNum)}" data-time="${esc(t.time || "")}" data-op="${esc(t.opNum || "")}" data-opname="${esc(t.opName || "")}" data-cash="${t.cashTendCents ?? ""}" data-total="${t.totalCents ?? ""}" data-tc="${esc(t.tcNum || "")}" title="Record this transaction as the cause: it leads the More Information text and charges the operator in the cashier ledger">This was the cause</button>`;
     };
-    const vlinks = (v) => v ? `<span class="rls-links"><a class="btn btn-primary" href="${esc(v.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV viewer for this transaction">▶ Video</a><a class="btn btn-secondary" href="${esc(v.receiptUrl)}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a>${v.byTime ? `<span class="rls-muted">matched by time</span>` : ""}</span>` : noVideo;
+    const vlinks = (v) => v ? `<span class="rls-links"><a class="btn btn-primary" href="${esc(v.cctvUrl)}" target="_blank" rel="noopener" title="APPRISS CCTV viewer for this transaction">▶ Video</a><a class="btn btn-secondary" href="${esc(v.receiptUrl)}" target="_blank" rel="noopener" title="APPRISS receipt viewer">Receipt</a></span>` : noVideo;
     for (const k of ev.lookAt || []) {
       if (k === "investigation") {
         const inv = ev.investigation;
         const cards = inv.candidates.slice(0, 5).map((c, i) => `<div class="rls-block"><h4>${i + 1}. ${esc(c.time || "Time unknown")} · TR# ${esc(c.transNum)} · operator ${esc(c.opNum || "?")}${c.opName ? " " + esc(c.opName) : ""} ${vlinks(c.video)} ${causeBtn(c)} ${c.raw && receiptUpcs(c.raw).length ? `<button class="btn btn-sm btn-ghost" type="button" data-action="pantry-from-tx" data-tr="${esc(c.transNum)}" title="Put every item on this receipt on the store's pantry list">+ Pantry list</button>` : ""}</h4>${(() => { const x = (ev.cftTx || []).find((y) => String(y.tx.transNum) === String(c.transNum)); return x ? `<p class="${x.cft ? "" : "rls-hot"}"><strong>${x.cft ? "CFT keyed for this ticket" : "Associate pantry run — no CFT keyed"}</strong>${x.storeUse ? ` · ${esc(x.storeUse.repeats.join(", "))}` : ""}${x.cft ? ` · ${esc(withWeekday(x.cft.inputDate || ""))} ${esc(x.cft.inputTime || "")} ${esc(x.cft.accountDesc || "")} → ${esc(x.cft.recipient || "")}` : ""}</p>` : ""; })()}<p>${esc(c.hypothesis)}</p><ul class="rls-list">${c.supporting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>Potential cash discrepancy ${esc(money(c.possibleLossCents))}; remaining shortage under that hypothesis ${esc(money(c.residualCents))}${c.residualCents < 0 ? " (candidate exceeds shortage)" : ""}. Confirmed explained: $0.00.</p><p>${esc(c.check)}</p><details><summary>Receipt and conflicting evidence</summary><ul class="rls-list">${c.conflicting.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p>TC# ${esc(c.tcNum || "?")} · total ${esc(money(c.totalCents))} · cash ${esc(money(c.cashTendCents))} · change ${esc(money(c.changeDueCents || 0))}</p><pre>${esc(c.raw || "Raw receipt unavailable")}</pre></details></div>`).join("");
-        parts.push(sec("Investigate the shortage — cause unconfirmed", `<p>${esc(inv.method)}</p><p>${inv.gaps.map(esc).join(" ")}</p><p>${inv.candidates.length} completed cash transactions ranked; showing up to five. Review the till timeline alongside these transactions.</p>${cards || "<p>No eligible completed cash transactions. Check source coverage and till handling.</p>"}`));
+        parts.push(sec("Investigate the shortage — cause unconfirmed", `<p>Check the video to confirm the cash.</p>${cards || "<p>No eligible completed cash transactions. Check source coverage and till handling.</p>"}`));
       } else if (k === "tills") {
         const t = ev.tills; if (!t) continue;
         const adv = (t.advances || []).map((a) => `<li class="${a.kind === "advance_missing" ? "hit" : ""}">${esc(a.advance.time)} · ${esc(a.advance.action)} ${esc(money(a.advance.amountCents))} by ${esc(a.advance.associate || a.advance.associateId)} → ${a.kind === "advance_flip" ? `over on reg ${esc(a.landedOn.registerNbr)} ${esc(withWeekday(a.landedOn.date))} (${esc(money(a.landedOn.amountCents))})` : "never surfaced as an overage"}</li>`).join("");
@@ -429,7 +429,7 @@ export async function mount(host, container) {
         parts.push(sec(`${ev.cashMatches.length} transactions recorded cash near the amount`, `<ul class="rls-list">${ev.cashMatches.slice(0, 8).map((x) => `<li>${esc(x.time)} · TR# ${esc(x.transNum)} · op ${esc(x.opNum || "?")}${x.opName ? " " + esc(x.opName) : ""} · ${esc(x.why.join(", "))} ${vlinks(x.video)} ${causeBtn(x)}</li>`).join("")}</ul>`));
       } else if (k === "cft") {
         const rows = ev.cftNear || [];
-        parts.push(sec("Cash fund transfers near the amount (reference)", `<p class="rls-muted">CFT cash is dispensed by the recycler, not taken from a register, so a CFT does not by itself explain a register shortage. Listed so the amount and the person are in front of you if the journal or video points at a payout.</p><table class="rls-table"><thead><tr><th>Business date</th><th>Keyed</th><th>Amount</th><th>Recipient</th><th>Account</th><th>Reason</th></tr></thead><tbody>${rows.map((c) => `<tr class="${c.keyedLate ? "hit" : ""}"><td>${esc(withWeekday(c.businessDate))}${c.businessDate === item.date ? " ◀" : ""}</td><td>${esc(withWeekday(c.inputDate || "?"))} ${esc(c.inputTime || "")}${c.keyedLate ? ' <span class="badge badge-warn">late</span>' : ""}</td><td>${esc(money(c.amountCents))}</td><td>${esc(c.recipient || "?")}</td><td>${esc(c.accountDesc || "")} <span class="rls-muted">${esc(c.accountNbr || "")}</span></td><td>${esc(c.reason || "")}</td></tr>`).join("")}</tbody></table>`));
+        parts.push(sec("Cash fund transfers near the amount (reference)", `<table class="rls-table"><thead><tr><th>Business date</th><th>Keyed</th><th>Amount</th><th>Recipient</th><th>Account</th><th>Reason</th></tr></thead><tbody>${rows.map((c) => `<tr class="${c.keyedLate ? "hit" : ""}"><td>${esc(withWeekday(c.businessDate))}${c.businessDate === item.date ? " ◀" : ""}</td><td>${esc(withWeekday(c.inputDate || "?"))} ${esc(c.inputTime || "")}${c.keyedLate ? ' <span class="badge badge-warn">late</span>' : ""}</td><td>${esc(money(c.amountCents))}</td><td>${esc(c.recipient || "?")}</td><td>${esc(c.accountDesc || "")} <span class="rls-muted">${esc(c.accountNbr || "")}</span></td><td>${esc(c.reason || "")}</td></tr>`).join("")}</tbody></table>`));
       } else if (k === "drawer") {
         const d = ev.drawer; if (!d?.rows?.length) continue;
         const rows = [...d.rows].sort((a, b) => (b.near ? 1 : 0) - (a.near ? 1 : 0) || String(a.time).localeCompare(String(b.time)));
@@ -451,7 +451,7 @@ export async function mount(host, container) {
   }
 
   function srcPill(name, s) {
-    if (!s) return "";
+    if (!s || s.ok) return "";   // only failed sources are shown
     const cls = s.ok ? "pill-ok" : "pill-fail";
     const text = s.ok ? `${name} ✓${s.rows != null ? ` ${s.rows} days` : s.records != null ? ` ${s.records} records` : s.events != null ? ` ${s.events} events` : s.opens != null ? ` ${s.opens} opens` : s.transfers != null ? ` ${s.transfers} nearby` : s.hasCell === false ? " (no cell)" : ""}` : `${name} ✗ ${s.error || ""}`;
     return `<span class="pill ${cls}">${esc(text)}${!s.ok && s.loginUrl ? ` <a href="${esc(s.loginUrl)}" target="_blank" rel="noopener">sign in</a>` : ""}</span>`;
@@ -475,13 +475,13 @@ export async function mount(host, container) {
   host.ui.delegate(container, "click", "[data-action='refresh-queue']", async (ev) => {
     await commitStore();
     const d = await run("refresh_queue", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`WorkView: ${d.count} register items, ${d.otherCount} other open items`);
+    if (d) host.ui.toast(`${d.count} register items, ${d.otherCount} other open items`);
     await load();
   });
   host.ui.delegate(container, "click", "[data-action='refresh-grid']", async (ev) => {
     await commitStore();
     const d = await run("refresh_grid", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`Power BI: ${d.cellCount} register-days, ${d.rollup?.r1 ?? 0} unmatched`);
+    if (d) host.ui.toast(`Long/short updated: ${d.rollup?.r1 ?? 0} unmatched`);
     await load();
   });
   host.ui.delegate(container, "change", "[data-range-from], [data-range-to]", async (ev) => {
@@ -504,12 +504,12 @@ export async function mount(host, container) {
     ev.preventDefault(); ev.stopPropagation();
     const id = ev.target.closest("[data-id]").dataset.id;
     const d = await run("export_cashier_files", { id, from: cashierRange.from, to: cashierRange.to }, ev.target.closest("button"));
-    if (d) host.ui.toast(`Saved ${d.files.length} file${d.files.length === 1 ? "" : "s"} to Downloads\\${d.files[0].split("/").slice(0, -1).join("\\")}`);
+    if (d) host.ui.toast(`Saved ${d.files.length} file${d.files.length === 1 ? "" : "s"} to Downloads`);
   });
   host.ui.delegate(container, "click", "[data-action='cashiers-export-all']", async (ev) => {
     ev.preventDefault(); ev.stopPropagation();
     const d = await run("export_cashier_files", { from: cashierRange.from, to: cashierRange.to }, ev.target.closest("button"));
-    if (d) host.ui.toast(`Saved ${d.files.length} cashier files to Downloads\\${d.files[0].split("/").slice(0, -1).join("\\")}`);
+    if (d) host.ui.toast(`Saved ${d.files.length} cashier files to Downloads`);
   });
   host.ui.delegate(container, "submit", "[data-pantry-form]", async (ev) => {
     ev.preventDefault();
@@ -593,13 +593,13 @@ export async function mount(host, container) {
   host.ui.delegate(container, "click", "[data-action='refresh-tills']", async (ev) => {
     await commitStore();
     const d = await run("refresh_tills", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`Till log: ${d.rows} events, ${withWeekday(d.dateMin)} → ${withWeekday(d.dateMax)}`);
+    if (d) host.ui.toast("Tills updated");
     await load();
   });
   host.ui.delegate(container, "click", "[data-action='refresh-cft']", async (ev) => {
     await commitStore();
     const d = await run("refresh_cft", {}, ev.target.closest("button"));
-    if (d) host.ui.toast(`Cash fund transfers: ${d.rows} transfers, ${withWeekday(d.dateMin)} → ${withWeekday(d.dateMax)}`);
+    if (d) host.ui.toast("Cash transfers updated");
     await load();
   });
   host.ui.delegate(container, "click", "[data-action='analyze-all']", async (ev) => {
@@ -728,10 +728,10 @@ export async function mount(host, container) {
     if (!state?.store.storeNbr) return;
     const stale = (iso, min) => !iso || Date.now() - new Date(iso).getTime() > min * 60_000;
     const steps = [];
-    if (!state.queue || stale(state.queue.fetchedAt, 5)) steps.push({ action: "refresh_queue", btn: "refresh-queue", label: "WorkView" });
-    if (!state.grid?.capturedAt || stale(state.grid.capturedAt, 6 * 60)) steps.push({ action: "refresh_grid", btn: "refresh-grid", label: "Power BI" });
-    if (!state.tills || stale(state.tills.fetchedAt, 6 * 60)) steps.push({ action: "refresh_tills", btn: "refresh-tills", label: "Till log" });
-    if (!state.cft || stale(state.cft.fetchedAt, 6 * 60)) steps.push({ action: "refresh_cft", btn: "refresh-cft", label: "Cash fund transfers" });
+    if (!state.queue || stale(state.queue.fetchedAt, 5)) steps.push({ action: "refresh_queue", btn: "refresh-queue", label: "work items" });
+    if (!state.grid?.capturedAt || stale(state.grid.capturedAt, 6 * 60)) steps.push({ action: "refresh_grid", btn: "refresh-grid", label: "long/short" });
+    if (!state.tills || stale(state.tills.fetchedAt, 6 * 60)) steps.push({ action: "refresh_tills", btn: "refresh-tills", label: "tills" });
+    if (!state.cft || stale(state.cft.fetchedAt, 6 * 60)) steps.push({ action: "refresh_cft", btn: "refresh-cft", label: "cash transfers" });
     // Items whose analysis is missing or from an older schema still need a
     // pass even when every source is fresh (e.g. after an extension update).
     const needsAnalysis = (state.queue?.items || []).some((i) => i.register && i.date && !state.analyses?.[i.id] && !["flip", "bounceback"].includes(i.pre?.verdict));

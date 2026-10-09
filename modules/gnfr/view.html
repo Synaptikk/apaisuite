@@ -1,0 +1,62 @@
+<div class="gn">
+  <header class="gn-header">
+    <div class="gn-title">
+      <h1>Supply Orders</h1>
+      <p id="gnfr-sub" class="gn-sub">Who ordered what, and where it is.</p>
+    </div>
+    <div class="gn-head-actions">
+      <label class="gn-field">Show
+        <select id="gnfr-range" class="input">
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 6 months</option>
+          <option value="365" selected>Last 12 months</option>
+        </select>
+      </label>
+      <a class="btn btn-secondary btn-sm" href="https://mygnfr.walmart.com/tracking" target="_blank" rel="noopener">Open MyGNFR</a>
+      <button id="gnfr-refresh" class="btn btn-primary" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div id="gnfr-msg" class="gn-status" role="status" hidden></div>
+
+  <div id="gnfr-empty" class="gn-empty" hidden>
+    <h2>No orders loaded yet</h2>
+    <p>Press <b>Refresh</b> to load your store's orders (about a minute the first time).</p>
+  </div>
+
+  <div id="gnfr-body" hidden>
+    <section id="gnfr-attn" class="gn-attn" aria-label="Needs attention"></section>
+
+    <nav class="gn-tabs" role="tablist">
+      <button type="button" role="tab" data-tab="orders" class="is-active">Orders</button>
+      <button type="button" role="tab" data-tab="items">Items</button>
+      <button type="button" role="tab" data-tab="people">Who orders</button>
+      <button type="button" role="tab" data-tab="regulars">Regular items</button>
+      <button type="button" role="tab" data-tab="spend">Spend</button>
+    </nav>
+
+    <div id="gnfr-filters" class="gn-filters">
+      <input id="gnfr-q" class="input gn-search" type="search" placeholder="Search item, item #, cart #, PO, person…" autocomplete="off">
+      <select id="gnfr-person" class="input"><option value="">Everyone</option></select>
+      <select id="gnfr-job" class="input"><option value="">All job titles</option></select>
+      <select id="gnfr-area" class="input"><option value="">All areas</option></select>
+      <select id="gnfr-stage" class="input">
+        <option value="">Any status</option>
+        <option value="open">Not delivered yet</option>
+        <option value="approval">Awaiting approval</option>
+        <option value="late">Late</option>
+        <option value="stale">No delivery record</option>
+        <option value="ordered">Ordered</option>
+        <option value="shipped">Shipped</option>
+        <option value="delivered">Delivered</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button id="gnfr-clear" class="btn btn-sm btn-secondary" type="button" hidden>Clear filters</button>
+      <span class="gn-spacer"></span>
+      <span id="gnfr-count" class="gn-muted"></span>
+      <button id="gnfr-csv" class="btn btn-sm btn-secondary" type="button">Export CSV</button>
+    </div>
+
+    <section id="gnfr-pane" class="gn-pane"></section>
+  </div>
+</div>

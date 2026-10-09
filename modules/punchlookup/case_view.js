@@ -85,7 +85,7 @@ export function caseController(host, ref) {
       if (syncErr) return `Offline: ${syncErr}`;
       return savedAt ? `Saved ${hhmm(savedAt)}` : syncedAt ? `Live · synced ${hhmm(syncedAt)}` : "";
     },
-    syncLine() { return syncErr ? `Can't reach OneDrive: ${syncErr}` : syncedAt ? `Live · updates every 30 s · last synced ${hhmm(syncedAt)}` : "Loading…"; },
+    syncLine() { return syncErr ? `Can't reach OneDrive: ${syncErr}` : syncedAt ? `Live · synced ${hhmm(syncedAt)}` : "Loading…"; },
   };
 }
 
@@ -121,15 +121,15 @@ export async function openCase(host, root, ref, onBack) {
         <span class="pl-spacer"></span>
         <button type="button" class="btn btn-sm btn-secondary" data-act="wh">W&amp;H report</button>
         <button type="button" class="btn btn-sm btn-secondary" data-act="xlsx">Excel</button>
-        <button type="button" class="btn btn-sm btn-secondary" data-act="link" title="Investigators paste this into Punch Lookup → Cases. They also need the folder shared with them.">Copy case link</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-act="link">Copy case link</button>
         ${isOwner ? `<button type="button" class="btn btn-sm btn-primary" data-act="share">Share…</button>
-        <button type="button" class="btn btn-sm btn-secondary" data-act="refresh" title="Re-pull this case's dates from GTA">Refresh punches</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-act="refresh">Refresh punches</button>
         <button type="button" class="btn btn-sm btn-ghost pr-danger" data-act="delete">Delete case</button>` : ""}
       </div>
       <div class="pc-share" data-el="share" hidden>
-        <div class="pc-share-row"><input class="input" data-el="who" placeholder="Name of an AP associate at your store…"><span class="pc-muted">They get edit access to this case folder and an email from OneDrive. ☆ adds them to your AP team: every new case is shared with the team automatically.</span></div>
+        <div class="pc-share-row"><input class="input" data-el="who" placeholder="Name of an AP associate at your store…"><span class="pc-muted" title="☆ = share every new case with them automatically.">They get edit access to this case.</span></div>
         <div data-el="people"></div>
-        <div class="pc-share-row"><button type="button" class="btn btn-sm btn-secondary" data-el="findap">Find my store's AP team</button><span class="pc-muted">From the last 2 weeks of WFM schedules (AP job titles), matched to their store sign-in.</span></div>
+        <div class="pc-share-row"><button type="button" class="btn btn-sm btn-secondary" data-el="findap">Find my store's AP team</button></div>
         <div data-el="apfound"></div>
         <div class="pc-share-row" data-el="apteam"></div>
       </div>
@@ -195,7 +195,7 @@ export async function openCase(host, root, ref, onBack) {
         if (who.value.trim() !== q) return;
         people.innerHTML = !res.ok ? `<div class="pl-status error">${esc(res.error)}</div>`
           : (res.people || []).map((p) => `<div class="pc-person"><div><b>${esc(p.name)}</b> <span class="pc-muted">${esc([p.title, p.department].filter(Boolean).join(" · "))}</span></div>
-              <span><button type="button" class="btn btn-sm btn-ghost" data-star="${esc(p.key)}" data-name="${esc(p.name)}" data-title="${esc(p.title)}" title="AP team: shared on every new case">${team.some((t) => t.key === p.key) ? "★ Team" : "☆ Team"}</button>
+              <span><button type="button" class="btn btn-sm btn-ghost" data-star="${esc(p.key)}" data-name="${esc(p.name)}" data-title="${esc(p.title)}" title="☆ = share every new case with them automatically.">${team.some((t) => t.key === p.key) ? "★ Team" : "☆ Team"}</button>
               <button type="button" class="btn btn-sm btn-secondary" data-key="${esc(p.key)}" data-name="${esc(p.name)}">Add</button></span></div>`).join("") || `<div class="pc-muted">No one found.</div>`;
       }, 350);
     });
@@ -237,7 +237,7 @@ export async function openCase(host, root, ref, onBack) {
       save.disabled = true; save.textContent = "Sharing…";
       const res = await host.messaging.sendRaw("case_share", { ...ref, keys: team.map((t) => t.key) }, { timeoutMs: 90_000 }).catch((err) => ({ ok: false, error: err.message }));
       save.disabled = false; save.textContent = "Save and share this case with them";
-      host.ui.toast(res.ok ? `AP team saved and this case shared with ${team.map((t) => t.name).join(", ")}. OneDrive emailed them the link.` : res.error, { kind: res.ok ? "ok" : "error" });
+      host.ui.toast(res.ok ? `AP team saved and this case shared with ${team.map((t) => t.name).join(", ")}.` : res.error, { kind: res.ok ? "ok" : "error" });
     });
     teamEl?.addEventListener("click", async (e) => {
       const x = e.target.closest("[data-unstar]");
@@ -248,7 +248,7 @@ export async function openCase(host, root, ref, onBack) {
       b.disabled = true; b.textContent = "Sharing…";
       const res = await host.messaging.sendRaw("case_share", { ...ref, keys: team.map((t) => t.key) }, { timeoutMs: 90_000 }).catch((err) => ({ ok: false, error: err.message }));
       b.disabled = false; b.textContent = "Share this case with the team";
-      host.ui.toast(res.ok ? `Shared with ${team.map((t) => t.name).join(", ")}. OneDrive emailed them the link.` : res.error, { kind: res.ok ? "ok" : "error" });
+      host.ui.toast(res.ok ? `Shared with ${team.map((t) => t.name).join(", ")}.` : res.error, { kind: res.ok ? "ok" : "error" });
     });
     people?.addEventListener("click", async (e) => {
       const st = e.target.closest("[data-star]");
@@ -276,10 +276,10 @@ export async function openCase(host, root, ref, onBack) {
       else if (act === "xlsx") downloadWorkbook(asReviews(ctl.state.merged));
       else if (act === "link") {
         await navigator.clipboard.writeText(ctl.state.url).catch(() => {});
-        host.ui.toast("Case link copied. Investigators paste it under Punch Lookup → Cases (after you've shared the case with them).", { kind: "ok" });
+        host.ui.toast("Case link copied.", { kind: "ok" });
       } else if (act === "share") { const p = $('[data-el="share"]'); p.hidden = !p.hidden; if (!p.hidden) who.focus(); }
       else if (act === "refresh") {
-        btn.disabled = true; btn.textContent = "Pulling from GTA…";
+        btn.disabled = true; btn.textContent = "Refreshing…";
         const res = await host.messaging.sendRaw("case_refresh_punches", ref, { timeoutMs: 4 * 60_000 }).catch((err) => ({ ok: false, error: err.message }));
         btn.disabled = false; btn.textContent = "Refresh punches";
         host.ui.toast(res.ok ? "Punches refreshed." : res.error, { kind: res.ok ? "ok" : "error" });

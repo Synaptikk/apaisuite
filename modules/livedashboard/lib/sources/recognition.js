@@ -78,7 +78,7 @@ export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
   return withReportTab(async (tabId) => {
     const transport = await pollForTransport(tabId, CAPTURE_WAIT_MS, CAPTURE_POLL_MS);
     if (!transport) {
-      return { ok: false, errorClass: "NO_CAPTURE", error: "No Power BI request captured from the Safety Observations page." };
+      return { ok: false, errorClass: "NO_CAPTURE", error: "Safety Observations report didn't load. Try again." };
     }
     const body = buildSubmitterQuery({ modelId: transport.modelId, store: padStore(storeNbr), dateIso: fromIso });
     const res = await runQuery(tabId, transport, body, "Submitter");
@@ -96,7 +96,7 @@ export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
 
 async function withReportTab(pipeline) {
   const opened = await findOrOpenReportTab();
-  if (!opened) return { ok: false, errorClass: "TAB", error: "Could not open Power BI Field_Dashboard tab." };
+  if (!opened) return { ok: false, errorClass: "TAB", error: "Couldn't open the Safety Observations report. Try again." };
   const { tab, didOpen } = opened;
 
   // Owned here, closed in the finally. Previously closed only at the end of the
@@ -154,7 +154,7 @@ async function runRecognitionPipeline(tabId, storeNbr) {
   if (!transport) {
     return {
       ok: false, errorClass: "NO_CAPTURE",
-      error: "No Power BI request captured from the Safety Observations page. Open it once manually so the report signs in and fires its queries.",
+      error: "Safety Observations report didn't load. Open it once, then Refresh.",
     };
   }
 
@@ -203,19 +203,20 @@ async function runQuery(tabId, transport, body, type) {
   if (isAuthFailureStatus(authStatus)) {
     return {
       ok: false, errorClass: "AUTH", authStatus,
-      error: `Power BI recognition query returned ${authStatus} — autonomous reauth will retry.`,
+      error: (console.warn("[livedashboard] recognition auth status:", authStatus), "Power BI sign-in expired. Sign in to Power BI, then Refresh."),
     };
   }
   if (!res.ok) {
-    return { ok: false, errorClass: "QUERY", error: `Recognition ${type} query failed: ${res.error || res.status}` };
+    console.warn(`[livedashboard] recognition ${type} query failed:`, res.error || res.status);
+    return { ok: false, errorClass: "QUERY", error: "Couldn't load safety observations. Try again." };
   }
 
   let json;
   try { json = JSON.parse(res.body); }
-  catch { return { ok: false, errorClass: "PARSE", error: `Recognition ${type} response was not JSON.` }; }
+  catch { console.warn(`[livedashboard] recognition ${type} response was not JSON`); return { ok: false, errorClass: "PARSE", error: "Couldn't load safety observations. Try again." }; }
 
   const { complete, error } = readResult(json);
-  if (error) return { ok: false, errorClass: "QUERY", error: `Power BI rejected the ${type} query: ${error}` };
+  if (error) { console.warn(`[livedashboard] Power BI rejected the ${type} query:`, error); return { ok: false, errorClass: "QUERY", error: "Couldn't load safety observations. Try again." }; }
   if (!complete) {
     return {
       ok: false, errorClass: "TRUNCATED",

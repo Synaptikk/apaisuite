@@ -21,6 +21,9 @@ test("engagement leaves the description question out", () => {
 });
 
 test("tokens from page html", () => {
-  assert.deepEqual(readPageTokens('x "antiForgeryToken":"abc","serverSessionId":"d4e3" y'), { antiForgeryToken: "abc", serverSessionId: "d4e3" });
+  assert.deepEqual(readPageTokens('x "antiForgeryToken":"abc","serverSessionId":"d4e3" y'), { antiForgeryToken: "abc", serverSessionId: "d4e3", signedIn: false, displayName: null });
+  assert.equal(readPageTokens('"antiForgeryToken":"abc","serverSessionId":"d4e3","UserId":"3662-x"').signedIn, true);
+  assert.equal(readPageTokens('"antiForgeryToken":"abc","serverSessionId":"d4e3","UserId":""').signedIn, false);
+  assert.equal(readPageTokens('"antiForgeryToken":"abc","serverSessionId":"d4e3","UserId":"3662-x","DisplayName":"Alex Baker"').displayName, "Alex Baker");
   assert.equal(readPageTokens("<html>sign in</html>"), null);
 });

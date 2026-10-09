@@ -394,7 +394,7 @@ async function route() {
 
   if (!head || head === "home")     return renderHome();
   if (head === "settings")          return renderSettings();
-  if (head === "docs")              return renderDocs();
+  if (head === "docs")              return renderHome();   // old bookmarks; the Docs page was removed
 
   noteModuleOpened(head);
   return mountModule(head, rest);
@@ -510,7 +510,7 @@ function noteInteraction(moduleId) {
 
 document.addEventListener("click", (e) => {
   const id = currentMount?.moduleId;
-  if (!id) return;                                    // home, settings, docs
+  if (!id) return;                                    // home, settings
   if (!e.target?.closest?.(INTERACTIVE)) return;
   noteInteraction(id);
 }, true);   // capture: a module that stops propagation must not hide its own use
@@ -570,7 +570,7 @@ async function renderHome() {
           await mountInline(headerMod, headerContainer);
         } catch (e) {
           console.error(`[shell] home-header mount ${headerMod.manifest.id} failed:`, e);
-          headerContainer.innerHTML = `<div class="state-error">Failed to load dashboard strip: ${escapeHtml(String(e?.message ?? e))}</div>`;
+          headerContainer.innerHTML = `<div class="state-error">Couldn't load the dashboard strip. Reload the page.</div>`;
         }
       }
 
@@ -579,11 +579,6 @@ async function renderHome() {
       heading.className = "stack-sm";
       heading.innerHTML = `
         <h1>Welcome to APAISuite</h1>
-        <p class="muted">Asset Protection investigation tools, unified.
-          ${modules.length === 0
-            ? "No modules registered yet — see <code>modules/_registry.js</code>."
-            : `${modules.length} module${modules.length === 1 ? "" : "s"} available.`}
-        </p>
       `;
       root.appendChild(heading);
 
@@ -591,11 +586,7 @@ async function renderHome() {
       if (modules.length === 0) {
         const empty = document.createElement("div");
         empty.className = "state-empty";
-        empty.innerHTML = `
-          The suite shell is ready. Add a module by following
-          <a href="#/docs">docs/MIGRATION_PLAN.md</a> →
-          <em>Importing a new extension</em>.
-        `;
+        empty.innerHTML = `No tools enabled — turn some on in <a href="#/settings">Settings</a>.`;
         root.appendChild(empty);
       } else {
         for (const { group, modules: mods } of groupModules(modules)) {
@@ -656,12 +647,11 @@ function moduleCard(mod) {
       <span class="module-card-icon">${iconModuleSvg(mod)}</span>
       <div class="stack" style="gap:2px">
         <span class="module-card-name">${escapeHtml(m.name)}</span>
-        <span class="muted tiny">v${escapeHtml(m.version)} · ${escapeHtml(m.status)}</span>
       </div>
     </div>
     <div class="module-card-desc">${escapeHtml(m.description || "")}</div>
     <div class="module-card-foot">
-      <span class="pill ${pillClassForStatus(m.status)}">${escapeHtml(m.status)}</span>
+      ${m.status === "beta" || m.status === "deprecated" ? `<span class="pill ${pillClassForStatus(m.status)}">${escapeHtml(m.status)}</span>` : "<span></span>"}
       <a href="#/${escapeHtml(m.id)}" class="btn btn-primary btn-sm btn-pill">Open</a>
     </div>
   `;
@@ -681,7 +671,7 @@ const registeredModules = new Set();
 async function mountModule(id, restPath) {
   const mod = getModule(id);
   if (!mod) {
-    $main.innerHTML = `<div class="state-error">Unknown module: <code>${escapeHtml(id)}</code></div>`;
+    $main.innerHTML = `<div class="state-error">That tool isn't available. <a href="#/home">Go home</a>.</div>`;
     return;
   }
 
@@ -716,10 +706,7 @@ async function mountModule(id, restPath) {
   } catch (e) {
     console.error(`[shell] mount ${id} failed:`, e);
     $main.innerHTML = `
-      <div class="state-error">
-        <strong>Failed to load module <code>${escapeHtml(id)}</code>.</strong><br>
-        ${escapeHtml(String(e?.message ?? e))}
-      </div>
+      <div class="state-error">Couldn't load this tool. Reload the page.</div>
     `;
   }
 }
@@ -782,11 +769,7 @@ function renderSettings() {
       <div class="card">
         <h2 class="card-title">Appearance</h2>
         <div class="stack stack-sm">
-          <p class="muted" style="margin:0">
-            Theme — applies across every module. "System" follows your OS
-            light/dark preference. Saved to chrome.storage.sync so it follows
-            you to other Edge profiles.
-          </p>
+          <p class="field-label" style="margin:0">Theme</p>
           <div class="cluster" role="radiogroup" aria-label="Theme">
             ${["system", "light", "dark"].map((t) => `
               <label class="check">
@@ -797,10 +780,6 @@ function renderSettings() {
           </div>
           <hr style="width:100%;border:none;border-top:1px solid var(--apai-border);margin:var(--sp-2) 0">
           <p class="field-label" style="margin:0">Try the Preview layout</p>
-          <p class="muted" style="margin:0">
-            Use APAISuite's redesigned interface. You can switch back at any
-            time. Your theme choice above is unaffected either way.
-          </p>
           <div class="cluster" role="radiogroup" aria-label="Layout">
             ${[[LAYOUTS.CURRENT, "Current"], [LAYOUTS.PREVIEW, "Preview"]].map(([v, label]) => `
               <label class="check">
@@ -814,11 +793,7 @@ function renderSettings() {
       <div class="card" id="settings-modules">
         <h2 class="card-title">Modules</h2>
         <div class="stack stack-sm">
-          <p class="muted" style="margin:0">
-            Untick anything you don't use to take it out of the sidebar and the
-            home page. Hiding is not disabling — a hidden module keeps running
-            its scheduled work, and a direct link to it still opens.
-          </p>
+          <p class="muted" style="margin:0">Untick a tool to hide it.</p>
           <div class="stack stack-sm" id="set-modules-list"></div>
         </div>
       </div>
@@ -826,11 +801,6 @@ function renderSettings() {
       <div class="card" id="settings-defaults">
         <h2 class="card-title">Defaults</h2>
         <div class="stack stack-sm">
-          <p class="muted" style="margin:0">
-            Used across the suite — Metric Shots, VizPick, Live Dashboard,
-            Claims Disposition, StockingPlan and Digital Locks all read these
-            instead of asking every time. Saved to chrome.storage.sync.
-          </p>
 
           <div class="field">
             <label class="field-label" for="set-home-store">Home store number</label>
@@ -866,8 +836,7 @@ function renderSettings() {
               <button class="btn btn-secondary btn-sm" id="set-home-market-clear">Clear</button>
             </div>
             <p class="muted tiny" id="set-home-market-note" style="margin:0">
-              VizPick preselects this market in the rollup. Nothing in your
-              sign-in identifies a market, so it can't be detected for you.
+              VizPick preselects this market in the rollup.
             </p>
           </div>
 
@@ -877,9 +846,7 @@ function renderSettings() {
               <button class="btn btn-secondary btn-sm" id="set-profile-identity">Use my sign-in</button>
             </div>
             <p class="muted tiny" id="set-profile-identity-note" style="margin:0">
-              Optional. Reads the email of the account this browser is signed in
-              with — nothing else, and it never leaves your machine. Lets the
-              suite work out your store without you opening any other tool.
+              Fills in your store from your browser sign-in.
             </p>
           </div>
           <div class="row row-between" style="margin-top:14px">
@@ -918,9 +885,7 @@ function renderSettings() {
           <div class="stack stack-sm">
             <span class="field-label">Scheduled work</span>
             <p class="muted tiny" style="margin:0">
-              What is queued to run on its own. An empty table here means
-              nothing is scheduled — which looks identical to "idle" in the
-              feed below, and is how the alarm bug went unnoticed.
+              What is queued to run on its own. Empty means nothing is scheduled.
             </p>
             <div id="dbg-alarms" class="dbg-alarms"></div>
           </div>
@@ -1163,18 +1128,16 @@ function wireDefaults() {
       getIdentity().catch(() => ({})),
     ]);
     storeInput.value = effective || "";
-    const via = SOURCE_LABEL[identity?.storeSource] || "your sign-in";
+    // The detection source (identity?.storeSource / SOURCE_LABEL) is kept out
+    // of the note on purpose — users only need the number.
     if (override) {
       say(storeNote, detected
-        ? `Set manually. Detected from ${via}: ${detected}.`
-        : "Set manually. Nothing detected from your sign-ins yet.");
+        ? `Set manually (detected: ${detected}).`
+        : "Set manually.");
     } else if (detected) {
-      say(storeNote, `Detected from ${via}. Type a different number to override.`);
+      say(storeNote, `Detected: ${detected}. Type a different number to override.`);
     } else {
-      // No longer "sign in to AurorBuddy" — any of several tools now resolves
-      // it, and naming only one sent people to a module they may never use.
-      say(storeNote, "Not set. Using any tool that signs in to gscope, Auror or " +
-                     "Power BI will detect it — or type it here.", "muted");
+      say(storeNote, "Not set — type your store number.", "muted");
     }
   }
 
@@ -1235,10 +1198,12 @@ function wireDefaults() {
         say(profileNote, "This browser profile reports no signed-in account, " +
                          "so your store can't be detected this way.", "state-error");
       } else {
-        say(profileNote, `Couldn't read the account (${res.reason}).`, "state-error");
+        console.warn("[shell] profile identity:", res.reason);
+        say(profileNote, "Couldn't read your sign-in. Type your store instead.", "state-error");
       }
     } catch (e) {
-      say(profileNote, `Couldn't read the account (${e?.message ?? e}).`, "state-error");
+      console.warn("[shell] profile identity:", e?.message ?? e);
+      say(profileNote, "Couldn't read your sign-in. Type your store instead.", "state-error");
     } finally {
       profileBtn.disabled = false;
     }
@@ -1256,7 +1221,7 @@ function wireDefaults() {
   $("#set-home-market-clear")?.addEventListener("click", async () => {
     await clearUserHomeMarket().catch(() => {});
     marketInput.value = "";
-    say(marketNote, "Cleared. VizPick will use the first market in the capture.", "muted");
+    say(marketNote, "Cleared.", "muted");
   });
 
   const roleNote = $("#set-role-note");
@@ -1332,27 +1297,6 @@ function wireModuleVisibility() {
       renderSidebar();
     });
   }
-}
-
-function renderDocs() {
-  $main.innerHTML = `
-    <div class="stack" style="max-width:900px;margin:0 auto">
-      <h1>Docs</h1>
-      <p class="muted">Project docs live in <code>docs/</code>.</p>
-      <div class="card">
-        <ul style="margin:0;padding-left:1.5em">
-          <li><code>EXTENSION_SUITE_AUDIT.md</code> — code-level audit of the three donors</li>
-          <li><code>ARCHITECTURE.md</code> — plugin-style module registry</li>
-          <li><code>MIGRATION_PLAN.md</code> — phased plan + how to import a new extension</li>
-          <li><code>DESIGN_SYSTEM.md</code> — tokens + components</li>
-          <li><code>SOURCE_MAPPING.md</code> — file-by-file migration tracker</li>
-          <li><code>PERMISSIONS_MATRIX.md</code> — per-permission audit</li>
-          <li><code>FEATURE_PARITY.md</code> — feature-by-feature status</li>
-        </ul>
-      </div>
-      <div class="state-empty">In-app rendering of these markdown files will land in Phase 6.</div>
-    </div>
-  `;
 }
 
 // ── Icons (inline SVG; no external assets) ────────────────────
@@ -1603,7 +1547,7 @@ try {
   await route();
 } catch (e) {
   console.error("[shell] boot route failed:", e);
-  $main.innerHTML = `<div class="state-error">Shell boot failed: ${escapeHtml(String(e?.message ?? e))}</div>`;
+  $main.innerHTML = `<div class="state-error">Couldn't start APAISuite. Reload the page.</div>`;
 }
 
 if (showTips) {

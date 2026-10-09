@@ -10,7 +10,7 @@ const ENTRIES = [
   ["FTPR (First Time Pick Rate)",
    "FTP Actual ÷ FTP Expected. Exception picks are included in both halves."],
   ["Pick Rate",
-   "The unweighted mean of the daily Pick Rate column — a short day counts as much as a long one. It is not total picks ÷ total hours."],
+   "The average of the daily pick rates — a short day counts as much as a long one."],
   ["Nil Rate",
    "Nil Pick Qty ÷ Picked As Req Qty. Items that could not be found."],
   ["Sub Rate",
@@ -24,9 +24,9 @@ const ENTRIES = [
   ["Late starts",
    "For 5am associates only, based on first scan. 5:00–5:50 counts as a 5am start; 5:51 and later reads as an early 6am start. Store Help and Fashion are excluded, since they work different schedules."],
   ["Week numbering",
-   "Weeks run Saturday to Friday and are keyed by the Saturday. Week 1 of a fiscal year is the week containing Feb 1 — a retail calendar, not an ISO one."],
+   "Weeks run Saturday to Friday and are keyed by the Saturday. Week 1 of a fiscal year is the week containing Feb 1."],
   ["Where are the names?",
-   "Associate names are never stored in the database. Each associate is written as a token plus an encrypted display name, decrypted in your browser. See the privacy documentation for what that does and does not protect."],
+   "Associate names are never stored in the database in readable form; only your browser can read them."],
 ];
 
 export function render() {

@@ -119,7 +119,7 @@ function _detectOutliersUncached(records) {
             // "the market average" — the mean is computed across whichever
             // stores are in this pull, so naming a market number here was
             // wrong for anyone whose roster wasn't Market 120's.
-            explanation: `Store ${s.storeNumber} disposal value is ${z.toFixed(1)} SD above the market average (${fmtMoney(marketDispMean)}).`,
+            explanation: `Store ${s.storeNumber} disposal value is well above the market average (${fmtMoney(marketDispMean)}).`,
           });
         }
       }
@@ -139,7 +139,7 @@ function _detectOutliersUncached(records) {
             actualValue: fmtMoney(s.donationValue),
             severity: severityFromZ(z),
             zScore: z,
-            explanation: `Store ${s.storeNumber} donation value is ${z.toFixed(1)} SD above the market average (${fmtMoney(marketDonMean)}).`,
+            explanation: `Store ${s.storeNumber} donation value is well above the market average (${fmtMoney(marketDonMean)}).`,
           });
         }
       }
@@ -195,7 +195,7 @@ function _detectOutliersUncached(records) {
             actualValue: `${userCount} associates`,
             severity: deficitSd >= 2.5 ? "High" : "Medium",
             zScore: deficitSd,
-            explanation: `Store ${s.storeNumber} processed ${s.disposalCount.toLocaleString()} disposals via only ${userCount} associates — ${deficitSd.toFixed(1)} SD below the market mean of ${userCountMean.toFixed(1)} associates per store.`,
+            explanation: `Store ${s.storeNumber} processed ${s.disposalCount.toLocaleString()} disposals via only ${userCount} associates — far fewer than the market average of ${userCountMean.toFixed(1)} per store.`,
           });
         }
       }
@@ -480,7 +480,7 @@ function _detectUserOutliersUncached(records, storeNumber) {
           severity: severityFromZ(z),
           zScore: z,
           explanation:
-            `${row.userId} disposed ${fmtMoney(row.disposalValue)} — ${z.toFixed(1)} SD above the store's per-user average (${fmtMoney(dispMean)}).`,
+            `${row.userId} disposed ${fmtMoney(row.disposalValue)} — well above the store's per-associate average (${fmtMoney(dispMean)}).`,
         });
       }
     }
@@ -500,7 +500,7 @@ function _detectUserOutliersUncached(records, storeNumber) {
           severity: severityFromZ(z),
           zScore: z,
           explanation:
-            `${row.userId} donated ${fmtMoney(row.donationValue)} — ${z.toFixed(1)} SD above the store's per-user average (${fmtMoney(donMean)}).`,
+            `${row.userId} donated ${fmtMoney(row.donationValue)} — well above the store's per-associate average (${fmtMoney(donMean)}).`,
         });
       }
     }

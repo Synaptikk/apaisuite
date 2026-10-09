@@ -1,0 +1,26 @@
+
+SET CULTURE='en-US'
+SELECT DISTINCT
+	cf.ID AS key,
+	cf.Name AS name,
+	cf.Description.Invariant AS descriptionInvariant,
+	cf.Description.Localized AS descriptionLocalized,
+	cf.Caption.Invariant AS captionInvariant,
+	cf.Caption.Localized AS captionLocalized,
+	cf.Size AS size,
+	cf.Precision AS precision,
+	cf.DataType AS dataType,
+	cf.ValueEntryMethod AS valueEntryMethod,
+	cf.autoIncrement AS autoIncrement,
+	cf.DefaultFormula as formula,
+	cf.DefaultLabel as defaultLabel,
+	cf.HyperlinkType as linkType,
+	cf.TrackValueHistory as trackValueHistory,
+	cf.SortOptionsByValue AS sortOptionsByValue,
+	cf.IsListValuesByTemplate as isSameCfTemplate,
+	cf.Label.Invariant as labelInvariant,
+	cf.Label.Localized as labelLocalized,
+	cf.ListItemChildCustomFieldId as childId
+FROM CustomField cf
+WHERE cf.ID IN (__IDS__)
+ORDER BY cf.ID

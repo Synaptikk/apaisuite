@@ -94,7 +94,7 @@ function headline(plan) {
   lines.push("");
   lines.push(
     `Freight: ${plan.requiredHours}h` +
-    (plan.requiredBasis === "cv" ? " (CaseVisibility estimate)" : " (our case rates)")
+    (plan.requiredBasis === "cv" ? "" : " (estimate)")
   );
   lines.push(
     `Labour:  Stock 2 ${cap.stock2Hours}h (${cap.stock2Count}) + Overnight ${cap.stock3Hours}h (${cap.stock3Count}) = ${cap.capacity}h` +

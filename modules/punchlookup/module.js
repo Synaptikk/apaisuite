@@ -21,7 +21,7 @@ export default {
     id:          "punchlookup",
     group:       "ap",
     name:        "Punch Lookup",
-    description: "An associate's time-clock punches, and shared wage & hour cases: investigators document each day against the punches, live, from one OneDrive case.",
+    description: "Time-clock punches and shared wage & hour cases.",
     version:     "0.1.0",
     status:      "alpha",
     ui: {

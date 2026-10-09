@@ -33,15 +33,31 @@ export const QUESTION_IDS = {
   tool:        "ra2379a07a2e64b278efae4667942ed93",
 };
 
-/** antiForgeryToken + serverSessionId out of the ResponsePage HTML; null when signed out. */
+// The page's own "signInLinkSilent". The Forms login cookie (OIDCAuth.forms)
+// lives one hour; once it lapses the ResponsePage still renders, but
+// anonymously (empty UserId), and /responses answers 401 "Required user
+// login" (code 701). Loading this link in a tab renews it:
+//   GET oidcLogin → login.microsoftonline.com authorize (prompt=none)
+//   → auto-submit POST forms.cloud.microsoft/landing → SilentSignInComplete.aspx
+export const SILENT_SIGNIN_URL = "https://forms.cloud.microsoft/oidcLogin?IdentityProvider=aad&ru=%2FPages%2FSilentSignInComplete.aspx&prompt=none";
+export const FORMS_LOGIN_COOKIE = "OIDCAuth.forms";
+
+/**
+ * antiForgeryToken + serverSessionId out of the ResponsePage HTML, plus
+ * whether the page saw a signed-in user and their display name; null when the
+ * tokens are missing.
+ */
 export function readPageTokens(html) {
   const get = (k) => {
-    const m = String(html || "").match(new RegExp(`"${k}"\\s*:\\s*"([^"]+)"`));
+    const m = String(html || "").match(new RegExp(`"${k}"\\s*:\\s*"([^"]*)"`));
     return m ? m[1] : null;
   };
   const antiForgeryToken = get("antiForgeryToken");
   const serverSessionId = get("serverSessionId");
-  return antiForgeryToken && serverSessionId ? { antiForgeryToken, serverSessionId } : null;
+  if (!antiForgeryToken || !serverSessionId) return null;
+  // DisplayName is the signed-in account's name as the survey records it
+  // (seen 2026-10-08); it is how a submission from here is credited to a leader.
+  return { antiForgeryToken, serverSessionId, signedIn: !!get("UserId"), displayName: get("DisplayName") || null };
 }
 
 /**

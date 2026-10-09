@@ -22,12 +22,8 @@
 
   <div class="wv-status-row">
     <div>
-      <div class="field-label">Server last posted</div>
+      <div class="field-label">Last posted</div>
       <div id="wv-serverPost" class="wv-value">—</div>
-    </div>
-    <div>
-      <div class="field-label">Token age</div>
-      <div id="wv-tokenAge" class="wv-value">—</div>
     </div>
     <div>
       <div class="field-label">Last refresh</div>
@@ -37,25 +33,15 @@
       <div class="field-label">Next check</div>
       <div id="wv-nextCheck" class="wv-value">—</div>
     </div>
-    <div>
-      <div class="field-label">Instant refresh push</div>
-      <div id="wv-pushLinked" class="wv-value">—</div>
-    </div>
-    <div>
-      <div class="field-label">Workvivo tab</div>
-      <div id="wv-tabOpen" class="wv-value">—</div>
-    </div>
   </div>
 
   <div class="wv-action-row">
     <button id="wv-refreshNow" class="btn btn-primary btn-sm btn-pill">Refresh now</button>
-    <button id="wv-serverTest" class="btn btn-secondary btn-sm">Send server test</button>
+    <button id="wv-serverTest" class="btn btn-secondary btn-sm">Send test</button>
     <span id="wv-refreshMsg" class="muted tiny"></span>
   </div>
   <p class="muted tiny">
-    <strong>Refresh now</strong> proves this browser can read your Workvivo token and hand it to
-    QRCallBox. <strong>Send server test</strong> proves QRCallBox can post on its own with that
-    token; the message lands in your own Workvivo DM, never the store channel.
+    <strong>Send test</strong> posts a test message to your own Workvivo DM.
   </p>
 </section>
 
@@ -90,9 +76,7 @@
         <span id="wv-step2State" class="wv-step-state muted tiny"></span>
       </div>
       <p class="muted tiny">
-        The connector reads your chat token from an open Workvivo tab. Stay signed in and it
-        opens Workvivo in the background whenever it needs a fresh token; you do not need to
-        keep a tab open.
+        Stay signed in. No need to keep a tab open.
       </p>
       <div class="wv-action-row">
         <button id="wv-openWorkvivo" class="btn btn-secondary btn-sm">Open Workvivo</button>
@@ -109,8 +93,7 @@
       </div>
       <p class="muted tiny">
         Usually a group chat named "<em>store number</em> Customer Calls" with the team in it.
-        Create it in Workvivo first if it does not exist. The list below is loaded by
-        Refresh now.
+        Create it in Workvivo first if it does not exist.
       </p>
       <div class="wv-action-row">
         <select id="wv-channelSelect" class="input wv-channel-select"></select>
@@ -137,10 +120,6 @@
       <div class="field-label">Posting to</div>
       <div id="wv-connChannel" class="wv-value">—</div>
     </div>
-    <div>
-      <div class="field-label">Time zone</div>
-      <div id="wv-connTimeZone" class="wv-value">—</div>
-    </div>
   </div>
 
   <div class="wv-conn-stats">
@@ -163,31 +142,8 @@
     <li class="muted">Loading…</li>
   </ul>
 
-  <p id="wv-connFootnote" class="muted tiny"></p>
 </section>
 
-<!-- ── How it works ───────────────────────────────────────────────────── -->
-<details class="card wv-about">
-  <summary class="wv-section-title">How this works</summary>
-  <p class="muted">
-    QRCallBox replaces wall-mounted call boxes with printed QR posters. A customer scans one,
-    every on-shift associate's phone gets a push, and the same alert is posted into the
-    store's Workvivo chat so whoever is watching chat sees it too. Response time is tracked
-    against the first chat reply.
-  </p>
-  <p class="muted">
-    Posting into Workvivo chat needs a Sendbird chat token. Tokens issued through Walmart SSO
-    cannot be refreshed by a server, so this connector is the courier:
-  </p>
-  <ul class="wv-about-list muted">
-    <li>Once an hour it reads the live chat token from a Workvivo tab and sends it to
-        qrcallbox.com with your API key. With no tab open it opens one in the background
-        when the last refresh is more than six hours old.</li>
-    <li>If a scan post fails because the token died, qrcallbox.com pushes a refresh request
-        to this browser and the connector answers within seconds.</li>
-    <li>If Workvivo is signed out, you get one desktop notification asking you to sign in.</li>
-    <li>QRCallBox stores the token and posts each scan itself, so scans are posted at 3am
-        without any browser open. The token only travels
-        <code>workvivo.walmart.com</code> → this extension → <code>qrcallbox.com</code>.</li>
-  </ul>
-</details>
+<p class="muted tiny">
+  Keep Workvivo signed in on this browser and scans keep posting, even with no tab open.
+</p>

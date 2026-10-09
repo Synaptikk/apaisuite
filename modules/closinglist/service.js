@@ -104,7 +104,7 @@ async function collectIvrAbsences() {
         pendingIvrResolver = null;
         resolve({
           ok: false,
-          error: `IVR collection timed out (${FLOW_TIMEOUT_MS / 1000}s). Make sure you are signed in to IVR ATT Cloud.`,
+          error: "Call-offs timed out. Sign in to IVR and try again.",
         });
       }
     }, FLOW_TIMEOUT_MS);

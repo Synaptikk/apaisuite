@@ -162,10 +162,10 @@ test("store numbers and group labels are escaped into the page", () => {
 
 // ── Provenance ────────────────────────────────────────────────────────────
 
-test("the stamp prefers Tableau's own publish time and says so", () => {
+test("the stamp prefers the source publish time over capture time", () => {
   const s = cardStamp({ sourceUpdate: { raw: "8/22/2026 10:04 AM" }, capturedAt: "2026-08-22T18:00:00Z" });
   assert.match(s, /10:04 AM/);
-  assert.match(s, /Tableau/);
+  assert.match(s, /^Data as of /);
 });
 
 test("with no source stamp it falls back to capture time and says THAT", () => {

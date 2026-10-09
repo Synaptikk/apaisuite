@@ -23,7 +23,8 @@ export async function mount(host, container) {
     const resp = await fetch(host.url("view.html"));
     container.innerHTML = await resp.text();
   } catch (e) {
-    container.textContent = `Failed to load QRCallBox view: ${String(e?.message ?? e)}`;
+    console.warn("[workvivo] view load failed:", e);
+    container.textContent = "Couldn't load this page. Reload the suite.";
     container.className += " state-error";
     return () => { link.remove(); };
   }
@@ -80,8 +81,8 @@ export async function mount(host, container) {
       const soft = lastStatus.errorClass === "NO_TAB" || lastStatus.errorClass === "NO_TOKEN";
       return {
         color: soft ? "warn" : "fail",
-        head:  soft ? "Waiting for Workvivo" : "Delivery to QRCallBox failing",
-        det:   lastStatus.message ?? `Last attempt failed (${lastStatus.errorClass}).`,
+        head:  soft ? "Waiting for Workvivo" : "Can't reach QRCallBox",
+        det:   lastStatus.message ?? "Last attempt failed.",
       };
     }
 
@@ -94,27 +95,27 @@ export async function mount(host, container) {
           head:  `Posting to ${chan || "your store channel"}`,
           det:   health.lastServerPostAtMs
             ? (health.lastServerPostOk === false
-                ? `The server's last post failed (${health.lastPostFailureReason || health.lastServerPostStatus || "unknown"}). It will retry on the next scan.`
-                : `Server last posted a scan ${fmtAgo(health.lastServerPostAtMs)}.`)
-            : "Connected. The server will post the next scan.",
+                ? "The last post failed; it will retry on the next scan."
+                : `Last posted a scan ${fmtAgo(health.lastServerPostAtMs)}.`)
+            : "Connected. The next scan will post.",
         };
       case "validation_warn":
         return {
           color: "warn",
-          head:  `Channel set, token unverified`,
-          det:   "Sendbird's preflight failed on the last delivery; the server will still try to post. Refresh now to re-check.",
+          head:  "Connection unverified",
+          det:   "Couldn't verify the connection. Press Refresh now.",
         };
       case "needs_channel":
-        return { color: "warn", head: "Pick your store's channel", det: "Token delivered. Choose the channel in step 3." };
+        return { color: "warn", head: "Pick your store's channel", det: "Connected. Choose the channel in step 3." };
       case "needs_reauth":
         return {
           color: "fail",
-          head:  "Workvivo rejected the stored token",
-          det:   `Refresh is pending. Sign in to Workvivo if asked; the next refresh clears this.${health.tokenDiedAtMs ? ` Died ${fmtAgo(health.tokenDiedAtMs)}.` : ""}`,
+          head:  "Workvivo sign-in expired",
+          det:   "Sign in to Workvivo, then press Refresh now.",
         };
       default:
         if (lastSuccess) {
-          return { color: "ok", head: "Token delivered", det: "Waiting for the server's first post. Refresh now to load details." };
+          return { color: "ok", head: "Connected", det: "Waiting for the first scan to post." };
         }
         return { color: "neutral", head: "Ready to connect", det: "Sign in to Workvivo and press Refresh now." };
     }
@@ -132,17 +133,12 @@ export async function mount(host, container) {
     $("wv-serverPost").textContent = health?.lastServerPostAtMs
       ? `${fmtAgo(health.lastServerPostAtMs)} · ${health.lastServerPostOk === false ? "failed" : "ok"}`
       : "no scan posted yet";
-    $("wv-tokenAge").textContent = health?.tokenAgeMs != null ? fmtDur(health.tokenAgeMs) : "—";
     $("wv-lastSuccess").textContent = lastSuccess
       ? `${fmtAgo(lastSuccess.at)}${lastSuccess.storeNumber ? ` · store ${lastSuccess.storeNumber}` : ""}`
       : "never";
     $("wv-nextCheck").textContent = configured
       ? `${fmtIn(nextHeartbeatAt)}${retryCount ? ` · retry ${retryCount} queued` : ""}`
       : "—";
-    $("wv-pushLinked").textContent = pushLinked
-      ? "linked — the server can wake this browser"
-      : "not yet — links on the next refresh";
-    $("wv-tabOpen").textContent = tabOpen ? "open" : "closed — opens in the background when needed";
 
     // Steps
     const step1 = configured;
@@ -226,7 +222,6 @@ export async function mount(host, container) {
       : (user?.email || "—");
     $("wv-connStore").textContent    = store?.number      || "—";
     $("wv-connChannel").textContent  = store?.channelName || "(not picked yet)";
-    $("wv-connTimeZone").textContent = store?.timeZone    || "America/Chicago (default)";
 
     $("wv-connTotalScans").textContent = activity?.totalScans ?? "—";
     $("wv-connPosted").textContent     = activity?.scansPostedToWorkvivo ?? "—";
@@ -249,7 +244,6 @@ export async function mount(host, container) {
         ul.appendChild(li);
       }
     }
-    $("wv-connFootnote").textContent = activity ? `Last ${activity.windowDays} days.` : "";
   }
 
   async function reloadConnection() {
@@ -274,7 +268,7 @@ export async function mount(host, container) {
     // must never count as usage. A deliberate button press does.
     host.usage.record("refresh_now");
     for (const id of ["wv-refreshNow", "wv-refreshNow2"]) $(id).disabled = true;
-    flash(msgId, "Reading your Workvivo token…", true);
+    flash(msgId, "Checking…", true);
     try {
       const resp = await host.messaging.send("refresh-now");
       const status = resp.status ?? resp.data?.status;
@@ -299,14 +293,14 @@ export async function mount(host, container) {
   // stays on screen until the next press.
   $("wv-serverTest").addEventListener("click", async () => {
     $("wv-serverTest").disabled = true;
-    flash("wv-refreshMsg", "Asking the server to post…", true);
+    flash("wv-refreshMsg", "Sending test…", true);
     try {
       const resp = await host.messaging.send("server-test-post");
       const r = resp.data ?? resp;
       if (r.ok) {
         const b = r.body || {};
         flash("wv-refreshMsg",
-          `Server posted to your Workvivo DM at ${b.sentAtLocal ?? "just now"}${b.channelCreated ? " (created the DM)" : ""}. Check chat.`, true);
+          `Test sent to your Workvivo DM at ${b.sentAtLocal ?? "just now"}. Check chat.`, true);
       } else {
         flash("wv-refreshMsg", explainServerTest(r), true);
       }
@@ -319,14 +313,15 @@ export async function mount(host, container) {
 
   function explainServerTest(r) {
     const detail = typeof r.body === "string" ? r.body : (r.body?.error ?? "");
+    console.warn("[workvivo] server test failed:", r.errorClass, r.status, detail);
     switch (r.errorClass) {
       case "CONFIG":      return "Not configured yet — save your API key in step 1.";
       case "AUTH":        return "The server rejected your API key. Generate a new one at qrcallbox.com → Settings → Integrations and save it in step 1.";
-      case "TOKEN_STALE": return "Your API key is fine, but the token QRCallBox holds is dead. Press Refresh now, then retry.";
-      case "NOT_FOUND":   return "QRCallBox has no connection stored for you yet — press Refresh now first.";
-      case "TIMEOUT":     return "The server didn't answer in time. Sendbird may be slow; try again.";
-      case "NETWORK":     return `Couldn't reach qrcallbox.com: ${detail}`;
-      default:            return `Server error${r.status ? ` (${r.status})` : ""}: ${detail || "unknown"}`;
+      case "TOKEN_STALE": return "Workvivo sign-in expired. Press Refresh now, then retry.";
+      case "NOT_FOUND":   return "Not connected yet. Press Refresh now first.";
+      case "TIMEOUT":     return "No answer in time. Try again.";
+      case "NETWORK":     return "Couldn't reach qrcallbox.com. Check your connection and try again.";
+      default:            return "Something went wrong. Try again.";
     }
   }
 
@@ -350,7 +345,7 @@ export async function mount(host, container) {
   });
 
   $("wv-clearConfig").addEventListener("click", async () => {
-    if (!confirm("Forget the API key and this browser's connection history? Scans keep posting until the server's token expires.")) return;
+    if (!confirm("Remove the API key from this browser?")) return;
     try {
       await host.messaging.send("clear-config");
       $("wv-apiKey").value = "";
@@ -374,9 +369,10 @@ export async function mount(host, container) {
         flash("wv-channelMsg", `Saved. Scans will post to ${r.body?.channelName || "that channel"}.`, true);
       } else {
         const detail = typeof r.body === "string" ? r.body : (r.body?.error ?? "");
+        console.warn("[workvivo] set-channel failed:", r.errorClass, detail);
         flash("wv-channelMsg", r.errorClass === "TOKEN_STALE"
-          ? "The stored token is dead. Press Refresh now, then save the channel again."
-          : `Could not save: ${detail || r.errorClass || "unknown"}`, true);
+          ? "Workvivo sign-in expired. Press Refresh now, then save the channel again."
+          : "Couldn't save the channel. Try again.", true);
       }
     } catch (e) {
       flash("wv-channelMsg", `Error: ${e?.message ?? e}`, true);

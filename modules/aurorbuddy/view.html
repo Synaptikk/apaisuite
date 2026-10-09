@@ -5,12 +5,11 @@
 
 <div class="ab-header">
   <h1>AurorBuddy</h1>
-  <p class="muted">Auror × Secure · POS/SCO fraud cross-reference</p>
 </div>
 
 <section id="ab-step-1" class="card">
   <h2 class="card-title">
-    <span class="card-step">1</span> Configure Search Radius
+    <span class="card-step">1</span> Search
   </h2>
   <div class="ab-row">
     <label class="field">
@@ -32,7 +31,7 @@
     <button id="ab-btn-search" class="btn btn-primary btn-pill btn-lg">Search</button>
     <label class="check ab-inline-toggle">
       <input id="ab-show-all-stores" type="checkbox">
-      <span>Show all stores (default = home only)</span>
+      <span>Show all stores</span>
     </label>
   </div>
   <!-- Auror SSO auto-fill: the username your Auror Auth0 login expects.
@@ -40,9 +39,9 @@
        SSO flow auto-fills + submits the Auror identifier page so you don't
        have to click into the background tab. Leave blank to disable. -->
   <details class="ab-settings" style="margin-top:8px">
-    <summary class="muted" style="cursor:pointer;font-size:12px">Auror auto-login settings</summary>
+    <summary class="muted" style="cursor:pointer;font-size:12px">Auror sign-in</summary>
     <label class="field" style="margin-top:6px">
-      <span class="field-label">Auror email (for auto-login on the identifier page)</span>
+      <span class="field-label">Auror sign-in email</span>
       <input id="ab-auror-username" class="input" type="email" autocomplete="email" placeholder="you@company.com">
     </label>
   </details>
@@ -76,10 +75,6 @@
        Populated by view.js once the scan completes. Sorted by total_s
        descending so the biggest pain is at the top. Hidden during the
        scan; only appears when there's something to show. -->
-  <details id="ab-timings-card" class="hidden ab-timings-card">
-    <summary>⏱ Scan timings</summary>
-    <div id="ab-timings-body" class="ab-timings-body"></div>
-  </details>
 </section>
 
 <!-- Awaiting final value — V1 Mark Submitted UX per
@@ -92,11 +87,7 @@
     <button id="ab-awaiting-refresh" class="btn btn-secondary-sm" style="margin-left:auto">Refresh</button>
   </h2>
   <p class="muted" style="font-size:13px">
-    Auror events you submitted via AurorBuddy that still need a confirmed
-    final value. Enter the value the team will be credited with and click
-    Mark Submitted, or Skip if you can't confirm right now. Skip records
-    the value as "unknown" — better than a wrong number. You can confirm
-    later.
+    Enter the final credited value, or Skip if you don't know it yet.
   </p>
   <div id="ab-awaiting-body"></div>
 </section>

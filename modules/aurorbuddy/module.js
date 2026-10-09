@@ -45,7 +45,7 @@ export default {
     id:          "aurorbuddy",
     group:       "ap",
     name:        "AurorBuddy",
-    description: "Cross-reference Auror suspects against APPRISS/Secure activity, save evidence, and pre-fill Auror events.",
+    description: "Find Auror suspects shopping at your store and pre-fill Auror events.",
     version:     "0.1.62",
     status:      "active",
     accent:      "#FFC220",   // Auror yellow — see styles/tokens.css per-module block

@@ -171,7 +171,7 @@ function suggestedActions(ep) {
   if ([...reasons].some((r) => r.includes("unusual unlock source"))) {
     out.push("Confirm the source device/account is legitimate for this user");
   }
-  if (out.length === 0) out.push("Brief eyeball review");
+  if (out.length === 0) out.push("Quick review");
   return out;
 }
 

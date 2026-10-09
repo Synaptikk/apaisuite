@@ -210,9 +210,9 @@ export function normalize(headers, rawRows, sourceFileName) {
     });
   }
 
-  if (unparsedTimestamps > 0) warnings.push(`${unparsedTimestamps} row(s) had an unparseable Event_time and will not be scored on time-of-day rules.`);
-  if (unattributed > 0)       warnings.push(`${unattributed} row(s) had no USER ID and will be marked as unattributed.`);
-  if (blankPosition > 0)      warnings.push(`${blankPosition} row(s) had no Position and will skip role/zone mismatch scoring.`);
+  if (unparsedTimestamps > 0) warnings.push(`${unparsedTimestamps} event(s) had no time.`);
+  if (unattributed > 0)       warnings.push(`${unattributed} event(s) had no associate.`);
+  if (blankPosition > 0)      warnings.push(`${blankPosition} event(s) had no job title.`);
 
   return { rows, warnings, headers, unknownHeaders: unknown, headerMap: map };
 }

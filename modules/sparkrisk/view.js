@@ -172,7 +172,6 @@ async function loadOverview() {
       <div class="kpi-card">
         <div class="kpi-value">${fmt.num(stats.ineligibleOrders)}</div>
         <div class="kpi-label">Orders not scored</div>
-        <div class="kpi-note">Retained, outside any trip</div>
       </div>
     `;
 
@@ -259,7 +258,7 @@ function renderQueue(rows) {
   const tbody = $("sr-queue-body");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">No sessions match filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-row">No sessions match filters.</td></tr>`;
     return;
   }
 
@@ -296,7 +295,6 @@ function renderQueue(rows) {
       <td class="col-dur">${fmt.dur(r.session_duration_ms)}</td>
       <td class="col-spi ${excessCls}">${excessStr}</td>
       <td class="col-dur">${regTime}</td>
-      <td class="col-pct">${r.driver_prior_count != null ? Number(r.driver_prior_count) : "—"}</td>
       <td class="col-status">${statusPill(r.review_status)}</td>
     </tr>`;
   }).join("");
@@ -369,14 +367,14 @@ async function openSessionDetail(sessionId) {
         <div class="notice-bar notice-blue">
           <span class="notice-icon">📹</span>
           <div style="flex:1">
-            <strong>Source status window (nothing here is observed — verify on video):</strong>
+            <strong>Video window</strong>
             <div style="margin-top:8px;font-family:monospace;font-size:14px">
               <div><strong>Picked status recorded:</strong> ${esc(formatTime(arrivedTime))}</div>
               <div style="margin-top:4px"><strong>Dispatched status recorded:</strong> ${esc(formatTime(exitedTime))}</div>
               <div style="margin-top:4px;color:var(--apai-blue-100)"><strong>Elapsed between them:</strong> ${fmt.dur(exitedTime - arrivedTime)}</div>
             </div>
             <div style="margin-top:8px;font-size:13px;opacity:0.85">
-              Suggested footage window: <strong>${esc(arrivedTime.toLocaleTimeString())}</strong> to <strong>${esc(exitedTime.toLocaleTimeString())}</strong>. The driver may have reached or left a register outside it.
+              Suggested footage window: <strong>${esc(arrivedTime.toLocaleTimeString())}</strong> to <strong>${esc(exitedTime.toLocaleTimeString())}</strong> &mdash; check a few minutes either side.
             </div>
           </div>
         </div>
@@ -390,7 +388,7 @@ async function openSessionDetail(sessionId) {
     const totalOrders = dStats.total_orders || 0;
     const firstSeen = dStats.first_seen;
     const lastSeen = dStats.last_seen;
-    const expBadge = totalSessions < 10 ? "LIMITED HISTORY" : "RECORDED HISTORY";
+    const expBadge = `${totalSessions} prior trip${totalSessions === 1 ? "" : "s"}${firstSeen ? ` since ${fmt.date(firstSeen)}` : ""}`;
     // notice-high / notice-medium / notice-low are not defined in styles.css;
     // use the palette classes that exist.
     const expClass = totalSessions < 10 ? "amber" : "blue";
@@ -399,7 +397,7 @@ async function openSessionDetail(sessionId) {
     let daysActive = "—";
     if (firstSeen && lastSeen) {
       const daysDiff = Math.floor((new Date(lastSeen) - new Date(firstSeen)) / (1000 * 60 * 60 * 24));
-      daysActive = daysDiff === 0 ? "First day" : `${daysDiff} days`;
+      daysActive = daysDiff === 0 ? "within one day" : `over ${daysDiff} days`;
     }
 
     $("sr-panel-body").innerHTML = `
@@ -429,9 +427,9 @@ async function openSessionDetail(sessionId) {
         <div class="detail-section-title">Recorded Driver History</div>
         <div class="notice-bar notice-${expClass}" style="margin-bottom:var(--sp-3)">
           <div style="flex:1">
-            <strong>${expBadge}</strong>
+            <strong>${esc(expBadge)}</strong>
             <div style="margin-top:4px;font-size:14px;opacity:0.9">
-              ${totalSessions} recorded trip(s) · ${totalOrders} order(s) · imported range spans ${esc(daysActive)}
+              ${totalOrders} order(s) · ${esc(daysActive)}
             </div>
           </div>
         </div>
@@ -450,7 +448,7 @@ async function openSessionDetail(sessionId) {
       </div>
 
       <div class="detail-section">
-        <div class="detail-section-title">Identity Resolution</div>
+        <div class="detail-section-title">Order numbers</div>
         <button class="btn btn-secondary" id="sr-resolve-btn">🔓 Resolve Real Order Numbers</button>
         <div id="sr-resolved" class="hidden"></div>
       </div>
@@ -603,7 +601,7 @@ async function startExtraction() {
     const parsed = JSON.parse(await file.text());
     const orders = Array.isArray(parsed) ? parsed : parsed?.orders;
     if (!Array.isArray(orders) || !orders.length) {
-      throw new Error("Expected an array of normalized orders, or an object with an `orders` array");
+      throw Object.assign(new Error("not an array of orders / { orders: [...] }"), { userMsg: "This file isn't an order export." });
     }
     // Only the whole file has to be unusable to fail. Individual records with
     // no order_id are counted as `rejected` by the rebuild and reported below
@@ -611,26 +609,26 @@ async function startExtraction() {
     // push the analyst into hand-editing the source.
     const usable = orders.filter(o => o && typeof o === "object" && String(o.order_id ?? "").trim());
     if (!usable.length) {
-      throw new Error(`None of the ${orders.length} record(s) carry an order_id`);
+      throw Object.assign(new Error(`none of ${orders.length} records carry order_id`), { userMsg: `None of the ${orders.length} records have an order number.` });
     }
-    statusEl.textContent = `Rebuilding trips from ${orders.length} imported order(s)…`;
+    statusEl.textContent = `Importing ${orders.length} order(s)…`;
     const result = await send("ingestData", { orders });
     if (!result.ok) throw new Error(result.error || "Import failed");
     statusEl.textContent = "Import complete.";
     // Every count here is reported by the rebuild, not estimated.
     $("sr-extract-results").innerHTML = [
-      `<p><strong>${result.sessions}</strong> scoreable trip(s) after rebuilding the full order history.</p>`,
-      `<p><strong>${result.reviews}</strong> review record(s) available, including low-score trips.</p>`,
-      `<p><strong>${result.ineligibleOrders}</strong> order(s) retained but not scored (cancelled, zero quantity, or missing/inverted timestamps).</p>`,
-      result.rejected ? `<p><strong>${result.rejected}</strong> record(s) rejected for having no order_id.</p>` : "",
-      `<p class="muted tiny">Saved review decisions were carried across. Reimporting the same file again changes nothing.</p>`,
+      `<p><strong>${result.sessions}</strong> trip(s) scored.</p>`,
+            `<p><strong>${result.ineligibleOrders}</strong> order(s) skipped (cancelled or incomplete).</p>`,
+      result.rejected ? `<p><strong>${result.rejected}</strong> record(s) had no order number.</p>` : "",
+      `<p class="muted tiny">Saved reviews were kept.</p>`,
     ].join("");
     $("sr-extract-results").classList.remove("hidden");
     State.queue.offset = 0;
     await Promise.all([loadOverview(), loadQueue()]);
     bar.style.width = "100%";
   } catch (e) {
-    statusEl.textContent = `Import failed: ${e?.message || String(e)}`;
+    console.warn("[sparkrisk] import failed", e);
+    statusEl.textContent = `Import failed: ${e?.userMsg || (e instanceof SyntaxError ? "the file could not be read." : "please try again.")}`;
     bar.style.width = "0%";
   } finally {
     // The progress block stays visible: #sr-extract-status lives inside it and

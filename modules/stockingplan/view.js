@@ -78,7 +78,7 @@ export async function mount(host, container) {
     const existing = await host.tabs.query({ url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/*" });
     if (existing.length) return { tab: existing[0], opened: false };
 
-    setStatus("Opening CaseVisibility (background)…");
+    setStatus("Loading…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
     try {
 
@@ -88,7 +88,7 @@ export async function mount(host, container) {
     let finalTab = await host.tabs.get(created.id);
     if (CV_MATCH.test(finalTab.url || "")) return { tab: finalTab, opened: true };
 
-    setStatus("Signing in to CaseVisibility…");
+    setStatus("Signing in…");
     await host.auth.clickSso(created.id, SSO_SELECTORS);
 
     const deadline = Date.now() + 45_000;
@@ -142,14 +142,14 @@ export async function mount(host, container) {
       await savePrefs();
       const storeNbr = validStoreNbr($("sp-storeNbr").value);
       if (!storeNbr) {
-        setStatus("Enter a valid store number (1–5 digits) before collecting. Blank/invalid stores produce an empty report.", "error");
+        setStatus("Enter a valid store number.", "error");
         $("sp-storeNbr").focus();
         return;
       }
       const businessDate = $("sp-businessDate").value || todayIso();
       const nextDate     = Compute.nextIsoDate(businessDate);
 
-      setStatus("Finding CaseVisibility tab…");
+      setStatus("Loading…");
       const { tab, opened } = await openCvTab();
       cvTabId  = tab.id;
       cvOpened = opened;
@@ -168,7 +168,7 @@ export async function mount(host, container) {
         nextErr = String(e?.message ?? e);
       }
 
-      setStatus("Capturing freight data…");
+      setStatus("Loading freight…");
       let freightResp = { ok: false, areas: [], depts: [], areaTimes: [], aisles: [], error: null };
       try {
         // Pass the same tab so the SW doesn't open a second one.
@@ -197,9 +197,9 @@ export async function mount(host, container) {
       const callOuts = plan.associates.filter((a) => a.calledOut).length;
       let msg = `Done. ${plan.associates.length} on the stocking shifts`;
       if (callOuts) msg += `, ${callOuts} call-out${callOuts !== 1 ? "s" : ""}`;
-      if (!plan.deptTasks.length) msg += " — department breakdown missing (allow pop-ups for CaseVisibility)";
-      if (nextErr) msg += ` — next-day schedule unavailable: ${nextErr}`;
-      if (!freightResp.ok) msg += ` — freight warning: ${freightResp.error || "partial data"}`;
+      if (!plan.deptTasks.length) msg += " — department breakdown missing (allow pop-ups and Collect again)";
+      if (nextErr) { console.warn("[stockingplan] next-day schedule", nextErr); msg += " — tomorrow's schedule unavailable"; }
+      if (!freightResp.ok) { console.warn("[stockingplan] freight", freightResp.error); msg += " — freight partly missing"; }
       setStatus(msg, freightResp.ok && plan.deptTasks.length ? "ok" : "");
     } catch (e) {
       setStatus(String(e?.message ?? e), "error");
@@ -232,7 +232,7 @@ export async function mount(host, container) {
       tile("Overnight", cap.stock3Hours, cap.stock3Count, "tonight"),
       tile("Mod Team", cap.modCount ? cap.modHours : null, cap.modCount || null, "tonight", cap.modCount ? null : "none tonight"),
       tile("Freight required", plan.requiredHours, null, "freight",
-           plan.requiredBasis === "cv" ? "CaseVisibility estimate" : "our case rates"),
+           plan.requiredBasis === "cv" ? null : "estimate"),
       tile("Stock 1 tomorrow", cap.nextStock1Hours, cap.nextStock1Count, "tomorrow",
            cap.nextStock1Hours == null ? "not pulled" : null),
     ];
@@ -419,7 +419,7 @@ export async function mount(host, container) {
         tbody.innerHTML = `<tr><td colspan="6" class="muted">No freight rows found — check the browser console.</td></tr>`;
       } else if (level === "dept" && !plan.deptTasks.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="6" class="muted tiny">Department detail unavailable — casesByDept.html didn't open. Allow pop-ups for radapps3.wal-mart.com and collect again.</td>`;
+        tr.innerHTML = `<td colspan="6" class="muted tiny">Department detail didn't load — allow pop-ups and Collect again.</td>`;
         tbody.appendChild(tr);
       }
     }
@@ -440,7 +440,7 @@ export async function mount(host, container) {
   function renderAisles(tbody) {
     if (!plan.aisleSections.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="6" class="muted tiny">Aisle detail unavailable — casesByAisle.html didn't open. Allow pop-ups for radapps3.wal-mart.com and collect again.</td>`;
+      tr.innerHTML = `<td colspan="6" class="muted tiny">Aisle detail didn't load — allow pop-ups and Collect again.</td>`;
       tbody.appendChild(tr);
       return;
     }
@@ -598,7 +598,7 @@ export async function mount(host, container) {
   function onSuggest() {
     if (!plan) { setStatus("Collect first.", "error"); return; }
     if (!plan.deptTasks.length) {
-      setStatus("A suggestion needs the department breakdown — allow pop-ups for radapps3.wal-mart.com and collect again.", "error");
+      setStatus("A suggestion needs the department breakdown — allow pop-ups and Collect again.", "error");
       return;
     }
     host.usage.record("suggest");
@@ -693,8 +693,9 @@ export async function mount(host, container) {
   // which is a label, not a divide-by-zero.
   function renderHelpRates() {
     const box = $("sp-help-rates");
+    if (!box) return;
     if (!plan || !plan.deptTasks.length) {
-      box.innerHTML = "<p class=\"muted tiny\">Collect first and this shows the exact rate CaseVisibility used for every department in that business day&rsquo;s freight.</p>";
+      box.innerHTML = "<p class=\"muted tiny\">Collect first to see the rate for each department.</p>";
       return;
     }
 
@@ -712,9 +713,8 @@ export async function mount(host, container) {
     rows.sort((a, b) => (b.cph ?? -1) - (a.cph ?? -1));
 
     box.innerHTML =
-      '<p class="muted tiny">Derived from the ' + esc(plan.dateLabel || withWeekday(plan.businessDate)) +
-      " collect for store " + esc(String(plan.storeNbr)) +
-      " \u2014 cases divided by the hours CaseVisibility charged for them.</p>" +
+      '<p class="muted tiny">Store ' + esc(String(plan.storeNbr)) + ", " +
+      esc(plan.dateLabel || withWeekday(plan.businessDate)) + ".</p>" +
       '<table class="sp-help-table sp-help-rate-table"><thead><tr>' +
       '<th>Department</th><th class="sp-th-num">Cases / hr</th><th class="sp-th-num">Hours</th>' +
       "</tr></thead><tbody>" +
@@ -775,7 +775,7 @@ export async function mount(host, container) {
       `?subject=${encodeURIComponent(subject)}` +
       `&body=${encodeURIComponent(text)}`;
     if (url.length > 8000) {
-      setStatus("Body too long for URL deeplink — use Copy and paste into a new Outlook draft.", "error");
+      setStatus("Too long to open in Outlook — use Copy and paste.", "error");
       return;
     }
     host.tabs.create({ url });

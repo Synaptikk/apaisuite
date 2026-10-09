@@ -36,7 +36,7 @@ function buildHeatStrip(label, data, field, m, sd, color) {
     const isSpike = z >= 2;
     const bg = isSpike ? "rgba(220,38,38,0.85)" : hexAlpha(color, intensity(z));
     const cell = h("div", {
-      title: `${formatHour(d.hour)}: ${v} (${z >= 0 ? "+" : ""}${z.toFixed(1)} SD)`,
+      title: `${formatHour(d.hour)}: ${v}${isSpike ? " — unusually high" : ""}`,
       style: {
         aspectRatio: "1 / 1",
         borderRadius: "3px",

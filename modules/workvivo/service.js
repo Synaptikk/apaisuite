@@ -204,7 +204,7 @@ async function runHeartbeatImpl({ reason = "manual", openIfMissing = false } = {
   } else {
     const status = {
       at, ok: false, reason, status: 0, errorClass: "NO_TAB",
-      message: "No workvivo.walmart.com tab open. Retrying on the next tick.",
+      message: "Waiting for Workvivo. Sign in on this browser.",
     };
     await recordStatus(status);
     return status;
@@ -214,8 +214,8 @@ async function runHeartbeatImpl({ reason = "manual", openIfMissing = false } = {
     const status = {
       at, ok: false, reason, status: 0, errorClass: "NO_TOKEN",
       message: tabOpen
-        ? "Workvivo is open but the chat token isn't readable. Sign back into Workvivo chat."
-        : "Opened Workvivo in the background but no chat token appeared in 30s. Sign into Workvivo in this browser.",
+        ? "Workvivo is open but not signed in. Sign back in to Workvivo."
+        : "Waiting for Workvivo. Sign in on this browser.",
     };
     await recordStatus(status);
     await afterFailure(status, automatic);
@@ -230,13 +230,17 @@ async function runHeartbeatImpl({ reason = "manual", openIfMissing = false } = {
     installationId: await getInstallationId(),
   });
 
+  if (!post.ok) {
+    console.warn("[workvivo] heartbeat refused:", post.errorClass, post.status,
+      typeof post.body === "string" ? post.body : (post.body?.error ?? JSON.stringify(post.body)?.slice(0, 200)));
+  }
   const status = {
     at, ok: post.ok, reason,
     status:     post.status,
     errorClass: post.errorClass ?? null,
     message:    post.ok
       ? describeSuccess(post.body)
-      : `QRCallBox refused the token (${post.errorClass}): ${typeof post.body === "string" ? post.body : (post.body?.error ?? JSON.stringify(post.body).slice(0, 200))}`,
+      : "QRCallBox couldn't connect. Press Refresh now; if it persists, sign in to Workvivo again.",
     body:       post.body,
   };
 
@@ -258,10 +262,10 @@ async function runHeartbeatImpl({ reason = "manual", openIfMissing = false } = {
 function describeSuccess(body) {
   const store = body?.storeNumber ? `store ${body.storeNumber}` : "your store";
   const st = body?.health?.status;
-  if (st === "needs_channel")   return `Token delivered for ${store}. Pick the channel in step 3.`;
-  if (st === "needs_reauth")    return `Token delivered for ${store}; the server last saw it rejected and will retry on the next scan.`;
-  if (st === "validation_warn") return `Token delivered for ${store}; Sendbird preflight failed, the server will still try.`;
-  return `Token delivered for ${store}${body?.channelName ? ` → ${body.channelName}` : ""}.`;
+  if (st === "needs_channel")   return `Connected (${store}). Pick the channel in step 3.`;
+  if (st === "needs_reauth")    return `Connected (${store}). The next scan will retry.`;
+  if (st === "validation_warn") return `Connected (${store}), not yet verified.`;
+  return `Connected (${store})${body?.channelName ? ` → ${body.channelName}` : ""}.`;
 }
 
 /**

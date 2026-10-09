@@ -80,3 +80,7 @@ dev/clearsight-intake-lookups.json
 # dev probe outputs carry real names / incident text (public repo)
 dev/_*-out.json
 dev/_omni-compact.json
+dev/.compliance-harness-storage.json
+
+# Digital Schedule people rules name associates — never commit
+modules/digitalschedule/dev/*.local.txt

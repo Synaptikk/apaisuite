@@ -87,6 +87,12 @@ export async function mount(host, container) {
     rows = all.filter((r) => (!from || r[COL.date] >= from) && (!to || r[COL.date] <= to));
   }
 
+  // "no_hazard_found" → "No hazard found"; "(none)" / "(no tag)" pass through.
+  function tagText(t) {
+    const s = String(t ?? "");
+    return s.startsWith("(") ? s : s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
+  }
+
   function showState() {
     els.store.value = state?.store || "";
     els.storeSrc.textContent = state?.store
@@ -151,24 +157,21 @@ export async function mount(host, container) {
       `<div class="sa-bar">${FAMILY_ORDER.map((k) => `<span class="sa-fam-${k}" style="width:${s.total ? (100 * s.byFam[k]) / s.total : 0}%" data-tip="${esc(FAMILY_NAME[k])}: ${s.byFam[k]} (${pct(s.byFam[k], s.total)})"></span>`).join("")}</div>` +
       `<div class="sa-legend">${FAMILY_ORDER.map((k) => `<span><i class="sa-fam-${k}"></i>${esc(FAMILY_NAME[k])}<span class="sa-num sa-muted">${s.byFam[k]} · ${pct(s.byFam[k], s.total)}</span></span>`).join("")}</div>`;
     els.reasons.innerHTML = [...TAGS, "(none)"].map((t) =>
-      `<div><span><i class="sa-fam-${familyOf(t)}"></i>${esc(t)}</span><span class="sa-num sa-muted">${s.byTag[t] || 0}</span></div>`).join("");
+      `<div><span><i class="sa-fam-${familyOf(t)}"></i>${esc(tagText(t))}</span><span class="sa-num sa-muted">${s.byTag[t] || 0}</span></div>`).join("");
 
     // How the alert was answered at the device. Only ACCEPTED carries an
     // associate name, so the other two can never appear in the table below.
     const unattributed = s.byAction.na + s.byAction.noact + s.byAction.other;
     els.actions.innerHTML = ACTION_ORDER.map((k) =>
       `<div><span>${esc(ACTION_NAME[k])}</span><span class="sa-num sa-muted">${s.byAction[k]} · ${pct(s.byAction[k], s.total)}</span></div>`).join("") +
-      `<p class="sa-sub">SafeIQ records a name only when the alert was accepted. The ${unattributed} alert${unattributed === 1 ? "" : "s"} nobody accepted ` +
-      `(not available / no action) cannot be traced to a person and are grouped as <b>Unattributed</b> in the associate table. ` +
-      `The refusal that <em>is</em> attributable is accepting an alert and closing it as nothing there — the Non-issue columns below.</p>` +
+      (unattributed ? `<p class="sa-sub">${unattributed} alert${unattributed === 1 ? " was" : "s were"} never accepted (no name recorded).</p>` : "") +
       (unattributed ? `<button id="sa-share-unatt" class="btn btn-sm btn-secondary" title="Copy the unattributed alerts as a plain-text list (day, date, time, camera, department, aisle)">Copy the ${unattributed} unaccepted alert${unattributed === 1 ? "" : "s"} as a list</button>` : "");
 
     renderCams();
     renderAss();
     renderOncall();
     renderHours();
-    els.foot.textContent = `Times are store-local. "Ack" is minutes from detection to the associate accepting the alert; "done" is minutes from detection to task complete; "hold" is minutes from accepting to task complete — the window in which the alert is locked to the accepter. ${s.byFam.none} alerts have no tag (Not Available or No Action). Families are a reviewer grouping of the 12 system tags, not a SafeIQ field. ` +
-      `Read the times as workload, not as proof: a quick close is the house norm on every disposition — confirmed hazards close about as fast as non-issues, because associates accept on the handheld once they are already at the spot. "vs expected" is the column that carries a refusal signal.`;
+    els.foot.textContent = "Times are store-local.";
   }
 
   // Column definitions ----------------------------------------------------
@@ -176,11 +179,11 @@ export async function mount(host, container) {
     { k: "key", h: label, v: (r) => r.label || r.key, cell: (r) => `<td class="${label === "Camera" ? "sa-cam" : ""}">${esc(r.label || r.key)}</td>` },
     ...(label === "Camera" ? [{ k: "dept", h: "Department", v: (r) => r.dept || "", cell: (r) => `<td class="sa-dept">${esc(r.dept || "")}</td>` }] : []),
     { k: "total", h: "Alerts", r: 1, v: (r) => r.total, cell: (r) => `<td class="r sa-num">${r.total}</td>` },
-    { k: "nhf", h: "Non-issue", title: "Closed as no_hazard_found, no_spill or no_object", r: 1, dot: "nhf", v: (r) => r.nhf, cell: (r, ctx) => `<td class="r sa-num sa-heat" style="--h:${(r.nhf / ctx.maxNhf).toFixed(2)}">${r.nhf}</td>` },
-    { k: "nhfPct", h: "Non-issue %", title: "Share of alerts closed as no_hazard_found, no_spill or no_object", r: 1, v: (r) => r.nhfPct, cell: (r) => `<td class="r sa-num sa-pct" style="--p:${r.nhfPct.toFixed(2)}">${pct(r.nhf, r.total)}</td>` },
+    { k: "nhf", h: "Non-issue", title: "Closed as no hazard found, no spill or no object", r: 1, dot: "nhf", v: (r) => r.nhf, cell: (r, ctx) => `<td class="r sa-num sa-heat" style="--h:${(r.nhf / ctx.maxNhf).toFixed(2)}">${r.nhf}</td>` },
+    { k: "nhfPct", h: "Non-issue %", title: "Share of alerts closed as no hazard found, no spill or no object", r: 1, v: (r) => r.nhfPct, cell: (r) => `<td class="r sa-num sa-pct" style="--p:${r.nhfPct.toFixed(2)}">${pct(r.nhf, r.total)}</td>` },
   ];
   const famCols = [
-    { k: "f_clr", h: "Cleared", title: "cleaned_object + cleaned_spill (gone before arrival)", r: 1, dot: "clr", v: (r) => r.fam.clr, cell: (r) => `<td class="r sa-num">${r.fam.clr}</td>` },
+    { k: "f_clr", h: "Cleared", title: "Already cleaned up before the associate arrived", r: 1, dot: "clr", v: (r) => r.fam.clr, cell: (r) => `<td class="r sa-num">${r.fam.clr}</td>` },
     { k: "f_haz", h: "Confirmed", r: 1, dot: "haz", v: (r) => r.fam.haz, cell: (r) => `<td class="r sa-num">${r.fam.haz}</td>` },
     { k: "f_none", h: "No tag", r: 1, dot: "none", v: (r) => r.fam.none, cell: (r) => `<td class="r sa-num">${r.fam.none || ""}</td>` },
   ];
@@ -189,7 +192,7 @@ export async function mount(host, container) {
     { k: "medAck", h: "Ack min", title: "Median minutes from detection to acknowledgement", r: 1, v: (r) => r.medAck, cell: (r) => `<td class="r sa-num">${f1(r.medAck)}</td>` },
     { k: "medTtc", h: "Done min", title: "Median minutes from detection to task complete", r: 1, v: (r) => r.medTtc, cell: (r) => `<td class="r sa-num">${f1(r.medTtc)}</td>` },
     { k: "medHold", h: "Hold min", title: "Median minutes from accepting the alert to task complete. While it sits accepted, nobody else can complete it.", r: 1, v: (r) => r.medHold, cell: (r) => `<td class="r sa-num">${f1(r.medHold)}</td>` },
-    { k: "excessHold", h: "Hold excess", title: `Minutes accepted alerts sat open BEYOND a ${HOLD_GRACE_MIN}-minute working allowance per alert, summed. A raw total rewards volume — 47 quick closes outrank one parked alert — so only time past the allowance counts.`, r: 1,
+    { k: "excessHold", h: "Hold excess", title: `Minutes accepted alerts sat open past a ${HOLD_GRACE_MIN}-minute allowance per alert`, r: 1,
       v: (r) => r.excessHold, cell: (r) => `<td class="r sa-num${r.excessHold > HOLD_LONG_MIN ? " sa-hold" : ""}"${r.maxHold != null ? ` data-tip="${f1(r.totHold)} min held in total, longest single hold ${f1(r.maxHold)} min"` : ""}>${r.excessHold ? f1(r.excessHold) : ""}</td>` },
     { k: "holdLong", h: `Held >${HOLD_LONG_MIN}m`, title: `Accepted alerts that stayed open more than ${HOLD_LONG_MIN} minutes before task complete`, r: 1,
       v: (r) => r.holdLong, cell: (r) => r.holdLong ? `<td class="r sa-num sa-hold" data-tip="longest ${f1(r.maxHold)} min">${r.holdLong}</td>` : `<td class="r sa-num"></td>` },
@@ -258,7 +261,7 @@ export async function mount(host, container) {
       (noIds ? `<span class="sa-muted">Image IDs unavailable for these alerts. Use Pull alerts to retry.</span>` : `<span class="sa-muted">Click a frame to enlarge.</span>`) + `</div>` +
       `<div class="sa-gallery">` + list.map((r, i) => {
         const url = hazardImageUrl(r[COL.id]);
-        const tag = r[COL.reason] || "(no tag)";
+        const tag = tagText(r[COL.reason] || "(no tag)");
         return `<figure class="sa-shot" data-i="${i}" tabindex="0" role="button" aria-label="Open alert image">` +
           (url ? `<img loading="lazy" decoding="async" src="${url}" alt="${esc(tag)} at ${esc(r[COL.ts])}">` : `<div class="sa-shot-none">No image</div>`) +
           `<figcaption><span class="sa-tag sa-fam-${familyOf(r[COL.reason])}">${esc(tag)}</span> <span class="sa-mono">${esc(withWeekday(r[COL.ts].slice(5), r[COL.ts]))}</span><br>${esc(r[d.other] || "—")}${r[COL.ack] != null ? ` · ack ${f1(r[COL.ack])} min` : ""}${r[COL.aisle] ? ` · ${esc(r[COL.aisle])}` : ""}</figcaption></figure>`;
@@ -278,7 +281,7 @@ export async function mount(host, container) {
     lbEls.alert.setAttribute("aria-pressed", String(lb.view === "alert"));
     lbEls.assoc.setAttribute("aria-pressed", String(lb.view === "assoc"));
     lbEls.prev.disabled = lb.i <= 0; lbEls.next.disabled = lb.i >= lb.rows.length - 1;
-    const tag = r[COL.reason] || "(no tag)";
+    const tag = tagText(r[COL.reason] || "(no tag)");
     lbEls.meta.innerHTML = `<span class="sa-tag sa-fam-${familyOf(r[COL.reason])}">${esc(tag)}</span> <b>${esc(r[COL.camera])}</b> <span class="sa-mono">${esc(withWeekday(r[COL.ts]))}</span> · ${esc(r[COL.assoc] || r[COL.action] || "")}${r[COL.ack] != null ? ` · ack ${f1(r[COL.ack])} min` : ""}${r[COL.ttc] != null ? ` · done ${f1(r[COL.ttc])} min` : ""}${r[COL.hold] != null ? ` · held ${f1(r[COL.hold])} min` : ""} <span class="sa-muted">${lb.i + 1} / ${lb.rows.length}</span>`;
     const url = hazardImageUrl(r[COL.id], lb.view === "assoc" ? "pre_verify" : "bbox_overlay");
     lbEls.stage.innerHTML = url ? `<img src="${url}" alt="${esc(tag)}">` : `<div class="sa-shot-none">No image</div>`;
@@ -338,7 +341,7 @@ export async function mount(host, container) {
   function renderOncall() {
     const days = Object.keys(oncall?.days || {});
     if (!oncall?.camTeam || !days.length) {
-      els.ocNote.innerHTML = `<span>No clock-ins pulled for store ${esc(state?.store || "")} yet. <b>Pull clock-ins</b> reads the Store Systems camera list and each day's GTA punches (about 20 s a day the first time).</span>`;
+      els.ocNote.innerHTML = `<span>No clock-ins loaded yet. Click <b>Pull clock-ins</b>.</span>`;
       els.ocTiles.innerHTML = ""; els.oc.querySelector("thead").innerHTML = ""; els.oc.querySelector("tbody").innerHTML = ""; els.ocCount.textContent = "";
       ocLast = null; return;
     }
@@ -347,7 +350,7 @@ export async function mount(host, container) {
     const s = a.summary, tb = a.takenBy, acc = tb.team + tb.leader + tb.other + tb.unknown;
     const notes = [];
     if (a.missingDays.length) notes.push(`<span><b>${a.missingDays.length}</b> day${a.missingDays.length === 1 ? "" : "s"} in the window have no punches yet (${esc(a.missingDays.slice(0, 4).map((d) => withWeekday(d)).join(", "))}${a.missingDays.length > 4 ? "…" : ""}) — Pull clock-ins</span>`);
-    if (a.schedFallbackDays.length) notes.push(`<span>${a.schedFallbackDays.length} day${a.schedFallbackDays.length === 1 ? "" : "s"} (${esc(withWeekday(a.schedFallbackDays[0]))}${a.schedFallbackDays.length > 1 ? ` → ${esc(withWeekday(a.schedFallbackDays.at(-1)))}` : ""}) have a saved schedule that belongs to another store; job titles there come from each associate's other days</span>`);
+    if (a.schedFallbackDays.length) console.info("[safetyagent] saved schedule belongs to another store on", a.schedFallbackDays);
     const offList = a.unknownCams.filter((c) => c !== "(no camera)");
     if (offList.length) notes.push(`<span>Not on the camera list (skipped): ${esc(offList.join(", "))}</span>`);
     els.ocNote.innerHTML = notes.join("");
@@ -444,20 +447,18 @@ export async function mount(host, container) {
       `Leads and coaches accepted ${pct(tb.leader, acc)} (${tb.leader}), ${tb.leaderEarly} of them within ${WAVE1_MIN} minutes, before the alert escalated to them.`,
     ];
     const howTo = w1
-      ? `How to read this: "On the clock" counts alerts on the associate's team cameras while they were clocked in (meal breaks excluded). Each row adds up: Accepted + Taken by others (a coworker or lead accepted within ${WAVE1_MIN} minutes) + Let pass (nobody accepted within ${WAVE1_MIN} minutes).`
-      : `How to read this: "Escalations" counts alerts still open after ${WAVE1_MIN} minutes while the lead or coach was on shift. "Left ${LEAD_SIT_MIN}+ min" means it then sat another ${LEAD_SIT_MIN}+ minutes, or was never accepted.`;
+      ? `"Let pass" = nobody accepted within ${WAVE1_MIN} minutes while they were on the clock.`
+      : `"Left ${LEAD_SIT_MIN}+ min" = still unaccepted ${LEAD_SIT_MIN}+ minutes after reaching leads and coaches.`;
     const head = w1 ? ["Associate", "Team", "On the clock", "Accepted", "Taken by others", "Let pass", "Let pass %"]
                     : ["Lead / coach", "Job", "Escalations", "Accepted", `Left ${LEAD_SIT_MIN}+ min`, "Left %"];
     const body = t.list.map((p) => w1
       ? [p.name, p.team || "", p.offered, p.took, p.others, p.passed, pct(p.passed, p.offered)]
       : [p.name, p.job || "", p.esc, p.escTook, p.escPassed, pct(p.escPassed, p.esc)]);
-    const source = "Sources: SafeIQ alerts, GTA timesheet punches, the store schedule, and the Store Systems camera list.";
 
     const text = [title, range, "", "Summary", ...summary.map((x) => `- ${x}`), "", howTo, "",
       ...body.map((r) => w1
         ? `${r[0]} (${r[1]}): on the clock for ${r[2]} - accepted ${r[3]}, taken by others ${r[4]}, let pass ${r[5]} (${r[6]})`
-        : `${r[0]} (${r[1]}): ${r[2]} escalations - accepted ${r[3]}, left ${LEAD_SIT_MIN}+ min ${r[4]} (${r[5]})`),
-      "", source].join("\n");
+        : `${r[0]} (${r[1]}): ${r[2]} escalations - accepted ${r[3]}, left ${LEAD_SIT_MIN}+ min ${r[4]} (${r[5]})`)].join("\n");
 
     const cell = "padding:4px 10px;border:1px solid #d0d0d0;";
     const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222">` +
@@ -465,8 +466,7 @@ export async function mount(host, container) {
       `<p style="margin:0 0 4px"><b>Summary</b></p><ul style="margin:0 0 10px">${summary.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` +
       `<p style="margin:0 0 10px;color:#555">${esc(howTo)}</p>` +
       `<table style="border-collapse:collapse;font-size:10.5pt"><thead><tr>${head.map((h, i) => `<th style="${cell}background:#f2f2f2;text-align:${i < 2 ? "left" : "right"}">${esc(h)}</th>`).join("")}</tr></thead>` +
-      `<tbody>${body.map((r) => `<tr>${r.map((v, i) => `<td style="${cell}text-align:${i < 2 ? "left" : "right"}">${esc(String(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>` +
-      `<p style="margin:10px 0 0;color:#777;font-size:9pt">${esc(source)}</p></div>`;
+      `<tbody>${body.map((r) => `<tr>${r.map((v, i) => `<td style="${cell}text-align:${i < 2 ? "left" : "right"}">${esc(String(v))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     return { count: body.length, text, html };
   }
 
@@ -570,7 +570,6 @@ export async function mount(host, container) {
     // volume (the odd big spill). Under 1 min/alert is workload, not parking.
     const diluted = (g) => g.excessHold / g.holds.length < HOLD_NOISE_PER_ALERT_MIN;
     const top = withExcess.filter((g) => !diluted(g)).slice(0, 10);
-    const skipped = withExcess.filter(diluted);
     const s = summarize(rows);
     const lines = top.map((g, i) =>
       `${i + 1}. ${g.key} — ${f1(g.excessHold)} min beyond the allowance over ${g.holds.length} alert${g.holds.length === 1 ? "" : "s"}` +
@@ -578,9 +577,8 @@ export async function mount(host, container) {
     return {
       count: top.length,
       text: [`Top ${top.length} hold excess (accept → complete) — store ${state.data.store}, ${withWeekday(s.minDate)} → ${withWeekday(s.maxDate)}`,
-             `While an accepted alert sits open, no one else can complete it. Each alert gets a ${HOLD_GRACE_MIN}-minute working allowance (travel + cleanup); only minutes past it count, so quick closes on many alerts don't outrank one parked alert. High-volume associates whose excess averages under ${HOLD_NOISE_PER_ALERT_MIN} min per alert are workload, not parking, and are skipped.`,
-             "", ...lines,
-             ...(skipped.length ? ["", `Skipped as volume noise: ${skipped.map((g) => `${g.key} (${f1(g.excessHold)} min over ${g.holds.length} alerts)`).join("; ")}`] : [])].join("\n"),
+             `Minutes held open past a ${HOLD_GRACE_MIN}-minute allowance per alert.`,
+             "", ...lines].join("\n"),
     };
   }
   els.shareHolds.addEventListener("click", async () => {

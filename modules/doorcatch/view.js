@@ -91,7 +91,7 @@ export async function mount(host, container) {
   async function refresh() {
     els.refresh.disabled = true;
     status("", data ? "Updating…" : "Loading…");
-    const res = await host.messaging.sendRaw("list", { from: els.from.value, to: els.to.value }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    const res = await host.messaging.sendRaw("list", { from: els.from.value, to: els.to.value }).catch((err) => { console.warn("[doorcatch]", err?.message || err); return { ok: false, error: "Couldn't reach the extension. Try again." }; });
     els.refresh.disabled = false;
     if (!res?.ok) {
       // Keep showing what we have; a dropped connection shouldn't blank the page.
@@ -144,9 +144,9 @@ export async function mount(host, container) {
     const img = x.img ? `<img class="dc-thumb" src="${esc(x.img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="dc-thumb dc-thumb-empty"></span>`;
     const meta = x.brand ? esc(x.brand) : "";
     const price = typeof x.walmartPrice === "number"
-      ? `<span><span class="dc-price">${MONEY(x.walmartPrice)}</span> <span class="dc-muted">at Walmart${it.qty > 1 ? ` · ${MONEY(x.walmartPrice * it.qty)} for ${it.qty}` : ""}</span></span>`
+      ? `<span><span class="dc-price">${MONEY(x.walmartPrice)}</span> <span class="dc-muted">${it.qty > 1 ? `${MONEY(x.walmartPrice * it.qty)} for ${it.qty}` : ""}</span></span>`
       : `<span class="dc-muted">No Walmart price found</span>`;
-    const links = `<span class="dc-muted"><a href="${esc(x.walmartUrl)}" target="_blank" rel="noopener">walmart.com</a> · <a href="${esc(x.sourceUrl)}" target="_blank" rel="noopener">${esc(x.source)}</a></span>`;
+    const links = `<span class="dc-muted"><a href="${esc(x.walmartUrl)}" target="_blank" rel="noopener">walmart.com</a></span>`;
     return `<li class="dc-item">${img}<span class="dc-item-text"><span class="dc-item-name">${esc(x.name)}</span>${upc}${qty}${price}${meta ? `<span class="dc-muted">${meta}</span>` : ""}${links}</span></li>`;
   }
 
@@ -216,10 +216,10 @@ export async function mount(host, container) {
     els.cntCatches.textContent = data ? `(${visible().length})` : "";
     els.summary.innerHTML = data ? [
       ["Catches", live.length, `${els.from.value} to ${els.to.value}`],
-      ["Items", units, "units scanned in total"],
-      ["Value", MONEY(totals.value), totals.unpriced ? `Walmart price × qty · ${totals.unpriced} unpriced` : "Walmart price × qty"],
-      ["Open", open, "not reviewed yet"],
-      ["Door hosts", new Set(live.map((c) => c.host)).size, "see the Door hosts tab"],
+      ["Items", units, ""],
+      ["Value", MONEY(totals.value), totals.unpriced ? `${totals.unpriced} unpriced` : ""],
+      ["Open", open, ""],
+      ["Door hosts", new Set(live.map((c) => c.host)).size, ""],
     ].map(([l, n, s]) => `<div class="dc-sum"><span class="dc-sum-n">${n}</span><span class="dc-sum-l">${esc(l)}</span><span class="dc-sum-s">${esc(s)}</span></div>`).join("") + (lookupNote ? `<div class="dc-lookup-note">${esc(lookupNote)}</div>` : "") : "";
 
     const rows = visible();
@@ -261,7 +261,7 @@ export async function mount(host, container) {
     if (!c) return;
     const next = act === "note" ? c.status : act;
     const note = notes.has(id) ? notes.get(id) : c.note;
-    const res = await host.messaging.sendRaw("set_review", { id, status: next, note }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    const res = await host.messaging.sendRaw("set_review", { id, status: next, note }).catch((err) => { console.warn("[doorcatch]", err?.message || err); return { ok: false, error: "Couldn't reach the extension. Try again." }; });
     if (!res?.ok) return status("error", res?.error || "Could not save the review.");
     notes.delete(id);
     await refresh();
@@ -306,7 +306,7 @@ export async function mount(host, container) {
     e.preventDefault();
     const res = await host.messaging.sendRaw("save_settings", {
       storeNbr: els.store.value, reviewKey: els.reviewKey.value, submitKey: els.submitKey.value,
-    }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    }).catch((err) => { console.warn("[doorcatch]", err?.message || err); return { ok: false, error: "Couldn't reach the extension. Try again." }; });
     if (!res?.ok) return status("error", res?.error || "Could not save.");
     els.reviewKey.value = ""; els.submitKey.value = "";
     await loadSettings();
@@ -316,7 +316,7 @@ export async function mount(host, container) {
   els.hostsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const hosts = els.hosts.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    const res = await host.messaging.sendRaw("set_hosts", { hosts }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    const res = await host.messaging.sendRaw("set_hosts", { hosts }).catch((err) => { console.warn("[doorcatch]", err?.message || err); return { ok: false, error: "Couldn't reach the extension. Try again." }; });
     if (!res?.ok) return status("error", res?.error || "Could not save names.");
     els.hosts.value = res.hosts.join("\n");
     status("", `Saved ${res.hosts.length} host name${res.hosts.length === 1 ? "" : "s"}.`);

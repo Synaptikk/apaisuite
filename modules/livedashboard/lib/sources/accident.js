@@ -34,10 +34,12 @@ export async function fetchAccident(storeNbr) {
   const url = `${BASE_URL}/${encodeURIComponent(String(storeNbr))}.html`;
   const resp = await fetch(url, { method: "GET", credentials: "omit" });
   if (resp.status === 404) {
-    return { ok: false, errorClass: "NOT_FOUND", error: `No accident report file for store ${storeNbr} (cas_storage 404).` };
+    console.warn("[livedashboard] accident report 404 for store", storeNbr);
+    return { ok: false, errorClass: "NOT_FOUND", error: `No accident report for store ${storeNbr}.` };
   }
   if (!resp.ok) {
-    return { ok: false, errorClass: "HTTP", error: `cas_storage returned ${resp.status}` };
+    console.warn("[livedashboard] accident report HTTP", resp.status);
+    return { ok: false, errorClass: "HTTP", error: "Couldn't load accident details. Try again." };
   }
   const html = await resp.text();
   return parseAccidentHtml(html, storeNbr);
@@ -45,7 +47,7 @@ export async function fetchAccident(storeNbr) {
 
 export function parseAccidentHtml(html, storeNbr) {
   if (typeof html !== "string" || !html.length) {
-    return { ok: false, errorClass: "EMPTY", error: "Empty HTML response." };
+    return { ok: false, errorClass: "EMPTY", error: "Couldn't load accident details. Try again." };
   }
   const updatedAt = extractUpdatedTimestamp(html);
   const sections = splitSections(html);

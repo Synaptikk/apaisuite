@@ -132,3 +132,50 @@ export const SEED_URL_MIGRATIONS = [
     fromRasterScale: 2,
   },
 ];
+
+// Store-specific report jobs (lib/email_jobs.js). Seeded once per install by
+// service.js::ensureReportJobs, and only when the user's home store is
+// `store` — the recipients are that store's leadership list. Asked for
+// 2026-10-08: closing list at 10:00 daily; VizPick report image at 10:00 for
+// the previous day and 16:45 for the current day; both to email and the
+// "1458 Leadership" Workvivo channel.
+const LEADERSHIP_1458 = "1458leadership@walmart.onmicrosoft.com";
+const EVERY_DAY = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
+
+export const REPORT_JOB_SEEDS = [
+  {
+    store: "1458",
+    metric: {
+      id: "closing-list-daily",
+      kind: "closinglist",
+      name: "Closing List",
+      url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html",
+      enabled: true,
+      timezone: "local",
+      schedules: [{ days: EVERY_DAY, time: "10:00" }],
+      destination: { type: "workvivo-sendbird", channelName: "1458 Leadership" },
+      email: { to: LEADERSHIP_1458 },
+      caption: "",
+      capture: { retries: 0, catchUpWindowMs: 2 * 60 * 60 * 1000 },
+    },
+  },
+  {
+    store: "1458",
+    metric: {
+      id: "vizpick-email",
+      kind: "vizpick-email",
+      name: "VizPick Report (email)",
+      url: "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?:embed=y&:toolbar=n",
+      enabled: true,
+      timezone: "local",
+      schedules: [
+        { days: EVERY_DAY, time: "10:00", reportDay: "previous" },
+        { days: EVERY_DAY, time: "16:45", reportDay: "current" },
+      ],
+      destination: { type: "workvivo-sendbird", channelName: "1458 Leadership" },
+      email: { to: LEADERSHIP_1458 },
+      caption: "",
+      capture: { retries: 0, catchUpWindowMs: 2 * 60 * 60 * 1000 },
+    },
+  },
+];

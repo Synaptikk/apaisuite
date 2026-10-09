@@ -414,11 +414,7 @@ export async function mount(host, container) {
 
     row.innerHTML = tiles.join("")
       + `<p class="cx-note cx-scorecard-note">
-           From the Hoops scorecard. The big figure is
-           <strong>${escapeHtml(latestSub?.labelLong ?? "the current week")}</strong>, which is still in progress —
-           on one store that can be a handful of surveys, so read it against the
-           <strong>MTD</strong> figure beside it. Sub-scores are averages out of 5;
-           NPS is published weekly, never daily.
+           This week is still in progress. Compare it to <strong>MTD</strong>.
          </p>`;
   }
 
@@ -458,10 +454,8 @@ export async function mount(host, container) {
     const total = a.counts.filtered;
     // Said plainly rather than buried: the theme lists describe under half the
     // comments, and a reader who assumes otherwise will over-read a small row.
-    const coverage = `${fmt(tagged)} of ${fmt(total)} comments carry topic tags`;
-
-    $("[data-bad-sub]").textContent = coverage;
-    $("[data-good-sub]").textContent = coverage;
+    $("[data-bad-sub]").textContent = "";
+    $("[data-good-sub]").textContent = "";
 
     $("[data-bad-themes]").innerHTML = a.themes.negative.length
       ? a.themes.negative.map((t) => themeCard(t, "negative")).join("")
@@ -600,8 +594,7 @@ export async function mount(host, container) {
         <span><i class="cx-key cx-seg-pas"></i>4 stars</span>
         <span><i class="cx-key cx-seg-det"></i>1-3 stars</span>
         <span class="cx-legend-note">
-          Comment NPS over this selection: <strong>${state.analysis.ratings.commentNps ?? "—"}</strong>
-          — computed from these ${fmt(state.analysis.ratings.scored)} ratings, not the graded NPS above.
+          Comment NPS: <strong>${state.analysis.ratings.commentNps ?? "—"}</strong> (not the official score)
         </span>
       </div>`;
   }
@@ -655,7 +648,7 @@ export async function mount(host, container) {
   function renderFallbackComments(box) {
     const rows = [...box.rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     $("[data-comments-sub]").textContent =
-      `${fmt(rows.length)} from the Ops Portal — no topic tags, through ${escapeHtml(rows[0]?.date ?? "?")}`;
+      `${fmt(rows.length)} recent comments, through ${escapeHtml(rows[0]?.date ?? "?")}`;
 
     // The search and rating controls act on the Medallia set; with only the
     // stopgap loaded they would silently do nothing.
@@ -666,10 +659,8 @@ export async function mount(host, container) {
 
     $("[data-comment-list]").innerHTML = `
       <p class="cx-note">
-        Medallia could not be read, so these come from the Ops Portal's own feed:
-        <strong>50 rows, capped, with no topic tags and about a week behind</strong>.
-        That is why the theme breakdown and the trend above are not shown — they
-        cannot be built from this. Fix the Medallia session and press Refresh.
+        Showing the 50 most recent comments (about a week behind).
+        Sign in to Medallia and Refresh for the full view.
       </p>`
       + rows.map((r) => `
         <article class="cx-comment cx-rating-${r.rating ?? 0}">
@@ -690,7 +681,8 @@ export async function mount(host, container) {
     const n = state.narrative;
 
     $("[data-action='narrate-force']").hidden = !n;
-    $("[data-action='show-facts']").hidden = !n;
+    const factsBtn = $("[data-action='show-facts']");
+    if (factsBtn) factsBtn.hidden = !n;
 
     if (!n) {
       const st = state.settings?.gatewayTokenStatus;
@@ -703,11 +695,7 @@ export async function mount(host, container) {
              <strong>Settings → Sign in</strong> sets one up. Everything else on this page works without it.
            </p>`
         : `<p class="cx-empty">
-             <strong>Write it up</strong> sends the ranked themes, the movement figures and a
-             handful of verbatims to Walmart's internal AI gateway and gets back a written
-             summary, covering <strong>this store's comments only</strong>. Every number in it
-             is one already on this page — the model is told to use the figures it is given and
-             not to derive any.
+             <strong>Write it up</strong> turns this page into a short summary of your store's comments.
            </p>`;
       stamp.textContent = "";
       return;
@@ -754,11 +742,6 @@ export async function mount(host, container) {
 
     const s = g.summary;
     $("[data-genai-body]").innerHTML = `
-      <p class="cx-note">
-        The Ops Portal's own summary of this store's comments. Shown for reference only:
-        Walmart regenerates it rarely${ageDays != null && ageDays > 45 ? `, and this copy is ${ageDays} days old` : ""},
-        so the panels above are the current read.
-      </p>
       ${s.brief ? `<p class="cx-genai-brief">${escapeHtml(s.brief)}</p>` : ""}
       ${s.suggestions?.length ? `
         <h4>Its suggestions</h4>
@@ -803,17 +786,20 @@ export async function mount(host, container) {
 
     const parts = [];
     if (r.reason === "NO_STORE") parts.push(`<strong>No home store set.</strong> ${escapeHtml(r.error)}`);
-    if (r.hoops?.ok) parts.push(`Scorecard: ${r.hoops.weeks} weeks.`);
-    else if (r.hoops) parts.push(`<strong>Scorecard failed</strong> (${escapeHtml(r.hoops.errorClass)}): ${escapeHtml(r.hoops.error)}`);
+    if (r.hoops && !r.hoops.ok) {
+      console.warn("[cx] scorecard failed:", r.hoops.errorClass, r.hoops.error);
+      parts.push(`<strong>Couldn't load the scorecard.</strong> Refresh, or sign in to the Ops Portal.`);
+    }
 
     if (r.medallia?.ok) {
       parts.push(r.medallia.added
-        ? `Comments: ${fmt(r.medallia.added)} new, ${fmt(r.medallia.held)} held.`
-        : `Comments: nothing new, ${fmt(r.medallia.held)} held.`);
+        ? `${fmt(r.medallia.added)} new comment${r.medallia.added === 1 ? "" : "s"}.`
+        : `No new comments.`);
     } else if (r.medallia) {
-      parts.push(`<strong>Comments failed</strong> (${escapeHtml(r.medallia.errorClass)}): ${escapeHtml(r.medallia.error)}`);
+      console.warn("[cx] comments failed:", r.medallia.errorClass, r.medallia.error);
+      parts.push(`<strong>Couldn't load comments.</strong> Refresh, or sign in to Medallia.`);
       if (r.fallbackComments?.ok) {
-        parts.push(`Fell back to the Ops Portal's 50-comment feed — no topic tags, and about a week behind.`);
+        parts.push(`Showing the 50 most recent comments instead.`);
       }
     }
 
@@ -824,7 +810,8 @@ export async function mount(host, container) {
     const failed = r.hoops?.ok === false || r.medallia?.ok === false;
     show("[data-debug-panel]", failed);
     if (failed) {
-      $("[data-debug-body]").innerHTML = `<pre class="cx-facts">${escapeHtml(JSON.stringify(r, null, 1))}</pre>`;
+      console.warn("[cx] last pull:", r);
+      $("[data-debug-body]").innerHTML = "";
     }
   }
 
@@ -847,9 +834,7 @@ export async function mount(host, container) {
     const body = $("[data-narrative-body]");
     if (body) {
       body.innerHTML = `<p class="cx-empty">
-        Click <strong>Refresh</strong> to read the scorecard and pull this store's comments.
-        The first pull covers ${state.settings?.windowWeeks ?? 52} weeks and takes a couple of minutes;
-        it opens a background Medallia tab to borrow your signed-in session.
+        Click <strong>Refresh</strong> to load your store. The first load takes a couple of minutes.
       </p>`;
     }
     show("[data-narrative-panel]", true);
@@ -990,12 +975,7 @@ export async function mount(host, container) {
           </tbody>
         </table>
       </div>
-      <p class="cx-note">
-        NPS and the eight sub-scores for the latest week each store has published, from the
-        same Hoops scorecard as the panel above — <strong>scores only</strong>. Medallia shows
-        you comments for your own store, so the theme analysis below cannot be produced for
-        the rest of the market.
-      </p>`;
+      <p class="cx-note">Latest published week per store. Scores only; comments cover your store.</p>`;
   }
 
   async function doExportPdf() {

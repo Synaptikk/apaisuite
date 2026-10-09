@@ -98,12 +98,14 @@ async function daemon(path, params = {}, { timeoutMs = 120_000 } = {}) {
   try {
     const r = await fetch(u, { signal: ctl.signal, cache: "no-store" });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error(j.error || `daemon ${r.status}`), { kind: "DAEMON" });
+    if (!r.ok && !j.error) console.warn("[digitaldashboard] daemon HTTP", r.status, path);
+    if (!r.ok) throw Object.assign(new Error(j.error || "Live pick data returned an error — try again."), { kind: "DAEMON" });
     return j;
   } catch (e) {
-    if (e.name === "AbortError") throw Object.assign(new Error("GIF daemon took too long"), { kind: "TIMEOUT" });
+    if (e.name === "AbortError") { console.warn("[digitaldashboard] GIF daemon timed out", path); throw Object.assign(new Error("Live pick data took too long — try again."), { kind: "TIMEOUT" }); }
     if (e.kind) throw e;
-    throw Object.assign(new Error("GIF daemon not running — start it with: node dev/gif-daemon.mjs"), { kind: "OFFLINE" });
+    console.warn("[digitaldashboard] GIF daemon not running — start it with: node dev/gif-daemon.mjs", e);
+    throw Object.assign(new Error("Live pick data is offline."), { kind: "OFFLINE" });
   } finally { clearTimeout(timer); stop(); }
 }
 

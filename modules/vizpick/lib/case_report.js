@@ -161,7 +161,7 @@ export function caseDocDefinition(model, files = caseAttachments(model)) {
 
   content.push({ text: `Every digital scan that added picks (${model.digAdds?.length || 0})`, style: "h2" });
   if (model.digAdds?.length) {
-    const body = [[th("Tableau update"), th("Bin"), th("Scanned by"), th("Scan"), th("Scanned before by"), th("Picks added", "right"), th("Done / due after", "right")]];
+    const body = [[th("Update"), th("Bin"), th("Scanned by"), th("Scan"), th("Scanned before by"), th("Picks added", "right"), th("Done / due after", "right")]];
     for (const r of model.digAdds) {
       body.push([td(r.update), td(r.location), td(r.name), td(r.scan), { stack: [{ text: r.prevName || "", style: "td" }, { text: r.prevJob || "", fontSize: 6.5, color: MUTED }] },
         num(`+${r.dDue}`, { color: "#A6423A", bold: true }), num(`${r.done} / ${r.due}`)]);
@@ -173,7 +173,7 @@ export function caseDocDefinition(model, files = caseAttachments(model)) {
   content.push({ ol: (model.steps || []).map((s) => ({ text: s, style: "body", margin: [0, 0, 0, 3] })) });
   if (model.example) {
     content.push({ text: [{ text: `Worked example, bin ${model.example.location}. `, bold: true }, model.example.narrative || ""], style: "body", margin: [0, 8, 0, 6] });
-    const body = [[th("Tableau update"), th("Bin's last scan"), th("Scanned by"), th("Done / due", "right"), th("Change since the row above", "right")]];
+    const body = [[th("Update"), th("Bin's last scan"), th("Scanned by"), th("Done / due", "right"), th("Change since the row above", "right")]];
     for (const r of model.example.rows) body.push([td(r.update), td(r.scan), td(`${r.name}${r.job ? `  ·  ${r.job}` : ""}`), num(`${r.done} / ${r.due}`), num(r.change)]);
     content.push({ table: { headerRows: 1, widths: [60, 80, "*", 50, 100], body }, layout: tableLayout });
   }

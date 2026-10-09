@@ -2,7 +2,7 @@
   <header class="rls-header">
     <div class="rls-title">
       <h1>Register L/S Triage</h1>
-      <p class="rls-sub">Every open WorkView item for the store. Register shortages are checked against the Power BI grid, the register's cash ledger and the electronic journal, then sorted into <strong>ready to close</strong> and <strong>needs a look</strong>.</p>
+      <p class="rls-sub">Open register shortages, sorted into <strong>ready to close</strong> and <strong>needs a look</strong>.</p>
     </div>
     <div class="rls-toolbar">
       <label class="rls-store">
@@ -10,19 +10,19 @@
         <input class="input rls-store-input" id="rls-store" inputmode="numeric" maxlength="5" placeholder="1458">
         <span class="rls-store-src" data-store-src></span>
       </label>
-      <button class="btn btn-secondary" data-action="refresh-queue" title="Pull the open WorkView items for the last 30 days">
-        <span class="btn-label">Refresh WorkView</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      <button class="btn btn-secondary" data-action="refresh-queue" title="Open work items, last 30 days">
+        <span class="btn-label">Refresh work items</span><span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
-      <button class="btn btn-secondary" data-action="refresh-grid" title="Re-capture the Power BI long/short grid for this store (opens the report in the background, about a minute)">
-        <span class="btn-label">Refresh Power BI</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      <button class="btn btn-secondary" data-action="refresh-grid" title="Takes about a minute">
+        <span class="btn-label">Refresh long/short</span><span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
-      <button class="btn btn-secondary" data-action="refresh-tills" title="Pull the Cash Recycler till log (check-ins, check-outs, advances, pickups, who did them) for the last 60 days">
+      <button class="btn btn-secondary" data-action="refresh-tills" title="Last 60 days">
         <span class="btn-label">Refresh tills</span><span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
-      <button class="btn btn-secondary" data-action="refresh-cft" title="Pull the Cash Fund Transfers report (who took cash out of a register, why, and when it was keyed) for the last 60 days">
-        <span class="btn-label">Refresh CFTs</span><span class="btn-spinner" hidden aria-hidden="true"></span>
+      <button class="btn btn-secondary" data-action="refresh-cft" title="Last 60 days">
+        <span class="btn-label">Refresh cash transfers</span><span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
-      <button class="btn btn-primary" data-action="analyze-all" title="Pull Cash Research and EJ for every register item that has not been analyzed in the last 6 hours">
+      <button class="btn btn-primary" data-action="analyze-all" title="Check every item not analyzed in the last 6 hours">
         <span class="btn-label">Analyze all</span><span class="btn-spinner" hidden aria-hidden="true"></span>
       </button>
       <span class="rls-progress" data-progress></span>
@@ -30,10 +30,10 @@
   </header>
 
   <div class="rls-pills" data-pills>
-    <span class="pill pill-checking" data-pill="queue">WorkView: not pulled</span>
-    <span class="pill pill-checking" data-pill="grid">Power BI: not pulled</span>
-    <span class="pill pill-checking" data-pill="tills">Till log: not pulled</span>
-    <span class="pill pill-checking" data-pill="cft">Cash fund transfers: not pulled</span>
+    <span class="pill pill-checking" data-pill="queue">Work items: not loaded</span>
+    <span class="pill pill-checking" data-pill="grid">Long/short: not loaded</span>
+    <span class="pill pill-checking" data-pill="tills">Tills: not loaded</span>
+    <span class="pill pill-checking" data-pill="cft">Cash transfers: not loaded</span>
   </div>
 
   <div class="rls-summary" data-summary></div>
@@ -54,7 +54,7 @@
     </summary>
     <div class="rls-cashiers-body" data-cashiers-body></div>
     <form class="rls-receipt-form" data-receipt-form>
-      <div class="rls-receipt-head"><strong>Attach an unpaid training receipt</strong> <span class="rls-muted">A receipt printed in training mode that the customer never really paid. Charged to the associate as an event; the receipt number keeps it from being attached twice.</span></div>
+      <div class="rls-receipt-head"><strong>Attach an unpaid training receipt</strong> <span class="rls-muted">A receipt printed in training mode that the customer never really paid. Charged to the associate as an event.</span></div>
       <div class="rls-receipt-fields">
         <label><span class="rls-muted">WIN</span><input class="input" name="associateId" list="rls-receipt-wins" placeholder="WIN" required></label>
         <datalist id="rls-receipt-wins" data-receipt-wins></datalist>
@@ -72,7 +72,7 @@
   <details class="rls-pantrylist card" data-pantrylist>
     <summary><span class="card-title">Pantry list — items rung as the associate pantry</span> <span class="rls-muted" data-pantrylist-meta></span></summary>
     <div class="rls-pantrylist-body">
-      <div class="rls-muted">A cash ticket of $100 or more made mostly of these UPCs is treated as the pantry run: without a CFT keyed for it the register is short the ticket (process error, not a loss). Nothing else on a receipt counts as a store purchase. Add the items your store stocks, then re-analyze to generate the review list.</div>
+      <div class="rls-muted">Items the store buys for the associate pantry. Add yours, then re-analyze.</div>
       <div data-pantrylist-table></div>
       <form class="rls-pantry-form" data-pantry-form>
         <label class="rls-muted" for="rls-pantry-text">Add items — one per line, UPC first, then the description as the receipt prints it</label>
@@ -88,7 +88,7 @@
   <details class="rls-registers card" data-registers hidden>
     <summary><span class="card-title">Register map — what each register is at this store</span> <span class="rls-muted" data-registers-meta></span></summary>
     <div class="rls-registers-body">
-      <div class="rls-muted">Layouts differ store to store. The till log names most registers (SCO, FRONT END, CUSTOMER SERVICE, PHARMACY…); registers 61–64 default to the money center and 92–94 to the service desk when the log does not say; a department label from the log is shown but ranks below those defaults because it goes stale when a register is moved. Correct any register here — your choice is kept for this store. The service desk is what the matcher lets pair with any register store-wide.</div>
+      <div class="rls-muted">Fix any register that's labelled wrong. Your choice is saved for this store.</div>
       <div data-registers-table></div>
     </div>
   </details>
@@ -106,7 +106,6 @@
       <label class="rls-verify-row"><span class="rls-muted">More Information (what APPRISS will store)</span>
         <textarea class="rls-sug-text" data-verify-text rows="5"></textarea></label>
       <label class="rls-verify-check"><input type="checkbox" data-verify-ack> I have reviewed the evidence; file it and close the work item.</label>
-      <div class="rls-muted">Runs in a background tab that closes itself. Nothing is brought to the front.</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" type="button" data-action="verify-cancel">Cancel</button>
@@ -117,7 +116,7 @@
   <div class="rls-body">
     <aside class="rls-queue card" data-queue>
       <div class="rls-queue-list" data-queue-list>
-        <div class="rls-empty">No WorkView data yet — click <strong>Refresh WorkView</strong>.</div>
+        <div class="rls-empty">No work items yet — click <strong>Refresh work items</strong>.</div>
       </div>
     </aside>
 

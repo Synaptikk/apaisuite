@@ -87,4 +87,53 @@ test("ledger: 2 per scheduled day, foreign-roster days dropped", () => {
   assert.equal(by["Dana Fox"].done, 1);
   assert.equal(by["Dana Fox"].behind, 1);
   assert.equal(by["Someone Else"], undefined);
+  // Day by day: Dana's unstarted shift today is not a scheduled day, but the
+  // observation on it still shows (and counts toward Done).
+  assert.deepEqual(by["Taylor Reed"].byDay.map((d) => [d.dateIso, d.scheduled, d.expected, d.done]), [
+    ["2026-10-01", true, 2, 3], ["2026-10-02", true, 2, 0], ["2026-10-04", true, 2, 0],
+  ]);
+  assert.deepEqual(by["Dana Fox"].byDay.map((d) => [d.dateIso, d.scheduled, d.expected, d.done, d.shift]), [
+    ["2026-10-01", true, 2, 0, "7:00am–5:00pm"], ["2026-10-04", false, 0, 1, ""],
+  ]);
+});
+
+import { buildCatchUp, buildCatchUpMessage } from "../coach_check.js";
+
+test("catch-up: complete = behind through yesterday + today's 2", () => {
+  const ledgerRows = [
+    { name: "Alex Baker", behind: 2 },
+    { name: "Jordan Lee", behind: 4 },
+    { name: "Dana Fox", behind: 0 },
+    { name: "Off Today", behind: 10 },
+  ];
+  const r = buildCatchUp({ ledgerRows, schedule, members });
+  // Every leader on today, whatever the shift time (the post goes out in the
+  // morning); the overnight ACC coach has no ledger row yet → 0 behind.
+  assert.deepEqual(r.rows.map((c) => [c.name, c.behind, c.owe]), [
+    ["Jordan Lee", 4, 6], ["Alex Baker", 2, 4],
+    ["Casey Morgan", 0, 2], ["Dana Fox", 0, 2], ["Morgan Hale", 0, 2], ["Sam Carter", 0, 2], ["Taylor Reed", 0, 2],
+  ]);
+  assert.deepEqual(r.behind.map((c) => c.name), ["Jordan Lee", "Alex Baker"]);
+
+  const m = buildCatchUpMessage(r.behind, { throughLabel: "Wed 10/7", sinceLabel: "8/22" });
+  assert.match(m.text, /counted through Wed 10\/7/);
+  assert.match(m.text, /@\[ALEX BAKER\]\(person:1000000001\): complete 4 today \(2 behind \+ today's 2\)/);
+  assert.match(m.text, /@\[Jordan Lee\]\(person:1000000002\): complete 6 today/);
+  assert.deepEqual(m.mentionedUserIds, ["1000000002", "1000000001"]);
+});
+
+test("catch-up: nobody on today behind → no message", () => {
+  const r = buildCatchUp({ ledgerRows: [{ name: "Alex Baker", behind: 0 }], schedule: [schedule[0]], members });
+  assert.equal(buildCatchUpMessage(r.behind, { throughLabel: "x", sinceLabel: "y" }), null);
+});
+
+test("catch-up: today's live submissions come off what is owed", () => {
+  const ledgerRows = [{ name: "Alex Baker", behind: 3 }, { name: "Jordan Lee", behind: 1 }];
+  const today = [{ name: "Alex Baker" }, { name: "Alex Baker" }, { name: "Jordan Lee", count: 3 }];
+  const r = buildCatchUp({ ledgerRows, schedule, members, today });
+  const alex = r.rows.find((c) => c.name === "Alex Baker");
+  assert.deepEqual([alex.doneToday, alex.owe], [2, 3]);
+  assert.deepEqual(r.behind.map((c) => c.name), ["Alex Baker"]);   // Jordan: 1 + 2 − 3 = 0, caught up
+  const m = buildCatchUpMessage(r.behind, { throughLabel: "Wed 10/7", sinceLabel: "8/22" });
+  assert.match(m.text, /complete 3 more today \(3 behind \+ today's 2, 2 done so far\)/);
 });

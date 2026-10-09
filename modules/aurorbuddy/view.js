@@ -203,7 +203,7 @@ export async function mount(host, container) {
     btn.disabled = true;
     btn.textContent = "⏳ Saving receipt…";
     if (statusEl) {
-      statusEl.textContent = "opening Secure receipt viewer…";
+      statusEl.textContent = "Saving…";
       statusEl.classList.remove("hidden");
     }
 
@@ -305,7 +305,7 @@ export async function mount(host, container) {
   }));
 
   offSubs.push(host.messaging.on("fill_progress", (msg) => {
-    setProgress(`Fill Auror: ${msg.line}`);
+    console.log("[AurorBuddy] fill_progress:", msg.line);
   }));
 
   offSubs.push(host.messaging.on("appriss_progress", (msg) => {
@@ -323,10 +323,8 @@ export async function mount(host, container) {
       setScanProgressBar({ completed, total, matched, visible: true });
     } else if (phase === "congestion") {
       const secs = Math.round((windowMs ?? 30_000) / 1000);
-      setWarning(
-        `⚠ Secure is congested — ${timeouts ?? 3}+ request timeouts in the last ${secs}s. ` +
-        `The scan will continue and retry, but expect longer load times.`
-      );
+      console.warn(`[AurorBuddy] Secure congestion: ${timeouts ?? 3}+ timeouts in ${secs}s`);
+      setWarning("Secure is slow right now. The scan will keep going.");
     } else if (phase === "done") {
       const errLine = errors ? ` (${errors} error${errors === 1 ? "" : "s"})` : "";
       setCtxLine("ab-ctx-reviewing",
@@ -394,19 +392,13 @@ export async function mount(host, container) {
     const diag     = scanResp.diag     ?? {};
 
     if (suspects.length === 0) {
-      const diagLine = diag.rawTotal != null
-        ? ` · Auror index reported ${diag.rawTotal} matching Person record(s); ${diag.rowsFetched ?? 0} fetched; ${diag.afterActionableFilter ?? 0} passed the actionable filter ($100-$10k, 2+ events, named).`
-        : "";
-      const hint = diag.rawTotal === 0
-        ? " If you know suspects exist, either (a) the siteTraits format is off — check the 'auror_site' column above — or (b) they're outside the selected date range. Try 60/90 days."
-        : "";
-      setProgress(`Auror returned 0 suspects.${diagLine}${hint}`);
+      setProgress("No suspects found. Try 60 or 90 days.");
       console.log("[auror] full diag:", diag);
       renderTimings(_scanTimings);
       return;
     }
 
-    setProgress(`Auror returned ${suspects.length} suspect(s) (index total: ${diag.rawTotal ?? "?"}). Cross-referencing Secure…`);
+    setProgress(`Checking ${suspects.length} suspect${suspects.length === 1 ? "" : "s"}…`);
     setCtxIndividuals(suspects.length, _scanStores.length);
 
     const apprResp = await host.messaging.send("appriss_lookup", { suspects, homeStore: store });
@@ -415,10 +407,8 @@ export async function mount(host, container) {
     const matched = apprResp.matched ?? [];
     const errors  = apprResp.errors  ?? [];
 
-    const errLine = errors.length
-      ? ` · ${errors.length} error(s): ${errors.slice(0, 3).map((e) => `${e.name} (${e.error.slice(0, 60)})`).join(" · ")}${errors.length > 3 ? "…" : ""}`
-      : "";
-    setProgress(`Secure matched ${matched.length} / ${suspects.length} at store ${store}.${errLine}`);
+    if (errors.length) console.warn("[AurorBuddy] Secure lookup errors:", errors);
+    setProgress(`${matched.length} of ${suspects.length} have activity at your store.`);
     _scanFinalised = true;
     renderSuspects(matched, store);
     renderTimings(_scanTimings);
@@ -451,25 +441,24 @@ export async function mount(host, container) {
       + (headerCity ? ` · ${escapeHtml(headerCity)}, ${escapeHtml(headerState)}` : "")
       + ` (zip ${escapeHtml(headerZip)})`;
 
+    if (badParseCount > 0) {
+      console.warn("[AurorBuddy] store addresses failed ADDR_RE parse:",
+        stores.filter((s) => !s.parse_ok).map((s) => s.address));
+    }
     const warning = badParseCount > 0
-      ? `<div class="muted" style="color:var(--apai-error); margin-top:4px">
-           ⚠ ${badParseCount} store address${badParseCount === 1 ? "" : "es"} didn't parse — Auror lookups for those stores will miss.
-           Check the <code>raw address</code> column; if Walmart's format changed, update ADDR_RE in lib/stores.js.
-         </div>`
+      ? `<div class="muted" style="color:var(--apai-error); margin-top:4px">Some nearby stores couldn't be checked.</div>`
       : "";
 
     const rows = stores.map((s) => {
       const isHome = s.number === homeNum;
-      const badge  = isHome  ? `<span title="home store — excluded from Auror scan" style="color:var(--apai-muted)">home</span>` : "";
-      const parseBadge = s.parse_ok ? "" : `<span title="ADDR_RE didn't match — auror_site will be missing street/city/state" style="color:var(--apai-error)">⚠</span>`;
+      const badge  = isHome  ? `<span title="Your store" style="color:var(--apai-muted)">home</span>` : "";
+      const parseBadge = s.parse_ok ? "" : `<span title="Couldn't check this store" style="color:var(--apai-error)">⚠</span>`;
       return `
         <tr${isHome ? ' style="background:#F9FAFB"' : ""}>
           <td>${escapeHtml(s.number)} ${badge} ${parseBadge}</td>
           <td>${escapeHtml(s.store_type)}</td>
           <td>${s.miles.toFixed(1)} mi</td>
           <td>${escapeHtml(s.city)}, ${escapeHtml(s.state)}</td>
-          <td style="font-family:var(--font-mono);font-size:11px;color:var(--apai-muted)">${escapeHtml(s.address)}</td>
-          <td style="font-family:var(--font-mono);font-size:11px;color:${s.parse_ok ? "var(--apai-blue)" : "var(--apai-error)"}">${escapeHtml(s.auror_site)}</td>
         </tr>`;
     }).join("");
 
@@ -485,8 +474,6 @@ export async function mount(host, container) {
               <th style="padding:4px 8px">Type</th>
               <th style="padding:4px 8px">Distance</th>
               <th style="padding:4px 8px">City / State</th>
-              <th style="padding:4px 8px">Raw address</th>
-              <th style="padding:4px 8px">auror_site (what Auror indexes on)</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -522,7 +509,7 @@ export async function mount(host, container) {
     const nameCell = s.auror_url
       ? `<a href="${escapeHtml(s.auror_url)}" target="_blank" rel="noopener"><b>${escapeHtml(s.name || "Unknown")}</b></a>`
       : `<b>${escapeHtml(s.name || "Unknown")}</b>`;
-    const personId = s.person_id ? `<div class="muted mono tiny">${escapeHtml(s.person_id)}</div>` : "";
+    const personId = "";
     const threat   = s.threatening
       ? `<span class="badge badge-threat" title="${escapeHtml((s.threatening_types || []).join(", "))}">⚠ THREAT</span>`
       : "";
@@ -582,8 +569,7 @@ export async function mount(host, container) {
     } else {
       hostEl.textContent =
         `${visible} suspect${visible === 1 ? "" : "s"} with home-store activity · ` +
-        `${hidden} hidden (Secure summary flagged them but detail shows no home-store transactions — ` +
-        `enable 'Show all stores' above to view).`;
+        `${hidden} more at other stores. Turn on Show all stores to see them.`;
     }
   }
 
@@ -807,9 +793,8 @@ export async function mount(host, container) {
   }
   function setCtxIndividuals(individuals, storeCount) {
     setCtxLine("ab-ctx-individuals",
-      `We have identified <b>${individuals}</b> individual${individuals === 1 ? "" : "s"} at ` +
-      `those <b>${storeCount}</b> store${storeCount === 1 ? "" : "s"} that have a high probability of having ` +
-      `impacted your store.`);
+      `<b>${individuals}</b> suspect${individuals === 1 ? "" : "s"} found at ` +
+      `<b>${storeCount}</b> nearby store${storeCount === 1 ? "" : "s"}.`);
   }
   function setCtxReviewing(current, total, matched) {
     setCtxLine("ab-ctx-reviewing",
@@ -847,7 +832,7 @@ export async function mount(host, container) {
           <div class="ab-awaiting-row" data-event-id="${escapeHtml(r.aurorEventId || "")}" data-workflow-id="${escapeHtml(r.workflowId || "")}">
             <div class="ab-awaiting-meta">
               <div><b>${escapeHtml(r.suspectName || "(unknown suspect)")}</b> · ${escapeHtml(r.storeNumber || "")} · ${ts}</div>
-              <div class="muted small">Candidate (tender): ${cand} · ${aurorLink}</div>
+              <div class="muted small">Receipt total: ${cand} · ${aurorLink}</div>
             </div>
             <div class="ab-awaiting-action">
               <span class="ab-money-prefix">$</span>

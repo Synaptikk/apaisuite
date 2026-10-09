@@ -78,6 +78,7 @@
 .module-punchlookup .pr-problem { color: #b91c1c; font-size: 11px; padding: 0 5px 3px; }
 .module-punchlookup .pr-del { border: 0; background: none; color: #94a3b8; font-size: 18px; cursor: pointer; line-height: 1; padding: 5px; }
 .module-punchlookup .pr-del:hover { color: #b91c1c; }
+.module-punchlookup .pr-break td { background: #eff6ff; color: #1e3a8a; font-weight: 600; font-size: 12px; padding: 5px 6px; }
 .module-punchlookup .pr-gap td { background: #fffbeb; color: #92400e; font-style: italic; font-size: 12px; padding: 5px 6px; }
 .module-punchlookup .pr-link { border: 0; background: none; color: #1d4ed8; text-decoration: underline; cursor: pointer; font: inherit; font-style: normal; margin-left: 8px; }
 .module-punchlookup .pr-empty { color: #64748b; padding: 14px 8px !important; }
@@ -160,3 +161,34 @@
 .module-punchlookup .pr-people { font-size: 12px; color: #475569; flex: 1 1 100%; }
 .module-punchlookup .pr-people > span:first-child { color: #64748b; margin-right: 6px; }
 .module-punchlookup .pr-donelist { color: #15803d; }
+
+/* ── Store punch-edit review (audit_view.js) ──
+   Collapsed by default; the tables sit on the same light "paper" as the report. */
+.module-punchlookup .pl-audit { border: 1px solid var(--apai-border); border-radius: var(--rad-md); padding: var(--sp-3) var(--sp-4); background: var(--apai-bg-elev); }
+.module-punchlookup .pa > summary { cursor: pointer; display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; list-style: none; }
+.module-punchlookup .pa > summary::-webkit-details-marker { display: none; }
+.module-punchlookup .pa > summary::before { content: "▸"; color: var(--apai-muted); }
+.module-punchlookup .pa[open] > summary::before { content: "▾"; }
+.module-punchlookup .pa-sub { color: var(--apai-muted); font-size: var(--fs-sm); }
+.module-punchlookup .pa-form, .module-punchlookup .pa-msg { margin-top: var(--sp-3); }
+.module-punchlookup .pa-out { margin-top: var(--sp-3); background: #fff; color: #111; border: 1px solid var(--apai-border); border-radius: var(--rad-md); padding: var(--sp-4); }
+.module-punchlookup .pa-out .input { background: #fff; color: #111; border-color: #cbd5e1; }
+.module-punchlookup .pa-out .pl-check { color: #334155; }
+.module-punchlookup .pa-store { font-size: 13px; color: #334155; margin-bottom: var(--sp-3); line-height: 1.5; }
+.module-punchlookup .pa-filter { width: 200px; }
+.module-punchlookup .pa-tablewrap { overflow-x: auto; }
+.module-punchlookup .pa-table, .module-punchlookup .pa-ev { width: 100%; border-collapse: collapse; font-size: 13px; }
+.module-punchlookup .pa-table th { text-align: left; background: #1f3a5f; color: #fff; font-weight: 600; font-size: 12px; padding: 6px 8px; cursor: pointer; white-space: nowrap; user-select: none; }
+.module-punchlookup .pa-table th.is-sorted { background: #2c5282; }
+.module-punchlookup .pa-table td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top; }
+.module-punchlookup .pa-table td.num, .module-punchlookup .pa-ev td.num { text-align: right; white-space: nowrap; }
+.module-punchlookup .pa-table td.is-alert { color: #b91c1c; font-weight: 700; }
+.module-punchlookup .pa-table small { color: #64748b; }
+.module-punchlookup .pa-name { margin-left: 0; text-align: left; white-space: nowrap; }
+.module-punchlookup .pa-flags span { display: block; color: #b45309; font-size: 12px; white-space: nowrap; }
+.module-punchlookup .pa-detail > td { background: #f8fafc; padding: var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-5); }
+.module-punchlookup .pa-ev th { text-align: left; background: #e2e8f0; color: #1e293b; font-weight: 600; font-size: 12px; padding: 4px 6px; }
+.module-punchlookup .pa-ev td { border-bottom: 1px solid #e5e7eb; padding: 4px 6px; }
+.module-punchlookup .pa-ev tr.is-alert td { background: #fef2f2; color: #b91c1c; }
+.module-punchlookup .pa-none { color: #64748b; font-size: 13px; }
+.module-punchlookup .pa-note { margin: var(--sp-3) 0 0; font-size: 12px; color: #475569; max-width: 110ch; line-height: 1.5; }

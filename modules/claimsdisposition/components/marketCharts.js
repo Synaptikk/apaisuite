@@ -21,7 +21,7 @@ function chartCard(title, subtitle) {
     h("div", { class: "cd-section-head" },
       h("div", null,
         h("div", { class: "cd-section-title" }, title),
-        h("div", { class: "cd-section-sub" }, subtitle),
+        subtitle ? h("div", { class: "cd-section-sub" }, subtitle) : null,
       ),
     ),
     slot,
@@ -36,9 +36,9 @@ export function createMarketCharts() {
   let barCountByStore = null;
   let barDollarByStore = null;
 
-  const trendCard = chartCard("Daily Trend", "Disposals & donations across the selected window");
-  const countCard = chartCard("Disposals vs Donations by Store", "Item counts, current filter window");
-  const dollarCard = chartCard("Disposal $ vs Donation $ by Store", "Dollar value at cost");
+  const trendCard = chartCard("Daily Trend");
+  const countCard = chartCard("Disposals vs Donations by Store");
+  const dollarCard = chartCard("Disposal $ vs Donation $ by Store", "At cost");
 
   // Layout: trend is full width; the two store charts share the second row.
   const trendWrap = h("div", null, trendCard.card);

@@ -211,7 +211,7 @@ export async function mount(host, container) {
     const keyOf = (t, s) => pairFromTraining(t, s, { registers: state?.registers }).key;
     const actioned = new Set(all.filter((t) => t.paid.every((s) => isDone(keyOf(t, s)))));
     const list = ui.train.showReviewed ? all : all.filter((t) => !actioned.has(t));
-    const head = `<h2 class="bl-h2">Training receipts, paid <span class="bl-muted">door-host handhelds, matched to the sale that carries their lines · document one to charge the first transaction's cashier</span></h2>
+    const head = `<h2 class="bl-h2">Training receipts, paid</h2>
       <div class="bl-chips" data-controls="train"><button class="bl-chip bl-chip-r" data-flag="showReviewed" aria-pressed="${ui.train.showReviewed}" title="Documented and cleared cards leave this section; show them again to edit or undo">Show reviewed <small>${actioned.size}</small></button></div>`;
     const cards = list.map((t) => {
       const items = t.items.map((i) => `${esc(i.desc)} ${MONEY(i.cents)}`).join(", ");
@@ -254,7 +254,7 @@ export async function mount(host, container) {
       <div class="bl-chips"><button class="bl-chip bl-chip-v" data-flag="vision" aria-pressed="${s.vision}">Vision only</button><button class="bl-chip bl-chip-t" data-flag="training" aria-pressed="${s.training}">Training only</button>${reviewedChip(reviewedCount(cat))}</div>
       <label class="bl-field">Min $ <input class="input bl-min" data-min type="number" min="0" step="1" value="${s.minDollars}"></label>
       <label class="bl-field bl-sort">Sort <select class="input" data-sort>
-        <option value="train_value">Training first, then second $</option><option value="value">Second transaction $</option><option value="score">Score</option><option value="gap">Shortest gap</option><option value="date">Date and time</option></select></label>`;
+        <option value="train_value">Training first, then second $</option><option value="value">Second transaction $</option><option value="score">Likelihood</option><option value="gap">Shortest gap</option><option value="date">Date and time</option></select></label>`;
     host_.querySelector("[data-sort]").value = s.sort;
   }
 
@@ -308,7 +308,7 @@ export async function mount(host, container) {
   function detailRow(p) {
     const kv = (rows) => `<dl class="bl-kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
     return `<tr class="bl-detail"><td colspan="8"><div class="bl-dgrid">
-      <div><h4>First transaction ${videoBtn(p.date, p.t1.reg, p.t1.tr, p.t1.time)}</h4>${kv([["Register", `${p.t1.reg} (${esc(p.t1.type)})`], ["Cashier", `op ${esc(p.t1.op)}${opName(p.t1.op) ? ` · ${esc(opName(p.t1.op))}` : ""}`], ["TR#", esc(p.t1.tr)], ["Time", esc(p.t1.time)], ["Items", p.t1.items], ["Total", `${MONEY(p.t1.total)} ${esc(p.t1.tender)}`], ["Token", `…${esc(p.token)}`]])}</div>
+      <div><h4>First transaction ${videoBtn(p.date, p.t1.reg, p.t1.tr, p.t1.time)}</h4>${kv([["Register", `${p.t1.reg} (${esc(p.t1.type)})`], ["Cashier", `op ${esc(p.t1.op)}${opName(p.t1.op) ? ` · ${esc(opName(p.t1.op))}` : ""}`], ["TR#", esc(p.t1.tr)], ["Time", esc(p.t1.time)], ["Items", p.t1.items], ["Total", `${MONEY(p.t1.total)} ${esc(p.t1.tender)}`]])}</div>
       <div><h4>Second transaction · ${p.gapMin} min later ${videoBtn(p.date, p.t2.reg, p.t2.tr, p.t2.time)}</h4>${kv([["Register", `${p.t2.reg} (${esc(p.t2.type)})`], ["Operator", `op ${esc(p.t2.op)}`], ["TR#", esc(p.t2.tr)], ["Time", esc(p.t2.time)], ["Total", `${MONEY(p.t2.total)} ${esc(p.t2.tender)}`]])}
         <ul class="bl-ilist">${p.t2.items.map((it) => `<li><span>${esc(it.desc)} <span class="bl-mono bl-muted">${esc(it.code)}</span>${it.onT1 ? ` <span class="bl-also">also on first</span>` : ""}${it.service ? ` <span class="bl-also">money service</span>` : ""}</span><span class="bl-mono">${MONEY(it.cents)}</span></li>`).join("")}</ul>
         ${p.trainingRef ? `<div class="bl-chain"><b>Training receipt</b> ${esc(p.trainingRef.time)} · reg ${p.trainingRef.reg} · op ${esc(p.trainingRef.op)} · TR ${esc(p.trainingRef.tr)}</div>` : ""}</div>
@@ -333,10 +333,10 @@ export async function mount(host, container) {
     const v = ui.video[p.key];
     const saved = recFor(p.key)?.videoIds;
     if (!v && saved && (saved.t1 || saved.t2)) return `<div class="bl-vidrow">${apprissLinks(saved.t1, "First", p.t1.reg)}${apprissLinks(saved.t2, "Second", p.t2.reg)}<button class="btn btn-sm btn-ghost bl-vid-find" data-key="${esc(p.key)}">Look up again</button></div>`;
-    if (!v) return `<div class="bl-vidrow"><button class="btn btn-sm btn-secondary bl-vid-find" data-key="${esc(p.key)}">Find APPRISS video</button><span class="bl-muted">transaction-id CCTV and receipt links through Open Drawer, like the L/S triage; the ▶ Video buttons above play the register by time</span></div>`;
+    if (!v) return `<div class="bl-vidrow"><button class="btn btn-sm btn-secondary bl-vid-find" data-key="${esc(p.key)}">Find video</button></div>`;
     if (v.busy) return `<div class="bl-vidrow bl-muted">Looking up Open Drawer for reg ${p.t1.reg}${String(p.t2.reg) !== String(p.t1.reg) ? ` and reg ${p.t2.reg}` : ""} on ${mmdd(p.date)}…</div>`;
     if (!v.ok) return `<div class="bl-vidrow"><span class="bl-warn">${esc(v.error || "Open Drawer lookup failed.")}</span>${v.loginUrl ? `<a href="${esc(v.loginUrl)}" target="_blank" rel="noopener">Sign in to APPRISS</a>` : ""}<button class="btn btn-sm btn-ghost bl-vid-find" data-key="${esc(p.key)}">Retry</button></div>`;
-    const none = (reg) => `<span class="bl-muted">reg ${reg}: ${v.empty?.includes(String(reg)) ? "no drawer opens that day in Open Drawer (outside APPRISS's 60-day window, or none)" : "no transaction id"}</span>`;
+    const none = (reg) => `<span class="bl-muted">reg ${reg}: ${v.empty?.includes(String(reg)) ? "no video (over 60 days old)" : "no video found"}</span>`;
     return `<div class="bl-vidrow">${v.t1 ? apprissLinks(v.t1, "First", p.t1.reg) : none(p.t1.reg)}${v.t2 ? apprissLinks(v.t2, "Second", p.t2.reg) : none(p.t2.reg)}${v.explorer ? `<a class="bl-muted" href="${esc(v.explorer)}" target="_blank" rel="noopener">Open Drawer in APPRISS</a>` : ""}</div>`;
   }
 
@@ -344,7 +344,7 @@ export async function mount(host, container) {
     const rec = recFor(p.key);
     if (ui.editing.has(p.key)) return missForm(p, rec);
     if (!rec && isCleared(p.key)) return `<div class="bl-doc-actions"><span class="badge badge-neutral bl-clrd">Cleared</span><span class="bl-muted">${esc(clearedTitle(p.key))}</span><button class="btn btn-sm btn-ghost bl-unclear" data-key="${esc(p.key)}">Undo</button><button class="btn btn-sm btn-secondary bl-doc-open" data-key="${esc(p.key)}">Document this miss instead</button></div>`;
-    if (!rec) return `<div class="bl-doc-actions"><button class="btn btn-sm btn-primary bl-doc-open" data-key="${esc(p.key)}">Document this miss</button><button class="btn btn-sm btn-secondary bl-clear" data-key="${esc(p.key)}" title="Looked at, not a miss: take it out of the queue">Clear — not a miss</button><span class="bl-muted">documenting saves the cashier, what was missed, how it was caught and your note, and charges the miss to the cashier's ledger; both are kept across pulls</span></div>`;
+    if (!rec) return `<div class="bl-doc-actions"><button class="btn btn-sm btn-primary bl-doc-open" data-key="${esc(p.key)}">Document this miss</button><button class="btn btn-sm btn-secondary bl-clear" data-key="${esc(p.key)}" title="Looked at, not a miss: take it out of the queue">Clear — not a miss</button></div>`;
     return `<div class="bl-doc-card">
       <div><span class="badge badge-neutral bl-docd">Documented</span> <b>${esc(CAUSES[rec.cause] || rec.cause)}</b> · ${esc(OUTCOMES[rec.outcome] || rec.outcome)} · ${esc(VIDEO_REVIEW[rec.video] || VIDEO_REVIEW.not_reviewed)}</div>
       <div>Cashier op ${esc(rec.cashier.op)}${rec.cashier.name ? ` · ${esc(rec.cashier.name)}` : ""} · missed ${MONEY(rec.missedCents)}</div>
@@ -369,11 +369,11 @@ export async function mount(host, container) {
       <label class="bl-field">Video ${sel("video", VIDEO_REVIEW, video)}</label>
       ${p.manualCashier ? `<label class="bl-field">First transaction register <input class="input" name="t1reg" value="${esc(p.t1.reg === "" || p.t1.reg == null ? "" : p.t1.reg)}" inputmode="numeric" placeholder="register" title="Blank counts as a manned lane"></label>
       <label class="bl-field">Date <input class="input" type="date" name="t1date" value="${esc(p.date || "")}"></label>
-      <label class="bl-field">Time <input class="input" type="time" step="1" name="t1time" value="${esc(p.t1.time || "")}" title="About when the customer was rung up: EJ lists the sales on that register just before and after"></label>
-      <div class="bl-field"><span>&nbsp;</span><button type="button" class="btn btn-sm btn-secondary bl-find-op" title="Pull that register's journal from EJ Viewer and list the operators who rang sales around that time">Find operator in EJ</button></div>
+      <label class="bl-field">Time <input class="input" type="time" step="1" name="t1time" value="${esc(p.t1.time || "")}" title="About when the customer was rung up"></label>
+      <div class="bl-field"><span>&nbsp;</span><button type="button" class="btn btn-sm btn-secondary bl-find-op" title="Who rang sales around this time">Find operator</button></div>
       <div class="bl-field bl-field-wide bl-opfind" data-opfind></div>
       <label class="bl-field">First transaction op <input class="input" name="t1op" value="${esc(p.t1.op || "")}" required inputmode="numeric" placeholder="operator number" title="The cashier who rang the customer's first transaction: this miss is charged to them"></label>` : ""}
-      <label class="bl-field">Cashier name <input class="input" name="cashierName" value="${esc(name)}" placeholder="op ${esc(p.t1.op)}" title="${fromJournal ? "From the journal's sign-on banner, as EJ prints it" : ""}"><span class="bl-muted bl-namehint">${ui.nameLookup[String(p.t1.op)] === "busy" ? "looking the name up in APPRISS…" : ui.nameLookup[String(p.t1.op)] === "none" && !name ? "not in APPRISS (no drawer open) and no sign-on banner in the journal for the cached days" : ""}</span></label>
+      <label class="bl-field">Cashier name <input class="input" name="cashierName" value="${esc(name)}" placeholder="op ${esc(p.t1.op)}" ><span class="bl-muted bl-namehint">${ui.nameLookup[String(p.t1.op)] === "busy" ? "looking up name…" : ui.nameLookup[String(p.t1.op)] === "none" && !name ? "name not found" : ""}</span></label>
       <label class="bl-field bl-field-wide">Note <textarea class="input" name="note" data-auto="${rec ? "0" : "1"}">${esc(rec ? rec.note : draftNote(p, { cause, name }))}</textarea></label>
       <div class="bl-doc-actions"><button type="submit" class="btn btn-sm btn-primary">${rec ? "Save changes" : "Save"}</button><button type="button" class="btn btn-sm btn-ghost bl-doc-cancel" data-key="${esc(p.key)}">Cancel</button></div>
     </form>`;
@@ -462,7 +462,7 @@ export async function mount(host, container) {
     if (p.phase === "pull") els.progress.textContent = `Pulling ${withWeekday(p.date)} (${p.i + 1} of ${p.n})…`;
     else if (p.phase === "done") { els.progress.textContent = `${withWeekday(p.date)}: ${p.records} records, ${p.pairs} pairs (${p.i + 1} of ${p.n})`; refresh(); }   // each day is saved as it lands — show it
     else if (p.phase === "error") els.progress.textContent = `${withWeekday(p.date)}: ${p.error}`;
-    else if (p.phase === "names") els.progress.textContent = `APPRISS: op ${p.op} (${p.i + 1} of ${p.n})…`;
+    else if (p.phase === "names") els.progress.textContent = `Looking up names (${p.i + 1} of ${p.n})…`;
   }));
   unsubs.push(host.messaging.on("state_changed", () => { if (!busy && Date.now() > ignoreStateChangedUntil) refresh(); }));
 
@@ -520,24 +520,23 @@ export async function mount(host, container) {
   unsubs.push(host.ui.delegate(container, "keydown", ".bl-cash-name", (e, el) => { if (e.key === "Enter") { e.preventDefault(); el.blur(); } }));
   $("#boblisa-names").addEventListener("click", async () => {
     const btn = $("#boblisa-names"); btn.disabled = true;
-    els.progress.textContent = "Looking up operator names in APPRISS…";
+    els.progress.textContent = "Looking up names…";
     const res = await host.messaging.sendRaw("lookup_names", {}, { timeoutMs: 10 * 60_000 }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
     btn.disabled = false; els.progress.textContent = "";
     if (!res?.ok) {
       const login = res?.loginUrl ? ` <a href="${esc(res.loginUrl)}" target="_blank" rel="noopener">Open APPRISS Secure and sign in</a>, then look up again.` : "";
       showStatus("error", `${esc(res?.error || "Name lookup failed.")}${login}`, true);
     } else {
-      const parts = [`${res.resolved} operator${res.resolved === 1 ? "" : "s"} named from APPRISS`];
-      if (res.banners) parts.push(`${res.banners} named from the journal's sign-on banner (no drawer open in APPRISS)`);
-      if (res.unresolved) parts.push(`${res.unresolved} still unnamed: no drawer open on a cached day and no banner found${res.ejLoginUrl ? " (EJ Viewer is signed out)" : ""}`);
-      if (res.upgraded) parts.push(`${res.upgraded} documented miss${res.upgraded === 1 ? "" : "es"} now carry the full name`);
-      showStatus(res.loginUrl ? "warn" : "info", parts.join(" · ") + (res.loginUrl ? ` — APPRISS signed out part way; sign in and run again for the rest.` : ""));
+      const named = (res.resolved || 0) + (res.banners || 0);
+      const parts = [`${named} name${named === 1 ? "" : "s"} found`];
+      if (res.unresolved) parts.push(`${res.unresolved} still unknown${res.ejLoginUrl ? " (sign in to EJ Viewer)" : ""}`);
+      showStatus(res.loginUrl ? "warn" : "info", parts.join(" · ") + (res.loginUrl ? ` — sign in to APPRISS and run again for the rest.` : ""));
     }
     if (res && res.days) { state = { ...(state || {}), ...res }; paint(); }
   });
   $("#boblisa-cash-export").addEventListener("click", async () => {
     const res = await host.messaging.sendRaw("export_cashiers", {});
-    host.ui.toast(res?.ok ? `${res.rows} cashier${res.rows === 1 ? "" : "s"} saved to Downloads\\${String(res.filename).replace(/\//g, "\\")}` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
+    host.ui.toast(res?.ok ? `${res.rows} cashier${res.rows === 1 ? "" : "s"} saved to Downloads` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
   });
   unsubs.push(host.ui.delegate(container, "keydown", ".bl-row", (e, el) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }));
   // Video links look like anchors but are checked before they open: the SW
@@ -590,9 +589,8 @@ export async function mount(host, container) {
     const form = container.querySelector(`[data-docform="${CSS.escape(p.key)}"]`);
     if (!form) { if (found) repaintAll(); return; }
     if (found && !form.cashierName.value.trim()) { form.cashierName.value = found; form.cashierName.dispatchEvent(new Event("input", { bubbles: true })); }
-    form.cashierName.title = state?.people?.[op] ? "From APPRISS" : found ? "From the journal's sign-on banner, as EJ prints it (APPRISS has no drawer open for this operator)" : "";
     const hint = form.querySelector(".bl-namehint");
-    if (hint) hint.textContent = found ? (state?.people?.[op] ? "" : "journal banner name; APPRISS has no drawer open for this operator") : !form.cashierName.value.trim() ? (res?.loginUrl || res?.ejLoginUrl ? `${res.loginUrl ? "APPRISS" : "EJ Viewer"} is signed out: sign in, then reopen this form` : "not in APPRISS (no drawer open) and no sign-on banner in the journal for the cached days") : "";
+    if (hint) hint.textContent = found ? "" : !form.cashierName.value.trim() ? (res?.loginUrl || res?.ejLoginUrl ? `Sign in to ${res.loginUrl ? "APPRISS" : "EJ Viewer"}, then reopen this form` : "name not found") : "";
   }
   unsubs.push(host.ui.delegate(container, "click", ".bl-doc-cancel", (e, el) => { e.stopPropagation(); ui.editing.delete(el.dataset.key); repaintAll(); }));
   // The drafted note follows the cause (BoB / Lisa) and the name until the analyst types in it.
@@ -679,12 +677,12 @@ export async function mount(host, container) {
     if (!p) return;
     ui.video[key] = { busy: true }; repaintAll();
     const res = await host.messaging.sendRaw("link_video", { date: p.date, t1: { reg: p.t1.reg, tr: p.t1.tr, time: p.t1.time }, t2: { reg: p.t2.reg, tr: p.t2.tr, time: p.t2.time } }, { timeoutMs: 90_000 }).catch((err) => ({ ok: false, error: String(err?.message || err) }));
-    ui.video[key] = res || { ok: false, error: "No response from the service worker." };
+    ui.video[key] = res || { ok: false, error: "Lookup failed. Try again." };
     repaintAll();
   }));
   $("#boblisa-doc-export").addEventListener("click", async () => {
     const res = await host.messaging.sendRaw("export_misses", {});
-    host.ui.toast(res?.ok ? `${res.rows} row${res.rows === 1 ? "" : "s"} saved to Downloads\\${String(res.filename).replace(/\//g, "\\")}` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
+    host.ui.toast(res?.ok ? `${res.rows} row${res.rows === 1 ? "" : "s"} saved to Downloads` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
   });
 
   // ── boot ──────────────────────────────────────────────────────

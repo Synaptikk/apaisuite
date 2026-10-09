@@ -19,7 +19,7 @@ export function createDayOfWeek() {
       h("div", null,
         h("div", { class: "cd-section-title" }, "Day-of-Week Analysis"),
         h("div", { class: "cd-section-sub" },
-          "Compare daily volume to the rolling baseline. Dashed lines mark the average across the selected window."),
+          "Dashed line = average"),
       ),
     ),
     chartSlot,

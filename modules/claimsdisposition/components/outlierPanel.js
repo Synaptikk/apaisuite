@@ -177,8 +177,9 @@ export function createOutlierPanel({ onSelectStore } = {}) {
       type: "button",
       class: "cd-outlier-rule",
       style: { cursor: "pointer", border: "none", textDecoration: "underline", color: "var(--apai-blue)" },
+      title: `Rule ${o.ruleId}`,
       onClick: (e) => { e.stopPropagation(); openRulesModal(); },
-    }, o.ruleId);
+    }, RULE_REFERENCE.find((r) => r.id === o.ruleId)?.title || o.ruleId);
 
     return h("article", {
       class: "cd-card",

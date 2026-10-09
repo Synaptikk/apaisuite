@@ -5,9 +5,9 @@
 <div class="sp-header">
   <h1>StockingPlan
     <button id="sp-help-btn" class="sp-help-btn" type="button"
-            aria-label="How the hours are worked out" title="How the hours are worked out">?</button>
+            aria-label="Reading the plan" title="Reading the plan">?</button>
   </h1>
-  <p class="muted">Overnight stocking plan from CaseVisibility freight + schedule.</p>
+  <p class="muted">Overnight stocking plan.</p>
 </div>
 
 <section class="card sp-config">
@@ -28,7 +28,7 @@
       </svg>
       Collect
     </button>
-    <div id="sp-status" class="status-strip">Ready. Click Collect to load schedule and freight from CaseVisibility.</div>
+    <div id="sp-status" class="status-strip">Ready.</div>
   </div>
 </section>
 
@@ -58,15 +58,12 @@
   <div id="sp-suggest-blocks" class="sp-suggest-blocks"></div>
   <div id="sp-suggest-why" class="sp-suggest-why"></div>
   <pre id="sp-suggest-draft" class="sp-suggest-draft"></pre>
-  <p class="muted tiny">A first draft, not a decision. Hours are CaseVisibility's per-department estimate rolled into the lines the store writes in; heavy/light is against each line's own median. Edit before you send.</p>
+  <p class="muted tiny">First draft — edit before you send.</p>
 </section>
 <!-- Freight plan table — hidden until collect runs -->
 <section id="sp-plan-section" class="card sp-plan" hidden>
   <h2 class="sp-section-title">Freight Plan</h2>
-  <p class="sp-rates-note muted tiny">
-    Hours are CaseVisibility's own stocking-time estimate per department.
-    Areas are the store total; departments and D92/95 aisles are breakdowns of it, not additions.
-  </p>
+  <p class="sp-rates-note muted tiny">Departments and aisles are part of the area totals, not extra.</p>
   <div class="sp-view-toggle" role="group" aria-label="Breakdown level">
     <button type="button" class="sp-toggle-btn is-active" data-level="area">By area</button>
     <button type="button" class="sp-toggle-btn" data-level="dept">By department</button>
@@ -109,54 +106,17 @@
     <button class="sp-help-close" aria-label="Close">&times;</button>
   </form>
 
-  <h2>How the hours are worked out</h2>
-  <p class="muted tiny">Five separate calculations. The freight ones are CaseVisibility&rsquo;s own &mdash; this module runs them, it doesn&rsquo;t invent them.</p>
-
-  <h3>1 &middot; Freight hours</h3>
-  <p>Straight from CaseVisibility&rsquo;s <code>calc_getStockingHoursByDept</code>:</p>
-  <pre class="sp-help-code">hours = count / CPH(dept)</pre>
+  <h2>Reading the plan</h2>
   <ul>
-    <li>CPH is per department &mdash; from the workforce-planning table when the store has one, otherwise CaseVisibility&rsquo;s built-in list.</li>
-    <li>It is applied <strong>twice</strong>, once to full cases and once to inner packs, and the two are added:
-      <br><code>dept total = cases/CPH + inner packs/CPH</code></li>
-    <li>Vendor-stocked departments return <strong>0</strong> &mdash; not our labour.</li>
-    <li>Summed over every load CaseVisibility counts against this business date.</li>
+    <li><strong>Short / tight</strong> &mdash; tonight&rsquo;s crew hours against freight hours: under 1.10&times; is short, under 1.25&times; is tight.</li>
+    <li><strong>Heavy / light</strong> &mdash; a line compared with its usual size. Lines under 2h aren&rsquo;t labelled.</li>
+    <li><strong>Left</strong> &mdash; hours the shift still has for zoning, backroom and other work.</li>
+    <li>Stock 2 + Overnight is tonight&rsquo;s crew; Stock 1 is tomorrow morning&rsquo;s.</li>
+    <li>Team leads and coaches are listed but not counted as stocking hours. Call-outs are taken out.</li>
+    <li>Area totals are the store total; departments and aisles are part of them, not extra.</li>
+    <li>Breakpack-heavy departments (D19, D40, D46, D2, fashion) can read high.</li>
   </ul>
-  <p><strong>Store total = the seven area totals only.</strong> Departments break down their area, and D92/95 aisles break down two departments inside Food (Non-FDD) &mdash; so adding the levels together would count the same freight two or three times.</p>
 
-  <h3>2 &middot; Rates in use</h3>
+  <h3>Cases per hour by department</h3>
   <div id="sp-help-rates" class="sp-help-rates"></div>
-
-  <h3>3 &middot; If CaseVisibility&rsquo;s figures are missing</h3>
-  <p>Only when the per-department capture fails. The Labour card then reads <em>our case rates</em> instead of <em>CaseVisibility estimate</em>:</p>
-  <pre class="sp-help-code">cases / 55   (food &amp; consumables)
-cases / 45   (GM)
-+ inner packs / 80
-rounded UP to the next half hour</pre>
-
-  <h3>4 &middot; Labour hours</h3>
-  <pre class="sp-help-code">per associate = (scheduled minutes &minus; scheduled meal) / 60</pre>
-  <ul>
-    <li>Team leads and coaches are listed but <strong>excluded from capacity</strong> &mdash; they run the shift, they don&rsquo;t work freight.</li>
-    <li>Call-outs come out of working hours and are reported separately.</li>
-    <li><strong>Stock 2 + Overnight</strong> is tonight&rsquo;s stocking capacity. Stock 1 is <strong>tomorrow&rsquo;s</strong> crew, because the overnight shift runs 10pm to 7am and a plan written today is finished by the morning after.</li>
-  </ul>
-
-  <h3>5 &middot; The judgements</h3>
-  <table class="sp-help-table">
-    <tbody>
-      <tr><td><code>capacity &divide; freight</code></td><td>under 1.10 <strong>short</strong>, under 1.25 <strong>tight</strong>, otherwise OK</td></tr>
-      <tr><td><code>block hours &divide; its own hours</code></td><td>overnight above 0.78 hands a line to the morning; below 0.65 it takes D18 back</td></tr>
-      <tr><td>Stock 2 at or below 0.15</td><td>GM is light &mdash; send them to help zone and pick grocery</td></tr>
-      <tr><td><code>Left</code></td><td>available &minus; planned: what the shift still has for zoning, backroom and everything a plan doesn&rsquo;t list</td></tr>
-      <tr><td><code>line &divide; its own median</code></td><td>1.35 very heavy &middot; 1.15 heavy &middot; 0.80 no comment &middot; 0.60 light &middot; below that very light. Nothing under 2h gets an adjective.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>6 &middot; Rounding</h3>
-  <p>Hours are held as whole minutes on capture and shown to one decimal. Drift across a full store day is under 0.1h.</p>
-
-  <h3 class="sp-help-warn">Worth knowing</h3>
-  <p>CaseVisibility charges an inner pack at the <em>same</em> rate as a full case. The plans this store actually sends don&rsquo;t agree: the hours written for 3/19/67 land consistently about 45% of the way between the cases-only figure and the cases-plus-packs figure, on every date checked &mdash; the store works inner packs roughly twice as fast as CaseVisibility assumes.</p>
-  <p>This module quotes CaseVisibility&rsquo;s number as it stands rather than applying a discount of its own. Read the breakpack-heavy departments &mdash; D19 crafts, D40 OTC, D46 beauty, D2 HBA, fashion &mdash; with that in mind.</p>
 </dialog>

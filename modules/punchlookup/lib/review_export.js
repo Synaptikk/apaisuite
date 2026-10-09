@@ -14,11 +14,20 @@ import { buildXlsx } from "./xlsx_write.js";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TYPE_COLOR = { Work: "#16a34a", "Non-work": "#dc2626", Unclear: "#64748b" };
 
-/** Rows and the undocumented gaps between them, in time order. */
+/** Rows, the undocumented gaps and the punched meals/breaks, in time order. */
 export function timeline(a) {
   const items = [...a.rows.map((r) => ({ kind: "row", at: r.start ?? Infinity, r })),
-    ...a.gaps.map((g) => ({ kind: "gap", at: g.from, g }))];
-  return items.sort((x, y) => x.at - y.at || (x.kind === "gap" ? 1 : -1));
+    ...a.gaps.map((g) => ({ kind: "gap", at: g.from, g })),
+    ...(a.breaks || []).map((g) => ({ kind: "break", at: g.from, g }))];
+  const rank = { break: 0, row: 1, gap: 2 };
+  return items.sort((x, y) => x.at - y.at || rank[x.kind] - rank[y.kind]);
+}
+
+/** "Lunch — meal punch" / "Lunch — clocked out" label for a break row. */
+export function breakLabel(g) {
+  const m = g.to - g.from;
+  const what = m >= 30 ? "Lunch" : "Break";
+  return `${what} — ${g.status === "meal" ? "meal punch" : "clocked out"} (not paid)`;
 }
 
 // User rule (2026-10-08): on-clock time with no note is assumed to be work.
@@ -46,6 +55,11 @@ export function reviewPrintHtml(review) {
 
   let n = 0;
   const lines = timeline(a).map((it) => {
+    if (it.kind === "break") {
+      const c = "padding:3px 6px;color:#1e3a8a;background:#eff6ff;font-weight:600";
+      return `<tr><td style="${c}"></td><td style="${c}">${fmtTime(it.g.from)}</td><td style="${c}">${fmtTime(it.g.to)}</td>
+        <td style="${c};text-align:right">${it.g.to - it.g.from}</td><td colspan="4" style="${c}">${esc(breakLabel(it.g))}</td></tr>`;
+    }
     if (it.kind === "gap") {
       return `<tr><td></td><td style="padding:3px 6px;color:#92400e;font-style:italic">${fmtTime(it.g.from)}</td><td style="padding:3px 6px;color:#92400e;font-style:italic">${fmtTime(it.g.to)}</td>
         <td style="padding:3px 6px;text-align:right;color:#92400e;font-style:italic">${it.g.to - it.g.from}</td><td colspan="4" style="padding:3px 6px;color:#92400e;font-style:italic;background:#fffbeb">No notes — counted as work</td></tr>`;

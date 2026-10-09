@@ -20,6 +20,7 @@ import {
   encodeSchedule, decodeSchedule,
   encodeAssignments, decodeAssignments,
   encodeSuggestions, decodeSuggestions,
+  encodeSafetyObs, decodeSafetyObs,
   assertNoPlaintextNames,
 } from "./codec.js";
 
@@ -230,6 +231,13 @@ export const assignments = {
 export const suggestions = {
   async get(s, d)      { return decodeSuggestions(await getDoc(sug(s, d))); },
   async put(s, d, doc) { return setDoc(sug(s, d), await encodeSuggestions(doc)); },
+};
+
+const sobs = (s, d) => `stores/${s}/safetyObs/${d}`;
+
+export const safetyObs = {
+  async get(s, d)      { return decodeSafetyObs(await getDoc(sobs(s, d))); },
+  async put(s, d, doc) { return setDoc(sobs(s, d), await encodeSafetyObs(doc)); },
 };
 
 export const _internal = { toFields, fromFields, toValue, fromValue };

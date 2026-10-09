@@ -109,6 +109,14 @@ service cloud.firestore {
                      && request.resource.data.data is map;
       }
 
+      // modules/safetyobs: observations submitted from the suite, per day.
+      match /safetyObs/{date} {
+        allow read:  if signedIn();
+        allow write: if signedIn() && encryptedSchema()
+                     && validDateKey(date)
+                     && request.resource.data.entries is list;
+      }
+
       match /suggestions/{date} {
         allow read:  if signedIn();
         // Machine-generated; keyed by token, carries no `n` ciphertext at all.

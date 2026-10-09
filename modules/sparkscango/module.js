@@ -26,7 +26,7 @@ export default {
     id:          "sparkscango",
     group:       "ap",
     name:        "Spark & Scan&Go",
-    description: "Spark and Scan & Go exceptions, audits, and metrics — one-click investigation into SparkFraud driver/order lookups.",
+    description: "Spark and Scan & Go exceptions and audits.",
     version:     "0.1.0",
     status:      "alpha",
 

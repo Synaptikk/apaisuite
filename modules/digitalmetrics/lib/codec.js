@@ -167,6 +167,26 @@ export async function decodeAssignments(doc) {
   return { ...doc, associates: await decodeRoster(doc.associates, (doc.schemaVersion ?? 1) < 2) };
 }
 
+// ── safetyObs/{date} ─────────────────────────────────────────────────────
+// Safety observations submitted from the suite (modules/safetyobs), shared so
+// the browser that posts the morning catch-up sees what another browser
+// submitted today. Field_Dashboard only has them from the next morning.
+// Entry: { id, at, type, t, n }; id = the submitting browser's history stamp,
+// so a re-sync merges instead of double counting.
+const SAFETY_OBS_FIELDS = ["id", "at", "type"];
+
+export async function encodeSafetyObs(doc) {
+  return stamp({
+    entries: await encodeRoster(doc.entries, SAFETY_OBS_FIELDS),
+    store:   doc.store ?? null,
+  });
+}
+
+export async function decodeSafetyObs(doc) {
+  if (!doc) return null;
+  return { ...doc, entries: await decodeRoster(doc.entries, false) };
+}
+
 // ── suggestions/{date} ───────────────────────────────────────────────────
 export async function encodeSuggestions(doc) {
   const out = {};

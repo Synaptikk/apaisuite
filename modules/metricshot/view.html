@@ -5,17 +5,14 @@
 
 <div class="ms-header">
   <h1>Metric Shots</h1>
-  <p class="muted">
-    Scheduled screenshots of internal metric dashboards, posted to Workvivo channels.
-    Uses your existing authenticated tabs — no credentials stored.
-  </p>
+  <p class="muted">Scheduled metric screenshots posted to Workvivo.</p>
 </div>
 
 <section class="card ms-toolbar">
   <div class="ms-toolbar-row">
     <div>
       <span id="ms-home-store" class="pill">Store: —</span>
-      <span id="ms-tick-state" class="muted tiny">Next tick: —</span>
+      <span id="ms-tick-state" class="muted tiny">Next run: —</span>
     </div>
     <div>
       <button id="ms-add" class="btn btn-primary btn-sm btn-pill">+ Add Metric</button>
@@ -31,11 +28,6 @@
     <span class="ms-store-nudge-icon" aria-hidden="true">⚠️</span>
     <div>
       <strong>Set your store to enable scheduled captures.</strong>
-      <p class="muted tiny">
-        VizPick and other store-scoped metrics need your store number.
-        Without it, captures are paused so you don't post a blank
-        (default-store) report.
-      </p>
     </div>
     <button id="ms-store-nudge-open" class="btn btn-primary btn-sm btn-pill" type="button">Open Settings → Defaults</button>
   </div>
@@ -99,20 +91,6 @@
   </div>
 </details>
 
-<!-- TEMP diagnostic: capture the requests fired by Tableau's Download button -->
-<details class="card ms-log">
-  <summary>Export endpoint diagnostic (temp)</summary>
-  <div class="ms-log-body">
-    <p class="muted tiny">Open the VizPick tab, click <strong>Download → Excel/CSV</strong>, then hit the button below to dump the export requests the capture ring recorded.</p>
-    <button id="ms-dump-export" class="btn btn-secondary btn-sm">Dump export requests</button>
-    <button id="ms-try-export" class="btn btn-primary btn-sm">Try headless export</button>
-    <button id="ms-introspect-sdk" class="btn btn-secondary btn-sm">Introspect Sendbird SDK</button>
-    <button id="ms-read-netlog" class="btn btn-secondary btn-sm">Read netlog (open Workvivo tab)</button>
-    <p class="muted tiny">To find the real image-upload route: open workvivo.walmart.com/chat yourself, manually attach + send a test image (your @me self-DM is safest), then click the button above — it reads the network log off YOUR tab, without opening a new one.</p>
-    <pre id="ms-dump-export-pre" class="ms-log-pre">…</pre>
-  </div>
-</details>
-
 <!-- Add / Edit modal ------------------------------------------------------->
 <div class="ms-modal-backdrop" id="ms-modal-backdrop" hidden>
   <div class="ms-modal card" role="dialog" aria-modal="true" aria-labelledby="ms-modal-title">
@@ -170,7 +148,7 @@
         <input id="ms-f-channel" class="input ms-hidden" placeholder="Type a channel name"
                aria-label="Channel name">
         <span class="muted tiny" id="ms-f-channel-note">
-          Posting to yourself while the suite is under test. Load channels to pick a different one.
+          Load channels to pick one.
         </span>
       </div>
 
@@ -193,7 +171,7 @@
               <option value="viewport">Viewport (recommended)</option>
               <option value="fullpage">Full page</option>
               <option value="selector">CSS selector</option>
-              <option value="region">Region (text-anchored bounding box)</option>
+              <option value="region">Region (around text)</option>
             </select>
           </label>
           <label class="field">
@@ -201,9 +179,8 @@
             <input id="ms-f-selector" class="input" placeholder=".tabCanvas">
           </label>
           <label class="field">
-            <span class="field-label">Region: contain text anchors (for region mode, comma-separated)</span>
+            <span class="field-label">Region text (for region mode, comma-separated)</span>
             <input id="ms-f-contain-text" class="input" placeholder="Backroom Health, Fresh, Stocking Baseline">
-            <span class="muted tiny">Smallest bounding box that includes elements matching each of these visible strings.</span>
           </label>
           <label class="field">
             <span class="field-label">Required selector (wait until visible)</span>
@@ -230,12 +207,12 @@
           </label>
           <div class="ms-grid-2">
             <label class="field">
-              <span class="field-label">Settle delay (ms)</span>
-              <input id="ms-f-settle" class="input" type="number" min="0" max="120000" value="8000">
+              <span class="field-label">Wait after load (seconds)</span>
+              <input id="ms-f-settle" class="input" type="number" min="0" max="120" step="0.5" value="8">
             </label>
             <label class="field">
-              <span class="field-label">Page-load timeout (ms)</span>
-              <input id="ms-f-timeout" class="input" type="number" min="5000" max="600000" value="60000">
+              <span class="field-label">Page-load timeout (seconds)</span>
+              <input id="ms-f-timeout" class="input" type="number" min="5" max="600" value="60">
             </label>
           </div>
           <div class="ms-grid-2">
@@ -244,14 +221,14 @@
               <input id="ms-f-retries" class="input" type="number" min="0" max="5" value="2">
             </label>
             <label class="field">
-              <span class="field-label">Catch-up window (ms)</span>
-              <input id="ms-f-catchup" class="input" type="number" min="0" max="86400000" value="3600000">
+              <span class="field-label">Late-run window (minutes)</span>
+              <input id="ms-f-catchup" class="input" type="number" min="0" max="1440" value="60">
             </label>
           </div>
           <label class="field">
             <span class="field-label">Timezone</span>
             <input id="ms-f-tz" class="input" placeholder="local" value="local">
-            <span class="muted tiny">IANA name (America/Chicago) or "local".</span>
+            <span class="muted tiny">e.g. America/Chicago, or "local".</span>
           </label>
         </div>
       </details>

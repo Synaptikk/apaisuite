@@ -10,22 +10,25 @@
 //     (lib/form_fill.js). Submissions are the user's own: the form records the
 //     signed-in account.
 //
-//  2. 4:45 PM coach check. Every day at CHECK time the alarm reads today's
-//     schedule (Digital Metrics' WFM import, whole store, job titles), today's
-//     observations per submitter (Field_Dashboard Power BI, the same report
-//     the Live Dashboard reads), and @mentions in the "1458 management"
-//     Workvivo chat each scheduled coach / Store Manager / Ops Manager with
-//     fewer than 2 (lib/coach_check.js). Nothing is posted when nobody is short.
-//     Needs the browser running at 4:45; a run more than LATE_LIMIT_MIN late
-//     (machine asleep, browser closed) is skipped rather than posted stale.
+//  2. Morning catch-up post. Field_Dashboard (Power BI) refreshes once, early
+//     in the morning, and never holds today's observations: the original
+//     4:45 PM "under 2 today" check flagged nearly every coach (measured
+//     2026-10-08: 1 observation for the day at both 10:49 AM and 3:54 PM).
+//     So at POST time (default 9:00) the alarm builds the ledger through
+//     yesterday (2 per scheduled day since ledgerFrom, lib/coach_check.js),
+//     reads today's schedule (Digital Metrics' WFM import), and @mentions in
+//     the "1458 management" Workvivo chat each leader on today who is behind:
+//     "complete N today", N = behind + today's 2. Nothing is posted when
+//     nobody on today is behind. A run more than LATE_LIMIT_MIN late is
+//     skipped; the numbers would still be right, but a mid-afternoon post is noise.
 
 import { QUESTIONS, FORM_URL, missingAnswers, LOCATIONS, PROCESSES, TOOLS, TYPES } from "./lib/form_schema.js";
 import { FILL_FORM } from "./lib/form_fill.js";
-import { PAGE_URL, RESPONSES_URL, readPageTokens, buildResponseBody, responseHeaders } from "./lib/form_api.js";
+import { PAGE_URL, RESPONSES_URL, SILENT_SIGNIN_URL, FORMS_LOGIN_COOKIE, readPageTokens, buildResponseBody, responseHeaders } from "./lib/form_api.js";
 import { parseObservation, mergeAiPick } from "./lib/parse.js";
-import { checkCoaches, buildMessage, buildLedger, isCheckedTitle, MIN_PER_DAY } from "./lib/coach_check.js";
+import { buildCatchUp, buildCatchUpMessage, buildLedger, isCheckedTitle } from "./lib/coach_check.js";
 import { fetchSubmitters } from "../livedashboard/lib/sources/recognition.js";
-import { schedules } from "../digitalmetrics/lib/firestore.js";
+import { schedules, safetyObs } from "../digitalmetrics/lib/firestore.js";
 import { postTextToWorkvivo, listChannelMembers } from "../metricshot/lib/sendbird.js";
 import { readSettings as readCxSettings } from "../cx/lib/store.js";
 import { tokenStatus, DEFAULT_CLIENT_VERSION } from "../cx/lib/narrative.js";
@@ -37,12 +40,13 @@ const KEY = {
   settings: "safetyobs.settings.v1",
   history:  "safetyobs.history.v1",    // last submissions, newest first
   check:    "safetyobs.lastCheck.v1",  // last coach-check result (preview or posted)
-  posted:   "safetyobs.postedDay.v1",  // local date the 4:45 message last went out
+  posted:   "safetyobs.postedDay.v1",  // local date the daily message last went out
   schedCache: "safetyobs.leaderLines.v1", // { dateIso: [leader lines] | "foreign-or-empty" marker }
   ledger:   "safetyobs.lastLedger.v1",
+  me:       "safetyobs.me.v1",          // { displayName, at }: who this browser submits as
 };
 export const ALARM = "safetyobs.coachCheck";
-const LATE_LIMIT_MIN = 45;
+const LATE_LIMIT_MIN = 180;
 const HISTORY_MAX = 50;
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -50,9 +54,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   role: "Coach",
   channel: "1458 management",
   // Off until turned on in ONE browser: the suite is installed in both the
-  // normal and the debug Edge, and each install would post its own 4:45 message.
+  // normal and the debug Edge, and each install would post its own message.
   checkEnabled: false,
-  checkAt: "16:45",
+  // Morning, after Power BI's overnight refresh. A new key so the stored
+  // `checkAt` (the old 16:45 "under 2 today" post) is ignored.
+  postAt: "09:00",
   useAi: true,
   // First day Digital Metrics holds a 1458 schedule doc; nothing earlier can
   // say who was scheduled, so the ledger cannot start before it.
@@ -77,8 +83,10 @@ async function writeSettings(patch) {
 const localDay = (d = new Date()) => d.toLocaleDateString("en-CA");
 const parseHm = (s) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
-  return m ? Number(m[1]) * 60 + Number(m[2]) : 16 * 60 + 45;
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 9 * 60;
 };
+const shortDay = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" }).replace(",", "");
+const monthDay = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
 
 // ── Alarm: next CHECK time, rescheduled after every fire (DST-safe) ─
 
@@ -95,7 +103,7 @@ export async function ensureCheckAlarm() {
   const s = await readSettings();
   const existing = await chrome.alarms.get(ALARM);
   if (!s.checkEnabled) { if (existing) await chrome.alarms.clear(ALARM); return null; }
-  const when = nextAt(s.checkAt);
+  const when = nextAt(s.postAt);
   // Not create() unconditionally: it would replace a pending alarm (shared/alarms.js BUG 1).
   if (existing && Math.abs(existing.scheduledTime - when) < 60_000) return existing.scheduledTime;
   await chrome.alarms.create(ALARM, { when });
@@ -111,7 +119,8 @@ export async function onCheckAlarm(alarm) {
     const postedDay = (await chrome.storage.local.get(KEY.posted))[KEY.posted];
     if (postedDay === localDay()) return;                             // already posted today
     if (lateMin > LATE_LIMIT_MIN) {
-      await saveCheck({ dateIso: localDay(), at: Date.now(), ok: false, skipped: `alarm fired ${Math.round(lateMin)} min late (browser closed or asleep at ${s.checkAt})` });
+      await saveCheck({ dateIso: localDay(), at: Date.now(), ok: false, skipped: `Missed the ${s.postAt} post (browser was closed)` });
+      console.warn(`[safetyobs] check alarm fired ${Math.round(lateMin)} min late`);
       return;
     }
     await runCheck({ post: true, trigger: "alarm" });
@@ -131,30 +140,39 @@ async function runCheck({ post, trigger }) {
   return withKeepAwake("safetyobs.check", async () => {
     const s = await readSettings();
     const dateIso = localDay();
-    const atMin = parseHm(s.checkAt);
+    const throughIso = localDay(new Date(Date.now() - 86_400_000));
 
     const sched = await schedules.get(s.storeNbr, dateIso).catch((e) => ({ error: String(e?.message || e) }));
     const schedule = sched?.associates || [];
     if (!schedule.length) {
-      return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: `No schedule for store ${s.storeNbr} on ${dateIso} in Digital Metrics${sched?.error ? `: ${sched.error}` : ""}.` });
+      if (sched?.error) console.warn("[safetyobs] schedule read failed:", sched.error);
+      return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: `No schedule for store ${s.storeNbr} on ${dateIso}.` });
     }
 
-    const obs = await fetchSubmitters(s.storeNbr, dateIso);
-    if (!obs.ok) return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: `Field_Dashboard: ${obs.error}` });
+    const led = await ledgerThrough(s, throughIso);
+    if (!led.ok) return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: led.error });
 
     const mem = await listChannelMembers({ channelName: s.channel });
     const members = mem.ok ? mem.members : [];
 
-    const result = checkCoaches({ schedule, observations: obs.rows, members, atMin, minPerDay: MIN_PER_DAY });
-    const atLabel = new Date(2000, 0, 1, Math.floor(atMin / 60), atMin % 60).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    const message = buildMessage(result.behind, { atLabel });
+    const live = await liveToday(s.storeNbr, dateIso);
+    const result = buildCatchUp({ ledgerRows: led.rows, schedule, members, today: live.entries });
+    const message = buildCatchUpMessage(result.behind, { throughLabel: shortDay(throughIso), sinceLabel: monthDay(led.fromIso) });
 
     const rec = {
-      dateIso, at: Date.now(), trigger, ok: true,
-      checked: result.checked, behind: result.behind.map((c) => c.name), message: message?.text || null,
-      observationsToday: obs.rows.reduce((n, r) => n + r.count, 0),
+      dateIso, throughIso, fromIso: led.fromIso, at: Date.now(), trigger, ok: true,
+      checked: result.rows, behind: result.behind.map((c) => c.name), message: message?.text || null,
+      observationsThrough: led.observationsThrough,
+      liveToday: live.entries.length, liveError: live.error,
       membersError: mem.ok ? null : mem.error, posted: false,
     };
+    // Yesterday had a schedule but not one observation at the store: the
+    // overnight refresh has probably not landed, so the alarm holds off
+    // rather than post a backlog a day stale. "Post now" still sends.
+    if (post && trigger === "alarm" && led.scheduledThrough && !led.observationsThrough) {
+      rec.error = `No observations dated ${throughIso} yet; Field_Dashboard may not have refreshed. Not posted.`;
+      return saveCheck(rec);
+    }
     if (post && message) {
       const sent = await postTextToWorkvivo({ channelName: s.channel, text: message.text, mentionedUserIds: message.mentionedUserIds });
       rec.posted = !!sent.ok;
@@ -166,6 +184,74 @@ async function runCheck({ post, trigger }) {
     if (rec.posted) await chrome.storage.local.set({ [KEY.posted]: dateIso });
     return saveCheck(rec);
   });
+}
+
+// ── Live submissions: shared so any browser sees today's ──────────
+//
+// Field_Dashboard only shows an observation from the next morning, so the
+// suite's own submissions are the one same-day count there is. Each browser
+// keeps its history locally; today's entries are pushed to
+// digitalmetrics/stores/{store}/safetyObs/{date} (names sealed, codec.js) so
+// the browser that posts the catch-up sees what another one submitted. QR
+// submissions from phones are still only seen the next morning.
+
+/** The Forms account this browser submits as, cached; null if unknown. */
+async function whoAmI({ tokens } = {}) {
+  if (tokens?.displayName) {
+    await chrome.storage.local.set({ [KEY.me]: { displayName: tokens.displayName, at: Date.now() } });
+    return tokens.displayName;
+  }
+  const cached = (await chrome.storage.local.get(KEY.me))[KEY.me];
+  if (cached?.displayName) return cached.displayName;
+  try {
+    let t = await loadPageTokens();
+    if (t && !t.signedIn) { await renewFormsLogin(); t = await loadPageTokens(); }
+    if (t?.displayName) return whoAmI({ tokens: t });
+  } catch { /* unknown for now; the next sync retries */ }
+  return null;
+}
+
+/**
+ * Push this browser's not-yet-shared submissions from today. Older ones are
+ * left: Field_Dashboard has them by now. Merges by entry id, so a retry or a
+ * second browser never double counts.
+ */
+async function shareToday() {
+  const s = await readSettings();
+  const today = localDay();
+  const hist = (await chrome.storage.local.get(KEY.history))[KEY.history] || [];
+  const pending = hist.filter((h) => !h.shared && localDay(new Date(h.at)) === today);
+  if (!pending.length) return { ok: true, shared: 0 };
+  const me = await whoAmI();
+  if (!me) return { ok: false, error: "Could not tell which Microsoft account submitted (Forms signed out)." };
+  try {
+    const doc = (await safetyObs.get(s.storeNbr, today)) || { entries: [] };
+    const have = new Set((doc.entries || []).map((e) => String(e.id)));
+    const entries = [...(doc.entries || [])];
+    for (const h of pending) {
+      const id = String(h.at);
+      if (!have.has(id)) entries.push({ id, at: h.at, type: h.answers?.type || null, name: h.submitter || me });
+    }
+    const put = await safetyObs.put(s.storeNbr, today, { entries, store: s.storeNbr });
+    if (!put?.ok) return { ok: false, error: put?.error || "Firestore write failed" };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+  const ids = new Set(pending.map((h) => h.at));
+  const fresh = (await chrome.storage.local.get(KEY.history))[KEY.history] || [];
+  await chrome.storage.local.set({ [KEY.history]: fresh.map((h) => (ids.has(h.at) ? { ...h, shared: true, submitter: h.submitter || me } : h)) });
+  return { ok: true, shared: pending.length };
+}
+
+/** Today's shared entries for the store: [{ name, count }]. */
+async function liveToday(storeNbr, dateIso) {
+  await shareToday().catch(() => {});        // this browser's own first
+  try {
+    const doc = await safetyObs.get(storeNbr, dateIso);
+    return { entries: (doc?.entries || []).map((e) => ({ name: e.name, count: 1 })), error: null };
+  } catch (e) {
+    return { entries: [], error: String(e?.message || e) };
+  }
 }
 
 // ── Ledger: 2 per scheduled day since ledgerFrom ───────────────────
@@ -207,18 +293,43 @@ async function leaderSchedules(storeNbr, dates) {
   return out;
 }
 
+/**
+ * The ledger through `throughIso` (yesterday). Field_Dashboard has no
+ * same-day data, so counting today would charge every leader on today 2
+ * observations the report cannot show yet.
+ */
+async function ledgerThrough(s, throughIso, from) {
+  const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from || "") ? from : s.ledgerFrom;
+  const days = await leaderSchedules(s.storeNbr, daysBetween(fromIso, throughIso));
+  if (!days.length) return { ok: false, error: `No schedules for store ${s.storeNbr} from ${fromIso} to ${throughIso}.` };
+  const obs = await fetchSubmitters(s.storeNbr, fromIso, throughIso);
+  if (!obs.ok) { console.warn("[safetyobs] observations read failed:", obs.error); return { ok: false, error: "Couldn't load observations. Try again." }; }
+  const led = buildLedger({ days, observations: obs.rows, todayIso: throughIso });
+  return {
+    ok: true, fromIso, toIso: throughIso, ...led,
+    scheduledThrough: days.some((d) => d.dateIso === throughIso),
+    observationsThrough: obs.rows.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
+  };
+}
+
 async function runLedger({ from } = {}) {
   return withKeepAwake("safetyobs.ledger", async () => {
     const s = await readSettings();
+    const led = await ledgerThrough(s, localDay(new Date(Date.now() - 86_400_000)), from);
+    if (!led.ok) return led;
+    // Today stays out of Expected/Done/Behind (Field_Dashboard has none of
+    // it); shown beside them instead: who is on today, what they logged
+    // through the suite (the only same-day count there is), what they owe.
     const todayIso = localDay();
-    const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from || "") ? from : s.ledgerFrom;
-    const days = await leaderSchedules(s.storeNbr, daysBetween(fromIso, todayIso));
-    if (!days.length) return { ok: false, error: `No schedules for store ${s.storeNbr} from ${fromIso} in Digital Metrics.` };
-    const obs = await fetchSubmitters(s.storeNbr, fromIso, todayIso);
-    if (!obs.ok) return { ok: false, error: `Field_Dashboard: ${obs.error}` };
-    const now = new Date();
-    const led = buildLedger({ days, observations: obs.rows, todayIso, nowMin: now.getHours() * 60 + now.getMinutes() });
-    const rec = { ok: true, at: Date.now(), fromIso, toIso: todayIso, ...led };
+    const sched = await schedules.get(s.storeNbr, todayIso).catch((e) => ({ error: String(e?.message || e) }));
+    const live = await liveToday(s.storeNbr, todayIso);
+    const cu = buildCatchUp({ ledgerRows: led.rows, schedule: sched?.associates || [], today: live.entries });
+    const rec = {
+      ...led, at: Date.now(), todayIso,
+      today: cu.rows.map(({ name, jobName, shiftStart, shiftEnd, doneToday, owe }) => ({ name, jobName, shiftStart, shiftEnd, doneToday, owe })),
+      todayScheduleError: sched?.associates?.length ? null : (sched?.error || `no schedule for ${todayIso} in Digital Metrics`),
+      liveTodayCount: live.entries.length, liveError: live.error,
+    };
     await chrome.storage.local.set({ [KEY.ledger]: rec });
     return rec;
   });
@@ -298,7 +409,7 @@ async function fillInTab(answers, submit) {
       chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: FILL_FORM, args: [{ questions: QUESTIONS, answers, submit }] }),
       timeout,
     ]);
-    return ran?.[0]?.result || { ok: false, step: "inject", error: "no result from the form tab" };
+    return ran?.[0]?.result || { ok: false, step: "inject", error: "Form fill failed. Try again." };
   } finally {
     await forgetSessionTab(tab.id).catch(() => {});
     await chrome.tabs.remove(tab.id).catch(() => {});
@@ -315,15 +426,49 @@ async function fillInTab(answers, submit) {
 //              recorded, so never retry; the user checks Field_Dashboard.
 //   noToken  — page fetch failed or came back signed out: fall back.
 
-async function submitViaApi(answers, startedAt) {
-  let html;
+async function loadPageTokens() {
+  const page = await fetch(PAGE_URL, { credentials: "include" });
+  return readPageTokens(await page.text());
+}
+
+/**
+ * Renew the hour-long Forms login cookie by loading the page's silent sign-in
+ * link in a hidden tab. It has to be a tab: Edge signs navigations in with the
+ * Windows account, while a fetch of the same link gets AADSTS50058 "no user
+ * is signed in" (tried 2026-10-08). The tab never shows the form.
+ */
+async function renewFormsLogin(ms = 20_000) {
+  const tab = await chrome.tabs.create({ url: SILENT_SIGNIN_URL, active: false });
+  await registerSessionTab(MODULE_ID, tab.id, { idleMs: 60_000 }).catch(() => {});
   try {
-    const page = await fetch(PAGE_URL, { credentials: "include" });
-    html = await page.text();
-  } catch (e) {
-    return { outcome: "noToken", error: `form page: ${e?.message || e}` };
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const ck = await chrome.cookies.get({ url: "https://forms.cloud.microsoft/", name: FORMS_LOGIN_COOKIE }).catch(() => null);
+      if (ck) return null;
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t) return "sign-in tab closed";
+      if (t.status === "complete" && /silentsignincomplete/i.test(t.url || "")) return null;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return "silent sign-in timed out";
+  } finally {
+    await forgetSessionTab(tab.id).catch(() => {});
+    await chrome.tabs.remove(tab.id).catch(() => {});
   }
-  const tokens = readPageTokens(html);
+}
+
+async function submitViaApi(answers, startedAt) {
+  let tokens;
+  try {
+    tokens = await loadPageTokens();
+    if (tokens && !tokens.signedIn) {
+      const why = await renewFormsLogin();
+      tokens = await loadPageTokens();
+      if (!tokens?.signedIn) return { outcome: "noToken", error: `Microsoft Forms login lapsed and did not renew${why ? `: ${why}` : ""}` };
+    }
+  } catch (e) {
+    return { outcome: "noToken", error: `form page / sign-in: ${e?.message || e}` };
+  }
   if (!tokens) return { outcome: "noToken", error: "form page had no verification token (signed out of Microsoft?)" };
   const muid = (await chrome.cookies.get({ url: "https://forms.cloud.microsoft/", name: "MUID" }).catch(() => null))?.value;
   const body = buildResponseBody(QUESTIONS, answers, { startDate: startedAt });
@@ -341,7 +486,7 @@ async function submitViaApi(answers, startedAt) {
   if (res.ok) {
     let id = null;
     try { id = JSON.parse(text)?.id ?? null; } catch { /* body is optional */ }
-    return { outcome: "sent", status: res.status, responseId: id };
+    return { outcome: "sent", status: res.status, responseId: id, displayName: tokens.displayName || null };
   }
   return { outcome: res.status >= 500 ? "unsure" : "rejected", status: res.status, error: `${res.status} ${text.slice(0, 200)}` };
 }
@@ -363,7 +508,7 @@ export const handlers = {
     if (p.role != null) patch.role = String(p.role);
     if (p.channel != null) patch.channel = String(p.channel).trim();
     if (p.checkEnabled != null) patch.checkEnabled = !!p.checkEnabled;
-    if (p.checkAt != null && /^\d{1,2}:\d{2}$/.test(p.checkAt)) patch.checkAt = p.checkAt;
+    if (p.postAt != null && /^\d{1,2}:\d{2}$/.test(p.postAt)) patch.postAt = p.postAt;
     if (p.useAi != null) patch.useAi = !!p.useAi;
     if (p.ledgerFrom != null && /^\d{4}-\d{2}-\d{2}$/.test(p.ledgerFrom)) patch.ledgerFrom = p.ledgerFrom;
     const settings = await writeSettings(patch);
@@ -411,23 +556,29 @@ export const handlers = {
     const res = await withKeepAwake("safetyobs.submit", async () => {
       if (!submit) return fillInTab(answers, false);                    // test fill stays on the real page
       const api = await submitViaApi(answers, msg.startedAt);
-      if (api.outcome === "sent") return { ok: true, submitted: true, method: "api", status: api.status, responseId: api.responseId };
+      if (api.outcome === "sent") return { ok: true, submitted: true, method: "api", status: api.status, responseId: api.responseId, displayName: api.displayName };
       if (api.outcome === "unsure") {
-        return { ok: false, step: "api", method: "api", error: `Not sure it went through (${api.error}). Check Field_Dashboard before submitting again.` };
+        console.warn("[safetyobs] submit outcome unsure:", api.error);
+        return { ok: false, step: "api", method: "api", error: "Not sure it went through. Check the dashboard before resubmitting." };
       }
       const ui = await fillInTab(answers, true);                         // rejected / no token → the page way
       return { ...ui, method: "form", apiError: api.error };
     });
     if (res.ok && res.submitted) {
+      const submitter = res.displayName ? await whoAmI({ tokens: { displayName: res.displayName } }) : await whoAmI();
       const hist = (await chrome.storage.local.get(KEY.history))[KEY.history] || [];
-      hist.unshift({ at: Date.now(), sentence: String(msg.sentence || ""), answers, method: res.method, apiError: res.apiError || null });
+      hist.unshift({ at: Date.now(), sentence: String(msg.sentence || ""), answers, method: res.method, apiError: res.apiError || null, submitter });
       await chrome.storage.local.set({ [KEY.history]: hist.slice(0, HISTORY_MAX) });
+      res.share = await shareToday().catch((e) => ({ ok: false, error: String(e?.message || e) }));
     }
     return res;
   },
 
   async history() {
-    return { ok: true, items: (await chrome.storage.local.get(KEY.history))[KEY.history] || [] };
+    // Opening the panel also pushes anything from today not shared yet
+    // (submissions made before sharing existed, or while Firestore was down).
+    const share = await shareToday().catch((e) => ({ ok: false, error: String(e?.message || e) }));
+    return { ok: true, items: (await chrome.storage.local.get(KEY.history))[KEY.history] || [], share };
   },
 
   /** Run the coach check now. { post: false } previews without posting. */

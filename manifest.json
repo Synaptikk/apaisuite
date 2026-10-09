@@ -54,6 +54,8 @@
     "https://workvivo.walmart.com/*",
     "https://forms.office.com/*",
     "https://forms.cloud.microsoft/*",
+    "https://outlook.office.com/*",
+    "https://outlook.cloud.microsoft/*",
     "https://www.walmart.com/*",
     "https://go-upc.com/*",
     "https://www.upcitemdb.com/*",
@@ -101,7 +103,8 @@
     "https://ai-innovation-lab-app-bebdeibbicjffabd.walmart.com/*",
     "https://walmart.medallia.com/*",
     "https://puppy-backend.walmart.com/*",
-    "https://puppy.walmart.com/*"
+    "https://puppy.walmart.com/*",
+    "https://mygnfr.walmart.com/*"
   ],
   "content_scripts": [
     {

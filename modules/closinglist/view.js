@@ -78,7 +78,7 @@ export async function mount(host, container) {
   $("cl-excludeOvernight").checked = stored.excludeOvernight ?? DEFAULTS.excludeOvernight;
   $("cl-excludeJobs").value      = stored.excludeJobs ?? DEFAULTS.excludeJobs;
   $("cl-includeIvr").checked     = stored.includeIvr ?? DEFAULTS.includeIvr;
-  $("cl-showJobTitles").checked  = stored.showJobTitles ?? DEFAULTS.showJobTitles;
+  // Job-titles appendix: checkbox removed from the UI; always off (code path kept).
 
   async function saveDefaults() {
     await host.storage.sync.set({
@@ -89,7 +89,7 @@ export async function mount(host, container) {
       excludeOvernight: $("cl-excludeOvernight").checked,
       excludeJobs:      $("cl-excludeJobs").value,
       includeIvr:       $("cl-includeIvr").checked,
-      showJobTitles:    $("cl-showJobTitles").checked,
+      showJobTitles:    false,
     });
   }
 
@@ -112,17 +112,17 @@ export async function mount(host, container) {
     });
     if (!forceFresh && existing.length) return existing[0];
 
-    setStatus("Opening CaseVisibility (background)…");
+    setStatus("Loading schedule…");
     const created = await host.tabs.create({ url: CV_URL, active: false });
     onCreated(created.id);
     const loaded = await host.tabs.waitForLoad(created.id, 30_000);
-    if (!loaded) throw new Error("CaseVisibility tab load timed out.");
+    if (!loaded) throw new Error("Schedule timed out. Try again.");
 
     let finalTab = await host.tabs.get(created.id);
     if (HOST_MATCH.test(finalTab.url || "")) return finalTab;
 
     // Off CaseVisibility — tab is on the SSO redirect. Try to auto-click.
-    setStatus("Signing in to CaseVisibility…");
+    setStatus("Signing in…");
     await host.auth.clickSso(created.id, SSO_SELECTORS);
 
     // Poll for redirect back to CaseVisibility (SSO round-trip may bounce
@@ -132,13 +132,13 @@ export async function mount(host, container) {
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500));
       finalTab = await host.tabs.get(created.id).catch(() => null);
-      if (!finalTab) throw new Error("CaseVisibility tab was closed mid sign-in.");
+      if (!finalTab) throw new Error("Sign-in tab was closed. Try again.");
       if (HOST_MATCH.test(finalTab.url || "")) return finalTab;
     }
     onCreated(null); // Leave the sign-in tab available for manual MFA.
     throw new Error(
-      "Couldn't auto-sign in to CaseVisibility. The tab is open in the " +
-      "background — finish the sign-in there (incl. MFA if prompted), then click Collect again."
+      "Couldn't sign in to CaseVisibility automatically. Finish the sign-in " +
+      "in the tab that opened, then click Collect again."
     );
   }
 
@@ -149,7 +149,7 @@ export async function mount(host, container) {
     host.usage.record("collect");
     const $collect = $("cl-collect");
     $collect.disabled = true;
-    setStatus("Finding CaseVisibility tab…");
+    setStatus("Loading schedule…");
     let ownedTabId = null;
     const startedAt = Date.now();
     let stage = "schedule";
@@ -164,14 +164,14 @@ export async function mount(host, container) {
       const excludeOvernight = $("cl-excludeOvernight").checked;
       const excludeJobs      = $("cl-excludeJobs").value;
       const includeIvr       = $("cl-includeIvr").checked;
-      const showJobTitles    = $("cl-showJobTitles").checked;
+      const showJobTitles    = false; // checkbox removed from the UI; appendix kept off
 
       let tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; });
-      setStatus("Calling CaseVisibility…");
+      setStatus("Loading schedule…");
       const resp = await collectSchedule({
         emit,
         recover: async () => {
-          setStatus("Refreshing CaseVisibility sign-in...");
+          setStatus("Signing in…");
           if (ownedTabId != null) await host.tabs.remove(ownedTabId).catch(() => {});
           ownedTabId = null;
           tab = await findOrOpenCaseVisibilityTab((id) => { ownedTabId = id; }, true);
@@ -197,7 +197,7 @@ export async function mount(host, container) {
       let ivrStatus = "";
       if (includeIvr) {
         stage = "ivr";
-        setStatus("Collecting IVR call-offs (this opens an IVR tab, ~5-15s)…");
+        setStatus("Checking call-offs…");
         // host.messaging.send rejects on { ok: false }, so the catch is the
         // only failure path here. ivrResp on the happy path always has ok:true.
         try {
@@ -207,6 +207,7 @@ export async function mount(host, container) {
           ivrStatus = `, ${ivrRows.length} IVR rows`;
         } catch (e) {
           emit("ivr_failed", { kind: failureKind(e) });
+          console.warn("[closinglist] IVR call-offs failed:", e);
           ivrStatus = `, IVR failed: ${e?.message ?? e}`;
         }
       }
@@ -230,24 +231,31 @@ export async function mount(host, container) {
         const cloud = await uploadAssociatesToFirestore(model, {
           storeNbr, businessDate, uploadedBy: "extension",
         });
-        if (cloud.ok && cloud.skipped) cloudStatus = ", cloud: unchanged";
-        else if (cloud.ok)              cloudStatus = ", cloud: synced";
-        else                            cloudStatus = `, cloud: ${cloud.error}`;
+        if (!cloud.ok) {
+          console.warn("[closinglist] checklist sync failed:", cloud.error);
+          cloudStatus = " Checklist sync failed.";
+        }
       } catch (e) {
-        cloudStatus = `, cloud: ${e?.message ?? e}`;
+        console.warn("[closinglist] checklist sync failed:", e);
+        cloudStatus = " Checklist sync failed.";
       }
 
       emit("collect_finished", { durationMs: Date.now() - startedAt, schedule: "ok", ivr: includeIvr ? (ivrStatus.includes("IVR failed") ? "failed" : "ok") : "skipped", rowCount: model.includedCount });
+      const ivrFailedNote = ivrStatus.includes("IVR failed") ? " Couldn't check call-offs." : "";
       setStatus(
-        `Done. ${model.includedCount} of ${model.totalScheduled} ` +
-          `(skipped: cutoff=${model.skipped.skippedNotAfternoon}, overnight=${model.skipped.skippedOvernight}, ` +
-          `jobs=${model.skipped.skippedByJobFilter}, no-name=${model.skipped.skippedNoName})` +
-          `; ${calledOffCount} marked CALLED OFF` + ivrStatus + cloudStatus,
+        `Done: ${model.includedCount} closer${model.includedCount === 1 ? "" : "s"}, ${calledOffCount} called off.` +
+          ivrFailedNote + cloudStatus,
         "ok"
       );
+      $status.title =
+        `${model.includedCount} of ${model.totalScheduled} scheduled. Left out: ` +
+        `${model.skipped.skippedNotAfternoon} before the cutoff, ${model.skipped.skippedOvernight} overnight, ` +
+        `${model.skipped.skippedByJobFilter} excluded jobs, ${model.skipped.skippedNoName} without a name.`;
+      return { ok: true, storeNbr, businessDate, count: model.includedCount, calledOff: calledOffCount, ivrFailed: ivrStatus.includes("IVR failed") };
     } catch (e) {
       emit("collect_failed", { stage, kind: failureKind(e), durationMs: Date.now() - startedAt });
       setStatus(String(e?.message ?? e), "error");
+      return { ok: false, error: String(e?.message ?? e) };
     } finally {
       // Use the captured reference — $("cl-collect") would return null if the
       // user navigated away mid-collect (container detached). Setting .disabled
@@ -273,7 +281,7 @@ export async function mount(host, container) {
     const recipient    = $("cl-recipient").value.trim();
     const storeNbr     = $("cl-storeNbr").value.trim() || DEFAULTS.storeNbr;
     const businessDate = $("cl-businessDate").value || todayIso();
-    if (!text) { setStatus("Generate the draft first.", "error"); return; }
+    if (!text) { setStatus("Click Collect first.", "error"); return; }
     const subject = `Closing List — Store ${storeNbr} — ${withWeekday(businessDate)}`;
     const url =
       `https://outlook.office.com/mail/deeplink/compose` +
@@ -282,7 +290,7 @@ export async function mount(host, container) {
       `&body=${encodeURIComponent(text)}`;
     if (url.length > 8000) {
       setStatus(
-        "Body too long for URL deeplink — use Copy and paste into a new Outlook draft.",
+        "Too long to open in Outlook. Use Copy and paste.",
         "error"
       );
       return;
@@ -308,10 +316,29 @@ export async function mount(host, container) {
   // the next mount.
   const PREF_IDS = [
     "cl-storeNbr", "cl-recipient", "cl-startHour", "cl-endHour",
-    "cl-excludeOvernight", "cl-excludeJobs", "cl-includeIvr", "cl-showJobTitles",
+    "cl-excludeOvernight", "cl-excludeJobs", "cl-includeIvr",
   ];
   const onPrefChange = () => { saveDefaults().catch(() => {}); };
   for (const id of PREF_IDS) $(id)?.addEventListener("change", onPrefChange);
+
+  // 8b. Headless job. metricshot opens app.html?clReport=<json>#/closinglist in
+  // a background tab at its scheduled time; Collect runs exactly as the button
+  // does (saved prefs, today's date) and the email text goes back through
+  // storage. Business date is always today: it is a list of who closes today.
+  (async () => {
+    let job = null;
+    try { job = JSON.parse(new URLSearchParams(location.search).get("clReport") || "null"); } catch { /* not a job */ }
+    if (!job?.id) return;
+    const res = await onCollect();
+    const text = $("cl-email")?.value || "";
+    const storeNbr = res?.storeNbr || $("cl-storeNbr")?.value.trim() || "";
+    const businessDate = res?.businessDate || todayIso();
+    const out = res?.ok && text
+      ? { ok: true, text, storeNbr, businessDate, count: res.count, calledOff: res.calledOff, ivrFailed: !!res.ivrFailed,
+          subject: `Closing List — Store ${storeNbr} — ${withWeekday(businessDate)}` }
+      : { ok: false, error: res?.error || "Collect produced no list" };
+    await chrome.storage.local.set({ [`metricshot.reportJob.${job.id}`]: { ...out, at: Date.now() } }).catch(() => {});
+  })();
 
   // 9. Cleanup function — invoked (awaited) by the shell on route change.
   // Async so future teardown (unsubscribing from host.messaging.on listeners,

@@ -214,7 +214,7 @@ async function postFromPage(url, bodyJson, bearer) {
     });
     return { status: res.status, text: await res.text() };
   } catch (e) {
-    return { error: "GDP request failed inside the dashboard tab: " + String(e?.message ?? e) };
+    return { error: "Couldn't load freight totals. (" + String(e?.message ?? e) + ")" };
   }
 }
 
@@ -249,8 +249,7 @@ async function ensureGdpToken() {
     await sleep(1000);
   }
   throw new Error(
-    "GDP Connect did not hand over a token in 45s — open the Warehouse Details dashboard " +
-    "yourself, confirm it loads, then pull again");
+    "Freight totals didn't load. Open the Warehouse Details dashboard, then pull again.");
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────

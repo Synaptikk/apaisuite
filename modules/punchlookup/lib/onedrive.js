@@ -72,9 +72,13 @@ async function odFetch(url, opts = {}) {
 
 async function getJson(url) {
   const r = await odFetch(url, { headers: ACCEPT });
-  if (r.status === 401 || r.status === 403) throw new Error(`OneDrive refused access (${r.status}${r.viaTab ? ", in tab" : ""}, ${url.split("?")[0].split("/_api/")[1] || url}) even after signing in. If it's someone else's case, ask them to share it with you; otherwise open my.wal-mart.com in Edge once and try again.`);
+  if (r.status === 401 || r.status === 403) {
+    console.warn("[punchlookup] OneDrive", r.status, r.viaTab ? "in tab" : "", url.split("?")[0]);
+    // "refused access" is matched below (getMyProperties fallback) — keep it.
+    throw new Error("OneDrive refused access. If it's someone else's case, ask them to share it with you; otherwise sign in to OneDrive and try again.");
+  }
   if (r.status === 404) throw new Error("That case folder was not found (moved, deleted, or not shared with you).");
-  if (!r.ok) throw new Error(`OneDrive answered ${r.status}`);
+  if (!r.ok) { console.warn("[punchlookup] OneDrive HTTP", r.status, url.split("?")[0]); throw new Error("Couldn't reach OneDrive — try again."); }
   return r.json();
 }
 

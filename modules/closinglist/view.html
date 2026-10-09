@@ -6,7 +6,7 @@
 
 <div class="cl-header">
   <h1>ClosingList</h1>
-  <p class="muted">Closing-shift email draft from CaseVisibility schedule + IVR call-offs.</p>
+  <p class="muted">Who's closing tonight, ready to email.</p>
 </div>
 
 <section class="card cl-config">
@@ -52,11 +52,7 @@
     </label>
     <label class="check">
       <input id="cl-includeIvr" type="checkbox">
-      <span>Cross-reference IVR call-offs</span>
-    </label>
-    <label class="check">
-      <input id="cl-showJobTitles" type="checkbox">
-      <span>Append job titles list to email</span>
+      <span>Include call-offs</span>
     </label>
   </div>
 </details>
@@ -68,7 +64,7 @@
     </svg>
     Collect Schedule
   </button>
-  <div id="cl-status" class="status-strip">Ready. Click Collect — the extension will open the tabs it needs.</div>
+  <div id="cl-status" class="status-strip">Ready.</div>
 </div>
 
 <label class="cl-email-label" for="cl-email">Email draft</label>
@@ -88,5 +84,4 @@
     </svg>
     Open in Outlook
   </button>
-  <span class="muted tiny cl-footer-note">No data leaves your machine until you Copy or Open.</span>
 </div>

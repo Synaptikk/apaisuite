@@ -130,7 +130,7 @@ export function cardStamp({ sourceUpdate, capturedAt, isToday, detailAsOf } = {}
   const detail = detailAsOf && !Number.isNaN(new Date(detailAsOf).getTime())
     ? ` · department and associate detail as of ${withWeekday(new Date(detailAsOf).toLocaleString(), detailAsOf)} (that day's last current-day reading)`
     : "";
-  if (src) return `Data as of ${src} (Tableau's last update)${detail}`;
+  if (src) return `Data as of ${src}${detail}`;
   if (capturedAt) return `Captured ${withWeekday(new Date(capturedAt).toLocaleString(), capturedAt)}${detail}`;
   return (isToday ? "Current day — capture time unknown" : "Capture time unknown") + detail;
 }

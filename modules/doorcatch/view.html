@@ -2,7 +2,7 @@
   <header class="dc-header">
     <div class="dc-title">
       <h1>Door Catches</h1>
-      <p class="dc-sub">Items door hosts found at the exit that were not on the receipt. Hosts scan each barcode on their phone at the store's door link; every catch shows up here with the time, who caught it, the UPCs and quantities.</p>
+      <p class="dc-sub">Items found at the door that weren't on the receipt.</p>
     </div>
     <div class="dc-toolbar">
       <label class="dc-field">From <input id="doorcatch-from" class="input" type="date"></label>
@@ -39,17 +39,17 @@
 
   <div id="doorcatch-panel-hosts" class="dc-table-wrap" hidden>
     <table class="dc-table dc-hosts">
-      <thead><tr><th>Door host</th><th class="num">Catches</th><th class="num">Items</th><th class="num">Value</th><th class="num">Open</th><th class="num">Reviewed</th><th class="num">Dismissed</th><th class="num">Withdrawn</th><th>Last catch</th></tr></thead>
+      <thead><tr><th>Door host</th><th class="num">Catches</th><th class="num">Items</th><th class="num" title="Walmart online price × quantity. Withdrawn catches add no value.">Value</th><th class="num">Open</th><th class="num">Reviewed</th><th class="num">Dismissed</th><th class="num">Withdrawn</th><th>Last catch</th></tr></thead>
       <tbody id="doorcatch-host-rows"></tbody>
     </table>
-    <p class="dc-muted dc-hosts-foot">Totals for the dates above, every status. Value = Walmart online price × quantity; withdrawn catches are counted separately and add no value. Click a host to see their catches.</p>
+    <p class="dc-muted dc-hosts-foot">Click a host to see their catches.</p>
   </div>
 
   <details id="doorcatch-setup" class="dc-setup">
-    <summary>Setup: store, keys, door link, host names</summary>
+    <summary>Setup</summary>
     <div class="dc-setup-grid">
       <form id="doorcatch-settings" class="dc-card">
-        <h2>Connection</h2>
+        <h2>Store</h2>
         <label class="dc-field">Store <input id="doorcatch-store" class="input dc-store" inputmode="numeric" placeholder="1458"></label>
         <label class="dc-field">Review key <input id="doorcatch-review-key" class="input" type="password" autocomplete="off" placeholder="saved"></label>
         <label class="dc-field">Door key <input id="doorcatch-submit-key" class="input" type="password" autocomplete="off" placeholder="only to build the door link"></label>

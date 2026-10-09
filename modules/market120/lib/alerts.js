@@ -42,7 +42,7 @@ export const THRESHOLDS = {
   // Market 120 aggregate is larger. Set on order-of-magnitude.
   isaAdjDollars: {
     family: "isa",
-    label: "ISA Total Adjusted $ (abs)",
+    label: "ISA Total Adjusted $",
     kpi: "isa_total_adjusted_dollars",
     transform: (v) => (typeof v === "number") ? Math.abs(v) : null,
     warn: 500_000, crit: 800_000, unit: "$",
@@ -54,7 +54,7 @@ export const THRESHOLDS = {
   // for MVP we compare the raw absolute value; refine later.
   stolenAdj: {
     family: "isa",
-    label: "Stolen Adj $ (abs, trailing)",
+    label: "Stolen Adj $",
     kpi: "stolen_adjusted_dollars",
     transform: (v) => (typeof v === "number") ? Math.abs(v) : null,
     warn: 10_000, crit: 30_000, unit: "$",

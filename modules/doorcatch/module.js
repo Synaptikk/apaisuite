@@ -14,7 +14,7 @@ export default {
     id:          "doorcatch",
     group:       "frontend",
     name:        "Door Catches",
-    description: "Items door hosts scanned at the exit that were not on the receipt: when, who caught it, what and how many. Review, note and export.",
+    description: "Door catches: items not on the receipt. Review and export.",
     version:     "0.1.0",
     status:      "alpha",
     ui: {

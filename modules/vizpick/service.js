@@ -195,7 +195,7 @@ async function getState() {
 // in parallel inside its own turn.
 function pullStores(msg) {
   return withTableauLock("VizPick stores capture", () => _pullStores(msg), {
-    onWait: ({ heldBy }) => broadcast("capture_phase", { sourceId: "stores", phase: `Waiting for ${heldBy} to finish with Tableau` }),
+    onWait: () => broadcast("capture_phase", { sourceId: "stores", phase: "Waiting for another refresh to finish" }),
   });
 }
 
@@ -281,7 +281,7 @@ async function pullToday(msg) {
 
   todayRun = { cancelled: false, progress: { done: 0, total: stores.length, store: null } };
   return withTableauLock("VizPick Today crawl", () => _pullTodayLocked(msg, stores, market), {
-    onWait: ({ heldBy }) => broadcast("capture_phase", { sourceId: "today", phase: `Waiting for ${heldBy} to finish with Tableau` }),
+    onWait: () => broadcast("capture_phase", { sourceId: "today", phase: "Waiting for another refresh to finish" }),
   });
 }
 

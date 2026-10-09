@@ -10,6 +10,73 @@ notes live in `QRCallBox/public/extension/releases.json`.
 
 ## In-flight
 
+### 000000. MetricShot email report jobs: Closing List + VizPick (2026-10-08)
+
+**Asked:** closing list at 10:00 daily to email and "1458 Leadership"; VizPick
+email copy at 10:00 (previous day) and 4:45 PM (current day), same places.
+
+**Built:** `shared/outlook_send.js` (Outlook web auto-send), `modules/metricshot/lib/email_jobs.js`,
+headless report hooks in `closinglist/view.js` (`?clReport=`) and
+`vizpick/view.js` (`?vpReport=`), seeds `closing-list-daily` + `vizpick-email`
+(1458 only, recipient 1458leadership@walmart.onmicrosoft.com), manifest host
+perms for outlook.office.com / outlook.cloud.microsoft. Verified live in debug
+Edge: both headless builds, and two auto-sent emails to the user's own mailbox
+(real VizPick 10/7 image; real closing list text).
+
+**Open:** (1) Extension not reloaded in either Edge, so seeds/alarms are not
+live until it is. (2) The SW-side run (`run-now` → email + Workvivo post) has
+not been pressed end to end; first real fire is the next 10:00. (3) Both Edge
+installs share `metricshot.metrics` via storage.sync and dedupe per install —
+if both are open at 10:00 the group gets two emails; disable the jobs in one.
+(4) Recipients have no form field yet (kept across form saves; edit in storage).
+
+### 00000. Digital Schedule module: the wfm-schedule tools in the suite (2026-10-08)
+
+**Asked:** "our digital schedule tools, lets add it to the extension".
+
+**Built:** `modules/digitalschedule` (registered; mirrored into APAISuite-dev,
+whose own registry got the same two lines). Read / coverage grid / roster /
+hand edits / fit to guidance / validate / save + read-back / undo history.
+Verified 2026-10-08 against the live scheduler (store 1458, WK 36) from a
+background app.html tab with the module's messages routed straight into its
+service.js: read (451 associates, 113 DPS rows), editor, fitter, and a
+validator dry run came back clean. Coverage numbers match the CLI exactly.
+
+**Open:** (1) `save` / undo have not been pressed for real from the module
+(same page code the CLI saved 159 edits with on 2026-10-07). (2) Debug Edge
+extension not reloaded (other sessions were active), so the SW handlers
+there are still the old build. (3) People rules live per browser
+(`digitalschedule.rules`); the user's 1458 list has to be pasted in once.
+(4) Only DPS has a known role→job mapping; other roles need job codes typed.
+
+**Added same day:** (a) "Schedule assistant" chat panel (`chat_view.js`,
+`lib/assistant.js`, `lib/gateway.js`): Claude Opus 5 / Sonnet 5 through the
+Walmart AI gateway with the Cx module's gateway token (read-only import of
+`cx/lib/store.js`); tools find / coverage / queue / remove / validate / fit,
+**no save tool**. (b) The user's people rules ship to their own installs from
+`modules/digitalschedule/dev/people-rules.local.txt` (gitignored; release.sh
+strips `dev/`), auto-loaded when the rules box was never filled. (c) Store
+lookup in `lib/page.js` (and the skill's twin) now waits up to 90 s for the
+scheduler to mount — "Redux store not found" right after the tab opened.
+
+### 0000. Compliance Tasks module: Enviance calendar + fill/submit (2026-10-08)
+
+**Asked:** inspect every Enviance compliance task, what has to be keyed in,
+read past submissions, calendar of due dates (goal: everything by the 10th),
+and auto-fill/submit from the dashboard once a task is walked on paper.
+
+**Built:** `modules/compliance` (registered; mirrored into APAISuite-dev).
+Pull/learn/dry-run verified against live Enviance through
+`dev/compliance-harness.mjs` (Node + CDP, real service code). Unit tests:
+`node --test modules/compliance/lib/compliance.test.mjs`.
+
+**Open:** (1) UI checked in debug Edge 2026-10-08 (calendar, task list, fill panel). (2) The write path
+(PATCH currentstep) has never been sent for real: first save should be a
+Save (draft) on a task the user has walked, then Complete. (3) Seven stale
+open tasks at 1458 (2022 SPCC ×3 etc.) — ask the market/EHS owner whether
+to close them. (4) Corrective actions / Service Channel work orders for a
+failing answer are left to the Enviance form on purpose.
+
 ### 000. Safety Agent: who was on the clock when an alert went out (2026-10-01)
 
 **Asked:** use the alert time + GTA punches to see who was clocked in and did

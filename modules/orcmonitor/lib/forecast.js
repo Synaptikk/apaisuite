@@ -303,13 +303,13 @@ export function analyzeGroup(group, ctx) {
     : recencyDays <= 45 ? 0.55 : recencyDays <= 60 ? 0.4 : recencyDays <= 90 ? 0.25 : 0.1;
   const risk = Math.round(base * recency);
   const mLabel = market?.short ?? "your market";
-  const riskWhy = [recencyDays != null ? `Last hit ${recencyDays}d ago (×${recency})` : "No dated hit (×0.3)"];
-  if (pts.hits)     riskWhy.push(`${marketHits.length} hit${marketHits.length === 1 ? "" : "s"} at ${marketStoresHit} ${mLabel} store${marketStoresHit === 1 ? "" : "s"} in 90 days (+${pts.hits})`);
-  if (pts.forecast) riskWhy.push(`${Math.round(forecastShare)}% of their forecast is ${mLabel} stores (+${pts.forecast})`);
-  if (pts.near)     riskWhy.push(`${stops.length >= 2 ? "Working" : "One recent hit"} ${nearestMkt.miles} mi from ${mLabel} (+${pts.near})`);
-  if (!directional && recencyDays != null && !inactive) riskWhy.push("No direction of travel yet (no forecast or route points)");
-  if (pts.home)     riskWhy.push(`Store ${ctx.target?.store} is ${targetRoute.miles} route mi ahead (+${pts.home})`);
-  if (pts.severity) riskWhy.push(`Crew/loss/threats (+${pts.severity})`);
+  const riskWhy = [recencyDays != null ? `Last hit ${recencyDays}d ago` : "No dated hit"];
+  if (pts.hits)     riskWhy.push(`${marketHits.length} hit${marketHits.length === 1 ? "" : "s"} at ${marketStoresHit} ${mLabel} store${marketStoresHit === 1 ? "" : "s"} in 90 days`);
+  if (pts.forecast) riskWhy.push(`${Math.round(forecastShare)}% of their forecast is ${mLabel} stores`);
+  if (pts.near)     riskWhy.push(`${stops.length >= 2 ? "Working" : "One recent hit"} ${nearestMkt.miles} mi from ${mLabel}`);
+  if (!directional && recencyDays != null && !inactive) riskWhy.push("No direction of travel yet");
+  if (pts.home)     riskWhy.push(`Store ${ctx.target?.store} is ${targetRoute.miles} route mi ahead`);
+  if (pts.severity) riskWhy.push(`Crew/loss/threats`);
   const memberRisk = Math.max(...group.members.map(m => m.riskScore ?? 0));
   const headedIn = !inactive && directional && next.some(s => inMkt(s.num));
 

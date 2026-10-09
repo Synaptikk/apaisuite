@@ -36,3 +36,10 @@
 .module-safetyobs .so-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); align-items: end; font-size: var(--fs-sm); }
 .module-safetyobs .so-settings label { display: grid; gap: 4px; }
 .module-safetyobs .so-settings label.so-inline { display: flex; align-items: center; gap: var(--sp-2); }
+.module-safetyobs .so-today { background: color-mix(in srgb, var(--accent, #0071dc) 6%, transparent); }
+.module-safetyobs tr.so-coach { cursor: pointer; }
+.module-safetyobs tr.so-coach:hover td { background: color-mix(in srgb, var(--accent, #0071dc) 8%, transparent); }
+.module-safetyobs .so-caret { display: inline-block; width: 1em; transition: transform .15s; }
+.module-safetyobs tr.so-coach.open .so-caret { transform: rotate(90deg); }
+.module-safetyobs tr.so-days > td { padding: var(--sp-2) var(--sp-3) var(--sp-3) 2em; }
+.module-safetyobs .so-daytable { width: auto; min-width: 26rem; }

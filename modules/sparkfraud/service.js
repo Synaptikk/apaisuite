@@ -336,7 +336,7 @@ async function _foregroundIfStillStuck(tabId) {
     return {
       ready: false,
       reason: "auth-needs-interaction",
-      message: "Walmart's SSO is asking for sign-in (Okta MFA, consent, or session re-validation). The auth tab has been opened in its own window — finish the prompts there, then come back to APAISuite and retry your action.",
+      message: "Finish signing in to GScope in the window that opened, then try again.",
       tabId,
       stuckUrl: url,
       movedToNewWindow: moved,
@@ -490,7 +490,7 @@ async function ensureGscopeAuthTab() {
     return {
       ready: false,
       reason: "auth-pending",
-      message: "SSO in progress in the background tab. Click Find candidates again in a few seconds.",
+      message: "Signing you in… click Find candidates again in a few seconds.",
       tabId: stuckTab.id,
     };
   }
@@ -514,7 +514,7 @@ async function ensureGscopeAuthTab() {
       return {
         ready: false,
         reason: "auth-pending",
-        message: "SSO still in progress in the background tab. Click Find candidates again in a few seconds.",
+        message: "Still signing you in… click Find candidates again in a few seconds.",
         tabId: stored,
       };
     } catch (_) {
@@ -579,8 +579,7 @@ async function openAndDriveOwnAuthTab() {
   return {
     ready: false,
     reason: "auth-opening",
-    message: "Opened gscope SSO in a background tab — driving Go-clicks through the chain. " +
-             "Click Find candidates again in a few seconds.",
+    message: "Signing you in… click Find candidates again in a few seconds.",
     tabId: tab.id,
   };
 }
@@ -1351,7 +1350,7 @@ export const handlers = {
       }
 
       if (!read.cookies) {
-        return { ok: false, error: "All gscope tabs unresponsive — try refreshing one" };
+        return { ok: false, error: "GScope isn't responding. Refresh the GScope tab and try again." };
       }
       const { cookies, usedTab } = read;
 
@@ -1364,8 +1363,7 @@ export const handlers = {
         return {
           ok: false,
           error: "auth-cookies-missing",
-          message: "Signed-in session could not be established automatically — the SSO chain " +
-                   "completed but gscope issued no auth cookies. Open " +
+          message: "Couldn't sign you in automatically. Open " +
                    "https://gscope.walmartlabs.com/apphome to sign in, then click Find candidates again.",
           diag: {
             tabUrl: usedTab.url,

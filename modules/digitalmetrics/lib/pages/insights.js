@@ -342,12 +342,11 @@ function firstPickSection(ctx) {
   const pull = ctx.clockPull;
   const when = pull?.at
     ? new Date(pull.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
-  const how = pull?.at ? ` (${pull.auto ? "auto" : "manual"}, ${when}${pull.ms ? `, ${(pull.ms / 1000).toFixed(1)} s` : ""})` : "";
-  const note = pull?.running ? "Pulling clock-ins from the timesheet…"
-    : pull?.error ? `Clock-in pull failed${how}: ${pull.error}`
-    : pull?.at ? `Clock-ins updated${how}: ${pull.days} shift day(s) for ${pull.matched} associate(s)` +
-             (pull.unmatched?.length ? `. Not found in the timesheet: ${pull.unmatched.join(", ")}` : "") +
-             (pull.errors?.length ? `. Errors: ${pull.errors.join("; ")}` : "")
+  if (pull?.error || pull?.errors?.length) console.warn("[digitalmetrics] clock-in pull:", pull.error, pull.errors);
+  const note = pull?.running ? "Updating clock-ins…"
+    : pull?.error ? "Couldn't update clock-ins. Sign in to the timesheet site and try again."
+    : pull?.at ? `Clock-ins updated ${when}: ${pull.days} shift day(s) for ${pull.matched} associate(s)` +
+             (pull.unmatched?.length ? `. Not found in the timesheet: ${pull.unmatched.join(", ")}` : "")
     : totals.withClock ? "" : "No clock-ins yet. They update with each sync; sign in to the timesheet site if this stays empty.";
   const bar = `<div class="dm-toolbar">
       <button class="btn" data-dm-pull-clockins ${pull?.running ? "disabled" : ""}>Pull clock-ins</button>
@@ -490,8 +489,7 @@ export function render(ctx) {
     ...(dist.expressDays ? [
       statCard("Express Orders", dist.expressOrders.toLocaleString(),
                { note: `${dist.expressDays} of ${daily.length} days` }),
-      statCard("Express Picks",  dist.expressPicks.toLocaleString(),
-               { note: "UNITS on the Metric Overview" }),
+      statCard("Express Picks",  dist.expressPicks.toLocaleString()),
     ] : []),
     ...(dist.expressRate != null ? [
       statCard("Express Pick Rate", dist.expressRate.toFixed(1),
@@ -523,7 +521,7 @@ export function render(ctx) {
   const helpExpressSection = hve.days.length
     ? statRow([
         statCard("Days Compared", hve.days.length,
-                 { note: `of ${daily.length} loaded (needs the Express rate pull)` }),
+                 { note: `of ${daily.length} loaded` }),
         statCard("Store Help Hours", h(hve.helpHours), { tone: "help" }),
         statCard("Express Pick Hours", h(hve.expressHours)),
         statCard("Correlation", hve.r == null ? "—" : hve.r,
@@ -539,7 +537,7 @@ export function render(ctx) {
         { label: "Store Help Picks", key: "storeHelp", align: "right",
           format: (d) => esc(d.storeHelp.toLocaleString()) },
       ], hve.days)
-    : empty("No days with an Express pick-rate pull yet — pull Express to compare.");
+    : empty("No Express data yet for this week.");
 
   // ── Peak hours ─────────────────────────────────────────────────────────
   const peakCards = peaks.slice(0, 5).map((h, i) =>
@@ -598,9 +596,7 @@ export function render(ctx) {
     fold(`Excessive Lunches (>1:10)${parts?.longLunchCount ? ` — ${parts.longLunchCount} flagged` : ""}`, parts?.lunches),
     fold("Digital vs Store Help", split),
     fold("Store Help vs Express", `
-      <p class="dm-stat-note">Express pick hours against borrowed-help hours, day by day, on the days
-        the Express pick-rate pull covers. A strong correlation suggests Express volume is what pulls
-        store help onto picking; it is a pattern over few days, not proof.</p>
+      <p class="dm-stat-note">Does heavy Express volume pull in Store Help? A pattern, not proof.</p>
       ${helpExpressSection}`),
     fold("Store Help Peak Hours", peakSection),
     fold("Pick Starts and Stops — on the clock but not picking, per associate", firstPickSection(ctx)),

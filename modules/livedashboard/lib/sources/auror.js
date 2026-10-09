@@ -199,7 +199,7 @@ export async function fetchAurorExceptions(storeNbr, { days = LOOKBACK_DAYS } = 
   if (!jwt) {
     return {
       ok: false, errorClass: "NO_JWT",
-      error: "No Auror token — open any Auror page to refresh it",
+      error: "Sign in to Auror, then Refresh.",
     };
   }
   try {
@@ -237,10 +237,12 @@ export async function fetchAurorExceptions(storeNbr, { days = LOOKBACK_DAYS } = 
     return { ok: true, records, days, capturedAt: new Date().toISOString() };
   } catch (e) {
     const msg = String(e?.message ?? e);
+    console.warn("[livedashboard] auror pull failed:", msg);
+    const expired = /HTTP 401|HTTP 403/.test(msg);
     return {
       ok: false,
-      errorClass: /HTTP 401|HTTP 403/.test(msg) ? "EXPIRED" : "FETCH",
-      error: msg.slice(0, 160),
+      errorClass: expired ? "EXPIRED" : "FETCH",
+      error: expired ? "Auror sign-in expired. Sign in to Auror, then Refresh." : "Couldn't load Auror events. Try again.",
     };
   }
 }

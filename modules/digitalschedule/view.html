@@ -1,0 +1,135 @@
+<div class="ds">
+  <header class="ds-header">
+    <div>
+      <h1>Digital Schedule</h1>
+      <p class="ds-sub"><b>Blue</b> = on guidance · <span class="ds-k-under">yellow</span> = short · <span class="ds-k-over">red</span> = over. Nothing changes until you press Submit changes.</p>
+    </div>
+    <div class="ds-where" id="digitalschedule-where">No week loaded</div>
+  </header>
+
+  <form class="ds-toolbar" id="digitalschedule-bar" autocomplete="off">
+    <label class="ds-field">Week <span class="ds-wk">WK <input id="digitalschedule-wk" class="input" type="number" min="1" max="53" placeholder="40"></span></label>
+    <button class="btn btn-primary btn-sm" id="digitalschedule-go" type="submit">Load week</button>
+    <button class="btn btn-secondary btn-sm" id="digitalschedule-reload" type="button">Reload</button>
+    <button class="btn btn-secondary btn-sm" id="digitalschedule-show" type="button">Show scheduler</button>
+    <span class="ds-spacer"></span>
+    <label class="ds-field">Role
+      <select id="digitalschedule-role" class="input"></select>
+    </label>
+    <label class="ds-field">Jobs <input id="digitalschedule-jobs" class="input ds-jobs" placeholder="job codes" title="Job codes to include, e.g. 1-936-1451"></label>
+  </form>
+
+  <div id="digitalschedule-msg" class="ds-status" hidden></div>
+
+  <section id="digitalschedule-main" hidden>
+    <div class="ds-days" id="digitalschedule-days"></div>
+
+    <div class="ds-cols">
+      <section class="ds-card ds-cov">
+        <div class="ds-card-head">
+          <h2>Guidance graph</h2>
+          <span class="ds-spacer"></span>
+          <span class="ds-legend"><i class="blue"></i>on guidance <i class="under"></i>short <i class="over"></i>over <i class="line"></i>guidance <i class="peak"></i>12p–4p</span>
+        </div>
+        <div class="ds-rowlab">Current schedule</div><div class="ds-week" id="digitalschedule-wk-before"></div>
+        <div class="ds-rowlab">With queued changes</div><div class="ds-week" id="digitalschedule-wk-after"></div>
+        <div class="ds-charts">
+          <div><h3 id="digitalschedule-t-before"></h3><div class="ds-meta" id="digitalschedule-m-before"></div><div id="digitalschedule-ch-before"></div></div>
+          <div><h3 id="digitalschedule-t-after"></h3><div class="ds-meta" id="digitalschedule-m-after"></div><div id="digitalschedule-ch-after"></div></div>
+        </div>
+        <details class="ds-hourtable">
+          <summary>Hour table</summary>
+          <label class="ds-check"><input type="checkbox" id="digitalschedule-preview" checked> with queued changes</label>
+          <div class="ds-cov-wrap"><table class="ds-cov-table" id="digitalschedule-cov"></table></div>
+        </details>
+        <div class="ds-tip" id="digitalschedule-tip"></div>
+      </section>
+
+      <aside class="ds-side">
+        <section class="ds-card">
+          <div class="ds-card-head"><h2>Queued changes <span id="digitalschedule-qcount" class="ds-pill">0</span></h2></div>
+          <ol id="digitalschedule-queue" class="ds-queue"></ol>
+          <div id="digitalschedule-check" class="ds-check-out" hidden></div>
+          <div class="ds-actions">
+            <button class="btn btn-primary btn-sm" id="digitalschedule-save" type="button" disabled title="Verifies first if needed, then asks before writing to the live schedule">Submit changes</button>
+            <button class="btn btn-secondary btn-sm" id="digitalschedule-validate" type="button" title="Check without saving">Verify</button>
+            <button class="btn btn-secondary btn-sm" id="digitalschedule-revert" type="button" disabled>Revert last submit</button>
+            <span class="ds-spacer"></span>
+            <button class="btn btn-ghost btn-sm" id="digitalschedule-export" type="button">Export</button>
+            <button class="btn btn-ghost btn-sm" id="digitalschedule-clear" type="button" title="Empty the queue; nothing on the schedule changes">Discard</button>
+          </div>
+          <div id="digitalschedule-submit-state" class="ds-muted ds-submit-state"></div>
+        </section>
+
+        <section class="ds-card">
+          <div class="ds-card-head"><h2>Fit to guidance</h2></div>
+          <p class="ds-note">Weekends and 12p–4p never short; In Home drivers untouched. Only queues.</p>
+          <div class="ds-opts">
+            <label class="ds-field">No hour below <input id="digitalschedule-floor" class="input ds-num" type="number" min="50" max="100" step="5" value="85">%</label>
+            <label class="ds-field">Chase exact (blue) hours
+              <select id="digitalschedule-bonus" class="input"><option value="0">off</option><option value="5" selected>some</option><option value="15">strong</option></select>
+            </label>
+            <label class="ds-check"><input type="checkbox" id="digitalschedule-daymoves" checked> move shifts between weekdays</label>
+            <label class="ds-check"><input type="checkbox" id="digitalschedule-extend" checked> stretch short shifts to 9 h</label>
+          </div>
+          <details class="ds-rules">
+            <summary>People rules <span id="digitalschedule-rules-state" class="ds-muted"></span></summary>
+            <textarea id="digitalschedule-rules" class="input ds-rules-text" rows="8" spellcheck="false" title="One rule per line:&#10;pair: A + B&#10;fixed: Name 11:00-20:00&#10;days: Name sat,sun&#10;window: Name weekday 00:00-15:00&#10;nodaymove: Name&#10;keep: Name"></textarea>
+          </details>
+          <div class="ds-actions">
+            <button class="btn btn-primary btn-sm" id="digitalschedule-suggest" type="button">Suggest changes</button>
+            <span id="digitalschedule-suggest-out" class="ds-muted"></span>
+          </div>
+          <ul id="digitalschedule-notes" class="ds-notes"></ul>
+        </section>
+
+        <section class="ds-card">
+          <div class="ds-card-head"><h2>Saved changes</h2></div>
+          <ul id="digitalschedule-history" class="ds-history"></ul>
+        </section>
+      </aside>
+    </div>
+
+    <section class="ds-card ds-chat">
+      <div class="ds-card-head">
+        <h2>Schedule assistant</h2>
+        <span id="digitalschedule-chat-state" class="ds-muted"></span>
+        <button class="btn btn-secondary btn-sm" id="digitalschedule-chat-auth" type="button" hidden>Sign in to assistant</button>
+        <span class="ds-spacer"></span>
+        <details class="ds-field ds-chat-adv"><summary>Advanced</summary><label class="ds-field">Model <select id="digitalschedule-chat-model" class="input"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option></select></label></details>
+        <button class="btn btn-ghost btn-sm" id="digitalschedule-chat-reset" type="button">New chat</button>
+      </div>
+      <div id="digitalschedule-chat-log" class="ds-chat-log"></div>
+      <form id="digitalschedule-chat-form" class="ds-chat-form" autocomplete="off">
+        <textarea id="digitalschedule-chat-input" class="input" rows="2" placeholder="Tell it what to change…"></textarea>
+        <button class="btn btn-primary btn-sm" id="digitalschedule-chat-send" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="ds-card">
+      <div class="ds-card-head">
+        <h2>Associates</h2>
+        <span class="ds-spacer"></span>
+        <input id="digitalschedule-filter" class="input ds-filter" type="search" placeholder="Filter by name">
+        <label class="ds-check"><input type="checkbox" id="digitalschedule-all"> everyone on the roster</label>
+      </div>
+      <div id="digitalschedule-editor" class="ds-editor" hidden></div>
+      <div class="ds-roster-wrap"><table class="ds-roster" id="digitalschedule-roster"></table></div>
+      <p class="ds-note">Click a shift to change it, or an empty day to add one.</p>
+    </section>
+  </section>
+
+  <dialog id="digitalschedule-confirm" class="ds-dialog">
+    <form method="dialog">
+      <h2>Submit to the live schedule?</h2>
+      <p id="digitalschedule-confirm-what"></p>
+      <ol id="digitalschedule-confirm-list" class="ds-queue"></ol>
+      <label class="ds-check" id="digitalschedule-confirm-warn-wrap" hidden><input type="checkbox" id="digitalschedule-confirm-warn"> submit even with the new warnings above</label>
+      <div class="ds-actions">
+        <span class="ds-spacer"></span>
+        <button class="btn btn-secondary btn-sm" value="cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" value="save" id="digitalschedule-confirm-go">Submit</button>
+      </div>
+    </form>
+  </dialog>
+</div>

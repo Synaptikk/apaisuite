@@ -35,12 +35,14 @@ async function call(path, { method = "GET", query, body, reviewKey }) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
-      const error = res.status === 401 ? "Review key is wrong for this store." : (data.error || `HTTP ${res.status}`);
+      if (!data.error && res.status !== 401) console.warn(`[doorcatch] ${path} HTTP ${res.status}`);
+      const error = res.status === 401 ? "Review key is wrong for this store." : (data.error || "Couldn't reach the door catch service. Try again.");
       return { ok: false, status: res.status, error };
     }
     return data;
   } catch (err) {
-    return { ok: false, status: 0, error: err?.name === "AbortError" ? "qrcallbox.com timed out" : String(err?.message || err) };
+    console.warn(`[doorcatch] ${path} failed:`, err?.message || err);
+    return { ok: false, status: 0, error: err?.name === "AbortError" ? "The door catch service took too long. Try again." : "Couldn't reach the door catch service. Try again." };
   } finally {
     clearTimeout(timer);
   }

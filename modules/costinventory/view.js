@@ -24,7 +24,7 @@ const ROWS = [
   { key: "counted",   label: "Total from Cost Inventory App (Cost)", prefix: "",
     hint: "counted — salesfloor & backroom", kind: "input" },
   { key: "truck",     label: "Warehouse Truck Invoices (Cost)",      prefix: "+",
-    hint: "always 0 — last night's freight is reported below, not added here", kind: "computed" },
+    hint: "freight shown below", kind: "computed" },
   { key: "ending",    label: "Ending Inventory (Cost)",              prefix: "=",        kind: "computed", strong: true },
   { key: "gap1",      kind: "gap" },
   { key: "sales",     label: "Sales (Retail)",                       prefix: "",         kind: "pulled" },
@@ -118,13 +118,15 @@ export async function mount(host, container) {
         },
       });
       if (!res?.ok) {
-        host.ui?.toast?.(res?.error ?? "pull failed");
+        if (res?.error) console.warn("[costinventory] pull failed:", res.error);
+        host.ui?.toast?.(/store number/i.test(res?.error ?? "") ? res.error : "Pull failed — try again.");
         return;
       }
       state.snapshot = res.snapshot;
       render();
     } catch (e) {
-      host.ui?.toast?.(String(e?.message ?? e));
+      console.warn("[costinventory] pull failed:", e);
+      host.ui?.toast?.("Pull failed — try again.");
     } finally {
       setBusy(false);
     }
@@ -135,7 +137,8 @@ export async function mount(host, container) {
     try {
       await exportWorkbook(host, state, els);
     } catch (e) {
-      host.ui?.toast?.("export failed: " + String(e?.message ?? e));
+      console.warn("[costinventory] export failed:", e);
+      host.ui?.toast?.("Export failed.");
     }
   };
   els.exportBtn.addEventListener("click", onExport);
@@ -220,16 +223,16 @@ export async function mount(host, container) {
       sourceLine("Beginning inventory", snap.sources.beginningInventory,
         snap.sources.beginningInventory?.tool
           ? snap.sources.beginningInventory.tool
-          : "OneWalmart lookup"),
+          : "loaded", plainOneWalmartError),
       sourceLine("Sales & purchases", snap.sources.itr,
         snap.sources.itr?.coverage
           ? snap.sources.itr.coverage.days + " days, " +
             withWeekday(snap.sources.itr.coverage.firstDate) + " → " + withWeekday(snap.sources.itr.coverage.lastDate) +
             (snap.sources.itr.coverage.missingTail > 0
-              ? " (ITR is " + snap.sources.itr.coverage.missingTail + " day behind)" : "")
-          : "Ops Portal ITR"),
+              ? " (" + snap.sources.itr.coverage.missingTail + " day behind)" : "")
+          : "loaded", plainOpsPortalError),
       sourceLine("Freight", snap.sources.trailers,
-        (snap.sources.trailers?.loads?.length ?? 0) + " fresh trailer(s) on " + withWeekday(snap.sources.trailers?.night ?? "—")),
+        (snap.sources.trailers?.loads?.length ?? 0) + " fresh trailer(s) on " + withWeekday(snap.sources.trailers?.night ?? "—"), plainFreightError),
     ];
     els.sources.innerHTML = lines.join("");
   }
@@ -375,12 +378,26 @@ function money(n) {
   return "$" + (Number(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function sourceLine(label, source, detail) {
+// Raw source errors name endpoints and status codes; show a plain line and
+// keep the detail in the console.
+const AUTH_ERR_RE = /\b40[13]\b|\bsso\b|sign.?in|signed.?in|expired|login|csrf/i;
+function plainOneWalmartError(err) {
+  return AUTH_ERR_RE.test(err) ? "Sign in to OneWalmart and pull again." : "Couldn't load — try again.";
+}
+function plainOpsPortalError(err) {
+  return AUTH_ERR_RE.test(err) ? "Sign in to the Ops Portal and pull again." : "Couldn't load — try again.";
+}
+function plainFreightError(err) {
+  return /^Freight totals didn't load/.test(err) ? err : "Couldn't load freight totals.";
+}
+
+function sourceLine(label, source, detail, plainError) {
   const ok = source?.ok;
+  if (!ok && source?.error) console.warn("[costinventory] " + label + ":", source.error);
   return '<div class="ci-source ' + (ok ? "ci-source-ok" : "ci-source-bad") + '">' +
     '<span class="ci-source-dot"></span>' +
     "<strong>" + label + "</strong>" +
-    "<span>" + (ok ? detail : (source?.error ?? "not pulled")) + "</span></div>";
+    "<span>" + (ok ? detail : (source?.error ? (plainError ? plainError(String(source.error)) : "Couldn't load — try again.") : "not pulled")) + "</span></div>";
 }
 
 function relative(ms) {

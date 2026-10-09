@@ -123,3 +123,11 @@ test("W&H report sentences, totals, and no-notes time counted as work", async ()
   assert.match(text, /Total time performing work duties: 6 hrs 9 min\./);
   assert.match(text, /no documented activity is counted as performing work duties/);
 });
+
+test("punched lunch and out/in break show as break rows", async () => {
+  const { timeline, breakLabel } = await import("./review_export.js");
+  const a = analyzeDay([], [P("in", "11:35"), P("out", "15:46"), P("in", "16:49"), P("out", "19:30")], "2026-10-07");
+  assert.deepEqual(a.breaks, [{ from: 946, to: 1009, status: "off" }]);
+  assert.deepEqual(timeline(a).map((x) => x.kind), ["gap", "break", "gap"]);
+  assert.match(breakLabel(a.breaks[0]), /^Lunch — clocked out/);
+});

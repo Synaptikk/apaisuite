@@ -1,8 +1,10 @@
 // modules/safetyobs/lib/coach_check.js
 //
-// The 4:45 PM check: which scheduled coaches have fewer than 2 safety
-// observations today, and the Workvivo message that @mentions them. Pure;
-// tested in lib/tests/coach_check.test.mjs.
+// Which scheduled leaders owe safety observations, and the Workvivo message
+// that @mentions them. Pure; tested in lib/tests/coach_check.test.mjs.
+// The service posts the morning catch-up (buildCatchUp, at the bottom); the
+// same-day checkCoaches/buildMessage pair is no longer wired, because
+// Field_Dashboard never holds today's observations.
 //
 // Who is checked (the user's rule, 2026-10-08): every schedule title with
 // "Coach" in it, plus Store Manager and Ops Manager, whose shift today starts
@@ -144,8 +146,10 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
   const people = new Map();   // key → row
   for (const d of good) {
     for (const [k, { keys, s }] of d.leaders) {
-      const row = people.get(k) || { name: titleCase(s.name), keys, jobName: s.jobName, scheduledDays: 0, lastScheduled: null, done: 0, today: 0, scheduledToday: false };
+      const row = people.get(k) || { name: titleCase(s.name), keys, jobName: s.jobName, scheduledDays: 0, lastScheduled: null, done: 0, today: 0, scheduledToday: false, byDay: {} };
       row.scheduledDays++;
+      (row.byDay[d.dateIso] ||= { scheduled: false, shift: "", done: 0 }).scheduled = true;
+      row.byDay[d.dateIso].shift = s.shiftStart && s.shiftEnd ? `${s.shiftStart}–${s.shiftEnd}` : "";
       if (!row.lastScheduled || d.dateIso > row.lastScheduled) { row.lastScheduled = d.dateIso; row.jobName = s.jobName; }
       if (d.dateIso === todayIso) row.scheduledToday = true;
       people.set(k, row);
@@ -158,6 +162,7 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
     for (const row of people.values()) {
       if (row.keys.some((k) => ok.includes(k))) {
         row.done += n;
+        (row.byDay[o.dateIso] ||= { scheduled: false, shift: "", done: 0 }).done += n;
         if (o.dateIso === todayIso) row.today += n;
         break;
       }
@@ -165,8 +170,86 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
   }
   const rows = [...people.values()].map((r) => {
     const expected = r.scheduledDays * minPerDay;
-    const { keys, ...rest } = r;
-    return { ...rest, expected, behind: Math.max(0, expected - r.done), ahead: Math.max(0, r.done - expected), pct: expected ? Math.round((100 * r.done) / expected) : null };
+    const { keys, byDay, ...rest } = r;
+    // Per day, oldest first: scheduled days owe minPerDay; an unscheduled day
+    // with observations still counts toward Done.
+    const days = Object.keys(byDay).sort().map((dateIso) => ({ dateIso, ...byDay[dateIso], expected: byDay[dateIso].scheduled ? minPerDay : 0 }));
+    return { ...rest, byDay: days, expected, behind: Math.max(0, expected - r.done), ahead: Math.max(0, r.done - expected), pct: expected ? Math.round((100 * r.done) / expected) : null };
   }).sort((a, b) => b.behind - a.behind || a.name.localeCompare(b.name));
   return { rows, excludedDays: excludedDays.sort(), days: good.map((d) => d.dateIso).sort() };
+}
+
+// ── Morning catch-up (2026-10-08) ──────────────────────────────────
+//
+// Field_Dashboard refreshes once, early in the morning, so it never holds
+// today's observations: a 4:45 "under 2 today" check flagged nearly everyone.
+// The post now goes out after the refresh and tells each leader scheduled
+// today how many to complete today: what the ledger says they are behind
+// through yesterday, plus today's 2 (the user: "complete 4 today to catch up,
+// 6 etc, however many").
+
+/**
+ * @param {object} p
+ * @param {Array} p.ledgerRows   buildLedger rows computed through yesterday
+ * @param {Array<{name:string, jobName:string, shiftStart:string, shiftEnd:string}>} p.schedule   today's whole schedule
+ * @param {Array<{userId:string, nickname:string}>} [p.members]
+ * @param {Array<{name:string, count?:number}>} [p.today]   today's observations submitted from the suite
+ *        (shared through Firestore); the only same-day count there is
+ * @returns {{rows: Array, behind: Array}}   rows: every leader on today; behind: those with backlog still owed
+ */
+export function buildCatchUp({ ledgerRows = [], schedule = [], members = [], today = [], minPerDay = MIN_PER_DAY }) {
+  const todayCounts = new Map();
+  for (const o of today) {
+    const n = Math.max(1, Math.round(Number(o.count) || 1));
+    for (const k of nameKeys(o.name)) todayCounts.set(k, (todayCounts.get(k) || 0) + n);
+  }
+  const ledger = ledgerRows.map((r) => ({ keys: nameKeys(r.name), r }));
+  const memberByKey = new Map();
+  for (const m of members) for (const k of nameKeys(m.nickname)) if (!memberByKey.has(k)) memberByKey.set(k, m);
+
+  const seen = new Set();
+  const rows = [];
+  for (const s of schedule) {
+    if (!isCheckedTitle(s.jobName)) continue;
+    const keys = nameKeys(s.name);
+    if (!keys.length || seen.has(keys[0])) continue;
+    seen.add(keys[0]);
+    const hit = ledger.find((l) => l.keys.some((k) => keys.includes(k)));
+    const behind = hit ? hit.r.behind : 0;
+    const doneToday = Math.max(0, ...keys.map((k) => todayCounts.get(k) || 0));
+    const member = keys.map((k) => memberByKey.get(k)).find(Boolean) || null;
+    rows.push({
+      name: titleCase(s.name), jobName: s.jobName, shiftStart: s.shiftStart, shiftEnd: s.shiftEnd,
+      behind, doneToday, owe: Math.max(0, behind + minPerDay - doneToday),
+      member: member ? { userId: String(member.userId), nickname: member.nickname } : null,
+    });
+  }
+  rows.sort((a, b) => b.owe - a.owe || a.name.localeCompare(b.name));
+  return { rows, behind: rows.filter((r) => r.behind > 0 && r.owe > 0) };
+}
+
+/**
+ * The morning post. Null when no leader on today is behind.
+ * @param {Array} behind        buildCatchUp().behind
+ * @param {object} o
+ * @param {string} o.throughLabel   last day the counts cover, e.g. "Wed 10/7"
+ * @param {string} o.sinceLabel     ledger start, e.g. "8/22"
+ * @returns {{text:string, mentionedUserIds:string[]}|null}
+ */
+export function buildCatchUpMessage(behind, { throughLabel, sinceLabel, minPerDay = MIN_PER_DAY } = {}) {
+  if (!behind.length) return null;
+  const lines = behind.map((c) => {
+    const who = c.member ? `@[${c.member.nickname}](person:${c.member.userId})` : c.name;
+    const done = c.doneToday ? `, ${c.doneToday} done so far` : "";
+    return `• ${who}: complete ${c.owe}${c.doneToday ? " more" : ""} today (${c.behind} behind + today's ${minPerDay}${done})`;
+  });
+  return {
+    text: [
+      `Safety observations: ${minPerDay} per scheduled day since ${sinceLabel}, counted through ${throughLabel}.`,
+      `To catch up:`,
+      ...lines,
+      `Everyone else on today: your usual ${minPerDay}.`,
+    ].join("\n"),
+    mentionedUserIds: behind.filter((c) => c.member).map((c) => c.member.userId),
+  };
 }

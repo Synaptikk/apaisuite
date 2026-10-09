@@ -36,8 +36,8 @@ export function createSummaryCards({ getFilteredOutlierCount }) {
     const outlierCount = getFilteredOutlierCount?.(state) ?? 0;
 
     replace(grid,
-      card({ title: "Total Disposals", value: sum.disposalCount.toLocaleString(), sub: "Items dispositioned as disposal", accent: ACCENT_BLUE }),
-      card({ title: "Total Donations", value: sum.donationCount.toLocaleString(), sub: "Items dispositioned as donation", accent: ACCENT_YELLOW }),
+      card({ title: "Total Disposals", value: sum.disposalCount.toLocaleString(), accent: ACCENT_BLUE }),
+      card({ title: "Total Donations", value: sum.donationCount.toLocaleString(), accent: ACCENT_YELLOW }),
       card({ title: "Disposal $ Value", value: fmtMoney(sum.disposalValue), sub: "At cost", accent: ACCENT_BLUE }),
       card({ title: "Donation $ Value", value: fmtMoney(sum.donationValue), sub: "At cost", accent: ACCENT_YELLOW }),
       card({ title: "Disposal Rate", value: fmtPct(sum.disposalRate), sub: "of all claim events" }),

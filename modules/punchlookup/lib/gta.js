@@ -114,6 +114,81 @@ export async function punchesInPage(req) {
       }
       return { pages, details };
     }
+    // Store-wide (edit review): the store team, then one day of every
+    // associate's raw clocks. GPS (g=) is dropped here, before it leaves the page.
+    if (req.op === "storeTeam") {
+      const layer = doc.getElementById("WBT_IDS_layer");
+      const ds = (n) => (html.match(new RegExp(`${n}='([^']*)'`)) || [])[1] || "";
+      if (!layer) return { error: "The timesheet has no team picker for this sign-in." };
+      const common = {
+        key: "", label: escape(ds(layer.getAttribute("fls") || "DS_3")), fields: "", pageSize: "200", dataSourceType: "REGISTERED",
+        dataSourceSpec: escape(ds(layer.getAttribute("dss") || "DS_2")), dataSourceParams: escape(layer.getAttribute("dsp") || ""),
+        where: "", addWhere: "", filtersDuplicatesBySQL: "", initialBlank: "", multiple: "Y",
+      };
+      const head = JSON.parse(await (await post(`${base}/services/platform/dblookup/getdblookup`, JSON.stringify(common), true)).text());
+      let fieldNames = "";
+      try { fieldNames = JSON.parse(head[0].data[0]).fieldNames || ""; } catch { /* the lookup will say */ }
+      const all = JSON.parse(await (await post(`${base}/services/platform/dblookup/getdblookup`, JSON.stringify({
+        ...common, pageNum: 0, initialBlank: false, fieldNames, criteria: "", sortOrderBy: null }), true)).text());
+      const cell = (c) => String(c ?? "").split("~|~")[0].trim();
+      const want = String(req.store || "").padStart(5, "0");
+      // Index loop: the page's legacy library replaces Array.prototype.find.
+      for (let i = 1; i < all.length; i++) {
+        const d = all[i]?.data;
+        if (Array.isArray(d) && (!req.store ? /^\d{5}$/.test(cell(d[1])) : cell(d[1]) === want)) return { teamId: cell(d[0]), store: cell(d[1]), label: cell(d[2]) };
+      }
+      return { error: req.store ? `Your timesheet sign-in does not cover store ${req.store}.` : "No store team on this sign-in." };
+    }
+
+    if (req.op === "storeDay") {
+      const [y, m, d] = req.date.split("-");
+      const f = new URLSearchParams({
+        wbat, pageAction: "", FROM_DAILY_SELECTION: "true", VIEW_SELECTION: "0", CREATE_DEFAULT_RECORDS: "N",
+        EMPLOYEE_IDS: "", EMPLOYEE_IDS_label: "", WBT_IDS: String(req.teamId), WBT_IDS_label: "", INCLUDE_SUB_TEAMS: "Y",
+        DATE_SELECTION: "7", TS_DATE_SELECTION_UI_EXTRA: "", TS_DATE_SELECTION_UI_MANUAL: "7",
+        START_DATE: `${y}${m}${d} 000000`, START_DATE_dummy: `${m}/${d}/${y}`,
+        END_DATE: `${y}${m}${d} 000000`, END_DATE_dummy: `${m}/${d}/${y}`, wbXpos: "0", wbYpos: "0",
+      });
+      for (let i = 1; i <= 10; i++) f.set(`TDF_FIELD${i}`, "null");
+      // The form's hidden ROWS_ON_PAGE is 7, which made a store day ~66 pages.
+      // Ask for more; if the server ignores it the walk below still works,
+      // because it steps by the global tsRow index, not by an assumed size.
+      const ROWS = String(req.rows || 50);
+      f.set("ROWS_ON_PAGE", ROWS);
+      const parse = (h) => {
+        const rows = [];
+        const ids = [...h.matchAll(/<tr id='tsRow(\d+)'/g)].map((m) => Number(m[1]));
+        const parts = h.split(/<tr id='tsRow\d+'/);
+        for (let i = 1; i < parts.length; i++) {
+          const who = /class=.textMedium.>([^<]+?)\s+-\s+\d{6,}</.exec(parts[i]);
+          const cl = /baseDate:'\d{8}'[^[]*clocks:\[(.*?)\]\s*\}\)/s.exec(parts[i]);
+          if (!who || !cl) continue;
+          const clocks = [];
+          for (const p of cl[1].matchAll(/\{type:'(\d+)',time:'(\d{12,14})'(?:,data:'([^']*)')?/g)) {
+            clocks.push([Number(p[1]), p[2], (p[3] || "").split("&").filter((kv) => !/^g=/.test(kv)).join("&")]);
+          }
+          if (clocks.length) rows.push([who[1].replace(/\s+/g, " ").trim(), clocks]);
+        }
+        const pm = /Page\s+(\d+)\s+of\s+(\d+)/.exec(h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " "));
+        return { rows, ids, page: pm ? Number(pm[1]) : null, of: pm ? Number(pm[2]) : null, none: /No Associates found/i.test(h) };
+      };
+      const pg = parse(await (await post(`${base}/action/dailytimesheet.action?action=LoadEmployeeAction`, f.toString())).text());
+      if (pg.none) return { pages: 0, rows: [] };
+      if (pg.page !== 1 || !pg.of || !pg.ids.length) return { error: "The timesheet did not return a paged team list.", drift: true };
+      const rows = [...pg.rows];
+      let cur = pg, pages = 1;
+      while (cur.page < cur.of && pages < 400) {
+        const start = cur.ids[cur.ids.length - 1] + 1;
+        const next = parse(await (await post(`${base}/action/dailytimesheet.action`,
+          `action=ViewTimesheetAction&TS_STARTING_ROW=${start}&ROWS_ON_PAGE=${ROWS}&SHOW_APPLIED_OVERRIDES=&INLINE_DETAILS_EXPANDED=`)).text());
+        if (next.ids[0] !== start || next.page !== cur.page + 1) {
+          return { error: `Timesheet page ${cur.page + 1} came back as ${next.page} (row ${next.ids[0]}, wanted ${start}).`, drift: true };
+        }
+        rows.push(...next.rows);
+        cur = next; pages++;
+      }
+      return { pages, rows, pageSize: pg.ids.length };
+    }
     return { error: `unknown op ${req.op}` };
   } catch (e) {
     return { error: String(e?.message || e) };

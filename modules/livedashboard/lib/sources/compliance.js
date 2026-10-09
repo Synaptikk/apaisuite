@@ -28,7 +28,7 @@ const MAX_REAUTH_ATTEMPTS  = 2;
 export async function fetchCompliance() {
   // 1. Find or open background tab.
   const opened = await findOrOpenEnvianceTab();
-  if (!opened) return { ok: false, errorClass: "TAB", error: "Could not find or open Enviance tab." };
+  if (!opened) return { ok: false, errorClass: "TAB", error: "Couldn't open Enviance. Try again." };
   const { tab, didOpen } = opened;
 
   // Owned here, closed in the finally. Previously closed only at the end of the
@@ -99,7 +99,7 @@ async function runCompliancePipeline(tabId) {
   if (!envelope) {
     return {
       ok: false, errorClass: "NO_CAPTURE",
-      error: "Enviance tab open but WfAdapt.getWfs not captured in time. Open the panel manually once.",
+      error: "Enviance didn't load in time. Open Enviance once, then Refresh.",
     };
   }
 
@@ -130,7 +130,8 @@ async function runCompliancePipeline(tabId) {
     if (!respText && envelope.respBody) respText = envelope.respBody;
   }
   if (!respText) {
-    return { ok: false, errorClass: "EMPTY", error: "No response body to decode." };
+    console.warn("[livedashboard] compliance: empty response body");
+    return { ok: false, errorClass: "EMPTY", error: "Couldn't load compliance tasks. Try again." };
   }
 
   // Auth check BEFORE JSON.parse. If Enviance served a login HTML body
@@ -147,14 +148,14 @@ async function runCompliancePipeline(tabId) {
       ok: false,
       errorClass: "AUTH",
       authStatus,
-      error: `Enviance auth-shaped response (${authStatus}) — autonomous reauth will retry.`,
+      error: (console.warn("[livedashboard] compliance auth status:", authStatus), "Enviance sign-in expired. Sign in to Enviance, then Refresh."),
     };
   }
 
   // Parse rows.
   let json;
   try { json = JSON.parse(respText); }
-  catch { return { ok: false, errorClass: "PARSE", error: "Response was not JSON." }; }
+  catch { console.warn("[livedashboard] compliance: response was not JSON"); return { ok: false, errorClass: "PARSE", error: "Couldn't load compliance tasks. Try again." }; }
 
   const rows = decodeWfsResponse(json);
   return {

@@ -126,6 +126,8 @@ function normalizeSchedule(s) {
       ? [...new Set(s.days.map((d) => String(d).toUpperCase()))].filter((d) => WEEKDAYS.includes(d))
       : [],
     time: typeof s?.time === "string" ? s.time.trim() : "",
+    // Report metrics (lib/email_jobs.js): which day this slot reports on.
+    ...(s?.reportDay === "previous" || s?.reportDay === "current" ? { reportDay: s.reportDay } : {}),
   };
 }
 

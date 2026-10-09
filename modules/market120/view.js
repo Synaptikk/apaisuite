@@ -139,7 +139,7 @@ export async function mount(host, container) {
       if (wow.priorWeek) {
         meta.textContent = `Comparing ${wow.currentWeek} vs ${wow.priorWeek} · ${rows.length} stores · ${wow.weekCount} weeks on record.`;
       } else {
-        meta.textContent = `${wow.currentWeek} baseline · ${rows.length} stores. Week-over-week deltas appear after next week's snapshot.`;
+        meta.textContent = `${wow.currentWeek} · ${rows.length} stores. First week — changes show next week.`;
       }
     }
 
@@ -234,7 +234,6 @@ export async function mount(host, container) {
         `Market 120 = <b>${money(m.dollars)}</b> C/D exposure${bd.pctDollars != null ? ` (${bd.pctDollars.toFixed(1)}% national)` : ""}, concentrated in deleted inventory.`,
         `Focus stores: ${top3 || "—"} — highest $ impact.`,
         `Deleted drives <b>${bd.delShareDol.toFixed(0)}%</b> of C/D dollars — prioritise deletion-reason review over clearance markdown depth.`,
-        `Next: reconcile category concentration to Market 120 and track the week-over-week movers below.`,
       ];
       blList.innerHTML = lines.map((l) => `<li>${l}</li>`).join("");
     }
@@ -265,12 +264,11 @@ export async function mount(host, container) {
     const rv = isa.review;
     if (isaScope) {
       isaScope.textContent = rv
-        ? `Market ${rv.market} · all adjustment reasons · ${fmtRange(rv.window)} (${rv.window.days} days, data through ${fmtDay(rv.dataThrough)}) · ` +
-          `Stolen Adj $ is fiscal year to date since ${fmtDay(rv.fyFrom)} · read directly from Power BI, not the reports' saved filters`
+        ? `Market ${rv.market} · ${fmtRange(rv.window)} · data through ${fmtDay(rv.dataThrough)}`
         : "";
     }
     if (!rv) {
-      isaBody.innerHTML = `<p class="mkt120-empty">No ISA review loaded yet. Click Refresh on ISA Activity — it reads Market 120 from Power BI in a background tab.</p>`;
+      isaBody.innerHTML = `<p class="mkt120-empty">Click Refresh on ISA Activity to load.</p>`;
       return;
     }
     const reasons = isaReasonList();
@@ -281,7 +279,7 @@ export async function mount(host, container) {
     parts.push(`<div class="mkt120-isa-controls">
       <div class="mkt120-isa-seg" role="group" aria-label="Review window">${isa.presets.map((d) =>
         `<button class="mkt120-isa-segbtn" data-isa-action="days" data-days="${d}" aria-pressed="${d === rv.window.days}"${isa.busy ? " disabled" : ""}>${d} days</button>`).join("")}</div>
-      <span class="mkt120-sd-meta">${isa.busy ? "Loading from Power BI…" : `${escapeHtml(fmtRange(rv.window))} · data through ${escapeHtml(fmtDay(rv.dataThrough))} · pulled ${escapeHtml(withWeekday(new Date(rv.capturedAt).toLocaleString("en-US"), rv.capturedAt))}`}</span>
+      <span class="mkt120-sd-meta">${isa.busy ? "Loading…" : `${escapeHtml(fmtRange(rv.window))} · data through ${escapeHtml(fmtDay(rv.dataThrough))} · pulled ${escapeHtml(withWeekday(new Date(rv.capturedAt).toLocaleString("en-US"), rv.capturedAt))}`}</span>
     </div>`);
 
     const maxReason = Math.max(1, ...sum.byReason.map((r) => Math.abs(r.dollars)));
@@ -317,7 +315,7 @@ export async function mount(host, container) {
       const on = isa.sort.key === key;
       return `<th class="${num ? "num " : ""}mkt120-isa-sort" data-isa-action="sort" data-key="${key}" aria-sort="${on ? (isa.sort.dir === 1 ? "ascending" : "descending") : "none"}" title="Sort">${label}${on ? (isa.sort.dir === 1 ? " ▲" : " ▼") : ""}</th>`;
     };
-    parts.push(`<div class="mkt120-sd-head"><h3>Stores</h3><span class="mkt120-sd-meta">click a column to sort · click a store for categories, sources, items and stolen detail</span></div>
+    parts.push(`<div class="mkt120-sd-head"><h3>Stores</h3><span class="mkt120-sd-meta">Click a store for detail</span></div>
       <div class="mkt120-wow-table-wrap"><table class="mkt120-wow-table mkt120-isa-stores">
         <thead><tr>${th("store", "Store", false)}${th("dollars", "Adjusted $")}<th aria-hidden="true"></th><th>Largest reason</th>${th("qty", "Units")}${th("stolenWindow", "Stolen (window)")}${th("stolenFy", "Stolen (FY)")}</tr></thead>
         <tbody>${stores.map((s) => isaStoreRow(s, maxStore)).join("") || `<tr><td colspan="7" class="mkt120-empty">No stores for the selected reasons.</td></tr>`}</tbody>
@@ -450,13 +448,13 @@ export async function mount(host, container) {
     if (!d?.detail) {
       parts.push(head(""));
       parts.push(d?.error && !d.loading
-        ? `<p class="mkt120-debug-error">${escapeHtml(d.error)}</p>`
-        : `<p class="mkt120-empty">Reading this store's adjustment lines from Power BI…</p>`);
+        ? `<p class="mkt120-debug-error">${escapeHtml(plainError(d.error, "Power BI"))}</p>`
+        : `<p class="mkt120-empty">Loading…</p>`);
     } else {
       const det = d.detail;
       const items = det.items.items.filter((it) => !reasons || reasons.includes(it.reason)).slice(0, 25);
       parts.push(head(`${escapeHtml(int(det.items.itemCount))} items · ${escapeHtml(int(det.items.lines))} lines · ${escapeHtml(smoney(det.items.total))} · pulled ${escapeHtml(withWeekday(new Date(det.capturedAt).toLocaleString("en-US"), det.capturedAt))}${d.loading ? " · refreshing…" : ""}`));
-      if (d.error) parts.push(`<p class="mkt120-debug-error">${escapeHtml(d.error)}</p>`);
+      if (d.error) parts.push(`<p class="mkt120-debug-error">${escapeHtml(plainError(d.error, "Power BI"))}</p>`);
       parts.push(`<div class="mkt120-wow-table-wrap"><table><thead><tr><th>Item</th><th>Description</th><th>Category</th><th>Reason</th><th>Source</th><th>Dates</th><th class="num">Units</th><th class="num">$</th></tr></thead><tbody>` +
         (items.map((it) => `<tr><td>${escapeHtml(it.item)}</td><td>${escapeHtml(it.desc)}</td><td>${escapeHtml(it.cat)} <span class="mkt120-sd-meta">D${escapeHtml(it.dept)}</span></td>` +
           `<td>${escapeHtml(it.reason)}</td><td>${escapeHtml(it.sources)}</td>` +
@@ -633,7 +631,7 @@ export async function mount(host, container) {
     const hist = res.history || [];
     if (hist.length) {
       parts.push(`<div class="mkt120-sd-head"><h3>Weekly history</h3>` +
-        `<span class="mkt120-sd-meta">${hist.length === 1 ? "baseline week — history builds weekly" : `${hist.length} weeks on record`}</span></div>` +
+        `<span class="mkt120-sd-meta">${hist.length === 1 ? "first week" : `${hist.length} weeks on record`}</span></div>` +
         `<div class="mkt120-sd-history">${hist.map((h) =>
           `<span class="mkt120-chip">${escapeHtml(h.week)} · ${escapeHtml(money(h.dollars))} · ${escapeHtml(int(h.units))} units</span>`).join("")}</div>`);
     }
@@ -644,11 +642,11 @@ export async function mount(host, container) {
 
     if (!d) {
       parts.push(head(""));
-      if (loading) parts.push(`<p class="mkt120-empty">Reading this store's items from Tableau in a background tab…</p>`);
-      else if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(res.detailError)}</p>`);
+      if (loading) parts.push(`<p class="mkt120-empty">Loading…</p>`);
+      else if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(plainError(res.detailError, "Tableau"))}</p>`);
     } else {
       parts.push(head(`${escapeHtml(int(d.itemCount))} items · pulled ${escapeHtml(withWeekday(new Date(d.capturedAt).toLocaleString("en-US"), d.capturedAt))}${loading ? " · refreshing…" : ""}`));
-      if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(res.detailError)}</p>`);
+      if (res.detailError) parts.push(`<p class="mkt120-debug-error">${escapeHtml(plainError(res.detailError, "Tableau"))}</p>`);
 
       const rollup = (title, rows, label) => {
         const max = rows[0]?.dollars || 1;
@@ -706,7 +704,7 @@ export async function mount(host, container) {
     const alerts = computeAlerts(state);
     if (!alerts.length) {
       if (!hasRealKpis(state)) {
-        listEl.innerHTML = `<p class="mkt120-empty">No real KPIs captured yet. Click Refresh; alerts will populate once at least one metric has been extracted from a live report.</p>`;
+        listEl.innerHTML = `<p class="mkt120-empty">No alerts yet. Click Refresh.</p>`;
       } else {
         listEl.innerHTML = `<p class="mkt120-alert-ok">✓ All captured metrics within thresholds.</p>`;
       }
@@ -739,9 +737,9 @@ export async function mount(host, container) {
     if (!showClearance && !showIsa) { section.hidden = true; body.innerHTML = ""; return; }
     section.hidden = false;
     const lines = [];
-    if (showClearance && state.clearance?.debug) lines.push(renderDebug("Clearance / Deleted (Tableau)", state.clearance.debug));
-    if (showIsa && state.isa?.debug)             lines.push(renderDebug("ISA Activity (Power BI)",       state.isa.debug));
-    body.innerHTML = lines.join("") || "<p class=\"mkt120-empty\">A KPI is missing but no capture debug was stored. Re-run Refresh.</p>";
+    if (showClearance && state.clearance?.debug) lines.push(renderDebug("Clearance / Deleted", state.clearance.debug, "Tableau"));
+    if (showIsa && state.isa?.debug)             lines.push(renderDebug("ISA Activity",        state.isa.debug, "Power BI"));
+    body.innerHTML = lines.join("") || "<p class=\"mkt120-empty\">Some values couldn't be read. Try Refresh.</p>";
   }
 
   // A source is "partial" when it has a KPI payload but at least one metric
@@ -752,28 +750,26 @@ export async function mount(host, container) {
     return Object.entries(kpis).some(([k, v]) => k !== "capturedAt" && k !== "stub" && (v === null || v === undefined));
   }
 
-  function renderDebug(label, dbg) {
-    const parts = [];
-    parts.push(`<div class="mkt120-debug-block">`);
-    parts.push(`<strong>${escapeHtml(label)}</strong>`);
-    if (dbg.errorClass) parts.push(` — <code>${escapeHtml(dbg.errorClass)}</code>`);
-    if (dbg.error) {
-      parts.push(`<br><span class="mkt120-debug-error">${escapeHtml(String(dbg.error))}</span>`);
-    } else if (dbg.ok) {
-      parts.push(`<br><span class="mkt120-debug-note">Capture OK, but a KPI value is missing — expand below and check <code>seenDescriptors</code> for the real measure name.</span>`);
-    }
-    if (dbg.subErrors) {
-      parts.push(`<ul>`);
-      for (const [k, v] of Object.entries(dbg.subErrors)) {
-        parts.push(`<li><code>${escapeHtml(k)}</code>: ${escapeHtml(String(v))}</li>`);
-      }
-      parts.push(`</ul>`);
-    }
-    if (dbg.debug) {
-      parts.push(`<details><summary>Capture debug</summary><pre>${escapeHtml(JSON.stringify(dbg.debug, null, 2))}</pre></details>`);
-    }
-    parts.push(`</div>`);
-    return parts.join("");
+  // Plain message in the UI; the raw capture detail goes to the console.
+  function renderDebug(label, dbg, source) {
+    console.warn(`[market120] ${label} capture problem`, dbg);
+    const msg = dbg.error
+      ? plainError(dbg.errorClass ? `${dbg.errorClass}: ${dbg.error}` : dbg.error, source, true)
+      : "Some values couldn't be read. Try Refresh.";
+    return `<div class="mkt120-debug-block"><strong>${escapeHtml(label)}</strong>` +
+      `<br><span class="mkt120-debug-error">${escapeHtml(msg)}</span></div>`;
+  }
+
+  // Map a raw source error ("CLASS: detail") to a short actionable line.
+  // The raw text is logged with console.warn so debugging still works.
+  function plainError(raw, source, alreadyLogged = false) {
+    const s = String(raw ?? "");
+    if (!s) return "";
+    if (!alreadyLogged) console.warn(`[market120] ${source} error`, s);
+    if (/^AUTH\b|sign[- ]?in|\bSSO\b|session/i.test(s)) return `Sign in to ${source}, then Refresh.`;
+    const detail = s.replace(/^[A-Z_]+:\s*/, "");
+    if (/^(NO_DATA|INPUT)\b/.test(s) || /^(No |Load the ISA review)/.test(detail)) return detail;
+    return "Couldn't load data — try Refresh.";
   }
 
   function escapeHtml(s) {

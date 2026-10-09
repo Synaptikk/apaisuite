@@ -110,14 +110,14 @@ export const handlers = {
       const store = String(msg?.store || await getUserHomeStore() || "").trim();
       if (!store) return { ok: false, error: "No store set. Pick your home store in the shell header first." };
 
-      progress(`Fetching CAS evidence file for ${store}…`);
+      progress("Loading claims…");
       const resp = await fetch(`${CAS_BASE}/${encodeURIComponent(store)}.html`, { credentials: "omit" });
-      if (resp.status === 404) return { ok: false, error: `No CAS accident file for store ${store}.` };
-      if (!resp.ok) return { ok: false, error: `cas_storage returned ${resp.status}.` };
+      if (resp.status === 404) return { ok: false, error: `No accident file for store ${store}.` };
+      if (!resp.ok) { console.warn("[accidents] claims file HTTP", resp.status); return { ok: false, error: "Couldn't load the claims file. Try again." }; }
       const html = await resp.text();
 
       const parsed = parseAccidentHtml(html, store);
-      if (!parsed.ok) return { ok: false, error: parsed.error || "Could not parse the CAS file." };
+      if (!parsed.ok) return { ok: false, error: parsed.error || "Couldn't read the claims file." };
       const charges = parsePnl(html);
 
       const prev = await readCache(store);
@@ -135,11 +135,11 @@ export const handlers = {
       const signedIn = await ensureClearsight().catch(() => false);
       data.clearsight.signedIn = signedIn;
       if (!signedIn) {
-        data.clearsight.error = "Not signed in to Clearsight — evidence-report claims are listed without details. Pull again after signing in.";
+        data.clearsight.error = "Sign in to Clearsight to see claim details, then pull again.";
       } else {
         const refs = [...new Set(parsed.records.map((r) => r.referenceNbr))];
         for (let i = 0; i < refs.length; i++) {
-          progress(`Clearsight ${i + 1}/${refs.length}: claim ${refs[i]}…`);
+          progress(`Loading claim ${i + 1} of ${refs.length}…`);
           try {
             data.claims[refs[i]] = await enrichClaim(refs[i]);
           } catch (e) {
@@ -188,7 +188,7 @@ export const handlers = {
       const todo = refs.filter((r) => msg?.force || !data.refDetails[r] || data.refDetails[r].error);
       let done = 0, failed = 0, expired = false;
       for (const ref of todo) {
-        progress(`Clearsight ${done + failed + 1}/${todo.length}: claim ${ref}…`);
+        progress(`Loading claim ${done + failed + 1} of ${todo.length}…`);
         try {
           data.refDetails[ref] = await enrichClaim(ref);
           done++;

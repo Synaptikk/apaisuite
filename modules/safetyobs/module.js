@@ -1,9 +1,9 @@
 // modules/safetyobs/module.js
 //
 // Safety Observations — type what you saw, the QR-poster survey gets filled
-// and submitted; at 4:45 PM the "1458 management" Workvivo chat @mentions
-// every scheduled coach still under 2 observations today; a ledger shows who
-// is behind (2 per scheduled day) since the schedule import began.
+// and submitted; each morning the "1458 management" Workvivo chat @mentions
+// every leader on today who is behind, with how many to complete today; a
+// ledger shows who is behind (2 per scheduled day) since the schedule import began.
 // See service.js for the sources.
 
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
@@ -20,7 +20,7 @@ export default {
     id:          "safetyobs",
     group:       "safety",
     name:        "Safety Observations",
-    description: "Type an observation in plain words and it fills out the Safety Observation Survey for you. 4:45 PM Workvivo nudge for coaches under 2, and a ledger of who is behind.",
+    description: "Log safety observations in plain words; daily catch-up and who's behind.",
     version:     "0.1.0",
     status:      "alpha",
     ui: {

@@ -316,15 +316,15 @@ export function buildThreatCard(personId, profile, feedResp, targetLat, targetLo
   if (traj.reason === "local_operator") score = Math.min(score, 20); // far-away local operator
   score = Math.min(100, Math.max(0, score));
   why.push(lastOffenceDays != null
-    ? `Last offence ${lastOffenceDays}d ago (×${recency})`
-    : "No dated offence (×0.3)");
-  if (pts.proximity) why.push(`${Math.round(currentLoc.dist)} mi from store (+${pts.proximity})`);
-  if (pts.market)    why.push(`${marketEvents90} hit${marketEvents90 === 1 ? "" : "s"} in ${marketLabel} in 90 days (+${pts.market})`);
-  if (pts.activity)  why.push(`${events90} event${events90 === 1 ? "" : "s"} in 90 days (+${pts.activity})`);
-  if (pts.loss)      why.push(`$${Math.round(totalValue).toLocaleString("en-US")} on file (+${pts.loss})`);
-  if (pts.threat)    why.push("Threatening behavior (+10)");
-  if (pts.crew)      why.push(`Crew/vehicle known (+${pts.crew})`);
-  if (pts.corridor)  why.push(`Works your interstate (+${pts.corridor})`);
+    ? `Last offence ${lastOffenceDays}d ago`
+    : "No dated offence");
+  if (pts.proximity) why.push(`${Math.round(currentLoc.dist)} mi from store`);
+  if (pts.market)    why.push(`${marketEvents90} hit${marketEvents90 === 1 ? "" : "s"} in ${marketLabel} in 90 days`);
+  if (pts.activity)  why.push(`${events90} event${events90 === 1 ? "" : "s"} in 90 days`);
+  if (pts.loss)      why.push(`$${Math.round(totalValue).toLocaleString("en-US")} on file`);
+  if (pts.threat)    why.push("Threatening behavior");
+  if (pts.crew)      why.push(`Crew/vehicle known`);
+  if (pts.corridor)  why.push(`Works your interstate`);
 
   // ── 300-mile store history cap ────────────────────────────────────────────
   const distantCount = storeDists.filter(s => s.dist > 300).length;

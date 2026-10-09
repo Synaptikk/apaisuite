@@ -56,9 +56,9 @@ export async function mount(host, container) {
   }
   function setEmu(h) {
     const el = $("[data-emu]");
-    if (!h) { el.textContent = "daemon …"; return; }
-    if (!h.ok) { el.textContent = h.kind === "OFFLINE" ? "daemon off" : "daemon error"; el.dataset.state = "off"; return; }
-    el.textContent = "emulator " + (h.emulator || "?") + (h.busy ? " · " + h.busy : "");
+    if (!h) { el.textContent = "connecting…"; return; }
+    if (!h.ok) { el.textContent = "offline"; el.dataset.state = "off"; return; }
+    el.textContent = h.emulator === "up" ? "live" : "starting…";
     el.dataset.state = h.emulator === "up" ? "up" : "down";
   }
 
@@ -81,7 +81,7 @@ export async function mount(host, container) {
       const day = hourlyBars(summary.series, summary.dayStart);
       chart.innerHTML = day ? barChartSvg(day, { width: Math.min(640, container.clientWidth - 40 || 600), height: 150, title: "Store 1458", subtitle: comp.peak ? `peak ${comp.peak.slot} ${n(comp.peak.qtyPicked)}` : "" }) : "Not enough readings yet.";
     } else {
-      chart.textContent = "Collecting readings — the graph fills after two refreshes.";
+      chart.textContent = "Collecting data…";
     }
 
     // express by slot — the SW already computed this via expressSummary.
@@ -138,10 +138,9 @@ export async function mount(host, container) {
         const h = await pingHealth();
         if (stopped) break;
         let p;
-        if (!h?.ok) p = h?.kind === "OFFLINE" ? "GIF daemon not running" : "waiting for the daemon";
-        else if (h.phase && h.phase !== "idle") p = h.phase;
-        else if (h.emulator === "down") p = "starting emulator";
-        else p = "reading GIF";
+        if (!h?.ok) p = h?.kind === "OFFLINE" ? "Live pick data is offline" : "Connecting";
+        else if (h.emulator === "down") p = "Connecting";
+        else p = "Updating";
         onText(p + ".".repeat((dots++ % 3) + 1));
         await new Promise((r) => setTimeout(r, 2000));
       }
@@ -158,7 +157,7 @@ export async function mount(host, container) {
       stopProg();
       paintSummary(); note(summary?.stale ? "Showing the last reading; a fresher one is still loading." : "");
     } catch (e) {
-      stopProg(); note(e?.message || "Refresh failed.", "err");
+      stopProg(); console.warn("[digitaldashboard] refresh failed", e); note(e?.message || "Refresh failed — try again.", "err");
     } finally { busy = false; pingHealth(); }
   }
 
@@ -171,7 +170,7 @@ export async function mount(host, container) {
       watch = await ask("check_breaks", { maxAge: 60, wait: 150 }, { timeoutMs: 240_000 });
       stopProg(); paintBreaks();
     } catch (e) {
-      stopProg(); el.textContent = "Couldn't check: " + (e?.message || "error");
+      stopProg(); console.warn("[digitaldashboard] break check failed", e); el.textContent = "Couldn't check: " + (e?.message || "try again.");
     } finally { busy = false; pingHealth(); }
   }
 

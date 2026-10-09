@@ -1,0 +1,167 @@
+/* modules/digitalschedule/styles.css
+   Digital Schedule: day strip, coverage grid (scheduler colours: blue = on
+   guidance, yellow = short, red = over), queue + fitter side panel, roster.
+   Every selector scoped under .module-digitalschedule. */
+
+.module-digitalschedule .ds { padding: var(--sp-5) var(--sp-6); display: grid; gap: var(--sp-4); }
+.module-digitalschedule .ds-header { display: flex; gap: var(--sp-4); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.module-digitalschedule .ds-header h1 { margin: 0; font-size: var(--fs-xl); }
+.module-digitalschedule .ds-sub { margin: var(--sp-1) 0 0; color: var(--apai-muted); font-size: var(--fs-sm); max-width: 90ch; }
+.module-digitalschedule .ds-where { font-size: var(--fs-sm); color: var(--apai-ink-soft); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); white-space: nowrap; }
+
+.module-digitalschedule .ds-toolbar, .module-digitalschedule .ds-actions, .module-digitalschedule .ds-opts,
+.module-digitalschedule .ds-card-head, .module-digitalschedule .ds-editor-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.module-digitalschedule .ds-actions { margin-top: var(--sp-3); }
+.module-digitalschedule .ds-opts { gap: var(--sp-3); margin-top: var(--sp-2); }
+.module-digitalschedule .ds-field { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--apai-ink-soft); white-space: nowrap; }
+.module-digitalschedule .ds-wk { display: inline-flex; align-items: center; gap: 4px; }
+.module-digitalschedule .ds-wk input { width: 4.5em; }
+.module-digitalschedule .ds-jobs { width: 11em; }
+.module-digitalschedule .ds-num { width: 4.5em; }
+.module-digitalschedule .ds-filter { width: 14em; }
+.module-digitalschedule .ds-check { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-spacer { flex: 1; }
+.module-digitalschedule .ds-muted { color: var(--apai-muted); font-size: var(--fs-sm); }
+.module-digitalschedule .ds-note { color: var(--apai-muted); font-size: 12px; margin: var(--sp-2) 0 0; }
+.module-digitalschedule .ds-note code { font-size: 11px; }
+.module-digitalschedule .ds-pill { display: inline-block; min-width: 1.6em; text-align: center; padding: 0 6px; border-radius: var(--rad-pill); background: var(--apai-bg-soft); font-size: 12px; font-weight: 600; }
+.module-digitalschedule .ds-tag { display: inline-block; font-size: 10px; padding: 0 5px; margin-right: 3px; border-radius: var(--rad-pill); border: 1px solid var(--apai-border); color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-tag.warn { border-color: var(--apai-warn); color: var(--apai-warn); }
+
+.module-digitalschedule .ds-status { padding: var(--sp-2) var(--sp-3); border-radius: var(--rad-md); font-size: var(--fs-sm); border: 1px solid var(--apai-border-soft); }
+.module-digitalschedule .ds-status.busy { border-color: var(--apai-blue); color: var(--apai-blue); }
+.module-digitalschedule .ds-status.error { color: var(--apai-error); border-color: var(--apai-error); background: var(--apai-error-bg); }
+
+.module-digitalschedule .ds-card { border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); background: var(--apai-bg-elev); padding: var(--sp-3) var(--sp-4); min-width: 0; }
+.module-digitalschedule .ds-card h2 { margin: 0; font-size: var(--fs-md, 15px); }
+.module-digitalschedule .ds-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: var(--sp-4); align-items: start; }
+.module-digitalschedule .ds-side { display: grid; gap: var(--sp-4); }
+@media (max-width: 1100px) { .module-digitalschedule .ds-cols { grid-template-columns: 1fr; } }
+
+/* scheduler colours */
+.module-digitalschedule { --ds-blue: #2f7fe0; --ds-blue-bg: rgba(47,127,224,.20); --ds-under: #b7791f; --ds-under-bg: rgba(242,184,7,.28); --ds-over: #d64545; --ds-over-bg: rgba(214,69,69,.20); }
+.module-digitalschedule .ds-k-under { color: var(--ds-under); font-weight: 600; }
+.module-digitalschedule .ds-k-over { color: var(--ds-over); font-weight: 600; }
+
+/* day strip */
+.module-digitalschedule .ds-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--sp-2); }
+@media (max-width: 900px) { .module-digitalschedule .ds-days { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.module-digitalschedule .ds-day { border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: var(--sp-2) var(--sp-3); font-size: 12px; background: var(--apai-bg-elev); display: grid; gap: 2px; }
+.module-digitalschedule .ds-day.is-weekend { border-color: var(--ds-blue); }
+.module-digitalschedule .ds-day-name { font-weight: 700; font-size: var(--fs-sm); }
+.module-digitalschedule .ds-day-name small { color: var(--apai-muted); font-weight: 400; }
+.module-digitalschedule .ds-day-blue b { color: var(--ds-blue); font-size: var(--fs-md, 15px); }
+.module-digitalschedule .ds-delta { font-size: 11px; font-weight: 700; margin-left: 4px; }
+.module-digitalschedule .ds-delta.up { color: var(--apai-success); }
+.module-digitalschedule .ds-delta.down { color: var(--apai-error); }
+
+/* coverage grid */
+.module-digitalschedule .ds-cov-wrap { overflow-x: auto; margin-top: var(--sp-2); }
+.module-digitalschedule .ds-cov-table { border-collapse: separate; border-spacing: 2px; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.module-digitalschedule .ds-cov-table th { font-weight: 600; color: var(--apai-ink-soft); padding: 2px 6px; text-align: right; white-space: nowrap; }
+.module-digitalschedule .ds-cov-table thead th { text-align: center; }
+.module-digitalschedule .ds-cov-table th.is-peak { color: var(--apai-ink); }
+.module-digitalschedule .ds-cov-table th.is-weekend { color: var(--ds-blue); }
+.module-digitalschedule .ds-c { text-align: center; padding: 3px 4px; border-radius: 4px; min-width: 64px; border: 2px solid transparent; }
+.module-digitalschedule .ds-c small { color: var(--apai-muted); }
+.module-digitalschedule .ds-c.blue { background: var(--ds-blue-bg); }
+.module-digitalschedule .ds-c.under { background: var(--ds-under-bg); }
+.module-digitalschedule .ds-c.over { background: var(--ds-over-bg); }
+.module-digitalschedule .ds-c.is-low { font-weight: 700; }
+.module-digitalschedule .ds-c.is-low.under { box-shadow: inset 0 0 0 1px var(--ds-under); }
+.module-digitalschedule .ds-c.is-moved { border-color: var(--apai-ink-soft); border-style: dashed; }
+
+/* queue + check */
+.module-digitalschedule .ds-queue { margin: var(--sp-2) 0 0; padding-left: 1.4em; font-size: 13px; display: grid; gap: 4px; max-height: 340px; overflow: auto; }
+.module-digitalschedule .ds-queue li { position: relative; padding-right: 22px; }
+.module-digitalschedule .ds-queue li.ds-empty { list-style: none; margin-left: -1.4em; }
+.module-digitalschedule .ds-queue li.is-flagged { color: var(--apai-error); }
+.module-digitalschedule .ds-flag { font-size: 11px; color: var(--apai-error); }
+.module-digitalschedule .ds-x { position: absolute; right: 0; top: 0; border: 0; background: none; color: var(--apai-muted); cursor: pointer; font-size: 15px; line-height: 1; }
+.module-digitalschedule .ds-x:hover { color: var(--apai-error); }
+.module-digitalschedule .ds-check-out { margin-top: var(--sp-2); padding: var(--sp-2); border-radius: var(--rad-md); font-size: 12px; border: 1px solid var(--apai-border-soft); }
+.module-digitalschedule .ds-check-out.ok { border-color: var(--apai-success); background: var(--apai-success-bg); }
+.module-digitalschedule .ds-check-out.warn { border-color: var(--apai-warn); background: var(--apai-warn-bg); }
+.module-digitalschedule .ds-check-out.error { border-color: var(--apai-error); background: var(--apai-error-bg); }
+
+.module-digitalschedule .ds-rules { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.module-digitalschedule .ds-rules summary { cursor: pointer; }
+.module-digitalschedule .ds-rules-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin-top: var(--sp-2); }
+.module-digitalschedule .ds-notes { margin: var(--sp-2) 0 0; padding-left: 1.2em; font-size: 12px; color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-history { list-style: none; margin: var(--sp-2) 0 0; padding: 0; font-size: 12px; display: grid; gap: var(--sp-2); }
+.module-digitalschedule .ds-history li { border-bottom: 1px solid var(--apai-border-soft); padding-bottom: var(--sp-1); }
+.module-digitalschedule .ds-hist-actions { display: flex; gap: var(--sp-1); }
+
+/* roster */
+.module-digitalschedule .ds-roster-wrap { overflow-x: auto; margin-top: var(--sp-2); }
+.module-digitalschedule .ds-roster { border-collapse: collapse; width: 100%; font-size: 12px; }
+.module-digitalschedule .ds-roster th, .module-digitalschedule .ds-roster td { border-bottom: 1px solid var(--apai-border-soft); padding: 4px 6px; vertical-align: top; text-align: left; }
+.module-digitalschedule .ds-roster thead th { position: sticky; top: 0; background: var(--apai-bg-elev); white-space: nowrap; }
+.module-digitalschedule .ds-roster thead th.is-weekend { color: var(--ds-blue); }
+.module-digitalschedule .ds-roster tbody th { min-width: 150px; font-weight: 400; }
+.module-digitalschedule .ds-name { font-weight: 600; }
+.module-digitalschedule .ds-cell { cursor: pointer; min-width: 92px; }
+.module-digitalschedule .ds-cell:hover { background: var(--apai-bg-soft); }
+.module-digitalschedule .ds-shift { display: block; width: 100%; text-align: left; font: inherit; font-weight: 600; color: var(--apai-ink); background: var(--ds-blue-bg); border: 1px solid transparent; border-radius: 4px; padding: 2px 5px; margin-bottom: 2px; cursor: pointer; }
+.module-digitalschedule .ds-shift small { display: block; font-weight: 400; color: var(--apai-ink-soft); font-size: 10px; }
+.module-digitalschedule .ds-shift.is-other { background: var(--apai-bg-soft); color: var(--apai-ink-soft); font-weight: 400; }
+.module-digitalschedule .ds-shift.is-changed { border: 1px dashed var(--apai-ink-soft); background: var(--ds-under-bg); }
+.module-digitalschedule .ds-shift:hover { border-color: var(--ds-blue); }
+.module-digitalschedule .ds-add { color: var(--apai-muted); }
+.module-digitalschedule .ds-avail { color: var(--apai-muted); font-size: 10px; margin-top: 2px; }
+.module-digitalschedule .ds-num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+.module-digitalschedule .ds-editor { border: 1px solid var(--ds-blue); border-radius: var(--rad-md); padding: var(--sp-3); margin-top: var(--sp-2); background: var(--apai-bg); }
+.module-digitalschedule .ds-editor-head { margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+.module-digitalschedule .ds-editor-why { margin-top: var(--sp-2); font-size: 12px; }
+
+.module-digitalschedule .ds-dialog { border: 1px solid var(--apai-border); border-radius: var(--rad-md); background: var(--apai-bg-elev); color: var(--apai-ink); max-width: 640px; width: calc(100% - 32px); }
+.module-digitalschedule .ds-dialog h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); }
+.module-digitalschedule .ds-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+
+/* schedule assistant */
+.module-digitalschedule .ds-chat-log { max-height: 420px; min-height: 120px; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); background: var(--apai-bg); }
+.module-digitalschedule .ds-msg { font-size: 13px; line-height: 1.45; max-width: 85%; padding: 6px 10px; border-radius: 10px; overflow-wrap: anywhere; }
+.module-digitalschedule .ds-msg.user { align-self: flex-end; background: var(--ds-blue-bg); }
+.module-digitalschedule .ds-msg.bot { align-self: flex-start; background: var(--apai-bg-soft); }
+.module-digitalschedule .ds-msg.tool { align-self: flex-start; font-size: 11px; color: var(--apai-muted); padding: 0 10px; }
+.module-digitalschedule .ds-msg.hint { max-width: none; color: var(--apai-muted); font-size: 12px; }
+.module-digitalschedule .ds-msg.error { align-self: stretch; max-width: none; color: var(--apai-error); background: var(--apai-error-bg); }
+.module-digitalschedule .ds-msg.pending { align-self: flex-start; color: var(--apai-muted); }
+.module-digitalschedule .ds-chat-form { display: flex; gap: var(--sp-2); align-items: flex-end; margin-top: var(--sp-2); }
+.module-digitalschedule .ds-chat-form textarea { flex: 1; min-width: 0; resize: vertical; font: inherit; }
+
+/* guidance graph (the WK 39 page's palette) */
+.module-digitalschedule { --g-blue: #80b8ee; --g-under: #f2b705; --g-over: #de1c24; --g-guide: #0071dc; --g-peak: rgba(0,113,220,.07); --g-line: var(--apai-border-soft); --g-ink3: var(--apai-muted); }
+.module-digitalschedule .ds-legend { display: inline-flex; gap: 6px 12px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: -6px; vertical-align: -2px; }
+.module-digitalschedule .ds-legend i.blue { background: var(--g-blue); }
+.module-digitalschedule .ds-legend i.under { background: var(--g-under); }
+.module-digitalschedule .ds-legend i.over { background: var(--g-over); }
+.module-digitalschedule .ds-legend i.line { height: 3px; width: 14px; background: var(--g-guide); vertical-align: 3px; }
+.module-digitalschedule .ds-legend i.peak { background: var(--g-peak); outline: 1px solid var(--apai-border-soft); }
+.module-digitalschedule .ds-rowlab { font-size: 11px; font-weight: 700; color: var(--apai-ink-soft); text-transform: uppercase; letter-spacing: .04em; margin: var(--sp-3) 0 4px; }
+.module-digitalschedule .ds-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 900px) { .module-digitalschedule .ds-week { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.module-digitalschedule .ds-mini { all: unset; cursor: pointer; border-radius: 8px; padding: 5px 5px 1px; border: 1px solid transparent; min-width: 0; }
+.module-digitalschedule .ds-mini:hover { border-color: var(--apai-border); }
+.module-digitalschedule .ds-mini[aria-pressed="true"] { border-color: var(--g-guide); box-shadow: 0 0 0 1px var(--g-guide) inset; }
+.module-digitalschedule .ds-mini:focus-visible { outline: 2px solid var(--g-guide); outline-offset: 2px; }
+.module-digitalschedule .ds-mini b { display: block; font-size: 12px; }
+.module-digitalschedule .ds-mini small { display: block; font-size: 11px; color: var(--apai-muted); font-variant-numeric: tabular-nums; }
+.module-digitalschedule .ds-mini svg, .module-digitalschedule .ds-charts svg { width: 100%; height: auto; display: block; overflow: visible; }
+.module-digitalschedule .ds-charts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-top: var(--sp-4); }
+@media (max-width: 1100px) { .module-digitalschedule .ds-charts { grid-template-columns: 1fr; } }
+.module-digitalschedule .ds-charts h3 { margin: 0; font-size: 13px; }
+.module-digitalschedule .ds-meta { font-size: 12px; color: var(--apai-muted); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.module-digitalschedule .ds-hourtable { margin-top: var(--sp-3); font-size: var(--fs-sm); }
+.module-digitalschedule .ds-hourtable summary { cursor: pointer; color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-tip { position: fixed; pointer-events: none; display: none; z-index: 50; max-width: 340px; background: var(--apai-bg-elev); color: var(--apai-ink); border: 1px solid var(--apai-border); border-radius: 8px; padding: 9px 11px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.18); font-variant-numeric: tabular-nums; }
+.module-digitalschedule .ds-tip .h { font-weight: 700; margin-bottom: 4px; }
+.module-digitalschedule .ds-tip .r { display: flex; justify-content: space-between; gap: 16px; }
+.module-digitalschedule .ds-tip .m { color: var(--apai-muted); font-weight: 400; }
+.module-digitalschedule .ds-tip hr { border: 0; border-top: 1px solid var(--apai-border-soft); margin: 6px 0; }
+.module-digitalschedule .ds-tip .in::before { content: "+ "; font-weight: 700; }
+.module-digitalschedule .ds-tip .out { color: var(--apai-ink-soft); }
+.module-digitalschedule .ds-tip .out::before { content: "- "; font-weight: 700; }
+.module-digitalschedule .ds-submit-state { margin-top: var(--sp-1); font-size: 12px; }

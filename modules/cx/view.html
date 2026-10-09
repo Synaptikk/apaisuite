@@ -8,7 +8,7 @@
       <span class="cx-freshness" data-freshness>no data yet</span>
       <button class="cx-linkbtn" data-action="open-settings">Settings</button>
       <button class="cx-linkbtn" data-action="export-pdf">Export PDF</button>
-      <button class="btn" data-action="refresh-full" title="Re-read the whole window from Medallia — eight requests, about two minutes">
+      <button class="btn" data-action="refresh-full" title="Reload all history (about 2 min)">
         Full pull
       </button>
       <button class="btn btn-primary" data-action="refresh">
@@ -46,9 +46,8 @@
     </div>
     <div class="cx-market-body" data-market-body>
       <p class="cx-empty">
-        <strong>Read the market</strong> pulls NPS and the eight sub-scores for every store
-        in your market from the same Hoops scorecard — about a minute. Scores only: the
-        comment analysis below stays your store, because Medallia only shows you yours.
+        <strong>Read the market</strong> loads scores for every store in your market
+        (about a minute). Scores only; comments cover your store.
       </p>
     </div>
   </section>
@@ -89,17 +88,10 @@
       <span class="cx-panel-stamp" data-narrative-stamp></span>
       <button class="cx-linkbtn" data-action="narrate">Write it up</button>
       <button class="cx-linkbtn" data-action="narrate-force" hidden>Regenerate</button>
-      <button class="cx-linkbtn" data-action="show-facts" hidden>What was sent</button>
     </div>
     <div class="cx-narrative-body" data-narrative-body>
       <p class="cx-empty">
-        <strong>Write it up</strong> sends the ranked themes, the movement figures and a
-        handful of verbatims to Walmart's internal AI gateway and gets back a written
-        summary. Every number in it is one already on this page — the model is told to
-        use the figures it is given and not to derive any. It covers
-        <strong>this store's comments only</strong>: the market scoreboard above is scores,
-        and Medallia shows you one store's comments, so there is no other store's feedback
-        for it to read.
+        <strong>Write it up</strong> turns this page into a short summary of your store's comments.
       </p>
     </div>
   </section>
@@ -130,11 +122,6 @@
       <span class="cx-panel-sub" data-movement-sub></span>
     </div>
     <div class="cx-movers" data-movers></div>
-    <p class="cx-note">
-      Compared as negative mentions per 100 comments, so a light week does not read as
-      an improvement. Rows marked <em>thin</em> have too few mentions in either window
-      to mean anything on a single store — they are listed, not ranked.
-    </p>
   </section>
 
   <!-- ── Rating mix by week. The shape of the feedback, not its average:
@@ -186,14 +173,11 @@
     <div class="cx-setting">
       <label for="cx-window-weeks">How much history to pull</label>
       <select id="cx-window-weeks" data-setting-weeks>
-        <option value="13">13 weeks — matches the Hoops trend line</option>
+        <option value="13">13 weeks</option>
         <option value="26">26 weeks</option>
         <option value="52">52 weeks — full year over year</option>
       </select>
-      <p class="cx-setting-hint">
-        A 52-week first pull is about 8,000 comments in eight requests, roughly two
-        minutes. After that a Refresh only reads what is new.
-      </p>
+      <p class="cx-setting-hint">First load takes about 2 minutes.</p>
     </div>
     <div class="cx-setting">
       <label>AI gateway</label>
@@ -203,79 +187,46 @@
         <span class="cx-token-status" data-token-status></span>
       </div>
       <p class="cx-setting-hint">
-        Only needed for <strong>The read</strong>. <strong>Sign in</strong> opens the gateway's
-        own sign-in page and picks the token up automatically when you finish — the same page
-        and the same token Code Puppy uses, so signing in here does not disturb it.
+        Needed only for <strong>The read</strong>. Ignore any error on the sign-in page.
+        Sign in again when it expires.
       </p>
-      <p class="cx-setting-hint">
-        <strong>That page may flash “Authentication failed — make sure your CLI is
-        running”. Ignore it.</strong> It is trying to hand the token to the Code Puppy CLI on
-        port 8090; if your CLI is not running that hand-off fails, but this extension has
-        already read the token and will close the tab. The status above is what to go by.
-      </p>
-      <p class="cx-setting-hint">
-        The token is stored on this device only, is never sent anywhere except
-        <code>puppy-backend.walmart.com</code>, and expires every few weeks; sign in again when
-        it does.
-      </p>
-      <div class="cx-setting-alt-row">
-        <label class="cx-filebtn">
-          Load from puppy.cfg
-          <input type="file" data-setting-cfg accept=".cfg,.ini,.txt,.conf" hidden>
-        </label>
-        <span class="cx-setting-hint">
-          Pick <code>.code_puppy\puppy.cfg</code> in your user folder and the token is read
-          straight out of it. An extension cannot open files on its own — but it can read one you
-          hand it, and that beats copying a 1,900-character token by hand.
-        </span>
-      </div>
-
       <details class="cx-setting-alt">
-        <summary>Paste a token instead</summary>
+        <summary>Advanced</summary>
+        <div class="cx-setting-alt-row">
+          <label class="cx-filebtn">
+            Load from puppy.cfg
+            <input type="file" data-setting-cfg accept=".cfg,.ini,.txt,.conf" hidden>
+          </label>
+        </div>
         <input id="cx-gateway-token" type="password" data-setting-token
-               placeholder="paste the puppy_token from ~/.code_puppy/puppy.cfg"
+               placeholder="or paste a token"
                autocomplete="off" spellcheck="false">
+        <label for="cx-gateway-version">Client version</label>
+        <input id="cx-gateway-version" type="text" data-setting-version
+               placeholder="0.1.70" autocomplete="off" spellcheck="false">
+        <p class="cx-setting-hint">Leave blank unless the read stops working.</p>
       </details>
     </div>
-    <div class="cx-setting">
-      <label for="cx-gateway-version">Client version sent to the gateway</label>
-      <input id="cx-gateway-version" type="text" data-setting-version
-             placeholder="0.1.70" autocomplete="off" spellcheck="false">
-      <p class="cx-setting-hint">
-        Sent as <code>x-puppy-version</code>. The gateway refuses clients below a floor —
-        and refuses a request with no version at all — answering with
-        "your Code Puppy CLI is out of date" instead of a result. Measured 2026-09-25:
-        <strong>0.1.61 is blocked, 0.1.70 and above pass.</strong> Leave it blank to use the
-        default; raise it if the gateway starts refusing again.
-      </p>
-    </div>
 
     <div class="cx-setting">
-      <label for="cx-gateway-model">Model</label>
+      <label for="cx-gateway-model">Summary style</label>
       <select id="cx-gateway-model" data-setting-model>
-        <option value="claude-sonnet-5">claude-sonnet-5 — quick</option>
-        <option value="claude-opus-5">claude-opus-5 — slower, better prose</option>
+        <option value="claude-sonnet-5">Fast</option>
+        <option value="claude-opus-5">Detailed</option>
       </select>
     </div>
     <div class="cx-setting cx-setting-danger">
       <button class="btn" data-action="clear-history">Clear stored comments</button>
-      <p class="cx-setting-hint">
-        Drops the local comment history. The next Refresh pulls the whole window again.
-      </p>
+      <p class="cx-setting-hint">The next Refresh reloads all history.</p>
     </div>
   </section>
 
   <!-- Shown only when the last pull failed. -->
   <section class="cx-panel cx-debug" data-debug-panel hidden>
     <div class="cx-panel-head">
-      <h2>Last pull details</h2>
+      <h2>Troubleshooting</h2>
       <button class="cx-linkbtn" data-action="copy-diagnostics">Copy diagnostics</button>
     </div>
     <div class="cx-debug-body" data-debug-body></div>
-    <p class="cx-note">
-      <strong>Copy diagnostics</strong> puts the pull state on your clipboard — which
-      source failed, its error class, and the record counts held. It carries no comment
-      text and no token.
-    </p>
   </section>
 </section>

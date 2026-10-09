@@ -465,14 +465,14 @@ async function runPullBody({ force, stores, manual = false }) {
       ? `opening Express Pickup for store ${e.store} (${withWeekday(e.date)})${expressTally(e)}`
       : e.source === "express-rate"
       ? `opening Express pick rate for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`
-      : `opening Tableau for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`,
+      : `loading metrics for store ${e.store} (${e.dates} day${e.dates === 1 ? "" : "s"})`,
     rendering: (e) => e.source === "express"
-      ? `waiting for the Express Pickup viz (${withWeekday(e.date)})${expressTally(e)}`
-      : `waiting for the Tableau viz (store ${e.store})`,
+      ? `loading Express Pickup (${withWeekday(e.date)})${expressTally(e)}`
+      : `loading metrics for store ${e.store}`,
     reading:   (e) => e.source === "express"
       ? `reading Express Pickup for ${withWeekday(e.date)}${expressTally(e)}`
       : `reading metrics for store ${e.store}`,
-    done:      (e) => `store ${e.store}: ${e.rows} rows`,
+    done:      (e) => `store ${e.store} done`,
   };
 
   try {
@@ -558,7 +558,7 @@ async function runPullBody({ force, stores, manual = false }) {
         } catch (e) { result.errors.push({ scope: `metrics ${s}`, error: String(e?.message ?? e) }); }
       }
     }, {
-      onWait: ({ heldBy }) => setProgress("waiting", { text: `waiting for ${heldBy} to finish with Tableau` }),
+      onWait: () => setProgress("waiting", { text: "waiting for another sync to finish" }),
       ...(manual ? { maxWaitMs: MANUAL_LOCK_WAIT_MS } : {}),
     });
 

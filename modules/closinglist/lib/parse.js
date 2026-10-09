@@ -234,11 +234,11 @@ export function render(model, opts) {
   lines.push(`Closing List — Store ${store} — ${withWeekday(date)}`);
   lines.push("");
   if (model.associates.length === 0) {
-    lines.push("(no associates matched the filters)");
+    lines.push("No closers scheduled.");
   } else {
     const groups = new Map();
     for (const a of model.associates) {
-      const key = a.jobLabel || "(no job)";
+      const key = a.jobLabel || "Other";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(a);
     }
@@ -248,22 +248,22 @@ export function render(model, opts) {
       lines.push(key);
       for (const a of members) {
         const suffix = a.calledOff
-          ? " CALLED OFF" + (a.calledOff.reason && a.calledOff.reason !== "None" ? ` (${a.calledOff.reason})` : "")
+          ? " — CALLED OFF" + (a.calledOff.reason && a.calledOff.reason !== "None" ? ` (${a.calledOff.reason})` : "")
           : "";
-        lines.push(`  ${a.name}: ${formatShiftRange(a.start, a.end)}:${suffix}`);
+        lines.push(`  ${a.name}: ${formatShiftRange(a.start, a.end)}${suffix}`);
       }
       lines.push("");
     }
   }
   if (model.ivrUnmatched && model.ivrUnmatched.length) {
-    lines.push("Absences with no visible job code:");
+    lines.push("Other call-offs:");
     for (const u of model.ivrUnmatched) {
       lines.push(`  ${u.rawName}${u.reason && u.reason !== "None" ? " (" + u.reason + ")" : ""}`);
     }
     lines.push("");
   }
   if (opts.showJobTitles && model.uniqueJobDescs.length) {
-    lines.push("— Job titles seen in today's data (for tuning the exclude filter) —");
+    lines.push("Job titles");
     for (const j of model.uniqueJobDescs) {
       lines.push(`  ${j.desc}  (${j.count})`);
     }

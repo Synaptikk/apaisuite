@@ -72,7 +72,7 @@ function selectedDaySection(rec, days) {
     : empty("Nothing to draw for this day.");
 
   const note = rec.before
-    ? `<p class="muted dm-pick-note">The grey block is the stretch before this browser started recording that day: only its total is known (${n(rec.before.picked)} picked, avg ${n(rec.before.perHour)}/hr), so it is drawn at the average rather than as invented hours.</p>`
+    ? `<p class="muted dm-pick-note" title="${esc(`${n(rec.before.picked)} picked, avg ${n(rec.before.perHour)}/hr`)}">Grey block: before tracking started (average only).</p>`
     : "";
 
   return section(`Picks per hour · ${dayText(rec.key)}${rec.closed ? "" : " (today)"}`, toolbar + stats + chart + note);
@@ -124,9 +124,7 @@ export function render(ctx) {
   if (!store) return empty("Select a store to see its picks per hour.");
   if (pickDays == null) return empty(`Loading pick history for store ${store}…`);
   if (!pickDays.length) {
-    return empty(`No picks-per-hour history for store ${store} yet. Digital Rollup records the home store's board readings ` +
-      `while its Auto refresh is on (every 5 minutes in the background, every 15 seconds with the board open); ` +
-      `each day shows up here from its first reading and stays after the day ends.`);
+    return empty(`No pick history for store ${store} yet. Turn on Auto refresh in Digital Rollup.`);
   }
   const selected = pickDays.find((d) => d.key === ui.pickDay) || pickDays[0];
   return selectedDaySection(selected, pickDays) + historySection(pickDays, selected);

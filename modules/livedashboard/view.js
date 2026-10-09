@@ -52,7 +52,7 @@ export async function mount(host, container) {
         ? `Loaded · store ${state.storeNbr}`
         : "Enter your store number above to load data";
     } catch (e) {
-      statusText.textContent = `State error: ${shortErr(e)}`;
+      console.warn("[livedashboard] state load failed", e); statusText.textContent = "Couldn't load the dashboard.";
     }
   }
 
@@ -75,7 +75,7 @@ export async function mount(host, container) {
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "fetching from IVR…");
+      setLoadingWidget(w, pill, prim, sec, foot, "loading…");
       return;
     }
     if (!c) {
@@ -89,7 +89,7 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click Refresh to collect from IVR";
+        sec.textContent  = "click Refresh";
         foot.textContent = "no data yet";
       }
       return;
@@ -135,7 +135,7 @@ export async function mount(host, container) {
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "fetching from CAS storage…");
+      setLoadingWidget(w, pill, prim, sec, foot, "loading…");
       return;
     }
     if (!c?.counts) {
@@ -149,7 +149,7 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click Refresh to pull";
+        sec.textContent  = "click Refresh";
         foot.textContent = "no data yet";
       }
       return;
@@ -176,7 +176,7 @@ export async function mount(host, container) {
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "checking Auror evidence…");
+      setLoadingWidget(w, pill, prim, sec, foot, "loading…");
       return;
     }
     if (!c?.counts) {
@@ -190,7 +190,7 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click Refresh — needs an Auror sign-in";
+        sec.textContent  = "click Refresh (sign in to Auror first)";
         foot.textContent = "no data yet";
       }
       return;
@@ -216,7 +216,7 @@ export async function mount(host, container) {
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "opening go.enviance.com…");
+      setLoadingWidget(w, pill, prim, sec, foot, "loading…");
       return;
     }
     if (!c) {
@@ -230,7 +230,7 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click Refresh; opens Enviance in background";
+        sec.textContent  = "click Refresh";
         foot.textContent = "no data yet";
       }
       return;
@@ -258,7 +258,7 @@ export async function mount(host, container) {
 
     const c = src?.cache;
     if (fresh?.inFlight && !c) {
-      setLoadingWidget(w, pill, prim, sec, foot, "pulling from Hoops…");
+      setLoadingWidget(w, pill, prim, sec, foot, "loading…");
       return;
     }
     if (!c?.currentWeek) {
@@ -272,7 +272,7 @@ export async function mount(host, container) {
         w.dataset.sev = "unknown";
         pill.textContent = "never";
         prim.textContent = "—";
-        sec.textContent  = "click Refresh to pull from Hoops";
+        sec.textContent  = "click Refresh";
         foot.textContent = "no data yet";
       }
       return;
@@ -355,20 +355,17 @@ export async function mount(host, container) {
     drillTitle.textContent = "Callouts Today — who called out";
     const c = lastState?.sources?.absences?.cache;
     if (!c) {
-      drillBody.innerHTML = `<div class="ld-empty">No absence data yet. Click Refresh to collect from IVR.</div>`;
+      drillBody.innerHTML = `<div class="ld-empty">No data yet. Click Refresh.</div>`;
       return;
     }
     const today = c.todayIso;
     const todayRows = (c.records || []).filter((r) => r.absenceDate === today);
     if (!todayRows.length) {
       const captured = c.capturedAt || "—";
-      const totalAll = (c.records || []).length;
       drillBody.innerHTML = `
         <div class="ld-empty">
           <strong>No callouts on file for today (${escapeHtml(today ? withWeekday(today) : "—")}).</strong>
-          <div style="margin-top:6px">IVR pull succeeded but returned no records for the current day${totalAll ? ` (${totalAll} record${totalAll === 1 ? "" : "s"} for other dates in cache)` : ""}.</div>
-          <div style="margin-top:4px">Captured ${escapeHtml(withWeekday(String(captured)))}.
-          If you expect records, the IVR scraper may have landed before the day's first calls came in — click Refresh to retry.</div>
+          <div style="margin-top:4px">Updated ${escapeHtml(withWeekday(String(captured)))}.</div>
         </div>`;
       return;
     }
@@ -412,7 +409,7 @@ export async function mount(host, container) {
     const c = lastState?.sources?.accident?.cache;
     const accidentHtml = c?.records?.length
       ? buildAccidentSection(c)
-      : `<div class="ld-empty">No accident records yet. Click Refresh to pull from CAS storage.</div>`;
+      : `<div class="ld-empty">No data yet. Click Refresh.</div>`;
     const recognitionHtml = buildRecognitionSection(
       lastState?.sources?.recognition,
       lastState?.freshness?.recognition,
@@ -478,12 +475,12 @@ export async function mount(host, container) {
     const c = src?.cache;
     if (!c?.rolling7d?.length) {
       if (fresh?.inFlight) {
-        return `${header}<div class="ld-empty">Pulling from the Field_Dashboard Power BI report…</div>`;
+        return `${header}<div class="ld-empty">Loading…</div>`;
       }
       if (fresh?.lastError) {
         return `${header}<div class="ld-empty">⚠ Safety observations pull failed: ${escapeHtml(String(fresh.lastError).slice(0, 160))}</div>`;
       }
-      return `${header}<div class="ld-empty">No safety observation data yet. Click Refresh — pulls from the Field_Dashboard Power BI report.</div>`;
+      return `${header}<div class="ld-empty">No data yet. Click Refresh.</div>`;
     }
     // Oldest → newest reads naturally left-to-right.
     const days = c.rolling7d.slice().reverse();
@@ -554,7 +551,7 @@ export async function mount(host, container) {
         * ${escapeHtml(fmtDateShort(todayIso))} is the current day — not live; the 7d totals cover the six completed days.
       </div>
       <div class="ld-empty" style="margin-top:2px">
-        Captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}${c.capturedAt ? ` (${escapeHtml(fmtAgo(new Date(c.capturedAt).getTime()))})` : ""}${c.replayed ? " · store-filter replay" : ""}
+        Updated ${escapeHtml(withWeekday(c.capturedAt || "?"))}${c.capturedAt ? ` (${escapeHtml(fmtAgo(new Date(c.capturedAt).getTime()))})` : ""}
         ${fresh?.isStale ? " · <strong>stale</strong>" : ""}
         ${fresh?.lastError ? ` · ⚠ last pull failed: ${escapeHtml(String(fresh.lastError).slice(0, 120))}` : ""}
       </div>
@@ -616,8 +613,7 @@ export async function mount(host, container) {
       drillBody.innerHTML = `
         <div class="ld-empty">
           <strong>No Auror evidence data yet.</strong>
-          <div style="margin-top:6px">Click <em>Refresh</em>. Needs a signed-in Auror tab
-          (the token is captured automatically from your own Auror browsing).</div>
+          <div style="margin-top:6px">Sign in to Auror, then click <em>Refresh</em>.</div>
         </div>`;
       return;
     }
@@ -667,10 +663,10 @@ export async function mount(host, container) {
   }
 
   function renderComplianceDrill() {
-    drillTitle.textContent = "Compliance Due Soon — task list (click row to open in Enviance)";
+    drillTitle.textContent = "Compliance Due Soon";
     const c = lastState?.sources?.compliance?.cache;
     if (!c?.tasks?.length) {
-      drillBody.innerHTML = `<div class="ld-empty">No compliance tasks yet. Click Refresh — opens go.enviance.com in a background tab.</div>`;
+      drillBody.innerHTML = `<div class="ld-empty">No data yet. Click Refresh.</div>`;
       return;
     }
     const rowHtml = c.tasks.map((t, i) => {
@@ -701,7 +697,7 @@ export async function mount(host, container) {
       </table>
       <div class="ld-empty" style="margin-top:6px">
         ${c.tasks.length} task${c.tasks.length === 1 ? "" : "s"} ·
-        captured ${escapeHtml(withWeekday(c.capturedAt || "?"))}${c.fromReplay ? " (live replay)" : " (from page bootstrap)"}
+        updated ${escapeHtml(withWeekday(c.capturedAt || "?"))}
         · click a row to open in Enviance
       </div>
     `;
@@ -731,7 +727,7 @@ export async function mount(host, container) {
         `;
         return;
       }
-      drillBody.innerHTML = `<div class="ld-empty">No CVP data yet. Click Refresh to pull from Hoops.</div>`;
+      drillBody.innerHTML = `<div class="ld-empty">No data yet. Click Refresh.</div>`;
       return;
     }
     const ordered = ["headline", "fresh", "food", "gm"];
@@ -956,7 +952,7 @@ export async function mount(host, container) {
     host.usage.record("refresh_all");
     refreshBtn.disabled = true;
     refreshBtn.textContent = "Refreshing…";
-    statusText.textContent = "Refreshing CVP + Absences…";
+    statusText.textContent = "Refreshing…";
     try {
       const resp = await host.messaging.send("refresh_all");
       const r = resp?.data ?? resp;
@@ -977,7 +973,7 @@ export async function mount(host, container) {
         const sum7d = (s) => (s || []).reduce((a, x) => a + (x.count || 0), 0);
         const rec = sum7d(r.recognition.rolling7d);
         const eng = sum7d(r.recognition.engagement7d);
-        lines.push(`Safety Obs ${rec + eng}/7d (${rec} rec · ${eng} eng)`);
+        lines.push(`Safety Obs ${rec + eng} this week`);
       } else                lines.push(`Safety Obs: ${shortErr(r.recognition?.error)}`);
       statusText.textContent = lines.join(" · ");
     } catch (e) {

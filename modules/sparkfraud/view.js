@@ -170,11 +170,8 @@ export async function mount(host, container) {
       // error message so unexpected failures don't silently degrade to the
       // generic "(none)" cookies error from buildHeaders.
       const short =
-        r.error === "auth-needs-interaction" ? "Finish sign-in in the foregrounded gscope tab, then retry" :
-        r.error === "auth-cookies-missing"   ? "Session expired — re-auth in the focused gscope tab" :
-        r.error === "auth-pending"           ? "Finish SSO in the open gscope tab" :
-        r.error === "auth-opening"           ? "Opening gscope tab — complete SSO if asked" :
-                                                `gscope auth failed: ${r.error || "unknown"}`;
+        r.error === "auth-opening"           ? "Signing you in…" :
+                                                "Sign in to GScope to continue";
       setStatus(short, "err");
       throw new Error(r.message || r.error || "getGscopeCookies failed");
     }
@@ -272,7 +269,7 @@ export async function mount(host, container) {
 <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#222}</style>
 </head><body>
 <h2>Loading recent orders for ${escapeHtml(driverName)}…</h2>
-<p>Querying Dispatcher for the last 7 days at store ${escapeHtml(store)}…</p>
+<p>Searching the last 7 days at store ${escapeHtml(store)}…</p>
 </body></html>`);
     w.document.close();
 
@@ -368,7 +365,7 @@ export async function mount(host, container) {
       }).join("");
 
       const capHit = trips.length >= 200
-        ? `<div class="note">⚠ Dispatcher returned the maximum 200 trips for this 7-day window — older trips at this store may be missing. Narrow the time range or filter on the main page if needed.</div>`
+        ? `<div class="note">⚠ Older trips at this store may be missing.</div>`
         : "";
 
       w.document.open();
@@ -415,7 +412,7 @@ export async function mount(host, container) {
 </head><body>
 <h2>Couldn't load driver orders</h2>
 <p>${escapeHtml(String(e?.message ?? e))}</p>
-<p style="color:#666;font-size:12px">The Dispatcher query failed. If your gscope session has expired, re-auth on the main SparkFraud page and try again.</p>
+<p style="color:#666;font-size:12px">If your GScope sign-in expired, sign in again and retry.</p>
 </body></html>`);
       w.document.close();
     }
@@ -499,7 +496,7 @@ export async function mount(host, container) {
 <style>${whosHereStyles()}</style>
 </head><body>
 <h2>Who's here now? — Store ${escapeHtml(store)}</h2>
-<p class="loading">Querying Dispatcher (NOW ± 30 min)…</p>
+<p class="loading">Searching…</p>
 </body></html>`);
     w.document.close();
 
@@ -566,9 +563,10 @@ export async function mount(host, container) {
           try {
             itemsByOrder = await fetchOrderItems(uniqueOrderIds);
             const totalRows = Object.values(itemsByOrder).reduce((n, rows) => n + rows.length, 0);
-            omsBlurb = ` · ${uniqueOrderIds.length} orders / ${totalRows} item rows captured`;
+            omsBlurb = ` · ${uniqueOrderIds.length} orders, ${totalRows} items`;
           } catch (e) {
-            omsBlurb = ` · OMS fetch failed: ${e?.message ?? e}`;
+            console.warn("[SparkFraud] Who's here item lookup failed:", e);
+            omsBlurb = ` · Items couldn't load`;
           }
         }
 
@@ -644,7 +642,7 @@ ${enriched.length
 <style>${whosHereStyles()}</style></head><body>
 <h2>Who's here now? — error</h2>
 <div class="err">${escapeHtml(String(e?.message ?? e))}</div>
-<p class="muted">If your gscope session expired, re-auth on the main SparkFraud page and click Refresh.</p>
+<p class="muted">If your GScope sign-in expired, sign in again and click Retry.</p>
 <button id="refresh" class="refresh-btn">↻ Retry</button>
 </body></html>`);
         w.document.close();
@@ -706,7 +704,7 @@ ${enriched.length
     }
     const trip = candidate.trip;
     const d = trip.driver || {};
-    const driverName = d.fullName || "<unassigned>";
+    const driverName = (d.fullName === "Looked up via OMS" ? "Driver unknown" : d.fullName) || "<unassigned>";
     const phone = d.phoneE164 || "—";
     const driverEmail = d.email || "";
     const carrier = trip.carrier || "?";
@@ -781,8 +779,6 @@ ${enriched.length
       itemsHtml += `</tbody></table>`;
     }
 
-    const evidence = trip.evidence || {};
-    const evidenceLine = `${escapeHtml(evidence.fetchedBy || "live")} (${escapeHtml((evidence.sources || []).map(s => s.system).join(", ") || "—")})`;
     const storeIdDisplay = (trip.storeId ?? trip.orders?.[0]?.storeId ?? "");
 
     const html = `<!doctype html>
@@ -829,7 +825,6 @@ ${confidenceHtml}
   <div><dt>Shopper at POS:</dt> ${escapeHtml(inStoreWindow)}</div>
   <div><dt>Investigated event:</dt> ${escapeHtml(eventStr)}</div>
   <div><dt>Store:</dt> ${storeIdDisplay} (${STORE_TZ})</div>
-  <div><dt>Evidence:</dt> ${evidenceLine}</div>
   <div><dt>Generated:</dt> ${withWeekday(new Date().toLocaleString("en-US", { timeZone: STORE_TZ }))} ${tzAbbr}</div>
 </div>
 ${missingThumbCount ? `<div class="thumb-banner">⚠ ${missingThumbCount} thumbnail${missingThumbCount === 1 ? "" : "s"} unavailable (no product image found). Dashed boxes indicate missing images.</div>` : ""}
@@ -854,11 +849,8 @@ ${itemsHtml}
     const have = Object.keys(c).sort();
     if (!c.authToken && !c.authtoken) {
       setStatus("Not signed in to gscope", "err");
-      const msg = "Missing gscope auth cookies. Cookies the extension found: " +
-        (have.length ? have.join(", ") : "(none)") +
-        ". Open https://gscope.walmartlabs.com/apphome in a tab in this same Edge profile, complete SSO, then refresh this page. " +
-        "Open DevTools (F12) Console for the full lookup diagnostic.";
-      throw new Error(msg);
+      console.warn("[SparkFraud] Missing gscope auth cookies. Found:", have.length ? have.join(", ") : "(none)");
+      throw new Error("Sign-in expired. Open https://gscope.walmartlabs.com/apphome, sign in, then search again.");
     }
     const ci = {};
     for (const k of Object.keys(c)) ci[k.toLowerCase()] = c[k];
@@ -951,7 +943,7 @@ ${itemsHtml}
       console.log("[SparkFraud] Dispatcher response:", r);
       if (r.ok || !AUTH_SHAPED_STATUSES.has(r.status) || attempt > 0) break;
 
-      setStatus("Dispatcher rejected the session — refreshing gscope auth…", "err");
+      setStatus("Refreshing sign-in…", "err");
       console.warn(`[SparkFraud] Dispatcher HTTP ${r.status} — reloading gscope tab for a fresh token, then retrying once`);
       const refreshed = await send("refreshGscopeAuth", {}, 90_000);
       console.log("[SparkFraud] refreshGscopeAuth:", refreshed);
@@ -972,7 +964,10 @@ ${itemsHtml}
         ? " (empty response — Swift does this when the gscope session is stale; a background refresh was tried. " +
           "Reload https://gscope.walmartlabs.com/apphome, confirm it shows content, then retry)"
         : "";
-      throw new Error(`Dispatcher: HTTP ${r.status}${detail ? ` — ${String(detail).slice(0, 300)}` : ""}${hint}`);
+      console.warn(`[SparkFraud] Dispatcher: HTTP ${r.status}${detail ? ` — ${String(detail).slice(0, 300)}` : ""}${hint}`);
+      throw new Error(AUTH_SHAPED_STATUSES.has(r.status)
+        ? "Sign-in expired. Open https://gscope.walmartlabs.com/apphome, sign in, then search again."
+        : "Search failed. Try again in a moment.");
     }
     const cb = r.data?.payload?.tasksByClientId?.["0"];
     return cb?.trips || [];
@@ -1087,7 +1082,7 @@ ${itemsHtml}
         `Returning ${totalRows} rows from ${batches.length - failedBatches} successful batch(es).`
       );
       setStatus(
-        `Item lookup failed for ${failedBatches}/${batches.length} order batch${batches.length === 1 ? "" : "es"} — ${lastOmsError}`,
+        failedBatches === batches.length ? "Items couldn't load" : "Some items couldn't load",
         "err"
       );
     }
@@ -1199,20 +1194,18 @@ ${itemsHtml}
       lastConfidenceCounts = { verified: 0, likely: 0, possible: 0, unknown: 0, conflicting: 0 };
       // Nothing rendered — clear the stored summary so a later
       // applyItemFilter("") can't restore the previous search's line.
-      lastRenderSummary = `0 viable trip(s) (of ${completed.length} fetched)`;
+      lastRenderSummary = `0 likely drivers`;
       $("sf-result-summary").textContent = lastRenderSummary;
       // Distinguish "nothing was viable" from "viable trips existed but your
       // ±N excluded them" — the second has an obvious next action (widen), and
       // before the window filter did anything it could not arise at all.
       const windowNote = outsideWindow
-        ? ` ${outsideWindow} viable trip(s) were at the POS outside ±${windowMin}m of ` +
-          `${formatEventTime()} — widen Window to see them.`
+        ? ` ${outsideWindow} were at the register just outside ±${windowMin}m — widen Window to see them.`
         : "";
       root.innerHTML =
-        `<p class="muted">No viable candidate trips for event time ${formatEventTime()}. ` +
-        `(Trips fetched: ${totalCompleted}, of which viable: ${viableCount}.` +
-        `${windowNote}` +
-        `${!viableOnly || outsideWindow ? "" : ' Uncheck "Only viable" to see all trips in window.'})</p>`;
+        `<p class="muted">No drivers were at the register near ${formatEventTime()}.` +
+        `${windowNote || " Try a wider window."}` +
+        `${!viableOnly || outsideWindow ? "" : ' Or uncheck "Only viable" to see all trips.'}</p>`;
       return;
     }
 
@@ -1251,7 +1244,7 @@ ${itemsHtml}
       const end   = fmtTimeMs(normalizedTrip.customerWindow.endMs);
       const isDelayed = normalizedTrip.status.delayed;
       const orderLinks = orderIds.map(oid =>
-        `<a class="order-link" data-order="${oid}" title="Open ${oid} in Dispatcher">${oid}<span class="order-item-count" data-for="${oid}"></span></a>`
+        `<a class="order-link" data-order="${oid}" title="Open order ${oid}">${oid}<span class="order-item-count" data-for="${oid}"></span></a>`
       ).join(" ");
 
       const pickedFmt = win.pickedMs ? fmtTimeMs(win.pickedMs) : "?";
@@ -1260,12 +1253,12 @@ ${itemsHtml}
       const inStoreMins = (win.pickedMs && win.dispatchedMs)
         ? Math.round((win.dispatchedMs - win.pickedMs) / 60000) : null;
       const windowLabel = win.pickedMs && win.dispatchedMs
-        ? `<span class="in-store-window" title="Shopper at POS / register: between PICKED (completed shopping) and DISPATCHED (left store with goods). Times in ${STORE_TZ}.">At POS between ${pickedFmt}→${dispFmt} ${tzAbbr} (${inStoreMins}m)</span>`
+        ? `<span class="in-store-window" title="Time between finishing shopping and leaving the store">At POS between ${pickedFmt}→${dispFmt} ${tzAbbr} (${inStoreMins}m)</span>`
         : win.inProgress && win.arrivedMs
-          ? `<span class="in-store-window in-progress-window" title="Trip in progress — ${win.arrivalSource} at ${fmtTimeMs(win.arrivedMs)} ${tzAbbrFor(new Date(win.arrivedMs), STORE_TZ)}, still inside. POS bracket closes when PICKED/DISPATCHED fire.">In store since ${fmtTimeMs(win.arrivedMs)} ${tzAbbrFor(new Date(win.arrivedMs), STORE_TZ)} · ${normalizedTrip.status.display || ""}</span>`
+          ? `<span class="in-store-window in-progress-window" title="Driver is still in the store">In store since ${fmtTimeMs(win.arrivedMs)} ${tzAbbrFor(new Date(win.arrivedMs), STORE_TZ)} · ${normalizedTrip.status.display || ""}</span>`
         : win.inProgress
           ? `<span class="in-store-window in-progress-window" title="Trip in progress but no ARRIVED_AT_STORE/PICK_STARTED event in the payload — matched on the customer window ${fmtTimeMs(normalizedTrip.customerWindow.startMs)}–${fmtTimeMs(normalizedTrip.customerWindow.endMs)} ${tzAbbrFor(new Date(), STORE_TZ)} instead. Weak signal.">In progress — arrival unknown · ${normalizedTrip.status.display || ""}</span>`
-          : `<span class="in-store-window missing" title="No PICKED/DISPATCHED events in this trip's data">At POS: unknown</span>`;
+          : `<span class="in-store-window missing" title="Register time unknown">At POS: unknown</span>`;
 
       const _tipLines = [
         ...candidate.rationale.map(r => "✓ " + r),
@@ -1280,12 +1273,12 @@ ${itemsHtml}
         <div class="trip-head">
           ${confidenceBadge}
           ${isOmsLookup
-            ? `<span class="trip-driver-btn trip-driver-oms" title="Driver name unavailable for OMS-only lookups">OMS lookup</span>`
+            ? `<span class="trip-driver-btn trip-driver-oms" title="Search by store to find the driver">Driver unknown</span>`
             : `<button class="trip-driver-btn" data-driver="${escapeHtml(driverName)}" title="Load all recent trips for ${escapeHtml(driverName)} (last 7 days)">${driverName}</button>`}
           <span class="trip-meta">${start}–${end} ${tzAbbr}${isDelayed ? ' <span class="delayed-flag">DELAYED</span>' : ""} · ${normalizedTrip.carrier || "?"} · ${phone}</span>
           ${windowLabel}
           ${isOmsLookup
-            ? `<button class="trip-watch" disabled title="Cannot watch: driver name unknown for OMS-only lookups. Run a store search to find the driver.">+ Watch</button>`
+            ? `<button class="trip-watch" disabled title="Driver unknown. Search by store to find the driver.">+ Watch</button>`
             : `<button class="trip-watch" title="Add ${escapeHtml(driverName)} to the watchlist for the current store" data-driver="${escapeHtml(driverName)}">+ Watch</button>`}
           <button class="trip-print" title="Print full trip details + items"><span class="trip-print-icon">🖨</span> Print</button>
           <span class="trip-toggle">▾</span>
@@ -1378,7 +1371,8 @@ ${itemsHtml}
             a.classList.remove("loading");
             if (!resp?.ok) {
               console.error("[SparkFraud] openOrderInDispatcher failed:", resp);
-              alert("Failed to open order in Dispatcher: " + (resp?.error || "unknown"));
+              console.warn("[SparkFraud] openOrderInDispatcher failed:", resp?.error);
+              alert("Couldn't open that order. Try again.");
             }
           });
         });
@@ -1391,12 +1385,9 @@ ${itemsHtml}
     // decided what is on screen.
     const inProgressShown = viableFiltered.filter(x => !x.win.hasEvents).length;
     lastRenderSummary =
-      `${viableFiltered.length} viable trip(s)` +
-      (windowMin ? ` at POS within ±${windowMin}m` : "") +
-      ` (of ${completed.length} fetched)` +
-      (outsideWindow ? ` · ${outsideWindow} outside ±${windowMin}m` : "") +
-      (inProgressShown ? ` · ${inProgressShown} in-progress (in store at event time, POS bracket still open)` : "") +
-      (lastWidenInfo ? ` · fetched ±${lastWidenInfo.dispatcherWindowMin}m to catch shopper presence` : "");
+      `${viableFiltered.length} likely driver${viableFiltered.length === 1 ? "" : "s"}` +
+      (outsideWindow ? ` · ${outsideWindow} just outside ±${windowMin}m` : "") +
+      (inProgressShown ? ` · ${inProgressShown} still in store` : "");
     $("sf-result-summary").textContent = lastRenderSummary;
   }
 
@@ -1408,8 +1399,7 @@ ${itemsHtml}
     const totalRows = orders.reduce((s, o) => s + (o.items?.length || 0), 0);
     if (!totalRows) {
       itemsContainer.innerHTML = lastOmsError
-        ? `<p class="error">Items could not be loaded — ${escapeHtml(String(lastOmsError))}. ` +
-          `Click Find candidates again to retry.</p>`
+        ? `<p class="error">Items couldn't load. Click Find candidates again to retry.</p>`
         : `<p class="muted">No item details returned for this trip's orders.</p>`;
       tripEl.dataset.itemsReady = "1";
       return;
@@ -1537,7 +1527,7 @@ ${itemsHtml}
     lookupMode = false;
     const btn = $("sf-search");
     btn.disabled = true;
-    $("sf-results").innerHTML = `<p class="muted"><span class="spinner"></span>Querying Dispatcher…</p>`;
+    $("sf-results").innerHTML = `<p class="muted"><span class="spinner"></span>Searching…</p>`;
     console.log("[SparkFraud] runSearch started");
     const searchT0 = Date.now();
     let searchSuccess = true;
@@ -1546,7 +1536,7 @@ ${itemsHtml}
     try {
       const store = $("sf-store").value.trim() || "";
       if (!/^\d{1,6}$/.test(store)) {
-        throw new Error("Enter a store number (digits only) before searching — Dispatcher rejects an empty pickup point with HTTP 400.");
+        throw new Error("Enter a store number.");
       }
       const date  = $("sf-date").value || new Date().toISOString().slice(0, 10);
       const evtTime = $("sf-event-time").value || "08:40";
@@ -1707,7 +1697,7 @@ ${itemsHtml}
     );
     const slowWarn = cached
       ? ""
-      : ` <span class="muted">(first lookup of this session — opening Order Resolution to capture auth headers, ~10s. Subsequent lookups will be ~1s.)</span>`;
+      : ` <span class="muted">(first lookup takes about 10 seconds)</span>`;
     $("sf-results").innerHTML = `<p class="muted"><span class="spinner"></span>Looking up order(s)…${slowWarn}</p>`;
     console.log("[SparkFraud] runOrderLookup started, cachedHeaders=" + !!cached);
     const lookupT0 = Date.now();
@@ -1809,7 +1799,7 @@ ${itemsHtml}
     console.log("[SparkFraud] enums.json deliveryTypes loaded:", DELIVERY_TYPE_ITEMS.length, "items");
   } catch (e) {
     console.error("[SparkFraud] CRITICAL: enums.json failed to load:", e);
-    setStatus("Registry load failed — see console", "err");
+    setStatus("Couldn't start. Reload the extension.", "err");
   }
 
   $("sf-search").addEventListener("click", runSearch);
@@ -1841,12 +1831,12 @@ ${itemsHtml}
       console.error("[SparkFraud] Who's here failed:", err);
     });
   });
-  $("sf-dev-reload").addEventListener("click", () => { chrome.runtime.reload(); });
+  $("sf-dev-reload")?.addEventListener("click", () => { chrome.runtime.reload(); });
   $("sf-dev-clear").addEventListener("click", async () => {
-    if (!confirm("Clear all gscope cookies, cache, and service workers? You'll have to re-do SSO. Use this only if gscope is stuck.")) return;
+    if (!confirm("Reset your GScope sign-in? You'll need to sign in again. Use this only if GScope is stuck.")) return;
     const r = await send("clearGscopeState");
     if (r?.ok) {
-      alert("Cleared. Open a new tab to https://gscope.walmartlabs.com/apphome and re-do SSO.");
+      alert("Done. Open https://gscope.walmartlabs.com/apphome and sign in again.");
     } else {
       alert("Clear failed: " + (r?.error || "unknown"));
     }
@@ -1909,7 +1899,7 @@ ${itemsHtml}
         : `<span class="muted tiny">no data yet</span>`;
       const isOmsEntry = w.driverName === "Looked up via OMS";
       return `<tr${isOmsEntry ? ' class="sf-wl-oms-row"' : ""}>
-        <td><button class="sf-wl-name-btn" data-driver="${escapeHtml(w.driverName)}" data-store="${escapeHtml(w.store)}" title="Open recent trips for ${escapeHtml(w.driverName)} at store ${escapeHtml(w.store)}">${escapeHtml(w.driverName)}</button>${isOmsEntry ? ' <span class="sf-wl-oms-warn" title="Driver name unknown — polling inactive. Remove this entry and re-add by watching from a store search result.">⚠ inactive</span>' : ""}</td>
+        <td><button class="sf-wl-name-btn" data-driver="${escapeHtml(w.driverName)}" data-store="${escapeHtml(w.store)}" title="Open recent trips at store ${escapeHtml(w.store)}">${escapeHtml(isOmsEntry ? "Driver unknown" : w.driverName)}</button>${isOmsEntry ? ' <span class="sf-wl-oms-warn" title="Driver unknown, so this entry isn't being checked. Remove it and watch the driver from a store search.">⚠ inactive</span>' : ""}</td>
         <td class="mono">${escapeHtml(w.store)}</td>
         <td>${status}</td>
         <td class="muted tiny">${escapeHtml(seen)}</td>
@@ -1922,7 +1912,7 @@ ${itemsHtml}
       const t = withWeekday(new Date(h.hitAt).toLocaleString("en-US", { timeZone: STORE_TZ }));
       const orderIds = (h.orderIds || []).slice(0, 3).join(", ") + ((h.orderIds || []).length > 3 ? "…" : "");
       const itemsBlurb = h.itemsByOrder
-        ? ` · ${Object.values(h.itemsByOrder).reduce((n, rows) => n + rows.length, 0)} items captured`
+        ? ` · ${Object.values(h.itemsByOrder).reduce((n, rows) => n + rows.length, 0)} items`
         : "";
       return `<tr>
         <td class="muted tiny">${escapeHtml(t)}</td>
@@ -1953,7 +1943,7 @@ ${itemsHtml}
         </div>` : ""}
       <div class="sf-wl-actions cluster">
         <button id="sf-wl-poll-now" class="btn btn-secondary btn-sm">Check now</button>
-        <span class="muted tiny">Polls every 3 minutes via chrome.alarms while at least one driver is watched. OS notifications fire on status transitions into enroute / at pickup / trip in progress.</span>
+        <span class="muted tiny">Checks every few minutes. You'll get an alert when a watched driver heads to the store.</span>
       </div>
     `;
 

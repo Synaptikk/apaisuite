@@ -369,16 +369,16 @@ export async function mount(host, container) {
       const res = await host.messaging.send("get-tick-state");
       if (res.alarmScheduledAt) {
         const next = new Date(res.alarmScheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        $("ms-tick-state").textContent = `Next tick: ${next}`;
+        $("ms-tick-state").textContent = `Next run: ${next}`;
       } else {
-        $("ms-tick-state").textContent = "Tick alarm not scheduled";
+        $("ms-tick-state").textContent = "No run scheduled";
       }
     } catch (_) { /* silent */ }
   }
 
   function updateTickState(atMs) {
     const t = new Date(atMs || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    $("ms-tick-state").textContent = `Last tick: ${t}`;
+    $("ms-tick-state").textContent = `Last run: ${t}`;
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────
@@ -434,7 +434,7 @@ export async function mount(host, container) {
   function renderStatusPill(m) {
     const s = m.lastStatus;
     if (!s) return `<span class="pill pill-muted">idle</span>`;
-    if (s.ok) return `<span class="pill pill-success" title="${host.ui.escapeHtml(s.path || "")}">posted</span>`;
+    if (s.ok) return `<span class="pill pill-success">posted</span>`;
     const cls = s.errorClass === "AUTH" ? "pill-warn" : "pill-danger";
     const label = s.errorClass || s.stage || "failed";
     return `<span class="pill ${cls}" title="${host.ui.escapeHtml(s.error || "")}">${host.ui.escapeHtml(label.toString().toLowerCase())}</span>`;
@@ -453,12 +453,12 @@ export async function mount(host, container) {
     host.ui.toast(`Running "${nameOf(id)}"…`);
     try {
       const res = await host.messaging.send("run-now", { id });
-      if (res.status?.ok) host.ui.toast(`Posted to Workvivo (${res.status.path})`);
+      if (res.status?.ok) host.ui.toast("Posted to Workvivo");
       else host.ui.toast(`Run failed: ${res.status?.error || "unknown"}`, { kind: "error" });
       await refresh();
       await refreshLog();
     } catch (e) {
-      host.ui.toast(`Run threw: ${e?.message ?? e}`, { kind: "error" });
+      host.ui.toast(`Run failed: ${e?.message ?? e}`, { kind: "error" });
     }
   }
 
@@ -529,10 +529,11 @@ export async function mount(host, container) {
     $("ms-f-vw").value = c.viewportWidth ?? 1440;
     $("ms-f-vh").value = c.viewportHeight ?? 1000;
     $("ms-f-zoom").value = c.zoom ?? 1;
-    $("ms-f-settle").value = c.settleDelayMs ?? 8000;
-    $("ms-f-timeout").value = c.timeoutMs ?? 60000;
+    // Shown in seconds / minutes; stored in ms.
+    $("ms-f-settle").value = (c.settleDelayMs ?? 8000) / 1000;
+    $("ms-f-timeout").value = (c.timeoutMs ?? 60000) / 1000;
     $("ms-f-retries").value = c.retries ?? 2;
-    $("ms-f-catchup").value = c.catchUpWindowMs ?? 3600000;
+    $("ms-f-catchup").value = (c.catchUpWindowMs ?? 3600000) / 60000;
     $("ms-modal-backdrop").hidden = false;
   }
 
@@ -565,10 +566,10 @@ export async function mount(host, container) {
         // CSS zoom (<1 shrinks content to fit more into the capture surface).
         // Clamped to the validator's (0, 3] range; falls back to 1 if blank.
         zoom: Math.min(3, Math.max(0.25, parseFloat($("ms-f-zoom").value) || 1)),
-        settleDelayMs: parseInt($("ms-f-settle").value, 10) || 0,
-        timeoutMs: parseInt($("ms-f-timeout").value, 10) || 60000,
+        settleDelayMs: Math.round((parseFloat($("ms-f-settle").value) || 0) * 1000),
+        timeoutMs: Math.round((parseFloat($("ms-f-timeout").value) || 60) * 1000),
         retries: parseInt($("ms-f-retries").value, 10) || 0,
-        catchUpWindowMs: parseInt($("ms-f-catchup").value, 10) || 0,
+        catchUpWindowMs: Math.round((parseFloat($("ms-f-catchup").value) || 0) * 60000),
       },
     };
   }
@@ -615,12 +616,16 @@ export async function mount(host, container) {
       $("ms-form-msg").textContent = "Looking up channel…";
       const r = await host.messaging.send("probe-destination", { id: res.id });
       if (r.ok) {
-        $("ms-form-msg").textContent = `Matched channel "${r.matched}" (…${r.channelUrlSuffix}).`;
+        $("ms-form-msg").textContent = `Channel found: ${r.matched}`;
       } else {
-        $("ms-form-msg").textContent = `Probe failed [${r.errorClass}]: ${r.error}`;
+        console.warn("[metricshot] destination check failed", r.errorClass, r.error);
+        $("ms-form-msg").textContent = r.errorClass === "NO_SESSION"
+          ? "Couldn't check the channel — open Workvivo and sign in, then try again."
+          : "Couldn't find that channel. Check the name and that you're a member.";
       }
     } catch (err) {
-      $("ms-form-msg").textContent = `Probe failed: ${err?.message ?? err}`;
+      console.warn("[metricshot] destination check failed", err);
+      $("ms-form-msg").textContent = "Couldn't check the channel. Try again.";
     }
   }
 
@@ -658,33 +663,29 @@ export async function mount(host, container) {
       wrap.hidden = true;
     } else if (followUp.ok) {
       wrap.hidden = false;
-      meta.textContent = `${followUp.binsCount} bins · ${followUp.deptsCount} depts scraped`;
-      pre.textContent = followUp.text || "(nothing to report — no rows above tier thresholds)";
+      meta.textContent = `${followUp.binsCount} bins · ${followUp.deptsCount} depts`;
+      pre.textContent = followUp.text || "Nothing to report.";
     } else {
       wrap.hidden = false;
-      meta.textContent = `scrape failed`;
-      pre.textContent = `[${followUp.errorClass || "?"}] ${followUp.error || "unknown"}`;
-      // On a PARSE failure the raw Tableau body was stashed — offer to copy it
-      // so the parser can be fixed against real data.
+      meta.textContent = "";
+      pre.textContent = "Couldn't read details.";
+      console.warn("[metricshot] follow-up failed", followUp.errorClass, followUp.error);
+      // On a PARSE failure the raw Tableau body was stashed — log it (console
+      // only) so the parser can be fixed against real data.
       if (ctx?.id) maybeShowScrapeDebug(ctx.id);
     }
 
     $("ms-preview-card").scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  // Fetch the stashed raw Tableau response for a failed scrape and append it
-  // to the follow-up panel + copy to clipboard, so it can be shared to fix
-  // the parser. Best-effort; silent if nothing saved.
+  // Fetch the stashed raw Tableau response for a failed scrape and log it to
+  // the console (not the UI) so the parser can be fixed. Best-effort.
   async function maybeShowScrapeDebug(id) {
     try {
       const res = await host.messaging.send("get-scrape-debug", { id });
       const dbg = res?.debug;
       if (!dbg) return;
-      const body = dbg.respBodyPreview || "";
-      const pre = $("ms-followup-pre");
-      pre.textContent += `\n\n── Raw Tableau response (${body.length} chars) ──\nURL: ${dbg.capturedUrl || "?"}\n\n${body}`;
-      try { await navigator.clipboard.writeText(body); host.ui.toast("Raw scrape body copied to clipboard."); }
-      catch { /* clipboard blocked — it's still shown in the panel */ }
+      console.warn("[metricshot] raw scrape response", dbg.capturedUrl || "?", dbg.respBodyPreview || "");
     } catch { /* ignore */ }
   }
 

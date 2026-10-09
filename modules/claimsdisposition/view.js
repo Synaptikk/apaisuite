@@ -214,7 +214,7 @@ export async function mount(host, container) {
     // Source picker.
     const sourceWrap = document.createElement("label");
     sourceWrap.className = "cd-field cd-inline";
-    sourceWrap.innerHTML = `<span class="cd-field-label">Source</span>`;
+    sourceWrap.innerHTML = `<span class="cd-field-label">Data from</span>`;
     const sourceSel = document.createElement("select");
     sourceSel.className = "cd-select";
     if (!state.pullsIndex.length) {
@@ -238,7 +238,7 @@ export async function mount(host, container) {
     // Days selector (drives the next Pull's date range).
     const daysWrap = document.createElement("label");
     daysWrap.className = "cd-field cd-inline";
-    daysWrap.innerHTML = `<span class="cd-field-label">Pull range</span>`;
+    daysWrap.innerHTML = `<span class="cd-field-label">Range</span>`;
     const daysSel = document.createElement("select");
     daysSel.className = "cd-select";
     for (const n of [7, 14, 30, 60, 90]) {
@@ -295,7 +295,7 @@ export async function mount(host, container) {
       const empty = document.createElement("span");
       empty.className = "cd-muted";
       empty.style.fontSize = "var(--fs-sm)";
-      empty.textContent = "No stores — add one to enable Pull";
+      empty.textContent = "Add a store to start";
       chipsWrap.appendChild(empty);
     }
     storesRow.appendChild(chipsWrap);
@@ -360,11 +360,9 @@ export async function mount(host, container) {
 
   function pullLabel(p) {
     const when = new Date(p.pulledAt);
-    const date = withWeekday(formatDateFmt(when, "MMM d, yyyy"), when);
-    const hr   = String(when.getHours()).padStart(2, "0");
-    const mn   = String(when.getMinutes()).padStart(2, "0");
-    const rows = NUMBER_FMT.format(p.totalRows ?? 0);
-    return `${date} ${hr}:${mn} · ${rows} rows · last ${p.days}d`;
+    const date = formatDateFmt(when, "MMM d");
+    const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `${date}, ${time} · last ${p.days} days`;
   }
 
   // ── Progress bar ──────────────────────────────────────────────
@@ -397,7 +395,7 @@ export async function mount(host, container) {
         <button type="button" class="cd-progress-details cd-btn cd-btn-xs">Details</button>
       </div>
       <div class="cd-progress-bar"><div class="cd-progress-fill" style="width:${pct}%"></div></div>
-      <div class="cd-progress-current">${current ? `currently fetching store ${current}` : ""}</div>
+      <div class="cd-progress-current">${current ? `Store ${current}…` : ""}</div>
       <div class="cd-progress-detailsbox cd-hidden"></div>
     `;
     const detailsBtn = els.progress.querySelector(".cd-progress-details");
@@ -425,10 +423,8 @@ export async function mount(host, container) {
       const row = document.createElement("div");
       row.className = "cd-progress-detail-row";
       const parts = [];
-      if (s.totalCount != null) parts.push(`${NUMBER_FMT.format(s.totalCount)} rows`);
-      if (s.ms != null)         parts.push(`${(s.ms / 1000).toFixed(1)}s`);
-      if (s.warning)            parts.push(`⚠ ${s.warning.slice(0, 60)}`);
-      if (s.error)              parts.push(s.error.slice(0, 60));
+      if (s.warning || s.error) console.warn(`[claimsdisposition] store ${store}:`, s.warning || "", s.error || "");
+      if (s.error)              parts.push("Failed");
       row.innerHTML = `
         <span class="cd-progress-detail-store">${store}</span>
         <span class="cd-progress-detail-meta">${parts.join(" · ") || "—"}</span>
@@ -479,8 +475,9 @@ export async function mount(host, container) {
         // surface it as a passive status — no "click here" prompt; the
         // next dashboard mount will retry automatically.
         const msg = resp.authFailure
-          ? `Looker auth still failing after ${resp.reauthAttempts ?? 0} background retries. Will retry on next dashboard refresh.`
-          : `pull failed: ${resp.error}`;
+          ? "Sign-in needed to load claims. Open the claims dashboard, sign in, then Pull again."
+          : "Couldn't load claims data. Try Pull again.";
+        console.warn("[claimsdisposition] pull failed:", resp.authFailure ? `auth, ${resp.reauthAttempts ?? 0} retries` : resp.error);
         setState({ inFlightPull: false, error: msg });
         return;
       }

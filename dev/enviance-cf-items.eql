@@ -1,0 +1,22 @@
+
+SET CULTURE='en-US'
+SELECT DISTINCT
+	cf.ID AS id,
+	cf.TrueValue.Invariant as trueValueInvariant,
+	cf.TrueValue.Localized as trueValueLocalized,
+	cf.FalseValue.Invariant as falseValueInvariant,
+	cf.FalseValue.Localized as falseValueLocalized,
+
+	cf.ListItemID as listItemId,
+	cf.ListItemOrder as listItemOrder,
+	cf.ListItem.Number as listItemNumberValue,
+	cf.ListItem.Text.Invariant as listItemTextValueInvariant,
+	cf.ListItem.Text.Localized as listItemTextValueLocalized,
+	cf.TextAlias.Invariant as textAliasInvariant,
+	cf.TextAlias.Localized as textAliasLocalized,
+
+	cf.Links.Name as labelName,
+	cf.Links.Url as labelUrl
+FROM CustomField cf
+WHERE cf.ID IN (__IDS__)
+ORDER BY cf.ID, cf.ListItemOrder, cf.Links.Name

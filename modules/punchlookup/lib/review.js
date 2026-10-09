@@ -205,8 +205,12 @@ export function analyzeDay(entries, punches, day) {
     if (cur < hi0) gaps.push({ from: cur, to: hi0 });
   }
   totals.undocumentedOn = gaps.reduce((s, g) => s + g.to - g.from, 0);
+  // Punched meals and out→in breaks inside the shift, shown as list rows.
+  const breaks = intervals
+    .filter((i) => i.status !== "on" && i.from >= window[0] && i.to <= window[1] && i.to > i.from)
+    .map((i) => ({ from: i.from, to: i.to, status: i.status }));
   totals.documentedOn = Math.max(0, totals.onClock - totals.undocumentedOn);
-  return { rows, gaps, issues: issues.sort((a, b) => a.at - b.at), totals, window, intervals };
+  return { rows, gaps, breaks, issues: issues.sort((a, b) => a.at - b.at), totals, window, intervals };
 }
 
 /** The day's punches in one readable line: "In 7:00 AM · Meal 11:02 AM–12:01 PM · Out 3:30 PM". */

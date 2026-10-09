@@ -230,7 +230,7 @@ function evaluateRules(e, ctx) {
     } else if (dayCount > meta.userDayP95 && dayCount >= T.volumeAbsoluteFloor) {
       out.push({
         rule: "HIGH_VOLUME",
-        reason: `high user volume (${dayCount}/day, p95=${meta.userDayP95})`,
+        reason: `high volume (${dayCount} in one day)`,
         weightFactor: 1,
       });
     }

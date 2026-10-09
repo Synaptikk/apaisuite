@@ -158,7 +158,7 @@ function storeLabel(name) {
 
   <section class="blk">
     <h2>Impacts headed your way</h2>
-    <p class="note">Stores ranked by how strongly the groups' routes point at them: where each group last hit, the direction it was driving on the interstate, how far it usually moves between hits, and whether it has hit the store before. Risk index 100 = the most exposed store in this brief.</p>
+    <p class="note">Risk index 100 = the most exposed store in this brief.</p>
     ${impacts}
     ${nearby}
   </section>
@@ -174,7 +174,6 @@ function storeLabel(name) {
   ${othersTbl}
 
   <footer class="ftr">
-    <div>Source: Auror (ORC events, person profiles) · Routes: Natural Earth interstates · APAISuite ORC Corridor Monitor</div>
     <div>Forecasts are projections from past movement, not confirmed intelligence. Verify in Auror before acting. Internal AP distribution only.</div>
   </footer>
 

@@ -14,7 +14,7 @@
   <!-- Clearance / Deleted family -->
   <section class="mkt120-family mkt120-family-cd" data-family="clearance">
     <div class="mkt120-family-head">
-      <h2>Clearance / Deleted <span class="mkt120-family-source">— Tableau · Market 120 aggregate</span></h2>
+      <h2>Clearance / Deleted</h2>
       <span class="mkt120-freshness" data-freshness="clearance">no capture yet</span>
       <button class="btn btn-secondary btn-sm" data-action="refresh-clearance">Refresh</button>
     </div>
@@ -37,7 +37,7 @@
   <!-- ISA family -->
   <section class="mkt120-family mkt120-family-isa" data-family="isa">
     <div class="mkt120-family-head">
-      <h2>ISA Activity <span class="mkt120-family-source">— Power BI · Market 120</span></h2>
+      <h2>ISA Activity</h2>
       <span class="mkt120-freshness" data-freshness="isa">no capture yet</span>
       <button class="btn btn-secondary btn-sm" data-action="refresh-isa">Refresh</button>
     </div>
@@ -57,7 +57,7 @@
     </div>
     <p class="mkt120-isa-scope" data-isa-scope></p>
     <details class="mkt120-isa-review" data-isa-review>
-      <summary>ISA review<span class="mkt120-isa-review-hint">reasons, stores, categories, items and stolen detail</span></summary>
+      <summary>ISA review</summary>
       <div class="mkt120-isa-body" data-isa-body>
         <p class="mkt120-empty">Click Refresh on ISA Activity to load the Market 120 review.</p>
       </div>
@@ -67,7 +67,7 @@
   <!-- Store-level breakdown (report-style: insights + KPIs + charts) -->
   <section class="mkt120-breakdown" data-breakdown-section hidden>
     <div class="mkt120-family-head">
-      <h2>Market 120 Breakdown <span class="mkt120-family-source">— Tableau Clearance/Deleted crosstab</span></h2>
+      <h2>Market 120 Breakdown</h2>
       <span class="mkt120-breakdown-asof" data-breakdown-asof></span>
     </div>
 
@@ -102,7 +102,7 @@
   <!-- Week-over-week store detail (Clearance/Deleted, Market 120) -->
   <section class="mkt120-wow" data-wow-section>
     <div class="mkt120-family-head">
-      <h2>Week-over-Week by Store <span class="mkt120-family-source">— Tableau Clearance/Deleted · Market 120</span></h2>
+      <h2>Week-over-Week by Store</h2>
       <span class="mkt120-freshness" data-freshness="stores">no capture yet</span>
       <button class="btn btn-secondary btn-sm" data-action="refresh-stores">Refresh</button>
     </div>
@@ -131,7 +131,7 @@
   <section class="mkt120-alerts">
     <h2 class="mkt120-section-heading">Alerts</h2>
     <div class="mkt120-alert-list" data-alert-list>
-      <p class="mkt120-empty">Click Refresh to pull KPIs; alerts will populate.</p>
+      <p class="mkt120-empty">Click Refresh to load alerts.</p>
     </div>
   </section>
 
@@ -139,24 +139,6 @@
   <section class="mkt120-debug" data-debug-section hidden>
     <h2 class="mkt120-section-heading">Last capture details</h2>
     <div class="mkt120-debug-body" data-debug-body></div>
-    <p class="mkt120-debug-hint">
-      Details persist to <code>chrome.storage.local["market120.debug.*"]</code>.
-      Open DevTools → Application → Storage to inspect the raw response preview.
-    </p>
   </section>
 
-  <!-- Pass-status banner -->
-  <aside class="mkt120-pass-banner" data-pass-banner>
-    <strong>Pass 5 — report-style breakdown shipped.</strong>
-    The Market 120 Breakdown section now mirrors the flat HTML report:
-    executive insights (top &amp; bottom), a KPI grid with national context,
-    a top-10-stores bar chart and a clearance-vs-deleted donut (dependency-free
-    inline SVG — MV3 CSP blocks CDN Chart.js), plus the week-over-week table.
-    All aggregation + chart logic is unit-tested (32/32) against the real capture.
-    <br><em>Live note:</em> the store capture reads the Tableau "CD Store" sheet
-    from a background tab (no focus change, no export dialog) and closes it on
-    success — a tab that needs SSO is left open so you can sign in. The
-    Clearance / Deleted tiles are fed from the same data. Click a store in the
-    week-over-week table for its detail.
-  </aside>
 </section>

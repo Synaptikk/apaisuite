@@ -36,10 +36,7 @@ export function cxDocDefinition(model) {
   if (narrative?.text) {
     content.push({ text: "The read", style: "h2" });
     content.push({
-      text: `From store ${storeNbr ?? "—"}'s own comments and scores — nothing else. `
-        + "This does not cover the other stores in the market table below: Medallia shows "
-        + "this account one store's comments, so no other store's feedback was available to "
-        + "summarise.",
+      text: `From store ${storeNbr ?? "—"}'s comments and scores only.`,
       style: "caption", margin: [0, 0, 0, 8],
     });
     content.push(...markdownToPdf(narrative.text));
@@ -66,7 +63,7 @@ export function cxDocDefinition(model) {
       [24, "*", 50, 55, 65],
     ));
     content.push({
-      text: "Scores only. Medallia scopes customer comments to your role, which covers one store, so the analysis below is this store's alone.",
+      text: "Scores only; comments cover your store.",
       style: "caption", margin: [0, 6, 0, 0],
     });
   }
@@ -110,7 +107,6 @@ export function cxDocDefinition(model) {
     content.push({
       text: `Store ${storeNbr ?? "—"} only. `
         + `${num(a.counts.filtered)} comments, ${a.counts.firstDay} to ${a.counts.lastDay}. `
-        + `${num(a.themes.taggedCount)} carry topic tags, which is what the themes below are built from. `
         + `Ratings: ${num(a.ratings.bands.promoter)} at 5 stars, ${num(a.ratings.bands.passive)} at 4, ${num(a.ratings.bands.detractor)} at 1-3.`,
       style: "caption", margin: [0, 0, 0, 10],
     });
@@ -177,7 +173,7 @@ export function cxDocDefinition(model) {
     pageMargins: [40, 40, 40, 46],
     footer: (page, count) => ({
       columns: [
-        { text: "Sources: Hoops Cx scorecard, Medallia customer comments.", style: "caption", margin: [40, 0, 0, 0] },
+        { text: "", style: "caption", margin: [40, 0, 0, 0] },
         { text: `${page} / ${count}`, alignment: "right", style: "caption", margin: [0, 0, 40, 0] },
       ],
       margin: [0, 12, 0, 0],

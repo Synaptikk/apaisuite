@@ -23,7 +23,7 @@ export default {
     id:          "claimsdisposition",
     group:       "ap",
     name:        "Claims Disposition",
-    description: "Live shrink-claims analytics: pulls per-store data on demand from the Looker Studio embed, caches up to 30 pulls in IndexedDB, exports per-store CSVs.",
+    description: "Disposal and donation trends by store, with outlier flags and CSV/PDF export.",
     version:     "0.3.0",
     status:      "beta",
 

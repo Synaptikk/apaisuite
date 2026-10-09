@@ -18,7 +18,8 @@ export async function mount(host, container) {
   try {
     container.innerHTML = await (await fetch(host.url("view.html"))).text();
   } catch (e) {
-    container.innerHTML = `<div class="state-error">Failed to load view: ${escapeHtml(String(e?.message ?? e))}</div>`;
+    console.warn("[sparkscango] view load failed:", e?.message ?? e);
+    container.innerHTML = `<div class="state-error">Couldn't load this page.</div>`;
     return () => link.remove();
   }
 
@@ -95,9 +96,9 @@ export async function mount(host, container) {
       else if (v?.errorClass === STATUS_UNRESOLVED) discovery++;
       else err++;
     }
-    if (discovery === items.length) return { text: "All sources await Power BI discovery — see docs/SPARKSCANGO_CHECKPOINT.md", cls: "warn" };
+    if (discovery === items.length) return { text: "Not available yet.", cls: "warn" };
     if (ok === items.length)         return { text: "All sources refreshed.", cls: "ok" };
-    return { text: `${ok} ok · ${discovery} awaiting discovery · ${err} error`, cls: err ? "err" : "warn" };
+    return { text: err ? `${err} couldn't load` : "Some data not available yet.", cls: err ? "err" : "warn" };
   }
 
   // ── State fetch ─────────────────────────────────────────────────
@@ -125,7 +126,8 @@ export async function mount(host, container) {
       return;
     }
     if (state.error) {
-      pane.innerHTML = errorCard("Could not load state", state.error);
+      console.warn("[sparkscango] state load failed:", state.error);
+      pane.innerHTML = errorCard("Couldn't load this page.", "Try again.");
       return;
     }
     switch (currentTab) {
@@ -138,33 +140,9 @@ export async function mount(host, container) {
 
   function renderOverview(pane) {
     const parts = [];
-    parts.push(`
-      <div class="ssg-state info">
-        <div class="ssg-state-title">Module scaffold ready — awaiting Power BI discovery</div>
-        <div class="ssg-state-detail">
-          Adapter contracts, investigation bridge, filter/state UI, and the SparkFraud shared-service seam are in place.
-          Populate <code>modules/sparkscango/lib/pages_registry.js</code> from a live probe (see <code>dev/ssg_powerbi_probe.js</code> or
-          <code>docs/SPARKSCANGO_CHECKPOINT.md</code>) to unblock the four data pulls.
-        </div>
-      </div>
-    `);
-    parts.push(`<h3 style="margin:16px 0 6px;font-size:13px">Source status</h3>`);
-    parts.push(`<div class="ssg-kpi-grid">`);
-    for (const [key, p] of Object.entries(PAGES)) {
-      const fr = state.freshness?.[key];
-      const lastError = fr?.lastError ? ` (${escapeHtml(fr.lastError)})` : "";
-      const badge = p.status === STATUS_UNRESOLVED ? "Discovery required" : (fr?.lastSuccess ? "Ready" : "No data");
-      parts.push(`
-        <div class="ssg-kpi">
-          <div class="ssg-kpi-label">${escapeHtml(p.label)}</div>
-          <div class="ssg-kpi-value">${escapeHtml(badge)}</div>
-          <div class="ssg-kpi-sub">Page <code>${escapeHtml(p.pageId.slice(0, 8))}…</code>${lastError}</div>
-        </div>
-      `);
-    }
-    parts.push(`</div>`);
+    parts.push(`<div class="ssg-state info"><div class="ssg-state-title">Coming soon.</div></div>`);
     parts.push(`<h3 style="margin:16px 0 6px;font-size:13px">Recent exceptions</h3>`);
-    parts.push(`<div class="ssg-state">No exception rows to display — adapters not yet returning data.</div>`);
+    parts.push(`<div class="ssg-state">No data yet.</div>`);
     pane.innerHTML = parts.join("");
   }
 
@@ -175,27 +153,11 @@ export async function mount(host, container) {
 
     // Unresolved page — clearest possible state
     if (page.status === STATUS_UNRESOLVED) {
-      const openQs = (page.openQuestions || []).map((q) => `<li>${escapeHtml(q)}</li>`).join("");
-      pane.innerHTML = `
-        <div class="ssg-state warn">
-          <div class="ssg-state-title">Discovery required</div>
-          <div class="ssg-state-detail">
-            This adapter needs the Power BI report probed live to identify the
-            <code>Select[].Name</code> mappings, body markers, and page/product routing.
-            Run <code>dev/ssg_powerbi_probe.js</code> in an authenticated Edge tab on:
-            <br><a href="${escapeHtml(page.url)}" target="_blank" rel="noopener">${escapeHtml(page.url)}</a>
-            <br>Paste the sanitized output into <code>modules/sparkscango/lib/pages_registry.js</code>.
-          </div>
-        </div>
-        <div>
-          <h4 style="margin:12px 0 4px;font-size:12px;color:#6f6f6f;text-transform:uppercase">Open questions</h4>
-          <ul style="font-size:12px;color:#333">${openQs}</ul>
-        </div>
-      `;
+      pane.innerHTML = `<div class="ssg-state warn"><div class="ssg-state-title">Not available yet.</div></div>`;
       return;
     }
     if (fr?.lastErrorClass === "NOT_IMPLEMENTED") {
-      pane.innerHTML = errorCard("Adapter not yet wired", "Page resolved but pull_" + sourceId + " implementation is pending.");
+      pane.innerHTML = `<div class="ssg-state">No data yet.</div>`;
       return;
     }
     if (!cache?.rows?.length) {
@@ -219,7 +181,7 @@ export async function mount(host, container) {
       <tr>
         <th>Time</th><th>Store</th><th>Type</th>
         <th>Order/Trip</th><th>Driver</th><th>Shopper/Txn</th>
-        <th>Source status</th>
+        <th>Status</th>
       </tr>`;
     const body = rows.map((r, i) => `
       <tr data-row-idx="${i}">
@@ -244,21 +206,18 @@ export async function mount(host, container) {
     const anyResolved = PAGES.spark_audits.status !== STATUS_UNRESOLVED
                      || PAGES.scango_audits.status !== STATUS_UNRESOLVED;
     if (!anyResolved) {
-      pane.innerHTML = `<div class="ssg-state warn">
-        <div class="ssg-state-title">Both audit adapters await discovery</div>
-        <div class="ssg-state-detail">See exceptions tabs for probe steps.</div>
-      </div>`;
+      pane.innerHTML = `<div class="ssg-state warn"><div class="ssg-state-title">Not available yet.</div></div>`;
       return;
     }
     const cards = [];
     for (const [key, cache] of [["spark_audits", spark], ["scango_audits", scango]]) {
       const p = PAGES[key];
       if (p.status === STATUS_UNRESOLVED) {
-        cards.push(`<div class="ssg-state warn"><div class="ssg-state-title">${escapeHtml(p.label)}</div><div class="ssg-state-detail">Discovery required.</div></div>`);
+        cards.push(`<div class="ssg-state warn"><div class="ssg-state-title">${escapeHtml(p.label)}</div><div class="ssg-state-detail">Not available yet.</div></div>`);
         continue;
       }
       if (!cache?.metrics?.length) {
-        cards.push(`<div class="ssg-state"><div class="ssg-state-title">${escapeHtml(p.label)}</div><div class="ssg-state-detail">No metrics in cache.</div></div>`);
+        cards.push(`<div class="ssg-state"><div class="ssg-state-title">${escapeHtml(p.label)}</div><div class="ssg-state-detail">No data yet.</div></div>`);
         continue;
       }
       cards.push(`<h3>${escapeHtml(p.label)}</h3><div class="ssg-kpi-grid">${
@@ -306,7 +265,8 @@ export async function mount(host, container) {
       const result = await runInvestigation(host, row);
       els.drawerBody.innerHTML = renderDrawerBody(row, result);
     } catch (e) {
-      els.drawerBody.innerHTML = errorCard("Investigation failed", String(e?.message ?? e));
+      console.warn("[sparkscango] investigation failed:", e?.message ?? e);
+      els.drawerBody.innerHTML = errorCard("Lookup failed", "Try again.");
     }
   }
   els.drawerClose.addEventListener("click", () => { els.drawer.hidden = true; });
@@ -314,11 +274,7 @@ export async function mount(host, container) {
   function renderDrawerLoading(row, decision) {
     return `
       <div class="ssg-drawer-section">
-        <h4>Chosen strategy</h4>
-        <div>${escapeHtml(decision.strategy)}${decision.strategy === STRATEGY.NONE ? " — " + escapeHtml(decision.reason || "") : ""}</div>
-      </div>
-      <div class="ssg-drawer-section">
-        <h4>Source facts</h4>
+        <h4>Exception</h4>
         ${renderFactsList(sourceFactsOf(row))}
       </div>
       ${decision.strategy !== STRATEGY.NONE ? `<div class="ssg-drawer-section"><div class="ssg-state info">Running lookup…</div></div>` : ""}
@@ -327,13 +283,12 @@ export async function mount(host, container) {
 
   function renderDrawerBody(row, result) {
     const parts = [];
-    parts.push(`<div class="ssg-drawer-section"><h4>Chosen strategy</h4><div>${escapeHtml(result.strategy)}${result.reason ? ` — ${escapeHtml(result.reason)}` : ""}</div></div>`);
-    parts.push(`<div class="ssg-drawer-section"><h4>Source facts</h4>${renderFactsList(result.sourceFacts || sourceFactsOf(row))}</div>`);
+    parts.push(`<div class="ssg-drawer-section"><h4>Exception</h4>${renderFactsList(result.sourceFacts || sourceFactsOf(row))}</div>`);
     if (result.matchedFacts) {
-      parts.push(`<div class="ssg-drawer-section"><h4>Matched facts</h4>${renderFactsList(result.matchedFacts)}</div>`);
+      parts.push(`<div class="ssg-drawer-section"><h4>Match</h4>${renderFactsList(result.matchedFacts)}</div>`);
     }
     if (result.inferences) {
-      parts.push(`<div class="ssg-drawer-section"><h4>Inferences</h4>${renderFactsList(result.inferences)}</div>`);
+      parts.push(`<div class="ssg-drawer-section"><h4>Notes</h4>${renderFactsList(result.inferences)}</div>`);
     }
     if (result.candidates?.length) {
       parts.push(`<div class="ssg-drawer-section"><h4>Candidates</h4>${result.candidates.map(renderCandidate).join("")}</div>`);

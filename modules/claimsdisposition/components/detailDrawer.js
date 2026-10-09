@@ -8,6 +8,7 @@
 import { h, replace } from "../lib/dom.js";
 import { dailyStoreSeries, hourSeries, summarize, byUserAtStore, fmtMoney, fmtPct } from "../lib/metrics.js";
 import { detectUserOutliers, scoreUsersAtStore } from "../lib/outliers.js";
+import { USER_RULE_REFERENCE } from "./outlierPanel.js";
 import { formatHour, formatDateShort } from "../lib/dates.js";
 import { withWeekday } from "../../../shared/dates.js";
 import { createLineChart } from "../lib/chart.js";
@@ -294,7 +295,7 @@ function renderUserTable(slot, storeNumber, records) {
               class: `cd-pill cd-pill-static cd-pill-${e.severity === "Critical" ? "critical" : e.severity === "High" ? "high" : e.severity === "Medium" ? "watch" : "normal"}`,
               title: e.explanation,
               style: { marginRight: "4px" },
-            }, `${e.ruleId} ${e.severity}`),
+            }, `${USER_RULE_REFERENCE.find((r) => r.id === e.ruleId)?.title || e.ruleId} · ${e.severity}`),
           ),
         );
         return h("tr", null,

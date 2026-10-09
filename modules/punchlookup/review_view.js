@@ -12,7 +12,7 @@
 // window, W&H report window, Excel download).
 
 import { analyzeDay, parseTime, parseQuickLine, fmtTime, fmtDuration, punchLine, TYPES } from "./lib/review.js";
-import { reviewPrintHtml, reviewsWorkbook, timeline, totalsOf, whReport, whHtml, whText } from "./lib/review_export.js";
+import { breakLabel, reviewPrintHtml, reviewsWorkbook, timeline, totalsOf, whReport, whHtml, whText } from "./lib/review_export.js";
 import { dayLabel } from "./lib/report.js";
 
 export function downloadWorkbook(reviews) {
@@ -152,6 +152,10 @@ export function openDay(host, root, ctl, date, onBack) {
 
     let n = 0;
     els.rows.innerHTML = timeline(a).map((it) => {
+      if (it.kind === "break") {
+        return `<tr class="pr-break"><td></td><td>${fmtTime(it.g.from)}</td><td>${fmtTime(it.g.to)}</td><td class="num">${it.g.to - it.g.from}</td>
+          <td colspan="5">${esc(breakLabel(it.g))}</td><td></td></tr>`;
+      }
       if (it.kind === "gap") {
         return `<tr class="pr-gap"><td></td><td>${fmtTime(it.g.from)}</td><td>${fmtTime(it.g.to)}</td><td class="num">${it.g.to - it.g.from}</td>
           <td colspan="5">No notes — counted as work <button type="button" class="pr-link" data-fill="${it.g.from}|${it.g.to}">add notes</button></td><td></td></tr>`;

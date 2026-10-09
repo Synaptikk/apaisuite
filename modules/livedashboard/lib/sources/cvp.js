@@ -105,7 +105,7 @@ async function tryFetchInsideHoopsTabImpl(url) {
     // Reuse within this request; withSessionTabs closes our tab at completion.
     let openedTab;
     try { openedTab = await chrome.tabs.create({ url: HOOPS_OPS_PORTAL_URL, active: false }); }
-    catch (e) { return { ok: false, errorClass: "TAB", error: `Could not open hoops tab: ${e?.message ?? e}` }; }
+    catch (e) { console.warn("[livedashboard] cvp: could not open tab", e); return { ok: false, errorClass: "TAB", error: "Couldn't open Hoops. Try again." }; }
     // Ours, and kept alive on purpose — but now on the reaper's clock rather
     // than forever. See shared/tabSessions.js.
     await registerSessionTab("livedashboard", openedTab.id);
@@ -138,13 +138,14 @@ async function tryFetchInsideHoopsTabImpl(url) {
     return { ok: false, errorClass: "AUTH", error: "Hoops tab not authenticated. Open hoops.wal-mart.com/ops-portal/ manually and sign in." };
   }
   const out = results?.[0]?.result;
-  if (!out)          return { ok: false, errorClass: "EMPTY", error: "executeScript returned no result." };
+  if (!out)          { console.warn("[livedashboard] cvp: executeScript returned no result"); return { ok: false, errorClass: "EMPTY", error: "Couldn't load CVP. Try again." }; }
   if (out.__auth)    return { ok: false, errorClass: "AUTH", error: "Hoops session expired. Open hoops.wal-mart.com/ops-portal/ in a tab, sign in, then click Refresh." };
-  if (!out.body)     return { ok: false, errorClass: "EMPTY", error: out.error || `Hoops returned status ${out.status} with no body` };
+  if (!out.body)     { console.warn("[livedashboard] cvp: no body", out.status, out.error); return { ok: false, errorClass: "EMPTY", error: "Couldn't load CVP. Try again." }; }
   try {
     return { ok: true, json: JSON.parse(out.body) };
   } catch {
-    return { ok: false, errorClass: "PARSE", error: "Hoops returned non-JSON body." };
+    console.warn("[livedashboard] cvp: non-JSON body");
+    return { ok: false, errorClass: "PARSE", error: "Couldn't load CVP. Try again." };
   }
 }
 

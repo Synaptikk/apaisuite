@@ -66,7 +66,7 @@ export async function mount(host, container) {
       return;
     }
     els.empty.hidden = true; els.tiles.hidden = false; els.tabs.hidden = false;
-    els.meta.textContent = `Store ${data.store} · CAS data as of ${data.sourceUpdatedOn ? withWeekday(data.sourceUpdatedOn) : "?"} · pulled ${new Date(data.capturedAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    els.meta.textContent = `Store ${data.store} · updated ${data.sourceUpdatedOn ? withWeekday(data.sourceUpdatedOn) : "?"} · pulled ${new Date(data.capturedAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 
     els.banner.hidden = !data.clearsight?.error;
     if (data.clearsight?.error) els.banner.textContent = data.clearsight.error;
@@ -122,9 +122,10 @@ export async function mount(host, container) {
 
     let body;
     if (detail?.error) {
-      body = `<div class="acc-note">Clearsight lookup failed: ${esc(detail.error)}</div>`;
+      console.warn("[accidents] claim detail failed:", detail.error);
+      body = `<div class="acc-note">Couldn't load claim details.</div>`;
     } else if (detail?.notFound) {
-      body = `<div class="acc-note">Not found in Clearsight quick search.</div>`;
+      body = `<div class="acc-note">Claim details not found.</div>`;
     } else if (d) {
       const checklist = detail.digest.evidence;
       const missingItems = checklist.items.filter((i) => !i.filled);
@@ -132,7 +133,7 @@ export async function mount(host, container) {
         <div class="acc-summary">${esc(detail.summary).replace(/\n\n/g, "<br><br>")}</div>
         <div class="acc-check ${checklist.complete ? "is-ok" : ""}">
           <div class="acc-check-head">
-            Evidence Collection (Clearsight): ${checklist.complete
+            Evidence: ${checklist.complete
               ? `completed ${esc(withWeekday(checklist.completedOn))}`
               : `${checklist.filled}/${checklist.total} fields filled — <strong>not completed</strong>`}
           </div>
@@ -143,7 +144,7 @@ export async function mount(host, container) {
           ${detail.attachments != null ? ` · ${detail.attachments} attachment${detail.attachments === 1 ? "" : "s"}` : ""}
         </div>`;
     } else {
-      body = `<div class="acc-note">No Clearsight detail (not signed in during the pull).</div>`;
+      body = `<div class="acc-note">No details — sign in and pull again.</div>`;
     }
 
     const links = [
@@ -261,7 +262,8 @@ export async function mount(host, container) {
           if (res.error) note = res.error;
           else if (res.failed) note = `${res.failed} claim lookup${res.failed === 1 ? "" : "s"} failed — listed without a situation.`;
         } catch (e) {
-          note = `Clearsight details could not be loaded (${e.message}). Listed from the CAS table only.`;
+          console.warn("[accidents] resolve_refs failed:", e);
+          note = "Some claim details couldn't load; listed without them.";
         }
         drawPnlRows(state.data);
       }
@@ -282,8 +284,7 @@ export async function mount(host, container) {
     const reversed = state.data.pnl.refs.filter((r) => r.charges.some((c) => !fy || c.fy === fy)).length - charged.length;
     const bits = [];
     if (dropped > 0) bits.push(`${dropped} claim${dropped === 1 ? "" : "s"} dropped as denied in Clearsight.`);
-    if (reversed > 0) bits.push(`${reversed} ref${reversed === 1 ? "" : "s"} with no net charge (reversed / $0) not listed.`);
-    bits.push("Edit the text below if needed — \"Copy for Outlook\" pastes as a table, plain text pastes as written here.");
+    if (reversed > 0) bits.push(`${reversed} claim${reversed === 1 ? "" : "s"} fully reversed — not listed.`);
     if (note) bits.unshift(note);
     els.emailNote.textContent = bits.join(" ");
     els.emailText.value = email.text;

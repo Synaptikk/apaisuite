@@ -33,6 +33,22 @@
 > still come from MetricShot's own live export.
 
 
+> **Email report jobs (2026-10-08).** Two store-1458 metrics, seeded once by
+> `service.js::ensureReportJobs` when the home store is 1458
+> (`data/defaults.js::REPORT_JOB_SEEDS`), email
+> `1458leadership@walmart.onmicrosoft.com` AND post to "1458 Leadership":
+> `closing-list-daily` (10:00, today's Closing List text) and `vizpick-email`
+> (10:00 = previous closed day, 16:45 = current day; the VizPick ✉ report
+> image for the home store). `lib/email_jobs.js` builds each report by opening
+> the module's own view headless (`app.html?clReport=…#/closinglist`,
+> `app.html?vpReport=…#/vizpick`), which writes the result to
+> `metricshot.reportJob.<id>`. Mail goes out through the user's Outlook on the
+> web session (`shared/outlook_send.js`: compose deeplink → paste body + PNG →
+> click Send; verified live 2026-10-08). Email and Workvivo are tracked as
+> separate parts on the postedRuns entry so a retry never re-emails. Dev
+> harness: `dev/outlook-send-test.mjs <to> <subject> <textFile|-> [png…]`.
+
+
 Scheduled screenshots of internal metric dashboards, posted into Workvivo channels using the user's already-authenticated tab. No credentials, tokens, or cookies leave the browser.
 
 **Status:** beta · **Version:** 0.1.0

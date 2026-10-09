@@ -2,7 +2,7 @@
   <header class="so-header">
     <div>
       <h1>Safety Observations</h1>
-      <p class="so-sub">Type what you saw. The tool picks the answers for the Safety Observation Survey (the QR poster form), shows them to you, and submits it under your Microsoft account when you confirm.</p>
+      <p class="so-sub">Type what you saw, check the answers, submit.</p>
     </div>
   </header>
 
@@ -26,7 +26,7 @@
 
   <section class="so-card">
     <div class="so-row">
-      <h2>Coach check <small id="safetyobs-next" class="so-muted"></small></h2>
+      <h2>Morning catch-up <small id="safetyobs-next" class="so-muted"></small></h2>
       <div class="so-actions">
         <button id="safetyobs-preview" class="btn btn-secondary btn-sm">Check now</button>
         <button id="safetyobs-post" class="btn btn-secondary btn-sm">Post now</button>
@@ -38,13 +38,17 @@
   <section class="so-card">
     <div class="so-row">
       <h2>Behind since <input id="safetyobs-from" class="input" type="date"> <small class="so-muted">2 per scheduled day</small></h2>
-      <button id="safetyobs-ledger-run" class="btn btn-secondary btn-sm">Refresh</button>
+      <div class="so-actions">
+        <button id="safetyobs-ledger-copy" class="btn btn-secondary btn-sm" disabled title="Copy the table (pastes as a table in Outlook, Teams, Excel)">Copy</button>
+        <button id="safetyobs-ledger-email" class="btn btn-secondary btn-sm" disabled title="Copy the table and open a new Outlook email to paste it into">Email</button>
+        <button id="safetyobs-ledger-run" class="btn btn-secondary btn-sm">Refresh</button>
+      </div>
     </div>
     <div id="safetyobs-ledger" class="so-table-wrap"></div>
   </section>
 
   <section class="so-card">
-    <h2>Submitted from here</h2>
+    <h2>Your submissions</h2>
     <div id="safetyobs-history" class="so-table-wrap"></div>
   </section>
 
@@ -54,9 +58,9 @@
       <label>Store <input id="safetyobs-store" class="input" inputmode="numeric"></label>
       <label>Your role on the form <select id="safetyobs-role" class="input"></select></label>
       <label>Workvivo chat <input id="safetyobs-channel" class="input"></label>
-      <label>Check time <input id="safetyobs-checkat" class="input" type="time"></label>
-      <label class="so-inline"><input id="safetyobs-enabled" type="checkbox"> Post the daily coach check</label>
-      <label class="so-inline"><input id="safetyobs-ai" type="checkbox"> Use the AI gateway to pick answers <small id="safetyobs-ai-state" class="so-muted"></small></label>
+      <label>Post time <input id="safetyobs-checkat" class="input" type="time"></label>
+      <label class="so-inline"><input id="safetyobs-enabled" type="checkbox"> Post the daily catch-up message</label>
+      <label class="so-inline"><input id="safetyobs-ai" type="checkbox"> Smart answer picks <small id="safetyobs-ai-state" class="so-muted"></small></label>
       <button class="btn btn-primary btn-sm" type="submit">Save</button>
     </form>
   </details>

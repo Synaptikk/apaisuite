@@ -32,7 +32,7 @@ const BASEMAPS = {
   "USGS Imagery":      `${USGS}/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}`,
   "USGS Shaded relief":`${USGS}/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}`,
 };
-const USGS_ATTR = 'Basemap: <a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank">USGS The National Map</a> · Roads: Natural Earth';
+const USGS_ATTR = "";
 
 const RISK_COLOR = s => s >= 70 ? "#B91C1C" : s >= 45 ? "#D97706" : "#CA8A04";
 const NEXT_COLOR = "#7C3AED";
@@ -126,7 +126,7 @@ export async function mount(host, container) {
     }
     st.sel = { store:null, group:null, person:null };
     await applyResult(r, true);
-    _setStatus(`Saved ${_ago(saved.savedAt)} · ${_resultLine(r, st.groups.length)} — Analyze to update (only new events are fetched)`);
+    _setStatus(`Saved ${_ago(saved.savedAt)} · ${_resultLine(r, st.groups.length)}`);
     return true;
   }
 
@@ -154,7 +154,7 @@ export async function mount(host, container) {
       const r = await host.messaging.sendRaw("getStatus", {});
       const d = r?.data ?? r;
       if (d?.tokenReady) {
-        badge.textContent = `✓ Auror Connected${d?.cachedProfiles ? ` · ${d.cachedProfiles} people, ${d.cachedEvents ?? 0} events saved locally` : ""}`;
+        badge.textContent = "✓ Connected";
         badge.className = "om-badge om-badge-ok";
         if (!progressInterval) $("#om-btn-analyze").disabled = false;
       } else {
@@ -185,12 +185,15 @@ export async function mount(host, container) {
       if ($("#om-full")) $("#om-full").checked = false;
     } catch (e) {
       _stopProgress(); btn.disabled = false; btn.textContent = "Analyze";
-      _setStatus(`Error: ${e?.message ?? e}`); return;
+      console.warn("[orcmonitor] analyze failed", e);
+      _setStatus(_plainError(e?.message ?? e)); return;
     }
     _stopProgress(); btn.disabled = false; btn.textContent = "Analyze";
     const data = resp?.data ?? resp;
     if (!data || resp?.ok === false || data?.ok === false) {
-      _setStatus(resp?.error ?? data?.error ?? "Failed — ensure Auror is open in Edge"); return;
+      const raw = resp?.error ?? data?.error;
+      if (raw) console.warn("[orcmonitor] analyze failed", raw);
+      _setStatus(_plainError(raw)); return;
     }
     await applyResult(data, true);
     _setStatus(_resultLine(data, st.groups.length));
@@ -468,11 +471,8 @@ export async function mount(host, container) {
         : Math.min(97, 30 + (total ? (p.profilesDone ?? 0) / total * 67 : 0));
       $("#om-progress-fill").style.width = pct + "%";
       $("#om-progress-label").textContent = p.stage === "events"
-        ? (p.eventsNew != null
-            ? `${p.eventsScanned} events listed · fetching ${p.eventsNew} new/updated (${p.eventsFetched ?? 0} done), the rest from local data`
-            : `Listing ${p.regionsChecked ?? 0}/${p.regionsTotal ?? 8} SE regions… ${p.eventsScanned ?? 0} events`)
-        : `People ${p.profilesDone ?? 0} / ${total || "?"} · ${p.profilesFetched ?? 0} of ${p.profilesNew ?? "?"} changed profiles fetched` +
-          `${(p.partialThreats?.length ?? 0) ? ` · ${p.partialThreats.length} within range` : ""}`;
+        ? `Loading events… ${Math.round(pct)}%`
+        : `Loading people… ${p.profilesDone ?? 0} / ${total || "?"}`;
       const partial = p.partialThreats ?? [];
       // Re-run the (cheap) group analysis every few new people.
       if (p.target && partial.length && partial.length - lastCount >= 3) {
@@ -528,13 +528,10 @@ function _storesPanel(st) {
 
 function _storesList(st, list) {
   if (!list.length) {
-    return `<div class="om-empty">No store forecast yet. Groups need at least one dated hit near the interstate network
-      within reach; widen the lookback to 60 or 90 days for a fuller picture.</div>`;
+    return `<div class="om-empty">No forecast yet. Try a 60 or 90 day lookback.</div>`;
   }
   const target = String(Number(st.data?.target?.store));
-  return `<p class="om-intro">Stores most likely to be hit next, from every group's recent route: where each group was last,
-    which way it was driving, how far it usually moves between hits, and the stores ahead of it on the interstate
-    network. Click a store to see which groups point at it.</p>` +
+  return `<p class="om-intro">Stores most likely to be hit next. Click one to see which groups point at it.</p>` +
     list.map((s, i) => {
       const who = s.groups.slice(0, 3).map(x =>
         `<b>${esc(x.label)}</b> — ${x.routeMiles} mi${x.heading ? ` via ${esc(x.heading)}` : ""}, last hit ${x.recencyDays ?? "?"}d ago${x.due ? ", due now" : x.etaDate ? `, ~${esc(_short(x.etaDate))}` : ""}`
@@ -558,9 +555,7 @@ function _groupsPanel(st) {
   const active = st.groups.filter(g => !g.inactive), idle = st.groups.filter(g => g.inactive);
   const card = g => _groupCard(g, st, target);
   const mkt = esc(st.market?.short ?? "your market");
-  return `<p class="om-intro">Ranked by risk to store ${esc(target?.store ?? "")} and ${mkt}: recent hits in ${mkt}, how much of
-    each group's projected route points into it, how close they are, and how recently they were active. People who offended
-    together are one group. Click a group to draw its route and its likely next stores.</p>` +
+  return `<p class="om-intro">Ranked by risk to store ${esc(target?.store ?? "")}. Click a group to see its route.</p>` +
     active.map(card).join("") +
     (idle.length ? `<div class="om-sec" style="margin:14px 0 6px">Inactive 60+ days — not used in forecasts (${idle.length})</div>` + idle.map(card).join("") : "");
 }
@@ -608,7 +603,7 @@ function _groupCard(g, st, target) {
           ${sel && (g.riskWhy ?? []).length ? `<div class="om-why"><b>Risk ${g.risk}:</b> ${g.riskWhy.map(esc).join(" · ")}</div>` : ""}
           ${tgt ? `<div>${tgt}</div>` : ""}
           ${legs ? `<div class="om-sec">Route driven (latest last)</div><ul class="om-legs">${legs}</ul>` : ""}
-          ${next ? `<div class="om-sec">${g.directional ? "Likely next stores" : "Nearest stores to their last hit (no direction yet)"} <span class="om-mk-key">outlined = ${esc(st.market?.short ?? "your market")}</span></div><div class="om-next">${next}</div>` : ""}
+          ${next ? `<div class="om-sec">${g.directional ? "Likely next stores" : "Nearest stores"} <span class="om-mk-key">outlined = ${esc(st.market?.short ?? "your market")}</span></div><div class="om-next">${next}</div>` : ""}
           ${members}
         </div>
       </div>`;
@@ -621,10 +616,13 @@ function _peoplePanel(st) {
 }
 
 function _resultLine(r, groups) {
-  const f = r.fetched;
-  const fresh = f ? (f.full ? "full refresh" : `${f.events} new/updated events, ${f.people} profiles fetched`) : null;
-  return `${groups} groups · ${r.threats?.length ?? 0} people within 300 mi · ${r.eventsScanned ?? "?"} ORC events in ${r.days ?? "?"} days` +
-         (fresh ? ` · ${fresh}` : "");
+  return `${groups} groups · ${r.threats?.length ?? 0} people within 300 mi · ${r.eventsScanned ?? "?"} ORC events in ${r.days ?? "?"} days`;
+}
+// Plain-language status for a failed Analyze; the raw detail goes to console.warn.
+function _plainError(raw) {
+  const s = String(raw ?? "");
+  if (/^Unknown store/i.test(s)) return s;
+  return "Couldn't reach Auror. Open Auror in Edge and try again.";
 }
 function _ago(ts) {
   const m = Math.round((Date.now() - ts) / 60000);
@@ -741,7 +739,7 @@ function _marketScope(data, stores, homeMarket) {
   const near = stores.filter(s => haversine(t.lat, t.lon, s.lat, s.lon) <= NEARBY_MI).map(s => s.num);
   if (!near.includes(String(Number(t.store)))) near.push(String(Number(t.store)));
   const m = homeMarket ? String(homeMarket).replace(/^0+/, "") : null;
-  return { label: m ? `Market ${m} (stores within ${NEARBY_MI} mi of ${t.store})` : `Stores within ${NEARBY_MI} mi of ${t.store}`,
+  return { label: m ? `Market ${m}` : `Stores within ${NEARBY_MI} mi of ${t.store}`,
            short: m ? `Market ${m}` : "area", stores: near, source: "radius" };
 }
 
@@ -801,11 +799,15 @@ function _initMap(container) {
   const bases = {
     "Simple":           L.layerGroup([land]),
     "Simple + terrain": L.layerGroup([relief]),
-    "USGS Topo":        L.tileLayer(BASEMAPS["USGS Topo"],    { attribution: USGS_ATTR, maxZoom: 16, crossOrigin: "anonymous" }),
-    "USGS Imagery":     L.tileLayer(BASEMAPS["USGS Imagery"], { attribution: USGS_ATTR, maxZoom: 16, crossOrigin: "anonymous" }),
+    "Topo":             L.tileLayer(BASEMAPS["USGS Topo"],    { attribution: USGS_ATTR, maxZoom: 16, crossOrigin: "anonymous" }),
+    "Satellite":        L.tileLayer(BASEMAPS["USGS Imagery"], { attribution: USGS_ATTR, maxZoom: 16, crossOrigin: "anonymous" }),
   };
   let baseName = "Simple";
-  try { const saved = localStorage.getItem("orcmonitor.basemap"); if (saved && bases[saved]) baseName = saved; } catch {}
+  try {
+    let saved = localStorage.getItem("orcmonitor.basemap");
+    saved = { "USGS Topo":"Topo", "USGS Imagery":"Satellite" }[saved] ?? saved; // pre-rename saved choice
+    if (saved && bases[saved]) baseName = saved;
+  } catch {}
   bases[baseName].addTo(map);
   el.classList.toggle("om-map-simple", baseName.startsWith("Simple"));
   map.on("baselayerchange", e => {
@@ -835,7 +837,7 @@ function _initMap(container) {
 
   // Tile health: if a USGS layer stops answering, fall back to Simple and say so.
   const note = container.querySelector("#om-map-note");
-  for (const [name, layer] of Object.entries({ "USGS Topo":bases["USGS Topo"], "USGS Imagery":bases["USGS Imagery"], "Shaded relief":relief })) {
+  for (const [name, layer] of Object.entries({ "Topo":bases["Topo"], "Satellite":bases["Satellite"], "Terrain":relief })) {
     let loaded = 0, failed = 0;
     layer.on("tileload", () => { loaded++; });
     layer.on("tileerror", () => {
@@ -844,7 +846,7 @@ function _initMap(container) {
         for (const b of Object.values(bases)) if (map.hasLayer(b)) map.removeLayer(b);
         bases["Simple"].addTo(map);
         el.classList.add("om-map-simple");
-        note.textContent = `${name} tiles are not loading — showing the built-in Simple map.`;
+        note.textContent = `${name} map unavailable — showing the simple map.`;
         note.classList.remove("hidden");
       }
     });
