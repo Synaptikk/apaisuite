@@ -146,6 +146,7 @@ function boardPanel(ctx) {
         <button class="btn" id="dm-board-sync" ${b.running ? "disabled" : ""}>Sync board</button>
         <button class="btn btn-sm" id="dm-board-unlink">Change link</button>
         <span class="dm-stat-note">${esc(dayNote)}</span>
+        <span class="dm-stat-note">The board's rows replace the grid on every sync. Finalize a day to keep the plan entered here instead.</span>
       </div>
       ${s?.error ? `<div class="status-strip status-strip-error">${esc(s.error)}</div>` : ""}
       ${unmatched.length ? `<div class="status-strip status-strip-warn">

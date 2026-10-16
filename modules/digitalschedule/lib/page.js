@@ -101,7 +101,14 @@ export async function wfmInPage(ARGS) {
       return { workerId: w.workerId, name: nm(w), job: w.job, payType: w.payType, employmentType: w.employmentType, minor: w.minorStatus ?? null,
         weekTotal: x.weekTotal ?? null, availability: avail(w), exceptions: exc(w), shifts, otherEvents: other }; });
     const demand = (state().scheduler.scheduleLaborDemand.data || []).map((d) => ({ roleId: d.laborRoleId, start: d.startTime, fte: d.fullTimeEquivalent, adjusted: d.adjustedFullTimeEquivalent }));
-    return { ctx: c, dates: DATES, demand, workers: out };
+    // Every role with guidance this week, named, with the job codes that count toward it (hierarchy.jobs → laborRoles).
+    const H = state().hierarchy || {}, roleJobs = {};
+    for (const j of Object.values(H.jobs?.data || {})) if (j.typeTxt === "JOB") for (const l of j.laborRoles || []) (roleJobs[l.id] ??= []).push(j.name);
+    const roles = [...new Set(demand.map((d) => d.roleId))].map((id) => ({ id, name: H.roles?.[id]?.name || String(id), jobs: roleJobs[id] || [] }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    // The grid follows the scheduler's team picker; scheduleSummary always holds the whole store (no shifts).
+    const total = (state().scheduler.scheduleSummary?.data?.workers || []).length || out.length;
+    return { ctx: c, dates: DATES, demand, roles, workers: out, filtered: out.length < total ? { shown: out.length, total } : null };
   }
 
   // ---------------------------------------------------------------- readback (server copy, via the scheduler's own GET)

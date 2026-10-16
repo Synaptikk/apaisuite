@@ -60,6 +60,7 @@ export function mergeSnapshot(prev, snapshot, now = Date.now()) {
     const old = base.associates[name];
     const reactivated = old && !isActive(old.status) && isActive(status);
     associates[name] = {
+      ...old,              // keep everything a detail read / Not active reading added (rate, walks, idleSince…)
       name,
       status,
       picks: old?.picks ?? null,
@@ -69,6 +70,8 @@ export function mergeSnapshot(prev, snapshot, now = Date.now()) {
       inactiveChecks: reactivated ? 0 : (old?.inactiveChecks ?? 0),
       // A reactivated associate is no longer settled — their count moves again.
       settled: reactivated ? false : (old?.settled ?? false),
+      // picked (or could have) since their last detail read → the hourly sweep re-reads them
+      activeSince: isActive(status) || (old?.activeSince ?? false),
     };
   }
   // Names in the roster but no longer in the All list: off the clock now. Keep
@@ -120,17 +123,62 @@ export function applyDetails(roster, details, now = Date.now()) {
     const rec = associates[name];
     if (!rec || !d || d.error != null) continue;
     const picks = Number.isFinite(d.picks) ? d.picks : rec.picks;
+    // performance facts off the same detail screen (kept from the last read that had them)
+    const keep = (k) => (Number.isFinite(d[k]) ? d[k] : rec[k]);
     const active = isActive(rec.status);
     const inactiveChecks = active ? 0 : (rec.inactiveChecks ?? 0) + 1;
     associates[name] = {
       ...rec,
       picks,
+      rate: keep("rate"),
+      walks: keep("walks"),
+      orders: keep("orders"),
       checkedAt: now,
       inactiveChecks,
       settled: !active && inactiveChecks >= SETTLE_AFTER_INACTIVE_CHECKS,
+      activeSince: active && rec.idleSince == null,   // still picking → the count keeps moving
     };
   }
   return { ...roster, associates };
+}
+
+export const STOP_IDLE_MS = 10 * 60_000;   // on Not active this long = stopped (a walk gap is ~5 min)
+
+/**
+ * Fold a Not active reading (every ~3 min) into the roster: anyone on it gets
+ * `idleSince` (kept while they stay on it); anyone on the clock and NOT on it is
+ * picking / in the backroom, so `idleSince` clears and `activeSince` is set —
+ * their total may move until they next stop.
+ */
+export function noteActivity(roster, notActiveNames, now = Date.now()) {
+  if (!roster?.associates) return roster;
+  const idle = new Set(notActiveNames || []);
+  const associates = { ...roster.associates };
+  for (const [name, r] of Object.entries(associates)) {
+    if (r.status === "offclock") continue;
+    if (idle.has(name)) { if (r.idleSince == null) associates[name] = { ...r, idleSince: now }; }
+    else if (r.idleSince != null || !r.activeSince) associates[name] = { ...r, idleSince: null, activeSince: true };
+  }
+  return { ...roster, associates };
+}
+
+/**
+ * Totals are read only when someone STOPS (user, 2026-10-09): a person's count
+ * moves only while they pick, so read it once they have been on Not active for
+ * STOP_IDLE_MS (break / lunch / done) or dropped off GIF's list (gone home) —
+ * and only for `allowed` names (scheduled pickers + store help). Picked since
+ * their last read first, then never-read; oldest stop first.
+ */
+export function stopReadNames(roster, { now = Date.now(), allowed = () => true, idleMs = STOP_IDLE_MS } = {}) {
+  const want = [];
+  for (const r of Object.values(roster?.associates || {})) {
+    if (!allowed(r.name)) continue;
+    const stopped = r.status === "offclock" || (r.idleSince != null && now - r.idleSince >= idleMs);
+    if (!stopped) continue;
+    if (r.activeSince && r.checkedAt != null) want.push({ name: r.name, prio: 0, since: r.idleSince ?? 0 });
+    else if (r.checkedAt == null) want.push({ name: r.name, prio: 1, since: r.idleSince ?? 0 });
+  }
+  return want.sort((x, y) => x.prio - y.prio || x.since - y.since).map((w) => w.name);
 }
 
 /** Rows for display/commands, newest-count first. `code(name)` → classification string. */
@@ -141,7 +189,11 @@ export function rosterRows(roster, code = () => null) {
       code: code(r.name),
       status: r.status,
       picks: r.picks,
+      rate: r.rate,
+      walks: r.walks,
+      orders: r.orders,
       settled: r.settled,
+      activeSince: r.activeSince,
       checkedAt: r.checkedAt,
       stale: r.checkedAt == null,
     }))

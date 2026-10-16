@@ -159,6 +159,10 @@ export async function encodeAssignments(doc) {
     store:       doc.store ?? null,
     finalized:   doc.finalized ?? false,
     finalizedAt: doc.finalizedAt ?? null,
+    // "board" when the Daily Board sync wrote the day (service.js); an app
+    // save leaves it off, so the grid knows where the plan came from.
+    source:      doc.source ?? null,
+    boardAppliedAt: doc.boardAppliedAt ?? null,
   });
 }
 

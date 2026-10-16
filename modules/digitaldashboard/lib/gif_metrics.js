@@ -106,9 +106,9 @@ export function boardDayStart(now) {
  *
  * History: { v:1, day, series: [[tMs, dayPicked], …], express: { [slot]: rec } }
  *
- * The series restarts on a new board day and when the total goes DOWN (a
- * closed slot that vanished, a re-sign-in mid-read) — differencing across a
- * drop would produce a negative hour, the same rule pick_history.js applies.
+ * The series restarts on a new board day; when the total goes DOWN (a
+ * closed slot that vanished, a re-sign-in mid-read) it is rebased instead,
+ * so differencing never produces a negative hour (see the comment below).
  *
  * Express per slot: the first reading counts the express qty still to pick at
  * that moment, and every later rise counts as orders dropping in. Picks made
@@ -133,7 +133,17 @@ export function recordReading(history, opd, now = new Date()) {
   const total = partial ? null : dayPicked(opd);
   if (total != null) {
     const last = h.series.at(-1);
-    if (last && total < last[1]) h.series = [];
+    // A dip (an hour moving from open to completed with a different count, a
+    // row missed mid-read) used to restart the series, which threw away the
+    // hour of history the rolling-60 rate needs — with hours closing every
+    // hour it could never fill. Rebase instead: shift the history down by the
+    // dip, so every difference between readings (all the rates use) survives
+    // and the dip itself counts as zero picks.
+    if (last && total < last[1]) {
+      const drop = last[1] - total;
+      h.series = h.series.map(([ts, v]) => [ts, v - drop]);
+      h.rebased = (h.rebased ?? 0) + 1;
+    }
     h.series.push([t, total]);
     h.series = h.series.filter(([ts]) => ts >= t - SERIES_KEEP_MS);
   }

@@ -115,3 +115,28 @@ test("tracking links skip vendor phone numbers", () => {
   assert.match(trackingUrl({ trk: "123456789012", carrier: "FXFE" }), /fedex/);
   assert.match(trackingUrl({ trk: "1Z999AA10123456784", carrier: "" }), /ups/);
 });
+
+test("deliveryPlan: who is off on their delivery day", async () => {
+  const { deliveryPlan } = await import("./model.js");
+  const today = "2026-10-15";
+  const ls = flatLines([
+    cart("c1", "1", "2026-10-10", [line({ status: "Shipped", delivered: false, eta: "2026-10-17", desc: "TOWEL" })]),
+    cart("c2", "2", "2026-10-10", [line({ status: "PO Created", po: "45", delivered: false, eta: "2026-10-17", desc: "BAGS" })]),
+    cart("c3", "3", "2026-10-10", [line({ status: "PO Created", po: "46", delivered: false, eta: "2026-10-17", desc: "GLOVES" })]),
+    cart("c4", "1", "2026-10-01", [line({ status: "PO Created", po: "47", delivered: false, eta: "2026-10-12", desc: "LATE ONE" })]),
+    cart("c5", "2", "2026-10-10", [line({ status: "PO Created", po: "48", delivered: false, eta: "2026-11-20", desc: "FAR OUT" })]),
+    cart("c6", "2", "2026-10-10", [line({ desc: "ALREADY HERE" })]),
+  ], today);
+  const names = { 1: { name: "Ann Lee" }, 2: { name: "Tom Scott", legal: "James Scott" }, 3: { name: "New Person" } };
+  const plan = deliveryPlan(ls, {
+    who: (w) => names[w], today,
+    roster: { "ANN|LEE": "GM Coach", "TOM|SCOTT": "Digital Coach" },
+    schedule: { "2026-10-15": { people: { "ANN|LEE": "7:00am–4:00pm" } }, "2026-10-17": { people: { "JAMES|SCOTT": "1:00pm–10:00pm" } } },
+  });
+  assert.deepEqual(plan.map((d) => [d.day, d.late]), [["2026-10-17", false], ["2026-11-20", false], ["", true]]);
+  const d17 = Object.fromEntries(plan[0].people.map((p) => [p.name, p.status]));
+  assert.deepEqual(d17, { "Ann Lee": "off", "New Person": "unscheduled", "Tom Scott": "working" });   // legal-name match
+  assert.equal(plan[0].people[0].name, "Ann Lee");                                                     // off sorts first
+  assert.equal(plan[1].people[0].status, "unknown");                                                   // no schedule posted
+  assert.equal(plan[2].people[0].status, "late");                                                      // past due: no off flag
+});

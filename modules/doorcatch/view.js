@@ -34,6 +34,7 @@ export async function mount(host, container) {
     copy: $("#doorcatch-copy"), hostsForm: $("#doorcatch-hosts-form"), hosts: $("#doorcatch-hosts"),
     cntCatches: $("#doorcatch-cnt-catches"), cntHosts: $("#doorcatch-cnt-hosts"), hostRows: $("#doorcatch-host-rows"),
     panelCatches: $("#doorcatch-panel-catches"), panelHosts: $("#doorcatch-panel-hosts"),
+    teamForm: $("#doorcatch-team-form"), team: $("#doorcatch-team"), extra: $("#doorcatch-extra"),
   };
 
   let data = null;          // last list response
@@ -68,11 +69,27 @@ export async function mount(host, container) {
     const s = await host.messaging.sendRaw("get_settings").catch(() => null);
     if (!s?.ok) return null;
     els.store.value = s.storeNbr || "";
-    els.reviewKey.placeholder = s.hasReviewKey ? "saved" : "paste the review key";
+    els.reviewKey.placeholder = s.via === "ap" && s.match ? `unlocked as AP (${s.match.name})`
+      : s.hasReviewKey ? "saved" : "AP unlock automatically, or paste the key";
     els.linkBox.hidden = !s.doorLink;
     els.link.textContent = s.doorLink || "";
-    if (!s.storeNbr || !s.hasReviewKey) els.setup.open = true;
+    if (!s.storeNbr) els.setup.open = true;
     return s;
+  }
+
+  function paintTeam(res) {
+    if (!res?.ok) { els.team.innerHTML = `<li class="dc-muted">${esc(res?.error || "Couldn't load the AP team.")}</li>`; return; }
+    els.team.innerHTML = res.team.length
+      ? res.team.map((t) => `<li>${esc(t.name)} <small>${esc(t.jobName)}</small></li>`).join("")
+      : `<li class="dc-muted">No AP associates on the store's schedules yet.</li>`;
+    els.extra.value = (res.extra || []).join("\n");
+  }
+
+  async function loadTeam(extra) {
+    els.team.innerHTML = `<li class="dc-muted">${extra ? "Saving…" : "Loading…"}</li>`;
+    const res = await host.messaging.sendRaw("team", extra ? { extra } : {}).catch(() => ({ ok: false, error: "Couldn't reach the extension. Try again." }));
+    if (alive) paintTeam(res);
+    return res;
   }
 
   async function show(res) {
@@ -97,10 +114,11 @@ export async function mount(host, container) {
       // Keep showing what we have; a dropped connection shouldn't blank the page.
       if (!data) paint();
       status("error", res?.error || "Could not load catches.");
-      if (/key|store/i.test(res?.error || "")) els.setup.open = true;
+      if (/key|store/i.test(res?.error || "") && !res?.noAccess) els.setup.open = true;
       return;
     }
     status("", "");
+    if (els.reviewKey.placeholder.startsWith("AP unlock")) loadSettings();   // just unlocked: show the door link
     await show(res);
     lookup();
   }
@@ -312,6 +330,13 @@ export async function mount(host, container) {
     await loadSettings();
     refresh();
   });
+  els.setup.addEventListener("toggle", () => { if (els.setup.open) loadTeam(); });
+  els.teamForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const extra = els.extra.value.split(/\r?\n/).map((n) => n.trim()).filter(Boolean);
+    const res = await loadTeam(extra.length ? extra : [""]);
+    status(res?.ok ? "" : "error", res?.ok ? "Saved who can open Door Catches." : res?.error || "Could not save.");
+  });
   els.copy.addEventListener("click", () => navigator.clipboard.writeText(els.link.textContent).then(() => status("", "Door link copied.")));
   els.hostsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -323,9 +348,10 @@ export async function mount(host, container) {
   });
 
   const s = await loadSettings();
-  if (s?.storeNbr && s?.hasReviewKey) {
+  if (s?.storeNbr) {
     // Open on the last list this browser loaded (same dates), then update it.
-    const last = await host.messaging.sendRaw("cached_list").catch(() => null);
+    // With no key yet, refresh() asks for AP access first.
+    const last = s.hasReviewKey ? await host.messaging.sendRaw("cached_list").catch(() => null) : null;
     if (last?.ok && last.from === els.from.value && last.to === els.to.value) await show(last.list);
     refresh();
   } else paint();

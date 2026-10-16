@@ -110,3 +110,30 @@ test("digitalPicks is null while any store-help count is still pending", () => {
   assert.equal(tot.storeHelpPending, 1);
   assert.equal(tot.digitalPicks, null);
 });
+
+test("totals are read on stop: 10+ min on Not active (or gone), picked since their read or never read, in scope only", async () => {
+  const { noteActivity, stopReadNames } = await import("../store_roster.js");
+  const day = "2026-10-09", M = 60_000;
+  let r = mergeSnapshot(null, { day, seen: [{ name: "Picker", status: "picking" }, { name: "Lunch", status: "notactive" },
+    { name: "Walk", status: "picking" }, { name: "New", status: "notactive" }, { name: "Other", status: "notactive" }] }, 0);
+  r = applyDetails(r, { Picker: { picks: 40 }, Lunch: { picks: 30 }, Walk: { picks: 20 } }, 0);
+  r = noteActivity(r, ["Lunch", "New", "Other"], 1 * M);          // Lunch was idle at its read → not active since
+  r = noteActivity(r, ["Lunch", "New", "Other", "Walk"], 5 * M);   // Walk drops into a walk gap
+  const allowed = (n) => n !== "Other";                           // not on PICK, not store help
+  assert.deepEqual(stopReadNames(r, { now: 9 * M, allowed }), []);              // nobody 10+ min yet
+  assert.deepEqual(stopReadNames(r, { now: 15 * M, allowed }), ["Walk", "New"]); // Walk stopped 10 min; New never read
+  r = noteActivity(r, ["Lunch", "New", "Other"], 16 * M);          // Walk back picking → no longer stopped
+  assert.deepEqual(stopReadNames(r, { now: 16 * M, allowed }), ["New"]);
+  r = applyDetails(r, { New: { picks: 5 } }, 17 * M);
+  assert.deepEqual(stopReadNames(r, { now: 30 * M, allowed }), []);             // Lunch never picked since its read
+});
+
+test("an All-list merge keeps the performance facts from the last detail read", async () => {
+  const { emptyRoster, mergeSnapshot, applyDetails } = await import("../store_roster.js");
+  let r = mergeSnapshot(emptyRoster("2026-10-09"), { day: "2026-10-09", seen: [{ name: "A B", status: "notactive" }] }, 1);
+  r = applyDetails(r, { "A B": { picks: 100, rate: 90, walks: 5, orders: 20 } }, 2);
+  r = mergeSnapshot(r, { day: "2026-10-09", seen: [{ name: "A B", status: "picking" }] }, 3);
+  const a = r.associates["A B"];
+  assert.equal(a.rate, 90); assert.equal(a.walks, 5); assert.equal(a.orders, 20); assert.equal(a.picks, 100);
+  assert.equal(a.status, "picking"); assert.equal(a.activeSince, true);
+});

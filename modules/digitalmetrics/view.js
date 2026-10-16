@@ -571,11 +571,16 @@ export async function mount(host, container) {
     state.locked      = isFinalized(doc || { date: state.assignmentDate });
     state.lastEditor = doc?.lastEditor || null;
     state.scheduleEditor = schedule?.lastEditor || null;
-    // Suggestions for cells that are already filled are noise; drop them here
-    // rather than making every consumer re-check.
-    state.suggestions = pruneSuggestions(suggestTasks(state.assignments, history, state.assignmentDate));
     state.saveStatus  = "";
     await loadBoard().catch(() => {});
+    // Where the Daily Board is the plan (store 1458, the user 2026-10-09: "the
+    // store is using the excel shared file"), learned suggestions are not
+    // shown: the hours come from the board, or stay empty until it lands.
+    // Suggestions for cells that are already filled are noise; drop them here
+    // rather than making every consumer re-check.
+    state.suggestions = doc?.source === "board" || state.board?.link
+      ? {}
+      : pruneSuggestions(suggestTasks(state.assignments, history, state.assignmentDate));
     renderPage();
     setStatus("ready");
   }

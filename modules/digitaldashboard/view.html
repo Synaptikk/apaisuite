@@ -1,60 +1,134 @@
-<div class="dmr-root" data-dd-root>
-  <header class="dmr-head">
-    <div class="dmr-head-main">
-      <h1 class="dmr-title">Digital Dashboard <span class="dmr-store">Store 1458</span></h1>
-      <p class="dmr-sub" data-asof>—</p>
+<div class="dd">
+  <header class="dd-header">
+    <div class="dd-title">
+      <h1>Digital Dashboard</h1>
+      <span class="dd-store">Store 1458</span>
     </div>
-    <div class="dmr-head-actions">
-      <span class="dmr-emu" data-emu title="Live pick data connection">connecting…</span>
-      <button class="dmr-btn" data-action="refresh">Refresh</button>
+    <div class="dd-toolbar">
+      <span class="pill" data-status title="Live GIF data from the companion phone">Connecting…</span>
+      <span class="dd-freshness" data-asof></span>
+      <button class="btn btn-sm btn-secondary" data-action="refresh">Refresh</button>
     </div>
   </header>
 
-  <p class="dmr-note" data-note hidden></p>
+  <div class="status-strip" data-note hidden></div>
 
-  <section class="dmr-tiles" data-tiles>
-    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="pph">—</span><span class="dmr-tile-lbl" data-tile-lbl="pph">picks / hr (last hour)</span></div>
-    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="avg">—</span><span class="dmr-tile-lbl">avg / closed hour</span></div>
-    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="day">—</span><span class="dmr-tile-lbl">picked today</span></div>
-    <div class="dmr-tile"><span class="dmr-tile-val" data-tile="ready">—</span><span class="dmr-tile-lbl">ready to pick</span></div>
-  </section>
-
-  <section class="dmr-panel">
-    <h2 class="dmr-h2">Picks per hour</h2>
-    <div class="dmr-chart" data-chart>No readings yet — hit Refresh.</div>
-  </section>
-
-  <section class="dmr-panel">
-    <h2 class="dmr-h2">Express per hour <span class="dmr-hint">estimate until :15 past</span></h2>
-    <div class="dmr-express" data-express>—</div>
-  </section>
-
-  <section class="dmr-panel">
-    <div class="dmr-panel-head">
-      <h2 class="dmr-h2">Break watch <span class="dmr-hint" data-break-limit>over 18 min</span></h2>
-      <button class="dmr-btn dmr-btn-sm" data-action="check-breaks">Check now</button>
+  <section class="dd-tiles">
+    <div class="dd-tile">
+      <span class="dd-tile-label" data-tile-lbl="pph">Picks / hr</span>
+      <span class="dd-tile-value" data-tile="pph">—</span>
+      <span class="dd-tile-sub" data-tile-sub="pph"></span>
     </div>
-    <div class="dmr-breaks" data-breaks>Press Check now to see who's been off a pick walk too long.</div>
+    <div class="dd-tile">
+      <span class="dd-tile-label">Picked today</span>
+      <span class="dd-tile-value" data-tile="day">—</span>
+      <span class="dd-tile-sub" data-tile-sub="day"></span>
+    </div>
+    <div class="dd-tile">
+      <span class="dd-tile-label">Ready to pick</span>
+      <span class="dd-tile-value" data-tile="ready">—</span>
+      <span class="dd-tile-sub" data-tile-sub="ready"></span>
+    </div>
+    <div class="dd-tile">
+      <span class="dd-tile-label">On-time pick</span>
+      <span class="dd-tile-value" data-tile="ontime">—</span>
+      <span class="dd-tile-sub" data-tile-sub="ontime"></span>
+    </div>
+    <div class="dd-tile">
+      <span class="dd-tile-label">Avg pick rate</span>
+      <span class="dd-tile-value" data-tile="rate">—</span>
+      <span class="dd-tile-sub">items / hr per picker</span>
+    </div>
   </section>
 
-  <details class="dmr-settings">
-    <summary>Settings</summary>
-    <div class="dmr-set-grid">
-      <label class="dmr-set-row"><span>Workvivo chat (leadership)</span><input type="text" data-set="channel" spellcheck="false"></label>
-      <label class="dmr-set-check"><input type="checkbox" data-set="autoSample"><span>Auto-refresh during store hours</span></label>
-      <label class="dmr-set-row dmr-set-sub"><span>…every</span><input type="number" min="5" max="60" data-set="sampleMin"><span>min</span></label>
-      <label class="dmr-set-check"><input type="checkbox" data-set="listen"><span>Answer <code>!pph</code> / <code>!express</code> / <code>!summary</code> / <code>!breaks</code> in that chat</span></label>
-      <label class="dmr-set-check"><input type="checkbox" data-set="autoBreakAlert"><span>Auto-post "out of a pick walk &gt; 18 min" to that chat (names, duration only)</span></label>
-      <label class="dmr-set-row dmr-set-sub"><span>…re-alert no sooner than</span><input type="number" min="5" max="120" data-set="reAlertMin"><span>min</span></label>
-      <div class="dmr-set-actions">
-        <button class="dmr-btn dmr-btn-sm" data-action="save-settings">Save</button>
-        <span class="dmr-set-note" data-set-note></span>
+  <section class="dd-panel">
+    <div class="dd-panel-head">
+      <h2>Staffing</h2>
+      <span class="dd-panel-sub">Pickers on today's board vs. the picks still in GIF</span>
+    </div>
+    <div class="dd-verdict" data-staff-verdict></div>
+    <div data-staffing><p class="dd-empty">Waiting for the first GIF reading.</p></div>
+    <p class="dd-footnote" data-staff-note></p>
+  </section>
+
+  <div class="dd-grid">
+    <section class="dd-panel">
+      <div class="dd-panel-head">
+        <h2>Hours</h2>
+        <span class="dd-panel-sub">By order due time</span>
       </div>
-      <details class="dmr-advanced">
-        <summary>Advanced</summary>
-        <label class="dmr-set-row"><span>GIF daemon URL</span><input type="text" data-set="daemonUrl" spellcheck="false"></label>
-        <button class="dmr-btn dmr-btn-sm dmr-btn-ghost" data-action="stop-emulator">Stop emulator</button>
-      </details>
+      <div data-hours><p class="dd-empty">No reading yet.</p></div>
+    </section>
+
+    <section class="dd-panel">
+      <div class="dd-panel-head">
+        <h2>Items by order due hour</h2>
+        <span class="dd-panel-sub" data-chart-sub></span>
+      </div>
+      <div class="dd-chart" data-chart><p class="dd-empty">Collecting readings…</p></div>
+    </section>
+  </div>
+
+  <div class="dd-grid">
+    <section class="dd-panel">
+      <div class="dd-panel-head">
+        <h2>Digital vs. store help</h2>
+        <span class="dd-panel-sub" data-split-sub></span>
+        <button class="btn btn-sm btn-ghost dd-push" data-action="refresh-store">Update</button>
+      </div>
+      <div data-split><p class="dd-empty">Press Update to count today's pickers.</p></div>
+    </section>
+
+    <section class="dd-panel">
+      <div class="dd-panel-head">
+        <h2>Express</h2>
+        <span class="dd-panel-sub">Final at :15 past each hour</span>
+      </div>
+      <div data-express><p class="dd-empty">No express orders read yet today.</p></div>
+    </section>
+  </div>
+
+  <section class="dd-panel">
+    <div class="dd-panel-head">
+      <h2>Break watch</h2>
+      <span class="dd-panel-sub" data-break-limit>Scheduled pickers out of a pick walk over 18 min</span>
+      <button class="btn btn-sm btn-ghost dd-push" data-action="check-breaks">Check now</button>
+    </div>
+    <div data-breaks><p class="dd-empty">Press Check now to see who's been off a pick walk too long.</p></div>
+    <div class="dd-panel-head dd-breaklog-head">
+      <h3>Today's long breaks</h3>
+      <span class="dd-panel-sub">Everyone the watch flagged, one row per stretch</span>
+      <select class="select dd-push dd-breaklog-day" data-breaklog-day aria-label="Day"></select>
+    </div>
+    <div data-breaklog><p class="dd-empty">No long breaks logged yet today.</p></div>
+  </section>
+
+  <details class="dd-settings">
+    <summary>Settings</summary>
+    <div class="dd-set-grid">
+      <label class="field">
+        <span class="field-label">Workvivo chat (leadership)</span>
+        <input class="input" type="text" data-set="channel" spellcheck="false">
+      </label>
+      <label class="check"><input type="checkbox" data-set="listen"><span>Answer <code>!pph</code>, <code>!staffing</code>, <code>!breaks</code> and the rest in that chat from this browser (only when the PC daemon isn't answering)</span></label>
+      <label class="check"><input type="checkbox" data-set="autoBreakAlert"><span>Post "out of a pick walk over 18 min" to that chat automatically (name and minutes only)</span></label>
+      <label class="field dd-inline">
+        <span class="field-label">Re-alert the same person no sooner than</span>
+        <span><input class="input dd-num" type="number" min="5" max="120" data-set="reAlertMin"> min</span>
+      </label>
+      <label class="check"><input type="checkbox" data-set="autoSample"><span>Refresh in the background during store hours (feeds the Pick Hours history and the store-help count)</span></label>
+      <label class="field dd-inline">
+        <span class="field-label">…every</span>
+        <span><input class="input dd-num" type="number" min="5" max="60" data-set="sampleMin"> min</span>
+      </label>
+      <label class="field">
+        <span class="field-label">GIF daemon URL</span>
+        <input class="input" type="text" data-set="daemonUrl" spellcheck="false">
+      </label>
+      <div class="dd-set-actions">
+        <button class="btn btn-sm btn-primary" data-action="save-settings">Save</button>
+        <span class="dd-footnote" data-set-note></span>
+      </div>
     </div>
   </details>
 </div>

@@ -3,6 +3,8 @@
 // Supply Orders — service-worker half.
 //   get   { }                 → { ok, data }   cached store doc (no network)
 //   pull  { days, full }      → { ok, data, warnings }
+//   delivery_schedule { store, days } → { ok, schedule }   who works each delivery day
+//   open_draft { subject, html }      → { ok }             Outlook draft, not sent
 //
 // Pull = MyGNFR store carts for the range (month windows, lines expanded),
 // merged into the cached doc; orderer names (user search, cached for good),
@@ -18,6 +20,7 @@ import { compactCart, compactApprovals, lineStage, isStale, nameKey, sapDay } fr
 import { withKeepAwake } from "../../shared/sw_keepalive.js";
 import { singleFlight } from "../safetyagent/lib/single_flight.js";
 import { schedules } from "../digitalmetrics/lib/firestore.js";
+import { openOutlookDraft } from "../../shared/outlook_send.js";
 
 const MODULE_ID = "gnfr";
 const DATA_KEY = (store) => `${MODULE_ID}.data.${store}`;
@@ -193,5 +196,27 @@ export const handlers = {
     try {
       return await pullFlight("pull", () => withKeepAwake(`${MODULE_ID}.pull`, () => pull(msg)));
     } catch (e) { return fail(e); }
+  },
+  // Who works each delivery day (for the put-away plan email). Per day:
+  // null when that day's schedule isn't imported yet (WFM runs ~2 weeks out),
+  // else { people: nameKey → "7:00am–4:00pm" }.
+  async delivery_schedule(msg) {
+    try {
+      const store = String(Number(msg?.store));
+      const days = [...new Set((msg?.days || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].slice(0, 60);
+      const out = {};
+      await pool(days, 5, async (d) => {
+        const doc = await schedules.get(store, d).catch(() => null);
+        if (!doc?.associates?.length) { out[d] = null; return; }
+        const people = {};
+        for (const a of doc.associates) { const k = nameKey(a?.name); if (k) people[k] = [a.shiftStart, a.shiftEnd].filter(Boolean).join("–"); }
+        out[d] = { people };
+      });
+      return { ok: true, schedule: out };
+    } catch (e) { return fail(e); }
+  },
+  // The delivery plan as an Outlook draft (opened, filled, never sent).
+  async open_draft(msg) {
+    return openOutlookDraft({ subject: String(msg?.subject || ""), html: String(msg?.html || "") });
   },
 };

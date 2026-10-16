@@ -53,10 +53,19 @@ export async function mount(host, container) {
   let gDays = null;
 
   // ── persisted prefs ───────────────────────────────────────────────────────
-  for (const [id, name] of Object.entries(ROLES)) els.role.insertAdjacentHTML("beforeend", `<option value="${id}">${esc(name)}</option>`);
   const prefs = (await host.storage.local.get("prefs").catch(() => null)) || {};
-  els.role.value = String(prefs.roleId || 1000271);
-  els.jobs.value = prefs.jobs || (ROLE_JOBS[els.role.value] || []).join(",");
+  // Role list: the scheduler's own roles once a week is read (read → data.roles), the Digital ones before that.
+  const roleList = () => data?.roles?.length ? data.roles
+    : Object.entries(ROLES).map(([id, name]) => ({ id: +id, name, jobs: ROLE_JOBS[id] || [] }));
+  const jobsFor = (id) => ROLE_JOBS[id] || roleList().find((r) => String(r.id) === String(id))?.jobs || [];
+  function fillRoles(want) {
+    const list = roleList();
+    els.role.innerHTML = list.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("")
+      + (list.some((r) => String(r.id) === want) ? "" : `<option value="${esc(want)}">Role ${esc(want)}</option>`);
+    els.role.value = want;
+  }
+  fillRoles(String(prefs.roleId || 1000271));
+  els.jobs.value = prefs.jobs || jobsFor(els.role.value).join(",");
   if (prefs.floor) els.floor.value = prefs.floor;
   if (prefs.bonus != null) els.bonus.value = String(prefs.bonus);
   if (prefs.daymoves != null) els.daymoves.checked = prefs.daymoves;
@@ -98,6 +107,7 @@ export async function mount(host, container) {
       const r = await send("read"); if (!r.ok) throw new Error(r.error);
       if (!alive) return;
       data = r.data;
+      fillRoles(els.role.value);
       els.wk.value = data.ctx.wk;
       queue = (await host.storage.local.get(qKey()).catch(() => null)) || [];
       check = null;
@@ -114,7 +124,8 @@ export async function mount(host, container) {
     if (!data) { els.main.hidden = true; return; }
     els.main.hidden = false;
     const c = data.ctx;
-    els.where.innerHTML = `<b>Store ${esc(c.store)}</b> · WK ${esc(c.wk)} · ${esc(c.weekStart)} – ${esc(c.weekEnd)}`;
+    els.where.innerHTML = `<b>Store ${esc(c.store)}</b> · WK ${esc(c.wk)} · ${esc(c.weekStart)} – ${esc(c.weekEnd)}`
+      + (data.filtered ? `<div class="ds-flag">Scheduler is filtered to a team: only ${data.filtered.shown} of ${data.filtered.total} associates read. Roles outside that team show 0 scheduled. Pick the whole store in the scheduler, then Reload.</div>` : "");
     renderCoverage(); renderQueue(); renderRoster(); renderHistory(); renderRulesState();
   }
 
@@ -445,7 +456,7 @@ export async function mount(host, container) {
   els.bar.addEventListener("submit", (e) => { e.preventDefault(); const wk = els.wk.value.trim(); load(wk && (!data || String(data.ctx.wk) !== wk) ? { wk } : {}); });
   els.reload.addEventListener("click", () => load());
   els.show.addEventListener("click", async () => { const r = await send("open_tab"); if (!r.ok) status(r.error, "error"); });
-  els.role.addEventListener("change", () => { const j = ROLE_JOBS[els.role.value]; if (j) els.jobs.value = j.join(","); savePrefs(); if (data) render(); });
+  els.role.addEventListener("change", () => { els.jobs.value = jobsFor(els.role.value).join(","); savePrefs(); if (data) render(); });
   els.jobs.addEventListener("change", () => { savePrefs(); if (data) render(); });
   for (const x of [els.floor, els.bonus, els.daymoves, els.extend]) x.addEventListener("change", savePrefs);
   els.rules.addEventListener("input", () => { host.storage.local.set("rules", els.rules.value).catch(() => {}); renderRulesState(); });

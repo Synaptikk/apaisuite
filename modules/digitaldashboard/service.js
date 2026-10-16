@@ -34,8 +34,10 @@ import { HOME_STORE, BREAK_LIMIT_MIN, pickersNow, normName, sameName } from "./l
 import { hourlyBars } from "./lib/pick_history.js";
 import { PICK_DAYS_KEY, upsertDay } from "./lib/pick_days.js";
 import { rosterRows, rosterTotals } from "./lib/store_roster.js";
-import { parseCommand, formatPph, formatExpress, formatSummary, formatBreaks, formatStore, formatHelp } from "./lib/commands.js";
+import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePickers, outputPickers } from "./lib/staffing.js";
+import { parseCommand, formatPph, formatExpress, formatSummary, formatBreaks, formatStore, formatHelp, formatBreakLog } from "./lib/commands.js";
 import { readChannelMessages, postTextToWorkvivo } from "../metricshot/lib/sendbird.js";
+import { isTrueAbsence, parseIvrName } from "../closinglist/lib/parse.js";
 
 const K = {
   settings: "digitaldashboard.gif.settings",
@@ -52,6 +54,7 @@ const DIGITAL_CLASSES = new Set(["Digital", "Exceptions"]);
 export const ALARM_NAMES = {
   sample: "digitaldashboard.sample",
   listen: "digitaldashboard.listen",
+  absences: "digitaldashboard.absences",
 };
 
 export const DEFAULTS = {
@@ -130,6 +133,14 @@ async function feedPickDays(summary) {
 /** Fetch a fresh-enough summary, cache it, and feed the archive. */
 export async function refreshSummary({ maxAge = 120, wait = 90 } = {}) {
   const s = await daemon("/summary", { maxAge, wait, window: 60 }, { timeoutMs: (wait + 45) * 1000 });
+  // Board pickers vs picks still in GIF, hour by hour (lib/staffing.js).
+  try {
+    s.staffing = staffingPlan({ open: s.open, upcoming: s.upcoming, roster: await todaysRoster(), rate: s.storeKpis?.avgPickRate,
+      pickingNow: s.storeKpis?.picking, active: activePickers({ picking: s.storeKpis?.picking, watch: s.watch, now: new Date() }),
+      output: outputPickers(s.pph?.perHour, s.storeKpis?.avgPickRate), expressPerHour: s.express?.avgItemsPerHour, now: new Date() });
+    // live pace per open due hour (due 30 min before the slot): need vs. picking now
+    s.pace = slotPace({ open: s.open, rate: s.pph?.perHour, perPicker: s.staffing?.perPicker, now: new Date() });
+  } catch (e) { console.warn("[digitaldashboard] staffing:", e?.message ?? e); }
   await lset(K.summary, { at: Date.now(), data: s });
   try { await feedPickDays(s); } catch (e) { console.warn("[digitaldashboard] feedPickDays:", e?.message ?? e); }
   return s;
@@ -167,6 +178,11 @@ export async function checkBreaks({ wait = 90, maxAge = 120 } = {}) {
 }
 
 export async function cachedWatch() { return lget(K.watch, null); }
+
+/** The daemon's long-break log for one board day (default today). Cache only — no GIF read. */
+export async function getBreakLog(day) {
+  return daemon("/breaklog", { day: /^\d{4}-\d{2}-\d{2}$/.test(day || "") ? day : null }, { timeoutMs: 10_000 });
+}
 
 // ── Store roster (!store): who picked today, coded digital vs store help ──
 
@@ -252,6 +268,10 @@ async function answerCommand(cmd) {
     const w = await checkBreaks({ wait: 90 }).catch((e) => ({ error: e.message }));
     return w.error ? `Couldn't check breaks: ${w.error}` : formatBreaks(w, new Date());
   }
+  if (cmd === "breaklog") {
+    const r = await getBreakLog().catch((e) => ({ error: e.message }));
+    return r.error ? `Couldn't read the break log: ${r.error}` : formatBreakLog(r.episodes, r.day, r.lastAt ? new Date(r.lastAt) : new Date(), { limitMin: r.limitMin });
+  }
   if (cmd === "store") {
     const st = await getStore({ pass: true, wait: 150 }).catch((e) => ({ error: e.message }));
     return st.error ? `Couldn't read the roster: ${st.error}` : formatStore(st, new Date());
@@ -260,9 +280,10 @@ async function answerCommand(cmd) {
   const s = await refreshSummary({ maxAge: 120, wait: 90 }).catch((e) => ({ error: e.message }));
   if (s.error) return `Couldn't read GIF: ${s.error}`;
   if (cmd === "express") return formatExpress(s, new Date());
+  if (cmd === "staffing") return staffingText(s.staffing, new Date(), s.pace);
   if (cmd === "summary") {
     const w = await cachedWatch();
-    return formatSummary(s, w, new Date());
+    return [formatSummary(s, w, new Date()), s.pace?.[0] ? paceLine(s.pace[0]) : null, staffingLine(s.staffing)].filter(Boolean).join("\n");
   }
   return formatPph(s, new Date());
 }
@@ -279,7 +300,13 @@ export async function pollListener() {
   // relay — no Workvivo tab needed). While it is listening, stand down so a
   // command is not answered twice.
   const h = await daemon("/health", {}, { timeoutMs: 5_000 }).catch(() => null);
-  if (h?.chat?.state === "listening") return { skipped: "daemon is answering the chat" };
+  // Stand down whenever the daemon runs its chat at all — including while it is
+  // backing off a relay 401 — because it answers the backlog itself once the
+  // relay is back. Taking over in that window answered every command twice
+  // (and re-answered the last 5 minutes) on 2026-10-09. Only a daemon that is
+  // unreachable or has its chat switched off leaves the chat to this browser.
+  const chatState = String(h?.chat?.state ?? "off");
+  if (h && !/^off|stopped/.test(chatState)) return { skipped: `daemon owns the chat (${chatState})` };
 
   const st = await lget(K.listen, null);
   const afterTs = st?.afterTs ?? (Date.now() - LISTEN_FIRST_LOOKBACK_MS);
@@ -317,6 +344,30 @@ export async function installAlarms() {
   else await chrome.alarms.clear(ALARM_NAMES.sample).catch(() => {});
   if (listen) await ensureAlarm(ALARM_NAMES.listen, { periodInMinutes: 1, delayInMinutes: 1 });
   else await chrome.alarms.clear(ALARM_NAMES.listen).catch(() => {});
+  await ensureAlarm(ALARM_NAMES.absences, { periodInMinutes: 10, delayInMinutes: 1 });
+}
+
+/**
+ * Hand today's IVR call-ins to the GIF daemon for !performance (user,
+ * 2026-10-09: "we can see real absences, the apaisuite already pulls it for
+ * the closing list"). Reads closinglist's cached pull only — Live Dashboard
+ * refreshes it hourly; nothing here opens IVR. Names + absence type only.
+ */
+const IVR_RESULT_KEY = "closinglist.ivrLastResult";   // closinglist/service.js RESULT_KEY
+export async function pushAbsences() {
+  const last = (await chrome.storage.local.get(IVR_RESULT_KEY))[IVR_RESULT_KEY];
+  if (!last?.rows?.length) return { pushed: 0 };
+  const day = isoDay(new Date(Date.now() - 5 * 3600_000));   // board day (5 AM rollover)
+  const rows = [];
+  for (const r of last.rows) {
+    if (r.absence_date !== day || !isTrueAbsence(r.absence_type)) continue;
+    const { first, last: lname } = parseIvrName(r.associate);
+    if (first && lname) rows.push({ name: `${first} ${lname}`, type: r.absence_type });
+  }
+  const { daemonUrl } = await getSettings();
+  const res = await fetch(new URL("/absences", daemonUrl), { method: "POST", headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ day, fetchedAt: last.fetchedAt ?? null, rows }) });
+  return { pushed: rows.length, ok: res.ok };
 }
 
 export async function onAlarm(alarm) {
@@ -329,6 +380,8 @@ export async function onAlarm(alarm) {
     // Advance the day's roster a few associates at a time — it accumulates
     // across ticks, so no single pass drills everyone (store_roster.js).
     await getStore({ pass: true, budget: 5, wait: 180 }).catch((e) => console.warn("[digitaldashboard] roster:", e?.message ?? e));
+  } else if (alarm.name === ALARM_NAMES.absences) {
+    await pushAbsences().catch(() => {});   // daemon offline → next tick
   } else if (alarm.name === ALARM_NAMES.listen) {
     await pollListener().catch((e) => console.warn("[digitaldashboard] listener:", e?.message ?? e));
   }
@@ -345,6 +398,7 @@ export const handlers = {
   "cached_summary":  () => cachedSummary(),
   "check_breaks":    (m) => checkBreaks({ maxAge: m?.maxAge ?? 120, wait: m?.wait ?? 90 }),
   "cached_watch":    () => cachedWatch(),
+  "break_log":       (m) => getBreakLog(m?.day),
   "store":           (m) => getStore({ pass: m?.pass ?? true, budget: m?.budget ?? 5, wait: m?.wait ?? 160 }),
   "cached_store":    () => cachedStore(),
   "health":          () => daemon("/health", {}, { timeoutMs: 8000 }).then((h) => ({ ok: true, ...h })).catch((e) => ({ ok: false, error: e.message, kind: e.kind })),

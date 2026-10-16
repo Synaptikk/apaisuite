@@ -30,7 +30,20 @@
 // GET /breaks?names=A|B&limit=18      scheduled pickers (names from the
 //                                     assignment grid) who are not active,
 //                                     with minutes since last seen
+// GET /breaklog?day=YYYY-MM-DD        the day's long-break log (cache only;
+//                                     default today, ~60 days kept)
 // GET /stop                           stop the emulator now
+//
+// SOURCE (GIF_SOURCE, default "phone"): since 2026-10-09 the readings come
+// from the GIF Companion app on a spare enrolled phone (APAISuite/gif-companion)
+// instead of the emulator. The phone POSTs each reading to /api/gif/ingest over
+// USB (`adb reverse tcp:8770 tcp:8770`, kept up by this daemon); reads the
+// routes need on demand are queued and handed to the phone in the reply to its
+// next check-in. The emulator is never started in phone mode. GIF_SOURCE=emulator
+// restores the old path.
+//
+// POST /api/gif/ingest               phone uploads: { kind, status, data }
+//                                     -> { ok, requests:[{id,kind,names}] }
 //
 // Also answers Workvivo !commands (dev/gif-chat.mjs) through QRCallBox's chat
 // relay, so no browser tab has to stay open; /health reports it under "chat".
@@ -41,12 +54,14 @@ import { spawn, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ensureHome, readOpdHourly, readNotActive, readAssociateDetail, readAssociateDetails, readAllAssociates, setProgressHook } from "./gif-reader.mjs";
-import { emptyRoster, mergeSnapshot, needsCheck, applyDetails } from "../modules/digitaldashboard/lib/store_roster.js";
+import { emptyRoster, mergeSnapshot, needsCheck, applyDetails, noteActivity, stopReadNames } from "../modules/digitaldashboard/lib/store_roster.js";
+import { noteWalks, walkMixByName } from "../modules/digitaldashboard/lib/walk_log.js";
 import {
   HOME_STORE, BREAK_LIMIT_MIN, recordReading, expressSummary, completedSummary,
   dayPicked, breakWatch, trackGaps, boardDayStart, boardDay, sameName,
 } from "../modules/digitaldashboard/lib/gif_metrics.js";
 import { rollingWindow, HOUR_MS } from "../modules/digitaldashboard/lib/pick_history.js";
+import { mergeBreakLog, breakLogDay, breakLogDays } from "../modules/digitaldashboard/lib/break_log.js";
 import { createChat } from "./gif-chat.mjs";
 
 // Outbound HTTPS (QRCallBox chat relay, Firestore) has to go through the corp
@@ -73,10 +88,17 @@ const PIN_FILE = join(SDK, ".emu-pin");
 const STATE_FILE = join(SDK, "gif-state.json");
 const PORT = Number(process.env.GIF_PORT || 8770);
 const IDLE_MIN = Number(process.env.GIF_IDLE_MIN ?? 10);
-const VERSION = "1";
+const VERSION = "2";
+const SOURCE = (process.env.GIF_SOURCE || "phone").toLowerCase();
+const PHONE = SOURCE === "phone";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toLocaleTimeString(), ...a);
+// Leave a reason in the log when the daemon dies (the loop launcher restarts it).
+process.on("uncaughtException", (e) => { log("CRASH:", e?.stack || e); process.exit(70); });
+process.on("unhandledRejection", (e) => log("unhandled rejection:", e?.stack || e));
+process.on("exit", (code) => log(`daemon exiting (code ${code})`));
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(sig, () => { log(`daemon stopped by ${sig}`); process.exit(0); });
 
 // ── State ────────────────────────────────────────────────────────
 let state = { history: null, gaps: {}, opd: null, opdAt: 0, notActive: null, notActiveAt: 0, watch: null, watchAt: 0, roster: null, rosterAt: 0, rosterUpdated: null };
@@ -154,11 +176,13 @@ async function ensureEmulator() {
 
 let idleTimer = null;
 function armIdle() {
+  if (PHONE) return;
   if (idleTimer) clearTimeout(idleTimer);
   if (!IDLE_MIN) return;
   idleTimer = setTimeout(() => { if (!busy) stopEmulator("idle"); }, IDLE_MIN * 60_000);
 }
 function stopEmulator(why) {
+  if (PHONE) return false;   // plain adb would target the phone, not an emulator
   if (!emulatorBooted()) return false;
   log(`stopping emulator (${why})`);
   tryAdb(["emu", "kill"], 10000);
@@ -174,6 +198,10 @@ let busy = null;
 const SIGNIN_RETRY_MIN = 30;
 let signinBlockedUntil = 0;
 function run(what, fn) {
+  if (PHONE) {
+    // The phone serialises its own reads; here a request only waits for its answer.
+    return (async () => { busy = what; try { return await fn(); } finally { busy = null; } })();
+  }
   const p = queue.then(async () => {
     if (Date.now() < signinBlockedUntil) {
       throw new Error(`GIF needs a manual sign-in — next try ${new Date(signinBlockedUntil).toLocaleTimeString()}`);
@@ -212,8 +240,13 @@ function refresh(kind, fn) {
  * request for minutes. With nothing cached at all there is nothing to hand
  * back, so the caller waits for the read regardless.
  */
-async function cachedOrFresh({ at, value, maxAge, waitSec, kind, fn }) {
+async function cachedOrFresh({ at, value, maxAge, waitSec, kind, fn, cacheOnly }) {
   if (value != null && fresh(at, maxAge)) return { value, stale: false, refreshing: !!jobs[kind] };
+  // ?cached=1 (chat commands): answer from the phone's last reading, never start a read
+  if (cacheOnly) {
+    if (value == null) throw new Error("no GIF reading yet — the phone hasn't reported since the daemon started");
+    return { value, stale: true, refreshing: !!jobs[kind] };
+  }
   const p = refresh(kind, fn).then((v) => ({ v }), (e) => ({ e }));
   const limit = value == null ? 600 : waitSec;
   const done = await Promise.race([p, sleep(limit * 1000).then(() => null)]);
@@ -223,17 +256,17 @@ async function cachedOrFresh({ at, value, maxAge, waitSec, kind, fn }) {
 }
 
 const readOpd = async () => {
-  const opd = await readOpdHourly();
+  const opd = await R.readOpdHourly();
   state.opd = opd; state.opdAt = Date.now();
   state.history = recordReading(state.history, opd, new Date());
   save();
   return opd;
 };
-const getOpd = (maxAge, waitSec = 600) =>
-  cachedOrFresh({ at: state.opdAt, value: state.opd, maxAge, waitSec, kind: "opd", fn: readOpd });
+const getOpd = (maxAge, waitSec = 600, cacheOnly = false) =>
+  cachedOrFresh({ at: state.opdAt, value: state.opd, maxAge, waitSec, kind: "opd", fn: readOpd, cacheOnly });
 
 const readNA = async () => {
-  const r = await readNotActive();
+  const r = await R.readNotActive();
   state.notActive = r; state.notActiveAt = Date.now(); save();
   return r;
 };
@@ -247,15 +280,22 @@ const getNotActive = (maxAge, waitSec = 600) =>
  * Over many passes the whole table fills in a few reads at a time; settled
  * (inactive, confirmed) associates are never re-read. budget caps reads/pass.
  */
+/** One associate-detail read → the facts the roster keeps (picks + performance). */
+const num = (v) => { const x = Number(String(v ?? "").replace(/,/g, "")); return v == null || v === "" || !Number.isFinite(x) ? undefined : x; };
+function detailFacts(d) {
+  if (!d || d.error) return { error: d?.error || "no reading" };
+  return { picks: num(d.qtyPicked), rate: num(d.avgPickRate), walks: num(d.pickwalksCompleted), orders: num(d.ordersPicked) };
+}
+
 async function storePass(budget = 5) {
-  const all = await readAllAssociates();
+  const all = await R.readAllAssociates();
   const day = boardDay(new Date());
   let roster = state.roster && state.roster.day === day ? state.roster : emptyRoster(day);
   roster = mergeSnapshot(roster, { day, seen: all.seen }, Date.now());
   const names = needsCheck(roster, { budget, now: Date.now() });
-  const details = names.length ? await readAssociateDetails(names) : {};
+  const details = names.length ? await R.readAssociateDetails(names) : {};
   const picks = {};
-  for (const [n, d] of Object.entries(details)) picks[n] = d?.error ? { error: d.error } : { picks: d?.qtyPicked };
+  for (const [n, d] of Object.entries(details)) picks[n] = detailFacts(d);
   roster = applyDetails(roster, picks, Date.now());
   state.roster = roster; state.rosterAt = Date.now();
   state.rosterUpdated = all.lastUpdated ?? state.rosterUpdated ?? null;
@@ -263,41 +303,259 @@ async function storePass(budget = 5) {
   return roster;
 }
 
+/**
+ * Totals on stop (user, 2026-10-09): once a minute, read the pick total of up to
+ * STOP_READS_PER_MIN people who have stopped picking (10+ min on Not active, or
+ * off GIF's list) since their last read — scheduled pickers + store help only
+ * (gif-chat sends that scope). No hourly burst; commands never start a read.
+ */
+const STOP_READS_PER_MIN = 2;
+let stopReading = false;
+async function stopReads() {
+  if (stopReading || !state.roster || !state.scope?.length) return;
+  const scope = state.scope;
+  const names = stopReadNames(state.roster, { allowed: (n) => scope.some((o) => sameName(o, n)) }).slice(0, STOP_READS_PER_MIN);
+  if (!names.length) return;
+  stopReading = true;
+  try {
+    const details = await R.readAssociateDetails(names);
+    const picks = {};
+    for (const [n, d] of Object.entries(details)) picks[n] = detailFacts(d);
+    state.roster = applyDetails(state.roster, picks, Date.now());
+    state.rosterAt = Date.now(); save();
+    log(`store: totals read on stop — ${Object.values(picks).filter((p) => !p.error).length}/${names.length}`);
+  } catch (e) { log("store: stop read failed:", e.message); }
+  finally { stopReading = false; }
+}
+
 /** Not-active list, then one batched detail trip for the scheduled ones in it. */
 async function breaksPass(names, limit) {
-  const na = await readNotActive();
-  state.notActive = na; state.notActiveAt = Date.now();
-  const suspects = (na?.notActive || []).filter((g) => names.some((s) => sameName(s, g)));
-  const details = suspects.length ? await readAssociateDetails(suspects) : {};
+  const na = await R.readNotActive();
+  // Phone mode: R returns the phone's own (timestamped) reading — re-stamping
+  // it here would make an old list look fresh. The emulator reader is a live read.
+  if (!PHONE) { state.notActive = na; state.notActiveAt = Date.now(); }
+  const notActive = na?.notActive || [];
+  const suspects = notActive.filter((g) => names.some((s) => sameName(s, g)));
+  // Someone's last scan can't change while they stay not active, so read it
+  // once per inactive stretch: keep cached details for names still on the
+  // list, drop the rest (they picked again — the next stretch needs a new
+  // read), and read only the new suspects.
+  const cache = {};
+  for (const [n, d] of Object.entries(state.breakDetails || {})) if (notActive.includes(n) && !d?.error) cache[n] = d;
+  const fresh = suspects.filter((n) => !cache[n]);
+  if (fresh.length) {
+    const got = await R.readAssociateDetails(fresh);
+    Object.assign(cache, got);
+    if (state.roster) state.roster = applyDetails(state.roster, Object.fromEntries(Object.entries(got).map(([n, d]) => [n, detailFacts(d)])), Date.now());
+  }
+  state.breakDetails = cache;
+  const details = Object.fromEntries(suspects.map((n) => [n, cache[n]]));
   const now = new Date();
   const watch = breakWatch({ scheduled: names, notActive: na?.notActive || [], details, now, limitMin: limit });
   state.gaps = trackGaps(state.gaps, watch, now);
   state.watch = { ...watch, names, notActiveUpdated: na?.lastUpdated ?? null };
+  // every watch run (background or asked) feeds the day's long-break log
+  state.breakLog = mergeBreakLog(state.breakLog, state.watch, now);
   state.watchAt = Date.now(); save();
   return state.watch;
 }
 
 function summarize(windowMin) {
   const now = new Date();
-  const series = state.history?.series || [];
+  // A reading from before today's 5 AM rollover is yesterday's: answer with no
+  // reading rather than serve its totals as today's (user, 2026-10-10: !pph
+  // showed yesterday's metrics while the phone was stalled).
+  const today = state.opdAt >= boardDayStart(now);
+  const opd = today ? state.opd : null, hist = today ? state.history : null;
+  const series = hist?.series || [];
   const rate = series.length >= 2 ? rollingWindow(series, windowMin * 60_000) : null;
   return {
     store: HOME_STORE,
-    asOf: state.opdAt ? new Date(state.opdAt).toISOString() : null,
-    readyToPick: state.opd?.readyToPick ?? null,
-    dayPicked: dayPicked(state.opd),
-    open: state.opd?.hours || [],
-    completed: completedSummary(state.opd),
-    completedHours: state.opd?.completed || [],
+    asOf: today ? new Date(state.opdAt).toISOString() : null,
+    readyToPick: opd?.readyToPick ?? null,
+    dayPicked: dayPicked(opd),
+    open: opd?.hours || [],
+    // later due-hours (OPD "Upcoming Picks") and My Store's dashboard figures
+    // (phone mode only — the emulator reader never captured them)
+    upcoming: opd?.upcoming || [],
+    storeKpis: opd?.store || null,
+    phone: PHONE ? { lastSeenSec: phone.lastSeenAt ? Math.round((Date.now() - phone.lastSeenAt) / 1000) : null, state: phone.status?.state ?? null, code: phone.status?.code ?? null, error: phone.status?.error ?? null } : null,
+    completed: completedSummary(opd),
+    completedHours: opd?.completed || [],
     pph: rate && {
       perHour: Math.round(rate.perHour), picked: rate.picked,
       spanMin: Math.round(rate.spanMs / 60000), full: rate.full, windowMin,
     },
-    express: expressSummary(state.history, now),
+    express: expressSummary(hist, now),
+    // latest break watch: staffing counts scheduled pickers between walks (< 10 min idle) as active
+    watch: state.watch ? { checkedAt: state.watch.checkedAt, suspects: (state.watch.suspects || []).map(({ name, idleMin, over }) => ({ name, idleMin, over })) } : null,
     // for the dashboard's per-clock-hour chart and the Pick Hours archive
     series, dayStart: boardDayStart(now), hourMs: HOUR_MS,
   };
 }
+
+// ── Phone link (GIF Companion) ───────────────────────────────────
+// Readings arrive on the phone's own schedule (status ~1 min, OPD ~2 min,
+// roster ~15 min). A route that needs something fresher queues a request; the
+// phone collects it from the reply to its next upload/heartbeat (~15 s) and
+// answers with a reading carrying data.requestId.
+const phone = { lastSeenAt: 0, status: null, appVersion: null };
+const pending = [];   // { id, kind, names, sentAt, resolve, reject, timer, promise }
+let reqSeq = 0;
+
+function askPhone(kind, names = [], timeoutSec = 120) {
+  if (kind !== "assoc") {
+    const same = pending.find((p) => p.kind === kind);
+    if (same) return same.promise;
+  }
+  const r = { id: `r${++reqSeq}`, kind, names, sentAt: 0 };
+  r.promise = new Promise((resolve, reject) => {
+    r.resolve = resolve; r.reject = reject;
+    r.timer = setTimeout(() => {
+      const i = pending.indexOf(r);
+      if (i >= 0) pending.splice(i, 1);
+      reject(new Error(Date.now() - phone.lastSeenAt > 120_000
+        ? "the GIF phone is not reporting (USB unplugged, app off, or GIF signed out)"
+        : `the GIF phone did not answer the ${kind} read in ${timeoutSec}s`));
+    }, timeoutSec * 1000);
+  });
+  pending.push(r);
+  return r.promise;
+}
+
+// A cached phone reading is good enough while it is no older than the phone's
+// own cadence for it; asking again would only queue a duplicate read.
+const PHONE_FRESH_SEC = { opd: 180, notactive: 200, all: 20 * 60 };   // phone: status every 3 min, OPD 2, roster 15
+async function cachedOrAsk(kind, value, at) {
+  if (value && Date.now() - at < PHONE_FRESH_SEC[kind] * 1000) return value;
+  return askPhone(kind, [], kind === "all" ? 150 : 120);
+}
+
+const phoneReader = {
+  readOpdHourly: () => cachedOrAsk("opd", state.opd, state.opdAt),
+  readNotActive: () => cachedOrAsk("notactive", state.notActive, state.notActiveAt),
+  readAllAssociates: () => cachedOrAsk("all", state.all, state.allAt),
+  readAssociateDetails: async (names) => (await askPhone("assoc", names, 60 + 15 * names.length))?.details || {},
+  readAssociateDetail: async (name) => {
+    const d = (await askPhone("assoc", [name], 75))?.details?.[name];
+    if (!d || d.error) throw new Error(d?.error || `no detail for ${name}`);
+    return d;
+  },
+};
+const R = PHONE ? phoneReader
+  : { readOpdHourly, readNotActive, readAllAssociates, readAssociateDetails, readAssociateDetail };
+
+function ingest(msg) {
+  const now = Date.now();
+  phone.lastSeenAt = now;
+  phone.status = msg.status || phone.status;
+  phone.appVersion = msg.appVersion || phone.appVersion;
+  const data = msg.data && typeof msg.data === "object" ? { ...msg.data } : null;
+  const reqId = data?.requestId;
+  if (data) delete data.requestId;
+  if (data) {
+    switch (msg.kind) {
+      case "opd":
+        state.opd = data; state.opdAt = now;
+        state.history = recordReading(state.history, data, new Date(now));
+        state.walkLog = noteWalks(state.walkLog, data.hours, now, boardDay(new Date(now)));   // walk types per picker (!performance)
+        break;
+      case "notactive":
+        state.notActive = data; state.notActiveAt = now;
+        if (state.roster) state.roster = noteActivity(state.roster, data.notActive || [], now);
+        break;
+      case "all": {
+        state.all = data; state.allAt = now;
+        const day = boardDay(new Date(now));
+        const roster = state.roster && state.roster.day === day ? state.roster : emptyRoster(day);
+        state.roster = mergeSnapshot(roster, { day, seen: data.seen || [] }, now);
+        state.rosterUpdated = data.lastUpdated ?? state.rosterUpdated ?? null;
+        break;
+      }
+      case "leaderboard":   // My Associates → Leaderboard: everyone's pick rate today (!performance)
+        state.leaderboard = { day: boardDay(new Date(now)), at: now, rows: data.rows || [], missing: data.missing ?? 0, storeTarget: data.storeTarget ?? null };
+        break;
+    }
+    save();
+    log(`phone: ${msg.kind}${reqId ? ` (${reqId})` : ""}`);
+  }
+  if (reqId) {
+    const i = pending.findIndex((p) => p.id === reqId);
+    if (i >= 0) { const [r] = pending.splice(i, 1); clearTimeout(r.timer); r.resolve(data); }
+  } else if (data && msg.kind !== "assoc") {
+    // A scheduled reading also satisfies a waiting request for the same kind.
+    for (const r of pending.filter((p) => p.kind === msg.kind)) {
+      pending.splice(pending.indexOf(r), 1); clearTimeout(r.timer); r.resolve(data);
+    }
+  }
+  // Hand out requests not sent yet, or sent >90 s ago without an answer (the
+  // phone may have dropped them in a failed pass).
+  const out = [];
+  for (const r of pending) {
+    if (r.sentAt && now - r.sentAt < 90_000) continue;
+    r.sentAt = now;
+    out.push({ id: r.id, kind: r.kind, names: r.names });
+  }
+  return { ok: true, requests: out };
+}
+
+function phoneHealth() {
+  return {
+    lastSeenAt: phone.lastSeenAt || null,
+    lastSeenSec: phone.lastSeenAt ? Math.round((Date.now() - phone.lastSeenAt) / 1000) : null,
+    appVersion: phone.appVersion, status: phone.status, reverse: reverseOk,
+    pending: pending.map((p) => ({ id: p.id, kind: p.kind, names: p.names.length, sent: !!p.sentAt })),
+    allAt: state.allAt || null,
+  };
+}
+
+function body(req) {
+  return new Promise((resolve, reject) => {
+    let b = ""; req.setEncoding("utf8");
+    req.on("data", (c) => { b += c; if (b.length > 2_000_000) { reject(new Error("body too large")); req.destroy(); } });
+    req.on("end", () => resolve(b)); req.on("error", reject);
+  });
+}
+
+// `adb reverse` lets the phone reach this daemon at 127.0.0.1:8770 over USB.
+// It dies with every replug / adb restart, so re-assert it every 30 s.
+function phoneSerial() {
+  if (process.env.GIF_PHONE) return process.env.GIF_PHONE;
+  const lines = tryAdb(["devices"], 5000).split(/\r?\n/).slice(1);
+  const dev = lines.map((l) => l.trim().split(/\s+/)).find(([sn, st]) => sn && st === "device" && !sn.startsWith("emulator-"));
+  return dev ? dev[0] : null;
+}
+function adbServerUp() {
+  return new Promise((resolve) => {
+    const s = net.connect(5037, "127.0.0.1");
+    const done = (up) => { s.destroy(); resolve(up); };
+    s.once("connect", () => done(true)); s.once("error", () => done(false));
+    s.setTimeout(1500, () => done(false));
+  });
+}
+let reverseOk = null;
+async function keepReverse() {
+  // No adb server (e.g. after a PC reboot): any adb call through execFileSync
+  // forks one that inherits our stdout pipe, so the call times out and kills
+  // it. Start one detached with no pipes and check again next tick.
+  if (!process.env.GIF_PHONE && !(await adbServerUp())) {
+    log("phone: adb server not running - starting it");
+    try { spawn(ADB, ["start-server"], { stdio: "ignore", detached: true, windowsHide: true }).unref(); } catch {}
+    reverseOk = false;
+    return;
+  }
+  const sn = phoneSerial();
+  if (!sn) { if (reverseOk !== false) log("phone: not connected over USB"); reverseOk = false; return; }
+  try {
+    adb(["-s", sn, "reverse", `tcp:${PORT}`, `tcp:${PORT}`], 8000);
+    if (reverseOk !== true) log(`phone: adb reverse tcp:${PORT} -> ${sn}`);
+    reverseOk = true;
+  } catch (e) {
+    if (reverseOk !== false) log("phone: adb reverse failed:", String(e.message).split("\n")[0]);
+    reverseOk = false;
+  }
+}
+if (PHONE) { keepReverse(); setInterval(keepReverse, 30_000); setInterval(() => stopReads(), 60_000); }
 
 // ── HTTP ─────────────────────────────────────────────────────────
 function send(res, code, body) {
@@ -319,15 +577,19 @@ const server = http.createServer(async (req, res) => {
             "/opd": "raw OPD Hourly reading (?maxAge=120)",
             "/notactive": "on the clock but not active (?maxAge=90)",
             "/assoc?name=First Last": "one associate's detail",
+            "/leaderboard[?read=1]": "today's pick rate for everyone (cached; read=1 asks the phone)",
             "/breaks?names=First Last|First Last": "scheduled pickers not active, minutes since last seen (?limit=18)",
             "/store": "day roster: every active associate + picks (accumulated; ?pass=1 to advance, ?budget=N)",
+            "/breaklog?day=YYYY-MM-DD": "the day's long-break log, one row per stretch (cache only; default today)",
             "/stop": "stop the emulator now",
           },
         });
       case "/health":
         return send(res, 200, {
           ok: true, version: VERSION, store: HOME_STORE, busy, phase, idleMin: IDLE_MIN,
-          emulator: emulatorBooted() ? "up" : "down",
+          source: SOURCE,
+          emulator: PHONE ? "retired (phone mode)" : emulatorBooted() ? "up" : "down",
+          phone: PHONE ? phoneHealth() : undefined,
           needsSignin: Date.now() < signinBlockedUntil ? signinBlockedUntil : null,
           chat: chat ? chat.status() : { state: "off" },
           opdAt: state.opdAt || null, notActiveAt: state.notActiveAt || null, watchAt: state.watchAt || null,
@@ -337,7 +599,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ...r.value, stale: r.stale, refreshing: r.refreshing });
       }
       case "/summary": {
-        const r = await getOpd(Number(q("maxAge", 120)), Number(q("wait", 600)));
+        const r = await getOpd(Number(q("maxAge", 120)), Number(q("wait", 600)), q("cached") === "1");
         return send(res, 200, { ...summarize(Number(q("window", 60))), stale: r.stale, refreshing: r.refreshing, error: r.error });
       }
       case "/notactive": {
@@ -347,7 +609,7 @@ const server = http.createServer(async (req, res) => {
       case "/assoc": {
         const name = q("name", "");
         if (!name) return send(res, 400, { error: "name required" });
-        return send(res, 200, await run(`assoc ${name}`, () => readAssociateDetail(name)));
+        return send(res, 200, await run(`assoc ${name}`, () => R.readAssociateDetail(name)));
       }
       case "/breaks": {
         // names = who the assignment grid has on PICK this hour (the caller
@@ -362,6 +624,21 @@ const server = http.createServer(async (req, res) => {
         });
         return send(res, 200, { ...r.value, gaps: state.gaps, stale: r.stale, refreshing: r.refreshing, error: r.error });
       }
+      case "/breaklog": {
+        // cache only — never starts a GIF read
+        const now = new Date();
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(q("day", "")) ? q("day") : boardDay(now);
+        return send(res, 200, {
+          day, today: boardDay(now), limitMin: state.watch?.limitMin ?? BREAK_LIMIT_MIN,
+          lastAt: state.breakLog?.lastAt || null, days: breakLogDays(state.breakLog),
+          episodes: breakLogDay(state.breakLog, day, now),
+        });
+      }
+      case "/scope": {
+        // who gets totals read on stop: today's board PICK names + store help (gif-chat, every 10 min)
+        state.scope = q("names", "").split("|").map((x) => x.trim()).filter(Boolean);
+        return send(res, 200, { scope: state.scope.length });
+      }
       case "/store": {
         // ?pass=1 runs one accumulation pass (reads the All list + a few
         // details); otherwise returns the roster built up so far. The SW adds
@@ -371,9 +648,33 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, {
           day: roster.day, roster,
           storeTotal: dayPicked(state.opd),
+          leaderboard: state.leaderboard?.day === roster.day ? state.leaderboard : null,
+          absences: state.absences?.day === roster.day ? state.absences : null,
+          walkMix: state.walkLog?.day === roster.day ? walkMixByName(state.walkLog) : {},
           lastUpdated: state.rosterUpdated ?? null,
           asOf: state.rosterAt || null,
         });
+      }
+      case "/absences": {
+        // POST from the Digital Dashboard SW: today's IVR call-ins (closinglist's
+        // cached pull — no scrape here). Kept in memory/state only, names + type.
+        if (req.method === "POST") {
+          const j = JSON.parse(await body(req) || "{}");
+          state.absences = { day: j.day || boardDay(new Date()), at: Date.now(), fetchedAt: j.fetchedAt ?? null, rows: Array.isArray(j.rows) ? j.rows.slice(0, 200) : [] };
+          save();
+          return send(res, 200, { ok: true, count: state.absences.rows.length });
+        }
+        return send(res, 200, state.absences || { rows: [] });
+      }
+      case "/leaderboard": {
+        // cached by default (commands never read); ?read=1 asks the phone for one now (manual/testing)
+        if (q("read") === "1" && PHONE) await askPhone("leaderboard", [], 150);
+        return send(res, 200, state.leaderboard || { rows: [] });
+      }
+      case "/api/gif/ingest": {
+        if (req.method !== "POST") return send(res, 405, { error: "POST only" });
+        if (!PHONE) return send(res, 409, { error: "daemon is in emulator mode" });
+        return send(res, 200, ingest(JSON.parse(await body(req))));
       }
       case "/stop":
         return send(res, 200, { stopped: stopEmulator("requested") });
@@ -388,7 +689,7 @@ const server = http.createServer(async (req, res) => {
 
 let chat = null;
 server.listen(PORT, "127.0.0.1", () => {
-  log(`gif-daemon on http://127.0.0.1:${PORT} (store ${HOME_STORE}, idle stop ${IDLE_MIN || "off"} min)`);
+  log(`gif-daemon on http://127.0.0.1:${PORT} (store ${HOME_STORE}, source ${SOURCE}${PHONE ? "" : `, idle stop ${IDLE_MIN || "off"} min`})`);
   // Workvivo !commands through QRCallBox's chat relay (dev/gif-chat.mjs);
   // GIF_CHAT=0 turns it off.
   if (process.env.GIF_CHAT !== "0") { chat = createChat({ port: PORT, log }); chat.start(); }

@@ -157,9 +157,9 @@ export async function mount(host, container) {
   const mdy = (iso) => { const [y, m, d] = String(iso || "").split("-"); return y ? `${m}/${d}` : ""; };
 
   /**
-   * Ledger rows (through yesterday) joined with today's side: on today or
-   * not, logged today in the suite, owed today. Leaders on today who have no
-   * ledger row yet (first scheduled day) are added with zeros.
+   * Ledger rows (through yesterday) joined with today's shift. Logged/owed
+   * today are not shown (the user, 2026-10-15): same-day observations can't
+   * be tracked. Leaders on today with no ledger row yet are added with zeros.
    */
   function ledgerView(l) {
     const hasToday = Array.isArray(l.today) && l.todayIso === localIso();
@@ -174,9 +174,6 @@ export async function mount(host, container) {
     }
     return { rows, hasToday };
   }
-  const todayCells = (r) => r.t
-    ? [`${r.t.shiftStart || "?"}–${r.t.shiftEnd || "?"}`, r.t.doneToday || 0, r.t.owe]
-    : ["off", "", ""];
 
   function renderLedger(l) {
     shownLedger = l?.ok ? l : null;
@@ -187,24 +184,24 @@ export async function mount(host, container) {
     const warn = [];
     if (l.toIso < localIso(Date.now() - 86_400_000)) warn.push(`Built ${when(l.at)}: it stops at ${mdy(l.toIso)} and has no today columns for ${mdy(localIso())}. Press Refresh.`);
     else if (!hasToday) warn.push("Built before the today columns existed. Press Refresh.");
+    if (els.from.value && l.fromIso !== els.from.value) warn.push(`This table starts ${mdy(l.fromIso)}. Press Refresh for ${mdy(els.from.value)} on.`);
     if (l.scheduledThrough && !l.observationsThrough) warn.push(`${mdy(l.toIso)} isn't in yet; it counts as not done.`);
     if (hasToday && l.todayScheduleError) warn.push(`Today's schedule: ${l.todayScheduleError}.`);
     if (hasToday && l.liveError) warn.push(`Today's suite submissions could not be read: ${l.liveError}.`);
-    const cols = hasToday ? 10 : 7;
+    const cols = hasToday ? 8 : 7;
     const body = rows.map((r, i) => {
-      const [shift, logged, owe] = todayCells(r);
       return `<tr class="so-coach" data-i="${i}" title="Show day by day">
       <td><span class="so-caret">▸</span> ${esc(r.name)}</td><td>${esc(r.jobName)}</td>
       <td class="num">${r.scheduledDays}</td><td class="num">${r.expected}</td><td class="num">${r.done}</td>
       <td class="num ${r.behind ? "bad" : "good"}">${r.behind ? r.behind : r.ahead ? `+${r.ahead}` : "0"}</td>
       <td class="num">${r.pct ?? ""}${r.pct == null ? "" : "%"}</td>
-      ${hasToday ? `<td class="so-today">${r.t ? esc(shift) : `<span class="so-muted">off</span>`}</td><td class="num so-today">${logged}</td><td class="num so-today ${r.t ? (owe ? "bad" : "good") : ""}">${owe}</td>` : ""}</tr>
+      ${hasToday ? `<td class="so-today">${r.t ? esc(`${r.t.shiftStart || "?"}–${r.t.shiftEnd || "?"}`) : `<span class="so-muted">off</span>`}</td>` : ""}</tr>
       <tr class="so-days" data-i="${i}" hidden><td colspan="${cols}">${dayBreakdown(r, l)}</td></tr>`;
     }).join("");
     els.ledger.innerHTML = `
       ${warn.map((w) => `<div class="so-status error">${esc(w)}</div>`).join("")}
       <div class="so-muted">Through ${mdy(l.toIso)} · ${l.days.length} scheduled days · updated ${when(l.at)}</div>
-      <table><thead><tr><th>Coach</th><th>Title</th><th class="num">Days scheduled</th><th class="num">Expected</th><th class="num">Done</th><th class="num">Behind</th><th class="num">Done %</th>${hasToday ? `<th class="so-today">Today's shift</th><th class="num so-today">Logged today</th><th class="num so-today" title="Behind + 2 − logged today">Owe today</th>` : ""}</tr></thead>
+      <table><thead><tr><th>Coach</th><th>Title</th><th class="num">Days scheduled</th><th class="num">Expected</th><th class="num">Done</th><th class="num">Behind</th><th class="num">Done %</th>${hasToday ? `<th class="so-today">Today's shift</th>` : ""}</tr></thead>
       <tbody>${body}</tbody></table>`;
     els.ledger.querySelectorAll("tr.so-coach").forEach((tr) => tr.addEventListener("click", () => {
       const detail = els.ledger.querySelector(`tr.so-days[data-i="${tr.dataset.i}"]`);
@@ -213,7 +210,7 @@ export async function mount(host, container) {
     }));
   }
 
-  /** One coach, day by day: shift, expected, done, running behind; today last. */
+  /** One coach, day by day: shift, expected, done, running behind; today's shift last. */
   function dayBreakdown(r, l) {
     const days = r.byDay || [];
     if (!days.length && !r.t) return `<span class="so-muted">No per-day detail in this table. Press Refresh.</span>`;
@@ -228,29 +225,29 @@ export async function mount(host, container) {
     });
     if (r.t) {
       lines.push(`<tr class="so-today"><td>${dow(l.todayIso)} ${mdy(l.todayIso)} (today)</td><td>${esc(`${r.t.shiftStart || "?"}–${r.t.shiftEnd || "?"}`)}</td>
-        <td class="num">2</td><td class="num">${r.t.doneToday || 0}</td><td class="num ${r.t.owe ? "bad" : "good"}">owe ${r.t.owe}</td></tr>`);
+        <td class="num">2</td><td class="num so-muted" colspan="2">not tracked same day</td></tr>`);
     }
     return `<table class="so-daytable"><thead><tr><th>Day</th><th>Shift</th><th class="num">Expected</th><th class="num">Done</th><th class="num">Running behind</th></tr></thead>
       <tbody>${lines.join("")}</tbody></table>
       <div class="so-muted">Only days with a shift or an observation are listed. An observation on a day off still counts toward Done.</div>`;
   }
   // Copy / email: the table goes on the clipboard twice, as HTML (Outlook,
-  // Teams and Excel keep it a table) and as tab-separated text.
+  // Teams and Excel keep it a table) and as tab-separated text. Ledger only,
+  // no today columns: only suite submissions count same-day (phone/QR ones
+  // land next morning), so a same-day "owe" was wrong for poster users.
   const LEDGER_HEAD = ["Coach", "Title", "Days scheduled", "Expected", "Done", "Behind", "Done %"];
-  const TODAY_HEAD = ["Today's shift", "Logged today", "Owe today"];
   const ledgerCells = (r) => [r.name, r.jobName, r.scheduledDays, r.expected, r.done,
     r.behind ? r.behind : r.ahead ? `+${r.ahead}` : 0, r.pct == null ? "" : `${r.pct}%`];
   const ledgerSubject = (l) => `Safety observations behind since ${mdy(l.fromIso)}`;
   function ledgerClip(l) {
-    const { rows, hasToday } = ledgerView(l);
-    const head = hasToday ? [...LEDGER_HEAD, ...TODAY_HEAD] : LEDGER_HEAD;
-    const cells = (r) => hasToday ? [...ledgerCells(r), ...todayCells(r)] : ledgerCells(r);
+    const rows = l.rows;
+    const head = LEDGER_HEAD;
+    const cells = ledgerCells;
     const notes = [`Counts ${mdy(l.fromIso)}–${mdy(l.toIso)}, 2 per scheduled day.`];
     const td = (v, i, head) => {
       const tag = head ? "th" : "td";
       const align = i >= 2 ? "right" : "left";
-      const bg = i >= LEDGER_HEAD.length ? "background:#f3f6fb;" : "";
-      return `<${tag} style="border:1px solid #bbb;padding:3px 8px;text-align:${align};${bg}">${esc(String(v))}</${tag}>`;
+      return `<${tag} style="border:1px solid #bbb;padding:3px 8px;text-align:${align}">${esc(String(v))}</${tag}>`;
     };
     const html = `<p><b>${esc(ledgerSubject(l))}</b><br>${notes.map(esc).join("<br>")}</p>
       <table style="border-collapse:collapse;font-family:Segoe UI,Arial,sans-serif;font-size:13px">
@@ -311,7 +308,7 @@ export async function mount(host, container) {
     const s = r.settings;
     els.store.value = s.storeNbr; els.role.value = s.role; els.channel.value = s.channel;
     els.checkAt.value = s.postAt; els.enabled.checked = s.checkEnabled; els.ai.checked = s.useAi;
-    if (!els.from.value) els.from.value = s.ledgerFrom;
+    if (!els.from.value) els.from.value = localIso().slice(0, 8) + "01";   // 1st of this month
     els.aiState.textContent = r.aiReady ? "(on)" : "(sign in on the Cx page)";
     els.next.textContent = s.checkEnabled
       ? (r.nextCheckAt ? `next post ${when(r.nextCheckAt)} to “${s.channel}”` : "")
@@ -321,7 +318,7 @@ export async function mount(host, container) {
     e.preventDefault();
     await send("save_settings", { patch: {
       storeNbr: els.store.value, role: els.role.value, channel: els.channel.value, postAt: els.checkAt.value,
-      checkEnabled: els.enabled.checked, useAi: els.ai.checked, ledgerFrom: els.from.value,
+      checkEnabled: els.enabled.checked, useAi: els.ai.checked,
     } });
     loadSettings();
   });

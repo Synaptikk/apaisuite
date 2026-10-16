@@ -39,6 +39,8 @@
 .module-doorcatch .dc-setup summary { cursor: pointer; font-weight: var(--fw-semi); font-size: var(--fs-sm); }
 .module-doorcatch .dc-setup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--sp-3); margin-top: var(--sp-3); }
 .module-doorcatch .dc-card { display: grid; gap: var(--sp-2); align-content: start; border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: var(--sp-3) var(--sp-4); background: var(--apai-bg-elev); }
+.module-doorcatch .dc-team { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-sm); columns: 2; }
+.module-doorcatch .dc-team small { color: var(--apai-muted); }
 .module-doorcatch .dc-card h2 { margin: 0; font-size: var(--fs-md); }
 .module-doorcatch .dc-card .dc-field input { flex: 1; }
 .module-doorcatch .dc-store { max-width: 6em; }

@@ -322,3 +322,57 @@ export function trackingUrl(l) {
 }
 
 export const CARRIER = { FXFE: "FedEx Express", FDE: "FedEx", FDEG: "FedEx Ground", VENTK: "Vendor truck" };
+
+// ── delivery plan ─────────────────────────────────────────────────────────
+/** Lines still expected to arrive: on the way, or past due but recent (late). */
+export const isIncoming = (l) => ["submitted", "ordered", "shipped"].includes(l.stage) && !l.stale;
+
+/**
+ * Who has supplies arriving on which day, and whether they work that day, so
+ * the put-away can be handed to someone else when they're off (the user,
+ * 2026-10-15). Past-due (late) lines go in their own group with no schedule
+ * check: many D-99 lines are already on the shelf without a delivered flag,
+ * so flagging their orderers as off would be noise.
+ *
+ * @param {Array} lines              flatLines() rows
+ * @param {object} p
+ * @param {(win:string)=>{name:string, legal?:string, job?:string}} p.who
+ * @param {Object<string, null|{people:Object<string,string>}>} p.schedule
+ *        per day: null when that day's schedule isn't posted yet, else
+ *        name key → shift text for everyone scheduled
+ * @param {Object<string,string>} [p.roster]   name key → title for anyone on a recent schedule
+ * @param {string} p.today
+ * @returns {Array<{day:string, late:boolean, people:Array<{win, name, job, status, shift, lines:Array}>}>}
+ *   dated days in order, then the late group (day ""), then undated (day "").
+ *   status: "working" | "off" | "unscheduled" (never on a recent schedule) | "unknown" (no schedule for that day or no date) | "late"
+ */
+export function deliveryPlan(lines, { who, schedule = {}, roster = {}, today }) {
+  const days = new Map();
+  for (const l of lines) {
+    if (!isIncoming(l)) continue;
+    const group = l.late ? "late" : (l.eta || "");
+    if (!days.has(group)) days.set(group, new Map());
+    const byWin = days.get(group);
+    if (!byWin.has(l.win)) byWin.set(l.win, []);
+    byWin.get(l.win).push(l);
+  }
+  const out = [];
+  for (const [group, byWin] of days) {
+    const late = group === "late";
+    const day = late ? "" : group;
+    const sched = day ? schedule[day] : null;
+    const people = [...byWin].map(([win, ls]) => {
+      const p = who(win);
+      const keys = [nameKey(p.name), nameKey(p.legal)].filter(Boolean);
+      const shift = sched ? keys.map((k) => sched.people?.[k]).find(Boolean) || "" : "";
+      const known = keys.some((k) => roster[k]) || keys.some((k) => sched?.people?.[k]);
+      const status = late ? "late" : !sched ? "unknown" : shift ? "working" : known ? "off" : "unscheduled";
+      return { win, name: p.name, job: p.job || "", status, shift, lines: ls.sort((a, b) => a.desc.localeCompare(b.desc)) };
+    });
+    const rank = { off: 0, unscheduled: 1, unknown: 2, late: 2, working: 3 };
+    people.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    out.push({ day, late, people });
+  }
+  const order = (d) => d.day || (d.late ? "9998" : "9999");
+  return out.sort((a, b) => order(a).localeCompare(order(b)));
+}

@@ -7,8 +7,8 @@
 // Field_Dashboard never holds today's observations.
 //
 // Who is checked (the user's rule, 2026-10-08): every schedule title with
-// "Coach" in it, plus Store Manager and Ops Manager, whose shift today starts
-// before the check time. An overnight coach starting at 9 PM has not worked
+// "Coach" in it, plus Store Manager, Emerging Store Manager (added 2026-10-15)
+// and Ops Manager, whose shift today starts before the check time. An overnight coach starting at 9 PM has not worked
 // yet at 4:45 and is left out. Hourly managers ("Vision Center Mgr Hrly") and
 // "People Lead" are not coaches.
 //
@@ -25,7 +25,7 @@ import { nameKeys, clockToMin } from "../../safetyagent/lib/oncall.js";
 export const MIN_PER_DAY = 2;
 export const CHECK_AT_MIN = 16 * 60 + 45;   // 4:45 PM local
 
-const LEADER_TITLE_RE = /\bcoach\b|^store manager\b|\bops manager\b|\boperations manager\b|\bstore lead\b/i;
+const LEADER_TITLE_RE = /\bcoach\b|^store manager\b|^emerging store manager\b|\bops manager\b|\boperations manager\b|\bstore lead\b/i;
 
 export const isCheckedTitle = (jobName) => LEADER_TITLE_RE.test(String(jobName || ""));
 

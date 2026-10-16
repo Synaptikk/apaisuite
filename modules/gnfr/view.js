@@ -10,6 +10,7 @@
 import {
   flatLines, cartState, personOf, regulars, duplicates, people, spendBy,
   trackingUrl, parseApprovalLog, STAGE_LABEL, CARRIER, AREAS, daysBetween,
+  deliveryPlan, isIncoming,
 } from "./lib/model.js";
 
 const NO_TITLE = "Not on recent schedule";
@@ -667,6 +668,79 @@ export async function mount(host, container) {
     a.download = `supply-${tab === "regulars" ? "regular-items" : "orders"}-${Number(data.store)}-${view.today}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+
+  // ── delivery plan email ──────────────────────────────────────────────────
+  // Everything still on the way, by delivery day → orderer → items, with
+  // whether the orderer works that day (WFM schedule). Orderers who are off
+  // are flagged so someone else can be lined up for the put-away. Copied to
+  // the clipboard as HTML + text, then an Outlook compose opens to paste into.
+  const PLAN_NOTE = {
+    off: "OFF that day: plan someone else to put it away",
+    unscheduled: "Not on the store schedule: confirm who will put it away",
+    unknown: "Schedule not posted yet",
+    late: "Past due: check whether it's already here",
+  };
+  function planClip(plan) {
+    const store = Number(data.store);
+    const subject = `Supply deliveries to put away · Store ${store} · as of ${fmtDay(view.today, { weekday: "short", month: "short", day: "numeric" })}`;
+    const dayLabel = (d) => d.late ? "Past due, not marked delivered (may already be here)" : !d.day ? "No delivery date yet" : `${d.day === view.today ? "Today, " : ""}${fmtDay(d.day, { weekday: "long", month: "short", day: "numeric" })}`;
+    const itemText = (l) => `${qtyText(l.qty, l.uom)} × ${l.desc}${l.area ? ` (${l.area})` : ""}${l.late && l.eta ? ` [was due ${fmtDay(l.eta)}]` : ""}`;
+    const flagged = plan.flatMap((d) => d.people.filter((p) => p.status === "off" || p.status === "unscheduled").map((p) => ({ d, p })));
+    const nItems = plan.reduce((s, d) => s + d.people.reduce((t, p) => t + p.lines.length, 0), 0);
+    const nLate = plan.filter((d) => d.late).reduce((s, d) => s + d.people.reduce((t, p) => t + p.lines.length, 0), 0);
+    const counts = `${plural(nItems - nLate, "item")} on the way${nLate ? `, ${nLate} past due` : ""}`;
+    const shortDay = (d) => d.day ? fmtDay(d.day, { weekday: "short", month: "short", day: "numeric" }) : "no date";
+
+    const td = "border:1px solid #bbb;padding:4px 8px;vertical-align:top;text-align:left";
+    const statusCell = (p) => p.status === "working" ? `Working ${esc(p.shift)}` : `<b style="color:${p.status === "unknown" || p.status === "late" ? "#555" : "#b00020"}">${esc(PLAN_NOTE[p.status])}</b>`;
+    const rowBg = (p) => p.status === "off" ? "background:#fde7e9;" : p.status === "unscheduled" ? "background:#fff4ce;" : "";
+    const html = `<p><b>${esc(subject)}</b><br>${counts}, from ${plural(new Set(plan.flatMap((d) => d.people.map((p) => p.win))).size, "orderer")}. Delivery dates are MyGNFR's estimates.</p>
+      ${flagged.length ? `<p style="color:#b00020"><b>Needs someone else to put away (${flagged.length}):</b><br>${flagged.map(({ d, p }) => `${esc(p.name)}${p.job ? `, ${esc(p.job)}` : ""}: ${esc(d.day ? fmtDay(d.day, { weekday: "short", month: "short", day: "numeric" }) : "no date")}, ${plural(p.lines.length, "item")}${p.status === "unscheduled" ? " (not on the schedule)" : " (off)"}`).join("<br>")}</p>` : `<p>Everyone with a delivery is working that day.</p>`}
+      ${plan.map((d) => `<h3 style="margin:14px 0 4px;font-size:15px">${esc(dayLabel(d))}</h3>
+      <table style="border-collapse:collapse;font-family:Segoe UI,Arial,sans-serif;font-size:13px">
+        <thead><tr style="background:#eee"><th style="${td}">Ordered by</th><th style="${td}">Title</th><th style="${td}">That day</th><th style="${td}">Items</th></tr></thead>
+        <tbody>${d.people.map((p) => `<tr style="${rowBg(p)}"><td style="${td}">${esc(p.name)}</td><td style="${td}">${esc(p.job)}</td><td style="${td}">${statusCell(p)}</td><td style="${td}">${p.lines.map((l) => esc(itemText(l))).join("<br>")}</td></tr>`).join("")}</tbody>
+      </table>`).join("")}`;
+    const text = [subject, `${counts}. Delivery dates are MyGNFR's estimates.`, "",
+      ...(flagged.length ? ["NEEDS SOMEONE ELSE TO PUT AWAY:", ...flagged.map(({ d, p }) => `  ${p.name}${p.job ? `, ${p.job}` : ""}: ${shortDay(d)}, ${plural(p.lines.length, "item")}${p.status === "unscheduled" ? " (not on the schedule)" : " (off)"}`), ""] : []),
+      ...plan.flatMap((d) => [dayLabel(d), ...d.people.flatMap((p) => [
+        `  ${p.name}${p.job ? ` (${p.job})` : ""}: ${p.status === "working" ? `working ${p.shift}` : PLAN_NOTE[p.status]}`,
+        ...p.lines.map((l) => `    - ${itemText(l)}`)]), ""]),
+    ].join("\n");
+    return { subject, html, text, flagged: flagged.length, nItems };
+  }
+  const planBtn = $("#gnfr-plan");
+  planBtn.addEventListener("click", async () => {
+    if (!data || !view) return;
+    const today = view.today;
+    const incoming = flatLines(Object.values(data.carts || {}), today).filter(isIncoming);
+    if (!incoming.length) { host.ui.toast("Nothing is on the way right now.", { kind: "info" }); return; }
+    planBtn.disabled = true;
+    try {
+      const days = [...new Set(incoming.filter((l) => !l.late).map((l) => l.eta).filter(Boolean))];
+      const res = await host.messaging.sendRaw("delivery_schedule", { store: data.store, days }, { timeoutMs: 60_000 })
+        .catch((e) => ({ ok: false, error: String(e?.message || e) }));
+      if (!res?.ok) { host.ui.toast(`Couldn't read the schedule: ${res?.error || "no answer"}`, { kind: "error" }); return; }
+      const plan = deliveryPlan(incoming, { who: P, schedule: res.schedule, roster: data.roster?.map || {}, today });
+      const { subject, html, text, flagged, nItems } = planClip(plan);
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      })]);
+      // Also on the clipboard, in case the draft can't be filled.
+      host.ui.toast("Opening an Outlook draft…", { kind: "info" });
+      const draft = await host.messaging.sendRaw("open_draft", { subject, html }, { timeoutMs: 120_000 })
+        .catch((e) => ({ ok: false, error: String(e?.message || e) }));
+      host.ui.toast(draft?.ok
+        ? `Draft ready in Outlook (${plural(nItems, "item")}${flagged ? `, ${flagged} flagged` : ""}): add recipients and send.`
+        : `Couldn't fill the draft (${draft?.error || "no answer"}). The plan is copied: start a new email and press Ctrl+V.`,
+        { kind: draft?.ok ? "ok" : "error" });
+    } catch (e) {
+      host.ui.toast(`Copy failed: ${e.message}`, { kind: "error" });
+    } finally {
+      planBtn.disabled = false;
+    }
   });
 
   // ── load / refresh ───────────────────────────────────────────────────────

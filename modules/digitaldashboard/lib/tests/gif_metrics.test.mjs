@@ -49,12 +49,16 @@ test("express drop-ins: first reading counts what is left, later rises add", () 
   assert.equal(r.samples, 3);
 });
 
-test("series restarts when the running total drops, and on a new day", () => {
+test("a drop in the running total rebases the series (keeps the hour); a new day restarts it", () => {
   let h = recordReading(null, { hours: [{ picked: 100 }] }, at(10));
   h = recordReading(h, { hours: [{ picked: 160 }] }, at(10, 30));
   assert.equal(h.series.length, 2);
+  // 160 → 50: history shifts down by 110, so 10:00→10:30 still reads +60 and the dip counts as 0.
   h = recordReading(h, { hours: [{ picked: 50 }] }, at(10, 40));
-  assert.equal(h.series.length, 1);
+  assert.equal(h.series.length, 3);
+  assert.deepEqual(h.series.map(([, v]) => v), [-10, 50, 50]);
+  h = recordReading(h, { hours: [{ picked: 90 }] }, at(11));
+  assert.equal(h.series.at(-1)[1] - h.series[0][1], 100);   // 60 before the dip + 40 after
   const next = recordReading(h, { hours: [{ picked: 5 }] }, new Date(2026, 9, 4, 6, 0));
   assert.equal(next.day, "2026-10-04");
   assert.equal(next.series.length, 1);

@@ -890,6 +890,8 @@ async function runBoardSync() {
           updatedAt:   new Date().toISOString(),
           finalized:   false,
           finalizedAt: null,
+          source:      "board",
+          boardAppliedAt: result.at,
         });
       }
       snaps[plan.date] = {
@@ -939,6 +941,7 @@ async function runBoardSync() {
       if (!merged.unchanged) {
         await assignments.put(BOARD_STORE, date, {
           ...doc, associates: merged.associates, updatedAt: new Date().toISOString(),
+          source: "board", boardAppliedAt: result.at,
         });
       }
       snap.names = names;

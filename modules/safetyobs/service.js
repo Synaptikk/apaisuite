@@ -15,7 +15,7 @@
 //     4:45 PM "under 2 today" check flagged nearly every coach (measured
 //     2026-10-08: 1 observation for the day at both 10:49 AM and 3:54 PM).
 //     So at POST time (default 9:00) the alarm builds the ledger through
-//     yesterday (2 per scheduled day since ledgerFrom, lib/coach_check.js),
+//     yesterday (2 per scheduled day, current month to date, lib/coach_check.js),
 //     reads today's schedule (Digital Metrics' WFM import), and @mentions in
 //     the "1458 management" Workvivo chat each leader on today who is behind:
 //     "complete N today", N = behind + today's 2. Nothing is posted when
@@ -60,10 +60,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // `checkAt` (the old 16:45 "under 2 today" post) is ignored.
   postAt: "09:00",
   useAi: true,
-  // First day Digital Metrics holds a 1458 schedule doc; nothing earlier can
-  // say who was scheduled, so the ledger cannot start before it.
-  ledgerFrom: "2026-08-22",
 });
+
+// First day Digital Metrics holds a 1458 schedule doc; nothing earlier can
+// say who was scheduled, so the ledger never starts before it. The ledger
+// defaults to the 1st of the current month (the user, 2026-10-15); an old
+// stored `ledgerFrom` setting is ignored.
+const LEDGER_FLOOR = "2026-08-22";
+const monthStartIso = (dateIso) => dateIso.slice(0, 8) + "01";
 
 const GATEWAY = "https://puppy-backend.walmart.com/anthropic/v1/messages";
 
@@ -149,7 +153,17 @@ async function runCheck({ post, trigger }) {
       return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: `No schedule for store ${s.storeNbr} on ${dateIso}.` });
     }
 
-    const led = await ledgerThrough(s, throughIso);
+    // The post counts the current month to date only (never before
+    // LEDGER_FLOOR). On the 1st there is no completed day of the month yet.
+    const monthStart = monthStartIso(dateIso);
+    const fromIso = monthStart > LEDGER_FLOOR ? monthStart : LEDGER_FLOOR;
+    if (throughIso < fromIso) {
+      const rec = { dateIso, throughIso, fromIso, at: Date.now(), trigger, ok: true, checked: [], behind: [], message: null, posted: false };
+      if (post) { rec.posted = true; rec.nothingToPost = true; await chrome.storage.local.set({ [KEY.posted]: dateIso }); }
+      return saveCheck(rec);
+    }
+
+    const led = await ledgerThrough(s, throughIso, fromIso);
     if (!led.ok) return saveCheck({ dateIso, at: Date.now(), trigger, ok: false, error: led.error });
 
     const mem = await listChannelMembers({ channelName: s.channel });
@@ -254,7 +268,7 @@ async function liveToday(storeNbr, dateIso) {
   }
 }
 
-// ── Ledger: 2 per scheduled day since ledgerFrom ───────────────────
+// ── Ledger: 2 per scheduled day since the 1st of the month ─────────
 
 function daysBetween(fromIso, toIso) {
   const out = [];
@@ -299,7 +313,8 @@ async function leaderSchedules(storeNbr, dates) {
  * observations the report cannot show yet.
  */
 async function ledgerThrough(s, throughIso, from) {
-  const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from || "") ? from : s.ledgerFrom;
+  const asked = /^\d{4}-\d{2}-\d{2}$/.test(from || "") ? from : monthStartIso(throughIso);
+  const fromIso = asked > LEDGER_FLOOR ? asked : LEDGER_FLOOR;
   const days = await leaderSchedules(s.storeNbr, daysBetween(fromIso, throughIso));
   if (!days.length) return { ok: false, error: `No schedules for store ${s.storeNbr} from ${fromIso} to ${throughIso}.` };
   const obs = await fetchSubmitters(s.storeNbr, fromIso, throughIso);
@@ -510,7 +525,6 @@ export const handlers = {
     if (p.checkEnabled != null) patch.checkEnabled = !!p.checkEnabled;
     if (p.postAt != null && /^\d{1,2}:\d{2}$/.test(p.postAt)) patch.postAt = p.postAt;
     if (p.useAi != null) patch.useAi = !!p.useAi;
-    if (p.ledgerFrom != null && /^\d{4}-\d{2}-\d{2}$/.test(p.ledgerFrom)) patch.ledgerFrom = p.ledgerFrom;
     const settings = await writeSettings(patch);
     const nextCheckAt = await ensureCheckAlarm();
     return { ok: true, settings, nextCheckAt };

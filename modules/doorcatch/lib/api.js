@@ -9,6 +9,10 @@
 //                        status, note, reviewer, caughtAt, createdAt, reviewedAt }] }
 //   POST /api/door/review  X-API-Key  { store, id, status, note, reviewer }
 //   POST /api/door/hosts   X-API-Key  { store, hosts }
+//   POST /api/door/team    X-API-Key  { store, team: [{ name, jobName }], extra?, by }
+//        → { ok, team, extra, teamAt }
+//   POST /api/door/access  { store, name, win } → { ok, reviewKey, submitKey, match } | 403
+//        (no key: unlocks for a name on the store's AP schedule or extra list)
 //   401 = wrong review key for that store.
 //
 // The door hosts' page is https://qrcallbox.com/door?s=<store>&k=<submitKey>.
@@ -56,6 +60,12 @@ export const setReview = ({ storeNbr, reviewKey, id, status, note, reviewer }) =
 
 export const setHosts = ({ storeNbr, reviewKey, hosts }) =>
   call("/api/door/hosts", { method: "POST", body: { store: storeNbr, hosts }, reviewKey });
+
+export const setTeam = ({ storeNbr, reviewKey, team, extra, by }) =>
+  call("/api/door/team", { method: "POST", body: { store: storeNbr, team, extra, by }, reviewKey });
+
+export const requestAccess = ({ storeNbr, name, win }) =>
+  call("/api/door/access", { method: "POST", body: { store: storeNbr, name, win } });
 
 // CSV of the catches as listed: one row per item line, so a catch with three
 // UPCs is three rows sharing its id, time and host.

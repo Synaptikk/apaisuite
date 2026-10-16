@@ -5,13 +5,18 @@
 // lib/audit.js finds late clock-ins set back inside the 9-minute grace,
 // clock-ins kept exactly on the hour, and punches not clocked live.
 //
-// Pulled days are cached in browser storage (`auditDays`, GPS already dropped
-// in the page) so a re-run only pulls new days; days in the last 14 are
-// re-pulled once they are 6 h old because edits keep landing for days.
+// Pulled days are cached in browser storage, one key per day (`auditDay:<date>`,
+// GPS already dropped in the page), so a re-run only pulls new days. Days in
+// the last 14 are re-pulled once per calendar day (edits keep landing for
+// days), not every 6 h: that re-pulled half a 28-day range on every run.
+// The cached days for the range are shown on open, before any pull.
+// (2026-10-09: was one `auditDays` blob rewritten after every day, with save
+// failures swallowed; migrated on first open.)
 
 import { analyzeStore, auditCsv, fmtMin, punchName, SOURCE_LABEL, GRACE, BIG_LATE } from "./lib/audit.js";
 
-const CACHE = "auditDays";
+const OLD_CACHE = "auditDays";
+const DAY = (d) => `auditDay:${d}`;
 const KEEP_DAYS = 120;
 const iso = (d) => d.toLocaleDateString("en-CA");
 
@@ -65,45 +70,107 @@ export function mountAudit(host, root) {
   const call = (type, payload, timeoutMs = 3 * 60_000) => host.messaging.sendRaw(type, payload, { timeoutMs })
     .catch((e) => ({ ok: false, error: String(e?.message || e) }));
 
-  async function run() {
-    const from = els.from.value, to = els.to.value;
-    if (!from || !to || from > to) { say("Pick a start date on or before the end date.", "error"); return; }
-    const dates = [];
+  // ── Day cache ──
+  async function migrateOldCache() {
+    let old = null;
+    try { old = await host.storage.local.get(OLD_CACHE); } catch { return; }
+    if (!old || typeof old !== "object") return;
+    try {
+      await host.storage.local.set(Object.fromEntries(Object.entries(old).map(([d, v]) => [DAY(d), v])));
+      await host.storage.local.remove(OLD_CACHE);
+    } catch { /* keep the old blob; read it next time */ }
+  }
+  async function readDays(dates) {
+    const out = {};
+    for (const d of dates) {
+      try { const v = await host.storage.local.get(DAY(d)); if (v?.rows) out[d] = v; } catch { /* missing */ }
+    }
+    return out;
+  }
+  /** Drop cached days beyond the newest KEEP_DAYS. */
+  async function pruneDays() {
+    try {
+      const all = Object.keys(await host.storage.local.get()).filter((k) => k.startsWith("auditDay:")).sort();
+      if (all.length > KEEP_DAYS) await host.storage.local.remove(all.slice(0, all.length - KEEP_DAYS));
+    } catch { /* next time */ }
+  }
+  const rangeDates = () => {
+    const from = els.from.value, to = els.to.value, dates = [];
+    if (!from || !to || from > to) return null;
     for (let d = new Date(`${from}T12:00`); iso(d) <= to; d.setDate(d.getDate() + 1)) dates.push(iso(d));
+    return dates;
+  };
+
+  async function analyze(dates, cache, store, note) {
+    const have = dates.filter((d) => cache[d] && cache[d].store === store);
+    if (!have.length) return false;
+    say("Reading schedules…");
+    const st = await call("audit_starts", { store, dates: have });
+    if (!alive) return false;
+    result = analyzeStore(have.map((d) => ({ date: d, rows: cache[d].rows })), st.ok ? st.starts : {});
+    const oldest = Math.min(...have.map((d) => cache[d].pulledAt || 0));
+    result.range = { from: have[0], to: have.at(-1), days: have.length, asked: dates.length, store, schedDays: Object.keys(st.starts || {}).length, oldest };
+    say(note || "");
+    render();
+    return true;
+  }
+
+  /** On open: show whatever is cached for the range, no pulling. */
+  async function showCached() {
+    await migrateOldCache();
+    const dates = rangeDates();
+    if (!dates || !alive) return;
+    const cache = await readDays(dates);
+    const stores = [...new Set(Object.values(cache).map((c) => c.store))];
+    if (stores.length !== 1) {
+      result = null; els.out.hidden = true;
+      say(stores.length ? "" : `Nothing cached for this range yet. Run review to pull it (~20 s a day).`);
+      return;
+    }
+    const n = Object.keys(cache).length;
+    await analyze(dates, cache, stores[0],
+      `Showing ${n} of ${dates.length} days from the cache. Run review to pull ${n < dates.length ? "the rest and " : ""}refresh recent days.`);
+  }
+
+  async function run() {
+    const dates = rangeDates();
+    if (!dates) { say("Pick a start date on or before the end date.", "error"); return; }
     if (dates.length > 93) { say("Pick 93 days or fewer.", "error"); return; }
     stop = false; els.run.disabled = true; els.stop.hidden = false;
     try {
       say("Finding your store team in the timesheet…");
       const team = await call("audit_team", {});
       if (!team.ok) { say(team.error, "error"); return; }
-      let cache = {};
-      try { cache = (await host.storage.local.get(CACHE)) || {}; } catch { /* start empty */ }
+      await migrateOldCache();
+      const cache = await readDays(dates);
       const recent = iso(new Date(Date.now() - 14 * 86_400_000));
-      const stale = (d) => !cache[d] || cache[d].store !== team.store || els.fresh.checked
-        || (d >= recent && Date.now() - cache[d].pulledAt > 6 * 3_600_000);
+      const today = iso(new Date());
+      const pulledOn = (c) => iso(new Date(c.pulledAt || 0));
+      const isNew = (d) => !cache[d] || cache[d].store !== team.store;
+      const stale = (d) => isNew(d) || els.fresh.checked || (d >= recent && pulledOn(cache[d]) < today);
       const need = dates.filter(stale);
+      const counts = { cached: dates.length - need.length, fresh: need.filter(isNew).length, again: need.filter((d) => !isNew(d)).length };
       const t0 = Date.now();
-      let lastPages = "";
+      let saveError = null, pulled = 0, failed = null;
       for (const [i, d] of need.entries()) {
         if (stop || !alive) break;
         const left = i ? Math.round(((Date.now() - t0) / i) * (need.length - i) / 60_000) : null;
-        say(`Loading day ${i + 1} of ${need.length}${left != null ? ` · ~${left} min left` : ""}…`);
+        say(`Loading day ${i + 1} of ${need.length} (${counts.cached} from cache)${left != null ? ` · ~${left} min left` : ""}…`);
         const res = await call("audit_day", { teamId: team.teamId, date: d });
-        if (!res.ok) { say(`${d}: ${res.error}`, "error"); break; }
-        lastPages = `last day ${res.pages} pages of ${res.pageSize}`;
+        if (!res.ok) { failed = `${d}: ${res.error}`; break; }
+        pulled++;
         cache[d] = { store: team.store, pulledAt: res.pulledAt, rows: res.rows };
-        const keep = Object.keys(cache).sort().slice(-KEEP_DAYS);
-        cache = Object.fromEntries(keep.map((k) => [k, cache[k]]));
-        try { await host.storage.local.set(CACHE, cache); } catch { /* still shown */ }
+        try { await host.storage.local.set(DAY(d), cache[d]); }
+        catch (e) { saveError = String(e?.message || e); }
       }
-      const have = dates.filter((d) => cache[d] && cache[d].store === team.store);
-      say("Reading schedules…");
-      const st = await call("audit_starts", { store: team.store, dates: have });
-      if (!alive) return;
-      result = analyzeStore(have.map((d) => ({ date: d, rows: cache[d].rows })), st.ok ? st.starts : {});
-      result.range = { from: have[0], to: have.at(-1), days: have.length, asked: dates.length, store: team.store, schedDays: Object.keys(st.starts || {}).length };
-      say(stop ? `Stopped — showing the ${have.length} day(s) pulled so far.` : "");
-      render();
+      if (pulled) await pruneDays();
+      const bits = [`${counts.cached} day(s) from the cache`, `${pulled} pulled${counts.again ? ` (${counts.again} recent day(s) re-pulled for late edits)` : ""}`];
+      if (stop) bits.unshift("Stopped");
+      if (failed) bits.push(`stopped at ${failed}`);
+      if (saveError) bits.push(`NOT saved to the cache: ${saveError}`);
+      const ok = await analyze(dates, cache, team.store, bits.join(" · ") + ".");
+      if (!ok) say(failed || "No days pulled.", "error");
+      else if (failed || saveError) els.msg.classList.add("error");
     } finally {
       els.run.disabled = false; els.stop.hidden = true;
     }
@@ -122,7 +189,7 @@ export function mountAudit(host, root) {
     els.out.hidden = false;
     const s = result.store, r = result.range;
     const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "–");
-    els.store.innerHTML = `<b>Store ${esc(r.store)}</b>, ${esc(r.from || "")} to ${esc(r.to || "")} (${r.days} of ${r.asked} days) ·
+    els.store.innerHTML = `<b>Store ${esc(r.store)}</b>, ${esc(r.from || "")} to ${esc(r.to || "")} (${r.days} of ${r.asked} days${r.oldest ? `, oldest pull ${esc(new Date(r.oldest).toLocaleString("en-US", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }))}` : ""}) ·
       ${s.punches} punches, <b>${pct(s.nonDevice, s.punches)}</b> not clocked live · clock-ins on the hour: <b>${pct(s.insOnHour, s.ins)}</b>`;
     const q = els.filter.value.trim().toUpperCase();
     const rows = result.people
@@ -190,5 +257,10 @@ export function mountAudit(host, root) {
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   });
 
+  showCached().catch(() => {});
+  // A new range shows its cached days straight away too.
+  const reshow = () => { if (!els.run.disabled) showCached().catch(() => {}); };
+  els.from.addEventListener("change", reshow); els.to.addEventListener("change", reshow);
+  root.querySelectorAll("[data-days]").forEach((btn) => btn.addEventListener("click", reshow));
   return () => { alive = false; stop = true; };
 }

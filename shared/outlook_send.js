@@ -92,6 +92,45 @@ export async function sendOutlookMail({ to, subject, text = "", images = [], onS
   }
 }
 
+/**
+ * Open a draft for the user to finish and send themselves: a foreground
+ * compose tab with the subject set and `html` pasted into the body. Nothing
+ * is sent. Opening the tab from the extension (not a page link) matters: in
+ * the user's normal Edge a clicked deeplink landed on the inbox with no draft
+ * (2026-10-15), so the in-page step also falls back to clicking "New mail".
+ *
+ * @param {object} p
+ * @param {string} p.subject
+ * @param {string} p.html     body, pasted as text/html
+ * @returns {Promise<{ok:boolean, error?:string, errorClass?:string}>}
+ */
+export async function openOutlookDraft({ subject = "", html = "" }) {
+  try {
+    const tab = await chrome.tabs.create({ url: `${COMPOSE_URL}?subject=${encodeURIComponent(subject)}`, active: true });
+    // OWA redirects/reloads while it boots, which kills an injected script
+    // mid-wait (the result comes back empty). Wait for each load to finish
+    // and re-inject until the page answers.
+    let filled = null;
+    const started = Date.now();
+    while (!filled && Date.now() - started < LOAD_TIMEOUT_MS + 30_000) {
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t) return { ok: false, errorClass: "COMPOSE", error: "the Outlook tab was closed" };
+      if (t.status !== "complete") { await sleep(500); continue; }
+      filled = await withTimeout(chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: "MAIN",
+        func: IN_PAGE_DRAFT,
+        args: [{ html, subject, timeoutMs: LOAD_TIMEOUT_MS }],
+      }).then((r) => r?.[0]?.result), LOAD_TIMEOUT_MS + 15_000, { ok: false, errorClass: "TIMEOUT", error: "Outlook took too long to open the draft" });
+      if (filled?.ok === false && filled.error && !/Frame with ID|was removed|No frame|context/i.test(filled.error)) break;
+      if (!filled?.ok) { filled = null; await sleep(1000); }
+    }
+    return filled?.ok ? { ok: true } : { ok: false, errorClass: filled?.errorClass || "COMPOSE", error: filled?.error || "couldn't fill the draft" };
+  } catch (e) {
+    return { ok: false, errorClass: "EXCEPTION", error: String(e?.message ?? e) };
+  }
+}
+
 function withTimeout(p, ms, fallback) {
   return Promise.race([p.catch((e) => ({ ok: false, error: String(e?.message ?? e) })), sleep(ms).then(() => fallback)]);
 }
@@ -161,6 +200,47 @@ async function IN_PAGE_FILL({ html, images, timeoutMs }) {
   return { ok: true, images: got, toText: toText.slice(0, 200) };
 }
 
+async function IN_PAGE_DRAFT({ html, subject, timeoutMs }) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const editor = () => document.querySelector('[aria-label="Message body"][contenteditable="true"]');
+  const t0 = Date.now();
+  let clickedNew = false;
+  while (!editor() && Date.now() - t0 < timeoutMs) {
+    if (/login\.microsoftonline\.com|\/login/i.test(location.href)) return { ok: false, errorClass: "AUTH", error: "Outlook is not signed in" };
+    // Landed on the inbox instead of a compose: start one.
+    if (!clickedNew && Date.now() - t0 > 8000) {
+      const btn = [...document.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").trim() === "New mail");
+      if (btn) { btn.click(); clickedNew = true; }
+    }
+    await sleep(300);
+  }
+  const body = editor();
+  if (!body) return { ok: false, errorClass: "COMPOSE", error: "the compose window never opened" };
+  await sleep(1500);   // let OWA finish wiring the editor
+
+  const subj = document.querySelector('input[aria-label="Subject"], input[placeholder="Add a subject"]');
+  if (subj && !subj.value && subject) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(subj, subject);
+    subj.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  if (html) {
+    body.focus();
+    const sel = getSelection();
+    const rg = document.createRange();
+    rg.selectNodeContents(body);
+    rg.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(rg);
+    const dt = new DataTransfer();
+    dt.setData("text/html", html);
+    dt.setData("text/plain", html.replace(/<[^>]+>/g, "\n"));
+    body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    await sleep(800);
+    if (!body.innerText.trim()) return { ok: false, errorClass: "COMPOSE", error: "the summary didn't land in the body" };
+  }
+  return { ok: true };
+}
+
 function IN_PAGE_CLICK_SEND() {
   const btn = [...document.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").trim() === "Send");
   if (!btn) return { ok: false };
@@ -178,4 +258,4 @@ function IN_PAGE_SEND_STATE() {
 }
 
 // For dev harnesses that drive the same page code over CDP.
-export const __inPage = { IN_PAGE_FILL, IN_PAGE_CLICK_SEND, IN_PAGE_SEND_STATE };
+export const __inPage = { IN_PAGE_FILL, IN_PAGE_DRAFT, IN_PAGE_CLICK_SEND, IN_PAGE_SEND_STATE };
