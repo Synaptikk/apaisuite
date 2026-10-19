@@ -73,6 +73,12 @@ export async function fetchRecognition(storeNbr) {
  * [{ dateIso, name, email, type, count }]. The survey records who filled it in, so this is how the Safety
  * Observations module (modules/safetyobs) tells which coaches have done their
  * two today. Same tab, transport and autonomous reauth as fetchRecognition.
+ *
+ * Days are the PC's local days. The survey's GREGORIAN_DATE is the UTC date
+ * (found 2026-10-17: a submission at 8:33 PM CDT on 10/15 is dated 10/16),
+ * and the model holds no time of day (Start_time is empty). Response Ids are
+ * one sequence across all stores, and each UTC date's smallest Id is that
+ * date's 00:00 UTC; see localDayOf for the split at local midnight.
  */
 export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
   return withReportTab(async (tabId) => {
@@ -80,11 +86,16 @@ export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
     if (!transport) {
       return { ok: false, errorClass: "NO_CAPTURE", error: "Safety Observations report didn't load. Try again." };
     }
+    // West of UTC a local day's rows carry its own UTC date or the next one,
+    // never an earlier one, so querying from fromIso still covers it.
     const body = buildSubmitterQuery({ modelId: transport.modelId, store: padStore(storeNbr), dateIso: fromIso });
     const res = await runQuery(tabId, transport, body, "Submitter");
     if (!res.ok) return res;
+    const startsRes = await runQuery(tabId, transport, buildDayStartQuery({ modelId: transport.modelId, dateIso: shiftIso(fromIso, -1) }), "Day start");
+    if (!startsRes.ok) return startsRes;
+    const dayStarts = readDayStarts(decodeRows(startsRes.json));
     const rows = decodeRows(res.json)
-      .map((r) => ({ ...r, dateIso: epochToIsoDate(r.Date) }))
+      .map((r) => ({ ...r, dateIso: localDayOf(epochToIsoDate(r.Date), Number(r.Id), dayStarts) }))
       .filter((r) => r.dateIso && r.dateIso >= fromIso && r.dateIso <= toIso)
       .map((r) => ({
         dateIso: r.dateIso, name: String(r.Name ?? "").trim(), email: String(r.Email ?? "").trim(),
@@ -255,6 +266,7 @@ export function buildSubmitterQuery({ modelId, store, dateIso }) {
     from: FROM,
     select: [
       ["Date", column("c", "GREGORIAN_DATE")],
+      ["Id", column("h", "Id")],   // one row per response, for localDayOf
       ["Name", column("h", "Name")],
       ["Email", column("h", "Email")],
       ["Type", column("h", TYPE_PROP)],
@@ -265,6 +277,67 @@ export function buildSubmitterQuery({ modelId, store, dateIso }) {
       whereDateRange(column("c", "GREGORIAN_DATE"), dateIso),
     ],
   });
+}
+
+/** Smallest response Id per UTC date, every store: the Id at 00:00 UTC. */
+export function buildDayStartQuery({ modelId, dateIso }) {
+  return buildQuery({
+    modelId,
+    from: FROM,
+    select: [
+      ["Date", column("c", "GREGORIAN_DATE")],
+      ["First", aggregate("h", "Id", AGG.MIN)],
+    ],
+    where: [whereDateRange(column("c", "GREGORIAN_DATE"), dateIso)],
+  });
+}
+
+/** { "YYYY-MM-DD": firstId } from buildDayStartQuery rows. */
+export function readDayStarts(rows) {
+  const out = {};
+  for (const r of rows || []) {
+    const d = epochToIsoDate(r.Date), id = Number(r.First);
+    if (d && id > 0) out[d] = id;
+  }
+  return out;
+}
+
+// Share of a UTC day's responses (all stores) that arrive per hour in the
+// first hours after 00:00 UTC, i.e. US evening. Calibrated 2026-10-17 from
+// the suite's own submissions: 8:33 PM CDT on 10/15 sat 2.1% into 10/16's
+// Ids at 1.55 h, and the rate falls off toward the night. Only responses in
+// the hour or so around local midnight can land on the wrong side.
+const EVENING_SHARE_PER_HOUR = 0.009;
+
+/**
+ * The PC-local day a response was submitted on, from its UTC date and Id.
+ * Local midnight on day D+1 is `h` hours after D+1's 00:00 UTC (h = the PC's
+ * UTC offset, 5 in CDT, 6 in CST); a response dated D+1 whose Id falls before
+ * the estimated Id at that moment was submitted on local day D.
+ * @param {string} utcIso    the survey's GREGORIAN_DATE
+ * @param {number} id        the response Id
+ * @param {object} dayStarts readDayStarts(): first Id per UTC date
+ * @param {number} [offsetH] hours behind UTC; default the PC's own at that local midnight
+ */
+export function localDayOf(utcIso, id, dayStarts, offsetH) {
+  if (!utcIso) return null;
+  const start = dayStarts?.[utcIso];
+  if (!(id > 0) || !start) return utcIso;
+  const h = offsetH ?? new Date(utcIso + "T00:00:00").getTimezoneOffset() / 60;
+  if (h <= 0) return utcIso;           // at or east of UTC: no evening spill
+  // The day's size: up to the next day's first Id, or (today, still
+  // filling) the previous day's size.
+  const next = dayStarts[shiftIso(utcIso, 1)], prev = dayStarts[shiftIso(utcIso, -1)];
+  const size = next ? next - start : prev ? start - prev : 0;
+  if (!size) return utcIso;
+  const localMidnightId = start + size * Math.min(1, EVENING_SHARE_PER_HOUR * h);
+  return id < localMidnightId ? shiftIso(utcIso, -1) : utcIso;
+}
+
+function shiftIso(iso, days) {
+  const d = new Date(iso + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 /** One output row per observation: a group with Count 3 becomes 3 rows. */

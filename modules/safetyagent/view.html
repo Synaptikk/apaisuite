@@ -87,6 +87,26 @@
     </section>
 
     <section class="sa-section">
+      <h2>Accepted, declined, ignored</h2>
+      <p class="sa-sub">Each person's response to the alerts that were theirs while they were clocked in: their team's cameras, and for team leads only their own area's cameras. Coaches, the store manager and Digital leads aren't counted. <b>Ignored</b> = the alert sat open a minute or more and they pressed nothing. Uses the dates above. Click a row to see the alerts they declined or ignored.</p>
+      <div class="sa-ctl">
+        <button id="sa-rb-pull" class="btn btn-sm btn-primary" title="Pulls who pressed Accept / Decline for these dates, and any missing clock-ins (about 20 seconds per day the first time)">Pull responses</button>
+        <span id="sa-rb-progress" class="sa-muted"></span>
+        <span class="btn-group" role="group" aria-label="Who">
+          <button id="sa-rb-all" class="btn btn-sm btn-group-item" aria-pressed="true">Everyone</button>
+          <button id="sa-rb-leads" class="btn btn-sm btn-group-item" aria-pressed="false">Team leads</button>
+          <button id="sa-rb-assoc" class="btn btn-sm btn-group-item" aria-pressed="false">Associates</button>
+        </span>
+        <label class="sa-field">Min alerts <input type="number" id="sa-rb-min" class="input sa-num-input" value="8" min="1"></label>
+        <label class="sa-field" title="Comma-separated names to leave out, e.g. leads who work the backroom">Don't count <input type="text" id="sa-rb-skip" class="input" placeholder="Name, Name"></label>
+        <button id="sa-rb-csv" class="btn btn-sm btn-secondary" title="Download the current table as a CSV for these dates">Export CSV</button>
+        <span class="sa-count" id="sa-rb-count"></span>
+      </div>
+      <div id="sa-rb-note" class="sa-meta"></div>
+      <div class="sa-tablewrap"><table id="sa-rb" class="data-table data-table-compact sa-table"><thead></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="sa-section">
       <h2>By hour of day</h2>
       <p class="sa-sub">Alert volume per store-local hour. The accent portion is non-issue closures.</p>
       <div class="sa-hours" id="sa-hours"></div>

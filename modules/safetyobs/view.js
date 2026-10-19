@@ -136,6 +136,7 @@ export async function mount(host, container) {
     const what = c.trigger === "preview" ? "Preview" : c.posted ? (c.nothingToPost ? "Nobody on today is behind, nothing posted" : "Posted") : `Not posted${c.postError ? `: ${c.postError}` : ""}`;
     els.check.innerHTML = `
       ${c.error ? `<div class="so-status error">${esc(c.error)}</div>` : ""}
+      ${c.held ? `<div class="so-status">${esc(c.held)}</div>` : ""}
       <div class="so-muted">${esc(what)} · ${when(c.at)}${c.liveError ? ` <span class="bad">Today's count unavailable</span>` : ""}</div>
       <table><thead><tr><th>On today</th><th>Title</th><th>Shift</th><th class="num">Behind</th><th class="num">Done today</th><th class="num">Still to do today</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="so-muted">No coaches or managers on today's schedule.</td></tr>`}</tbody></table>
       ${c.message ? `<pre class="so-pre">${esc(c.message.replace(/@\[([^\]]+)\]\(person:\d+\)/g, "@$1"))}</pre>` : ""}`;

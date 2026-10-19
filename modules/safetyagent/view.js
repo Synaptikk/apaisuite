@@ -9,6 +9,7 @@ import { COL, TAGS, FAMILY_ORDER, FAMILY_NAME, ACTION_ORDER, ACTION_NAME, HOLD_L
          familyOf, actionKey, cameraNhfRate, groupBy, summarize, byHour } from "./lib/aggregate.js";
 import { hazardImageUrl } from "./lib/sql.js";
 import { analyzeOncall, WAVE1_MIN, LEAD_SIT_MIN } from "./lib/oncall.js";
+import { responseBreakdown, skipKeys, IGNORE_MIN } from "./lib/response.js";
 import { withWeekday, weekdayOf } from "../../shared/dates.js";
 
 const PREFS_KEY = "prefs.v1";
@@ -42,6 +43,9 @@ export async function mount(host, container) {
     ocPull: $("#sa-oc-pull"), ocProgress: $("#sa-oc-progress"), ocW1: $("#sa-oc-w1"), ocW2: $("#sa-oc-w2"),
     ocTeam: $("#sa-oc-team"), ocMin: $("#sa-oc-min"), ocCopy: $("#sa-oc-copy"), ocCount: $("#sa-oc-count"),
     ocNote: $("#sa-oc-note"), ocTiles: $("#sa-oc-tiles"), oc: $("#sa-oc"),
+    rbPull: $("#sa-rb-pull"), rbProgress: $("#sa-rb-progress"), rbAll: $("#sa-rb-all"), rbLeads: $("#sa-rb-leads"),
+    rbAssoc: $("#sa-rb-assoc"), rbMin: $("#sa-rb-min"), rbSkip: $("#sa-rb-skip"), rbCsv: $("#sa-rb-csv"),
+    rbCount: $("#sa-rb-count"), rbNote: $("#sa-rb-note"), rb: $("#sa-rb"),
   };
 
   const f1  = (x) => (x == null ? "–" : (Math.round(x * 10) / 10).toFixed(1));
@@ -52,9 +56,12 @@ export async function mount(host, container) {
   let rows = [];            // rows after the date filter
   let busy = false;
   const ui = { camMode: "fam", assMode: "fam", cam: { sort: "nhf", dir: "desc" }, ass: { sort: "nhf", dir: "desc" },
-               ocWave: 1, oc1: { sort: "passed", dir: "desc" }, oc2: { sort: "escPassed", dir: "desc" } };
+               ocWave: 1, oc1: { sort: "passed", dir: "desc" }, oc2: { sort: "escPassed", dir: "desc" },
+               rbWho: "all", rb: { sort: "bad", dir: "desc" } };
   let oncall = null;        // service cache: { camTeam, days } — see service.js::pullOncall
   let ocBusy = false;
+  let actions = null;       // service cache: { byDate: { iso: { hzdId: entry } } } — see service.js::pullActions
+  let rbBusy = false;
 
   // ── prefs ─────────────────────────────────────────────────────
   async function loadPrefs() {
@@ -66,10 +73,14 @@ export async function mount(host, container) {
     if (typeof p.amin === "number") els.amin.value = p.amin;
     if (typeof p.ocMin === "number") els.ocMin.value = p.ocMin;
     if (p.ocWave === 2) ui.ocWave = 2;
+    if (["all", "leads", "assoc"].includes(p.rbWho)) ui.rbWho = p.rbWho;
+    if (typeof p.rbMin === "number") els.rbMin.value = p.rbMin;
+    if (typeof p.rbSkip === "string") els.rbSkip.value = p.rbSkip;
   }
   const savePrefs = () => host.storage.local.set(PREFS_KEY, {
     camMode: ui.camMode, assMode: ui.assMode, min: Number(els.min.value) || 1,
     amin: Number(els.amin.value) || 1, ocMin: Number(els.ocMin.value) || 1, ocWave: ui.ocWave,
+    rbWho: ui.rbWho, rbMin: Number(els.rbMin.value) || 1, rbSkip: els.rbSkip.value,
   }).catch(() => {});
 
   // ── status ────────────────────────────────────────────────────
@@ -112,6 +123,7 @@ export async function mount(host, container) {
     if (!res.ok) { setStatus(res.error, "error"); return; }
     state = res.data;
     await loadOncall();
+    await loadActions();
     showState();
     if (state.imageRefreshError) setStatus(state.imageRefreshError, "warn");
   }
@@ -170,6 +182,7 @@ export async function mount(host, container) {
     renderCams();
     renderAss();
     renderOncall();
+    renderResponses();
     renderHours();
     els.foot.textContent = "Times are store-local.";
   }
@@ -426,6 +439,99 @@ export async function mount(host, container) {
     oncall = res?.ok ? res.data.oncall : null;
   }
 
+  // ── accepted / declined / ignored ─────────────────────────────
+  // lib/response.js::responseBreakdown over the date-filtered rows, the
+  // action-log cache and the punch cache. Recomputed on every render.
+  let rbLast = null;
+  const roleOf = (p) => (p.lead ? "Team lead" : "Associate");
+  function renderResponses() {
+    const datesIn = [...new Set(rows.map((r) => r[COL.date]))];
+    const haveLog = datesIn.filter((d) => actions?.byDate?.[d]).length;
+    if (!oncall?.camTeam || !datesIn.length || !haveLog) {
+      els.rbNote.innerHTML = `<span>Nothing pulled for these dates yet. Click <b>Pull responses</b>.</span>`;
+      els.rb.querySelector("thead").innerHTML = ""; els.rb.querySelector("tbody").innerHTML = ""; els.rbCount.textContent = "";
+      rbLast = null; return;
+    }
+    const a = responseBreakdown(rows, actions, oncall, COL, { skip: skipKeys(els.rbSkip.value), today: todayNow() });
+    rbLast = a;
+    const notes = [`<span><b>${a.summary.counted}</b> of ${a.summary.alerts} alerts matched to clock-ins and presses</span>`];
+    const noLog = datesIn.length - haveLog;
+    if (a.summary.missingDays.length) notes.push(`<span><b>${a.summary.missingDays.length}</b> day${a.summary.missingDays.length === 1 ? "" : "s"} have no clock-ins yet — Pull responses</span>`);
+    if (noLog) notes.push(`<span><b>${noLog}</b> day${noLog === 1 ? "" : "s"} have no Accept/Decline log yet — Pull responses</span>`);
+    els.rbNote.innerHTML = notes.join("");
+
+    const bad = (r) => r.dec + r.ign;
+    const heat = (n, max) => `--h:${(n / max).toFixed(2)}`;
+    const cols = [
+      { k: "key", h: "Name", v: (r) => r.name, cell: (r) => `<td>${esc(r.name)}</td>` },
+      { k: "role", h: "Role", v: roleOf, cell: (r) => `<td class="sa-dept">${esc(roleOf(r))}</td>` },
+      { k: "job", h: "Job", v: (r) => r.job || "", cell: (r) => `<td class="sa-dept">${esc(r.job || "")}</td>` },
+      { k: "area", h: "Area", v: (r) => r.area || "", cell: (r) => `<td class="sa-dept">${esc(r.area || "")}</td>` },
+      { k: "sent", h: "Sent", title: "Alerts on their area's cameras while they were clocked in", r: 1, v: (r) => r.sent, cell: (r) => `<td class="r sa-num">${r.sent}</td>` },
+      { k: "acc", h: "Accepted", r: 1, v: (r) => r.acc, cell: (r) => `<td class="r sa-num">${r.acc || ""}</td>` },
+      { k: "dec", h: "Declined", r: 1, v: (r) => r.dec, cell: (r) => `<td class="r sa-num">${r.dec || ""}</td>` },
+      { k: "ign", h: "Ignored", title: `Open ${IGNORE_MIN}+ min and they pressed nothing`, r: 1, v: (r) => r.ign, cell: (r) => `<td class="r sa-num">${r.ign || ""}</td>` },
+      { k: "bad", h: "Declined + ignored", r: 1, v: bad, cell: (r, ctx) => `<td class="r sa-num sa-heat" style="${heat(bad(r), ctx.maxBad)}">${bad(r)}</td>` },
+      { k: "badPct", h: "%", r: 1, v: (r) => (r.sent ? bad(r) / r.sent : 0), cell: (r) => `<td class="r sa-num sa-pct" style="--p:${(r.sent ? bad(r) / r.sent : 0).toFixed(2)}">${pct(bad(r), r.sent)}</td>` },
+    ];
+    const min = Number(els.rbMin.value) || 1;
+    const who = ui.rbWho;
+    renderTable(els.rb, a.people, cols, ui.rb,
+      (g) => g.sent >= min && (who === "all" || (who === "leads") === g.lead), els.rbCount, "Camera",
+      a.people.length ? `Nobody here has ${min} or more alerts. Lower "Min alerts".` : "No one was on the clock for an alert in their area in this window.",
+      { maxBad: Math.max(1, ...a.people.map(bad)) });
+    els.rbAll.setAttribute("aria-pressed", String(who === "all"));
+    els.rbLeads.setAttribute("aria-pressed", String(who === "leads"));
+    els.rbAssoc.setAttribute("aria-pressed", String(who === "assoc"));
+  }
+
+  async function loadActions() {
+    const res = await host.messaging.send("get_actions", { store: state?.store }).catch(() => null);
+    actions = res?.ok ? res.data.actions : null;
+  }
+
+  async function pullResponses() {
+    if (rbBusy || !state?.data) return;
+    const dates = [...new Set(rows.map((r) => r[COL.date]))].sort();
+    if (!dates.length) { setStatus("No alerts in this window.", "warn"); return; }
+    rbBusy = ocBusy = true; els.rbPull.disabled = els.ocPull.disabled = true; els.rbProgress.textContent = "Starting…"; setStatus("");
+    try {
+      const oc = await host.messaging.send("pull_oncall", { store: state.store, dates });
+      if (!oc.ok) { setStatus(oc.error, "error"); return; }
+      oncall = oc.data.oncall;
+      const ac = await host.messaging.send("pull_actions", { store: state.store, from: dates[0], to: dates[dates.length - 1] });
+      if (!ac.ok) { setStatus(ac.error, "error"); return; }
+      actions = ac.data.actions;
+      renderOncall();
+      renderResponses();
+      if (oc.data.warnings?.length) setStatus(oc.data.warnings.join(" · "), "warn");
+      else host.ui.toast("Responses up to date for these dates");
+    } catch (e) {
+      setStatus(e?.message || String(e), "error");
+    } finally {
+      rbBusy = ocBusy = false; els.rbPull.disabled = els.ocPull.disabled = false; els.rbProgress.textContent = "";
+    }
+  }
+
+  function exportResponsesCsv() {
+    const t = tables[els.rb.id];
+    if (!t?.list.length || !rbLast) { host.ui.toast("Nothing in the table to export."); return; }
+    const s = summarize(rows);
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = ["Name", "Role", "Job", "Area", "Sent", "Accepted", "Declined", "Ignored", "Declined + ignored", "Declined + ignored %", "From", "To"];
+    const lines = [head.map(q).join(",")];
+    for (const p of t.list) {
+      const bad = p.dec + p.ign;
+      lines.push([p.name, roleOf(p), p.job, p.area, p.sent, p.acc, p.dec, p.ign, bad, p.sent ? Math.round((100 * bad) / p.sent) : "", s.minDate, s.maxDate].map(q).join(","));
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\r\n")], { type: "text/csv" }));
+    a.download = `safety-responses-${state.data.store}-${s.minDate}-to-${s.maxDate}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    host.ui.toast(`Exported ${t.list.length} row${t.list.length === 1 ? "" : "s"}`);
+  }
+
   // Email-ready copy of the on-the-clock table: a short summary in plain
   // words, one line on how to read the numbers, then the table. Copied as
   // HTML (pastes as a formatted table in Outlook) with a plain-text twin.
@@ -494,7 +600,7 @@ export async function mount(host, container) {
     const k = th.dataset.k;
     if (t.sortState.sort === k) t.sortState.dir = t.sortState.dir === "desc" ? "asc" : "desc";
     else { t.sortState.sort = k; t.sortState.dir = t.cols.find((c) => c.k === k)?.r ? "desc" : "asc"; }
-    table === els.cams ? renderCams() : table === els.oc ? renderOncall() : renderAss();
+    table === els.cams ? renderCams() : table === els.oc ? renderOncall() : table === els.rb ? renderResponses() : renderAss();
   };
   const onRowClick = (e) => {
     const tr = e.target.closest("tr.sa-row"); if (!tr) return;
@@ -603,6 +709,11 @@ export async function mount(host, container) {
   els.ocW2.addEventListener("click", () => { ui.ocWave = 2; savePrefs(); if (state?.data) renderOncall(); });
   els.ocTeam.addEventListener("input", () => { if (state?.data) renderOncall(); });
   els.ocMin.addEventListener("input", () => { savePrefs(); if (state?.data) renderOncall(); });
+  els.rbPull.addEventListener("click", pullResponses);
+  for (const [el, who] of [[els.rbAll, "all"], [els.rbLeads, "leads"], [els.rbAssoc, "assoc"]])
+    el.addEventListener("click", () => { ui.rbWho = who; savePrefs(); if (state?.data) renderResponses(); });
+  for (const el of [els.rbMin, els.rbSkip]) el.addEventListener("input", () => { savePrefs(); if (state?.data) renderResponses(); });
+  els.rbCsv.addEventListener("click", exportResponsesCsv);
   els.ocCopy.addEventListener("click", async () => {
     const out = state?.data && oncallText();
     if (!out?.count) { host.ui.toast("Nothing in the table to copy."); return; }
@@ -633,7 +744,8 @@ export async function mount(host, container) {
     if (busy) els.progress.textContent = msg.payload?.text || "";
   });
   const unsubOcProgress = host.messaging.on("oncall-progress", (msg) => {
-    if (ocBusy) els.ocProgress.textContent = msg.payload?.text || "";
+    if (rbBusy) els.rbProgress.textContent = msg.payload?.text || "";
+    else if (ocBusy) els.ocProgress.textContent = msg.payload?.text || "";
   });
 
   await loadPrefs();

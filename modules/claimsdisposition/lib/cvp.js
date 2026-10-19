@@ -1,143 +1,77 @@
 // modules/claimsdisposition/lib/cvp.js
 //
-// CVP Performance fetcher — pulls per-store sell-through data from
-// Walmart's Hoops Report Hub GraphQL API.
+// CVP Performance fetcher — per-store sell-through from Ops Portal.
 //
 // Why we care: a store with HIGH disposal rate AND LOW sell-through is
 // the signature of "CVP'd then immediately disposed instead of sold."
 // Sell-through is what tells us whether CVP'd merchandise actually
-// moved off the floor. Without it we're flying blind on the back end
-// of the disposition pipeline.
+// moved off the floor.
 //
-// Endpoint
-// ────────
-//   POST https://api.hoops.wal-mart.com/report-hub/v1/graphql
-//   Auth: SSO session cookies on *.wal-mart.com (the cookies we set
-//   when the user signed into Hoops in their browser).
+// Source: Ops Portal's `metric.cvp.megaCard.CVPOverview` (see the category
+// section below), store total (depts/sbuIds [-9999], the CVP page's "Total"
+// tile), one GET per store. This replaced the Hoops Report Hub GraphQL
+// query (api.hoops.wal-mart.com/report-hub/v1/graphql), which started
+// answering 404 and left every pull with `cvp: null`; found 2026-10-18.
 //
-// Cross-origin from chrome-extension:// works without any CSRF/XSRF
-// header dance (unlike Workvivo) — Hoops accepts the extension origin
-// and the *.wal-mart.com cookies are SameSite-permissive enough that
-// the request includes them. Verified 2026-06-02 via dev/probe-hoops-cvp.mjs.
-//
-// We grab the rolling 8-week window in one call so the detail drawer
-// can render a sell-through trend without a second round trip.
+// The returned shape is unchanged so the store table, drawer and R10
+// outlier rule read it as before. `sellThrough` stays cvpSalesQty /
+// cvpTotalQty (the ratio sellThroughTier's 25% / 15% bands were set on),
+// NOT Ops Portal's own cvpSellThruPct, which runs ~55-70%.
 
-const HOOPS_GRAPHQL = "https://api.hoops.wal-mart.com/report-hub/v1/graphql";
-
-const QUERY = `query CvpLast8Weeks($market: Int!, $dept: Int!) {
-  result: cvpBuTypeBuIdWeekDeptGroupGet(where: { and: [
-    { marketNbr:    { eq: $market } },
-    { last8WeekInd: { eq: 1 } },
-    { buType:       { eq: 6 } },
-    { deptGroupNbr: { eq: $dept } }
-  ] }) {
-    storeNbr wmWeekNbr wmYearWkNbr
-    firstCvpQty_Ty454
-    cvpToCvpQty_Ty454
-    cvpTotalQty_Ty454
-    cvpSalesQty_Ty454
-    cvpSalesRetailAmt_Ty454
-  }
-}`;
+const HISTORY_WEEKS = 8;
 
 /**
- * Fetch the rolling 8-week CVP performance for every store in the
- * given market. Returns a pivoted shape ready to merge into a pull
- * record:
+ * Rolling 8-week CVP performance for the given stores:
  *
- *   {
- *     fetchedAt: <epoch-ms>,
- *     latestWeek: <wmYearWkNbr>,
- *     byStore: {
- *       658: {
- *         week, yearWeek,
- *         firstCvpQty, cvpToCvpQty, cvpTotalQty,
- *         cvpSalesQty, cvpSalesRetailAmt, sellThrough,
- *         history: [{wmWeekNbr, wmYearWkNbr, sellThrough, cvpTotalQty, cvpSalesQty}, ...]
- *       },
- *       669: {...},
- *       ...
- *     }
- *   }
+ *   { fetchedAt, latestWeek, byStore: { 1458: {
+ *       week, yearWeek, firstCvpQty, cvpToCvpQty, cvpTotalQty,
+ *       cvpSalesQty, cvpSalesRetailAmt, sellThrough,
+ *       history: [{ wmWeekNbr, wmYearWkNbr, cvpTotalQty, cvpSalesQty, sellThrough }] } },
+ *     errors: [] }
  *
- * `sellThrough` is the headline metric: cvpSalesQty / cvpTotalQty.
- * Higher = healthier (more CVP'd merch sold instead of disposed).
- *
- * Throws on network / non-2xx / malformed response. The pull handler
- * should treat CVP failures as non-fatal — the claims pull still
- * produces value without CVP, and the next pull will retry.
+ * The newest week is the current, partial one (Ops Portal timeOffset 0).
+ * Per-store failures land in `errors`; throws only when every store failed,
+ * so the pull handler logs it as before.
  */
-export async function fetchCvpForMarket({ marketNbr, deptGroupNbr = 2 } = {}) {
-  // Required, with no default: this used to fall back to 120, so a caller
-  // that forgot to pass a market got one analyst's market back and no error.
-  // `$market` is declared Int! and getUserHomeMarket() returns the string the
-  // user typed (possibly "0120"), so parse rather than pass through.
-  const market = Number.parseInt(marketNbr, 10);
-  if (!Number.isFinite(market)) {
-    throw new Error(`fetchCvpForMarket needs a numeric market (got ${JSON.stringify(marketNbr)})`);
-  }
-
-  const resp = await fetch(HOOPS_GRAPHQL, {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json", "accept": "application/json" },
-    body: JSON.stringify({
-      query: QUERY,
-      variables: { market, dept: deptGroupNbr },
-    }),
-  });
-  if (!resp.ok) {
-    throw new Error(`Hoops returned HTTP ${resp.status}`);
-  }
-  const json = await resp.json();
-  if (json.errors?.length) {
-    throw new Error(`Hoops GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`);
-  }
-  const rows = Array.isArray(json?.data?.result) ? json.data.result : [];
-
-  // Pivot: group by storeNbr, sort each group by week ascending.
-  const byStoreHistory = new Map();
-  for (const r of rows) {
-    const store = Number(r.storeNbr);
-    if (!Number.isFinite(store)) continue;
-    if (!byStoreHistory.has(store)) byStoreHistory.set(store, []);
-    byStoreHistory.get(store).push(r);
-  }
-
-  let latestWeek = 0;
+export async function fetchCvpForStores(stores) {
   const byStore = {};
-  for (const [store, history] of byStoreHistory.entries()) {
-    history.sort((a, b) => a.wmYearWkNbr - b.wmYearWkNbr);
-    const current = history[history.length - 1];
-    if (current.wmYearWkNbr > latestWeek) latestWeek = current.wmYearWkNbr;
-    byStore[store] = {
-      week:               current.wmWeekNbr,
-      yearWeek:           current.wmYearWkNbr,
-      firstCvpQty:        Number(current.firstCvpQty_Ty454)        || 0,
-      cvpToCvpQty:        Number(current.cvpToCvpQty_Ty454)        || 0,
-      cvpTotalQty:        Number(current.cvpTotalQty_Ty454)        || 0,
-      cvpSalesQty:        Number(current.cvpSalesQty_Ty454)        || 0,
-      cvpSalesRetailAmt:  Number(current.cvpSalesRetailAmt_Ty454)  || 0,
-      sellThrough:        computeSellThrough(current),
-      history: history.map((r) => ({
-        wmWeekNbr:     r.wmWeekNbr,
-        wmYearWkNbr:   r.wmYearWkNbr,
-        cvpTotalQty:   Number(r.cvpTotalQty_Ty454) || 0,
-        cvpSalesQty:   Number(r.cvpSalesQty_Ty454) || 0,
-        sellThrough:   computeSellThrough(r),
-      })),
-    };
+  const errors = [];
+  let latestWeek = 0;
+  await Promise.all(stores.map(async (s) => {
+    try {
+      const weeks = (await fetchOpsCvpWeeks(s, [-9999], [-9999])).slice(-HISTORY_WEEKS);
+      if (!weeks.length) return;
+      const cur = weeks[weeks.length - 1];
+      if (cur.yearWeek > latestWeek) latestWeek = cur.yearWeek;
+      byStore[Number(s)] = {
+        week:              weekNbr(cur),
+        yearWeek:          cur.yearWeek,
+        firstCvpQty:       cur.firstCvpQty,
+        cvpToCvpQty:       cur.cvpToCvpQty,
+        cvpTotalQty:       cur.totalQty,
+        cvpSalesQty:       cur.soldQty,
+        cvpSalesRetailAmt: cur.salesRetailAmt,
+        sellThrough:       ratio(cur.soldQty, cur.totalQty),
+        history: weeks.map((w) => ({
+          wmWeekNbr:   weekNbr(w),
+          wmYearWkNbr: w.yearWeek,
+          cvpTotalQty: w.totalQty,
+          cvpSalesQty: w.soldQty,
+          sellThrough: ratio(w.soldQty, w.totalQty),
+        })),
+      };
+    } catch (e) {
+      errors.push(`${s}: ${e?.message ?? e}`);
+    }
+  }));
+  if (stores.length && !Object.keys(byStore).length) {
+    throw new Error(`no store returned CVP (${errors[0] ?? "empty"})`);
   }
-
-  return { fetchedAt: Date.now(), latestWeek, byStore };
+  return { fetchedAt: Date.now(), latestWeek, byStore, errors };
 }
 
-function computeSellThrough(row) {
-  const total = Number(row.cvpTotalQty_Ty454) || 0;
-  const sold  = Number(row.cvpSalesQty_Ty454) || 0;
-  return total > 0 ? sold / total : 0;
-}
+const ratio = (sold, total) => (total > 0 ? sold / total : 0);
+const weekNbr = (w) => w.yearWeek % 100;
 
 /** Severity buckets for the Store Comparison column cell coloring. */
 export function sellThroughTier(rate) {
@@ -199,5 +133,94 @@ export function cvpForWindow(cvp, dateRange, fetchedAt) {
     weeksUsed:      overlapping.length,
     weeksAvailable: cvp.history.length,
     capped,
+  };
+}
+
+// ── Ops Portal CVP by store category ────────────────────────────
+//
+// The same tRPC call the Ops Portal CVP page makes for its Fresh / F&C / GM
+// tiles (`metric.cvp.megaCard.CVPOverview`, cookie auth, plain GET), one per
+// store per category, with the dept lists from categories.js so F&C excludes
+// Fresh. timeType 202 = fiscal weeks: 14 rows, timeOffset -13 .. 0, where 0
+// is the current, partial week. Verified 2026-10-18 for 1458 WK37: F&C-only
+// 2,145 + Fresh 8,160 = the portal's F&C tile 10,305; GM by depts = by SBU.
+
+const OPS_CVP_TRPC = "https://hoops.wal-mart.com/ops-portal/v1/trpc/metric.cvp.megaCard.CVPOverview";
+
+async function fetchOpsCvpWeeks(storeNbr, depts, sbuIds = []) {
+  const input = encodeURIComponent(JSON.stringify({
+    json: { buId: Number(storeNbr), buType: 6, timeType: 202, depts, sbuIds },
+  }));
+  const res = await fetch(`${OPS_CVP_TRPC}?input=${input}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Ops Portal CVP ${res.status} for store ${storeNbr}`);
+  const grid = (await res.json())?.result?.data?.json;
+  const cols = grid?.meta?.columns;
+  if (!Array.isArray(cols) || !Array.isArray(grid?.rows)) {
+    throw new Error(`Ops Portal CVP returned no grid for store ${storeNbr}`);
+  }
+  const i = Object.fromEntries(cols.map((c, n) => [c, n]));
+  return grid.rows.map((r) => ({
+    week:         r[i.timeTextShort],          // "WK37"
+    yearWeek:     r[i.timeInt],                // 202637
+    offset:       r[i.timeOffset],             // 0 = current partial week
+    totalQty:     Number(r[i.cvpTotalQty_Ty454]) || 0,
+    soldQty:      Number(r[i.cvpSalesQty_Ty454]) || 0,
+    firstCvpQty:  Number(r[i.firstCvpQty_Ty454]) || 0,
+    cvpToCvpQty:  Number(r[i.cvpToCvpQty_Ty454]) || 0,
+    salesRetailAmt: Number(r[i.cvpSalesRetailAmt_Ty454]) || 0,
+    adherencePct: numOrNull(r[i.cvpAdherencePct_Ty454]),
+    sellThruPct:  numOrNull(r[i.cvpSellThruPct_Ty454]),
+  })).sort((a, b) => a.offset - b.offset);
+}
+
+function numOrNull(v) {
+  const n = Number(v);
+  return v == null || v === "" || !Number.isFinite(n) ? null : n;
+}
+
+/**
+ * Ops Portal CVP weeks for every store × category. Per-store failures are
+ * recorded, not thrown, so one store's 403 doesn't blank the rest.
+ * Returns { fetchedAt, byStore: { [store]: { fc: weeks[], fresh, gm } }, errors }.
+ */
+export async function fetchOpsCvpByCategory(stores, deptsByCategory) {
+  const byStore = {};
+  const errors = [];
+  const jobs = [];
+  for (const s of stores) {
+    byStore[s] = {};
+    for (const [cat, depts] of Object.entries(deptsByCategory)) {
+      jobs.push(fetchOpsCvpWeeks(s, depts)
+        .then((weeks) => { byStore[s][cat] = weeks; })
+        .catch((e) => { errors.push(`${s}/${cat}: ${e?.message ?? e}`); }));
+    }
+  }
+  await Promise.all(jobs);
+  return { fetchedAt: Date.now(), byStore, errors };
+}
+
+/**
+ * One category's Ops Portal week across the given stores. Percentages are
+ * averaged weighted by each store's CVP units (totalQty) — the portal ships
+ * only percentages, so this is the closest multi-store figure it allows.
+ * `offset` -1 = last full week, 0 = current week to date.
+ */
+export function opsCvpWeek(opsCvp, stores, category, offset = -1) {
+  if (!opsCvp?.byStore) return null;
+  let qty = 0, adhW = 0, adhQ = 0, stW = 0, stQ = 0, week = null, n = 0;
+  for (const s of stores) {
+    const w = opsCvp.byStore[s]?.[category]?.find((x) => x.offset === offset);
+    if (!w) continue;
+    n++;
+    week = week || w.week;
+    qty += w.totalQty;
+    if (w.adherencePct != null) { adhW += w.adherencePct * w.totalQty; adhQ += w.totalQty; }
+    if (w.sellThruPct  != null) { stW  += w.sellThruPct  * w.totalQty; stQ  += w.totalQty; }
+  }
+  if (!n) return null;
+  return {
+    week, stores: n, totalQty: qty,
+    adherencePct: adhQ ? adhW / adhQ : null,
+    sellThruPct:  stQ  ? stW  / stQ  : null,
   };
 }

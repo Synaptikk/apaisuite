@@ -252,3 +252,96 @@ export function stdev(arr) {
     arr.reduce((s, v) => s + (v - m) * (v - m), 0) / (arr.length - 1);
   return Math.sqrt(variance);
 }
+
+// ── Store categories + CVP adherence ────────────────────────────
+//
+// Adherence follows Ops Portal's definition: of the units claims recommended
+// for CVP, the share the store actually CVP'd (Ops Portal "Adh Units" /
+// "Recommended"). A CVP-recommended claim that went to DISPOSE / DONATE /
+// STOLEN / STORE USE is a miss, and the associate on the claim owns it.
+
+const isCvp = (s) => String(s || "").trim().toUpperCase() === "CVP";
+
+function emptyCvp() {
+  return { cvpRecUnits: 0, cvpDoneUnits: 0, cvpRecClaims: 0, cvpMissClaims: 0, missedRetail: 0 };
+}
+
+function addCvp(acc, r) {
+  if (!isCvp(r.recommendedAction)) return;
+  acc.cvpRecUnits += r.quantity;
+  acc.cvpRecClaims++;
+  if (isCvp(r.storeChoice)) {
+    acc.cvpDoneUnits += r.quantity;
+  } else {
+    acc.cvpMissClaims++;
+    acc.missedRetail += r.totalRetail;
+  }
+}
+
+function finishCvp(acc) {
+  acc.cvpMissUnits = acc.cvpRecUnits - acc.cvpDoneUnits;
+  acc.adherence = acc.cvpRecUnits ? acc.cvpDoneUnits / acc.cvpRecUnits : null;
+  return acc;
+}
+
+/** One row per category id: summarize() totals plus CVP adherence. */
+export function byCategory(records) {
+  const groups = new Map();
+  for (const r of records) {
+    const id = r.category || "other";
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(r);
+  }
+  const out = {};
+  for (const [id, recs] of groups) {
+    const cvp = emptyCvp();
+    for (const r of recs) addCvp(cvp, r);
+    out[id] = { ...summarize(recs), ...finishCvp(cvp) };
+  }
+  return out;
+}
+
+/**
+ * Associates ranked by CVP-recommended units they did not CVP. `category`
+ * narrows to one category id (null = all). Keyed by store + userId: the same
+ * login at two stores is two people's worth of decisions to coach.
+ * `missShare` is the associate's slice of their store's missed units.
+ */
+export function cvpAssociates(records, category = null) {
+  const byUser = new Map();
+  const storeMiss = new Map();
+  for (const r of records) {
+    if (category && r.category !== category) continue;
+    if (!isCvp(r.recommendedAction)) continue;
+    const key = `${r.storeNumber}|${r.userId || "(unknown)"}`;
+    let u = byUser.get(key);
+    if (!u) {
+      u = { storeNumber: r.storeNumber, userId: r.userId || "(unknown)", ...emptyCvp(), instead: {}, depts: {} };
+      byUser.set(key, u);
+    }
+    addCvp(u, r);
+    if (!isCvp(r.storeChoice)) {
+      const choice = (r.storeChoice || "BLANK").toUpperCase();
+      u.instead[choice] = (u.instead[choice] || 0) + r.quantity;
+      u.depts[r.department] = (u.depts[r.department] || 0) + r.quantity;
+      storeMiss.set(r.storeNumber, (storeMiss.get(r.storeNumber) || 0) + r.quantity);
+    }
+  }
+  const rows = [];
+  for (const u of byUser.values()) {
+    finishCvp(u);
+    if (!u.cvpMissUnits) continue;
+    u.missShare = u.cvpMissUnits / (storeMiss.get(u.storeNumber) || 1);
+    u.topInstead = topEntry(u.instead);
+    u.topDept = topEntry(u.depts);
+    rows.push(u);
+  }
+  rows.sort((a, b) => b.cvpMissUnits - a.cvpMissUnits || b.missedRetail - a.missedRetail);
+  return rows;
+}
+
+function topEntry(counts) {
+  let best = null;
+  for (const [k, v] of Object.entries(counts)) if (!best || v > best[1]) best = [k, v];
+  return best ? { key: best[0], units: best[1] } : null;
+}

@@ -3,10 +3,10 @@
 // The before / after Hours Guidance graph from the WK 39 page
 // (.claude/skills/wfm-schedule/reference/coverage-page.tpl.html), as string
 // builders for the module: bars = scheduled per hour coloured blue / short /
-// over, the guidance as a smoothed line (like the scheduler's), 12p–4p
+// over, the guidance as a smoothed line (like the scheduler's), the peak window (coverage.js PEAK)
 // shaded. "after" = with the queued changes applied.
 
-import { DOW, toMin, shiftSpan } from "./coverage.js";
+import { DOW, toMin, shiftSpan, PEAK } from "./coverage.js";
 
 const SHORT = ["sat", "sun", "mon", "tue", "wed", "thu", "fri"];
 export const hm = (m) => { m = ((m % 1440) + 1440) % 1440; const h = Math.floor(m / 60), mm = m % 60; return `${h % 12 || 12}${mm ? ":" + String(mm).padStart(2, "0") : ""}${h < 12 ? "a" : "p"}`; };
@@ -47,7 +47,7 @@ export function chartSvg(d, key, opt) {
   const step = yMax <= 10 ? 2 : yMax <= 30 ? 5 : 10;
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${key === "before" ? "Current" : "With queued changes"} vs guidance, ${dayLabel(d, true)}">`;
   if (axis) for (let v = 0; v <= yMax; v += step) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--g-line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--g-ink3)">${v}</text>`;
-  s += `<rect x="${x(12)}" y="${T}" width="${x(16) - x(12)}" height="${y(0) - T}" fill="var(--g-peak)"/>`;
+  s += `<rect x="${x(PEAK[0])}" y="${T}" width="${x(PEAK[PEAK.length - 1] + 1) - x(PEAK[0])}" height="${y(0) - T}" fill="var(--g-peak)"/>`;
   s += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--g-ink3)" stroke-width="1"/>`;
   for (const h of [0, 6, 12, 18, 23]) s += `<text x="${x(h + 0.5)}" y="${H - 4}" text-anchor="middle" font-size="${axis ? 11 : 9}" fill="var(--g-ink3)">${h === 23 ? "11p" : hm(h * 60)}</text>`;
   for (let h = 0; h < 24; h++) { const v = d[key][h]; if (!v) continue; const top = y(v);

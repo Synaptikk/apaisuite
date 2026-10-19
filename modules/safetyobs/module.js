@@ -7,11 +7,11 @@
 // See service.js for the sources.
 
 import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
-import { handlers, onCheckAlarm, ensureCheckAlarm, ALARM } from "./service.js";
+import { handlers, onCheckAlarm, ensureCheckAlarm, ALARM, ALARM_RETRY } from "./service.js";
 
 // Top level + guarded, like every alarm in the suite (shared/alarms.js).
 if (IS_SERVICE_WORKER) {
-  chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === ALARM) onCheckAlarm(alarm); });
+  chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === ALARM || alarm.name === ALARM_RETRY) onCheckAlarm(alarm); });
   ensureCheckAlarm().catch((e) => console.warn("[safetyobs] ensureCheckAlarm failed:", e?.message ?? e));
 }
 

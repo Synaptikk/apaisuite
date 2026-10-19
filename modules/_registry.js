@@ -55,7 +55,7 @@ export default [
   vizpick,           // VizPick Market Rollup — every store in a market at once
   digitaldashboard,  // Digital Dashboard — GIF store metrics (repurposed from digitalrollup)
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
-  digitalschedule,   // Digital Schedule — WFM coverage vs guidance, validated shift edits, fit-to-guidance, undo
+  digitalschedule,   // ScheduleRight — WFM coverage (any team / role / job) vs guidance, validated shift edits, fit-to-guidance, undo
   cx,                // Cx — store NPS + Medallia comment themes, what's going right/wrong
   aurorbuddy,
   registerls,        // Register L/S Triage — WorkView queue × Power BI grid × Cash Research × EJ

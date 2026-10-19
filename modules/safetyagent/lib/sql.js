@@ -46,6 +46,51 @@ export function hazardSql({ store, from, to } = {}) {
   ].join("\n");
 }
 
+// The per-action log behind each alert. Unlike the hazard table (which names
+// only the accepter), it names everyone who pressed Accept or Decline, and
+// timestamps CREATE / ESCALATE. Filter on facility_nbr: an unfiltered scan
+// times out. Loads in hourly batches like the hazard table.
+export const LOG_TABLE = "trade_model_safety_cv_detections_log";
+
+export function actionLogSql({ store, from, to } = {}) {
+  const nbr = Number(store);
+  if (!Number.isInteger(nbr) || nbr <= 0) throw new Error(`actionLogSql: bad store "${store}"`);
+  const where = [`facility_nbr = ${nbr}`];
+  if (from) { if (!DATE_RE.test(from)) throw new Error("actionLogSql: bad from date"); where.push(`hzd_dt_lcl >= DATE '${from}'`); }
+  if (to)   { if (!DATE_RE.test(to))   throw new Error("actionLogSql: bad to date");   where.push(`hzd_dt_lcl <= DATE '${to}'`); }
+  return [
+    "SELECT hzd_id, hzd_dt_lcl, action_ts_lcl, action_type, associate_name",
+    `FROM ${LOG_TABLE}`,
+    `WHERE ${where.join(" AND ")}`,
+    "ORDER BY action_ts_lcl ASC, hzd_id ASC, action_id ASC",
+  ].join("\n");
+}
+
+/**
+ * Log rows → { date: { hzdId: entry } }, entry = { c, e, r, k, acc:[names], dec:[names] }:
+ * CREATE / first ESCALATE / first RESERVE / first COMPLETE as epoch seconds
+ * (store-local wall clock — the *_ts_lcl values carry a misleading Z).
+ */
+export function compactActions(logRows) {
+  const sec = (s) => Math.round(Date.parse(String(s || "").replace(/Z$/, "")) / 1000);
+  const out = {};
+  for (const r of logRows) {
+    const date = String(r.hzd_dt_lcl || "").slice(0, 10);
+    if (!r.hzd_id || !date) continue;
+    const day = out[date] ||= {};
+    const e = day[r.hzd_id] ||= { c: null, e: null, r: null, k: null, acc: [], dec: [] };
+    const t = sec(r.action_ts_lcl), name = String(r.associate_name || "").trim();
+    switch (r.action_type) {
+      case "CREATE":   if (e.c == null) e.c = t; break;
+      case "ESCALATE": if (e.e == null) e.e = t; break;
+      case "COMPLETE": if (e.k == null) e.k = t; break;
+      case "RESERVE":  if (e.r == null) e.r = t; if (name && !e.acc.includes(name)) e.acc.push(name); break;
+      case "DECLINE":  if (name && !e.dec.includes(name)) e.dec.push(name); break;
+    }
+  }
+  return out;
+}
+
 // Compact row layout stored in chrome.storage.local and handed to the view.
 // Keep this array in sync with lib/aggregate.js::COL.
 export function compactRow(r) {

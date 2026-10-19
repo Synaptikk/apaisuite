@@ -1,6 +1,6 @@
 // modules/digitalschedule/service.js
 //
-// Digital Schedule — service-worker half. Every call runs lib/page.js inside
+// ScheduleRight — service-worker half. Every call runs lib/page.js inside
 // the Polaris scheduler tab (MAIN world: the page's Redux store, the scheduler
 // remote's own webpack modules for validate / save / readback).
 //
@@ -14,6 +14,8 @@
 //   chat     { model, system, messages, tools } → { ok, content, stop_reason }
 //                                    one schedule-assistant turn (lib/gateway.js)
 //   gateway_status                   → { ok, status }
+//   rules_get { store }              → { ok, doc }     the store's shared rules (null if none yet)
+//   rules_put { store, rules, areas } → { ok }         save them for every install at the store
 //
 // Writes go to the live schedule. The view only sends `save` after the user
 // confirmed this exact list; this file re-validates inside the same call
@@ -23,6 +25,11 @@ import { withKeepAwake } from "../../shared/sw_keepalive.js";
 import { wfmInPage } from "./lib/page.js";
 import { buildUndo, readbackMisses } from "./lib/coverage.js";
 import { chatTurn, gatewayStatus } from "./lib/gateway.js";
+// The store's shared people rules + areas live in the digitalmetrics database
+// (stores/{store}/scheduleRules/current, names sealed) — same route safetyobs uses.
+import { scheduleRules } from "../digitalmetrics/lib/firestore.js";
+
+const storeId = (s) => { const n = parseInt(String(s ?? "").replace(/\D/g, ""), 10); return n > 0 ? String(n) : null; };
 
 const SCHEDULER_URL = "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/scheduler";
 const MATCH = "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/scheduler*";
@@ -157,5 +164,18 @@ export const handlers = {
 
   async history() {
     try { return { ok: true, entries: await readHistory() }; } catch (e) { return fail(e); }
+  },
+
+  async rules_get(msg) {
+    const s = storeId(msg.store); if (!s) return fail("no store number");
+    try { return { ok: true, doc: await scheduleRules.get(s) }; } catch (e) { return fail(e); }
+  },
+
+  async rules_put(msg) {
+    const s = storeId(msg.store); if (!s) return fail("no store number");
+    try {
+      const r = await scheduleRules.put(s, { rules: msg.rules ?? "", areas: msg.areas ?? null, updatedAt: new Date().toISOString() });
+      return r?.ok === false ? fail(r.error) : { ok: true, editor: r?.data?.lastEditor ?? null };
+    } catch (e) { return fail(e); }
   },
 };

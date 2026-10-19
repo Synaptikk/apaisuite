@@ -181,9 +181,10 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
 
 // ── Morning catch-up (2026-10-08) ──────────────────────────────────
 //
-// Field_Dashboard refreshes once, early in the morning, so it never holds
-// today's observations: a 4:45 "under 2 today" check flagged nearly everyone.
-// The post now goes out after the refresh and tells each leader scheduled
+// Field_Dashboard lags (measured 2026-10-08: no same-day rows; 2026-10-17:
+// same-day rows by 1 PM, but yesterday still filling in after 9 AM), so a
+// 4:45 "under 2 today" check flagged nearly everyone. The post goes out in
+// the morning and tells each leader scheduled
 // today how many to complete today: what the ledger says they are behind
 // through yesterday, plus today's 2 (the user: "complete 4 today to catch up,
 // 6 etc, however many").
@@ -193,8 +194,8 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
  * @param {Array} p.ledgerRows   buildLedger rows computed through yesterday
  * @param {Array<{name:string, jobName:string, shiftStart:string, shiftEnd:string}>} p.schedule   today's whole schedule
  * @param {Array<{userId:string, nickname:string}>} [p.members]
- * @param {Array<{name:string, count?:number}>} [p.today]   today's observations submitted from the suite
- *        (shared through Firestore); the only same-day count there is
+ * @param {Array<{name:string, count?:number}>} [p.today]   today's observations so far
+ *        (mergeTodayCounts of suite submissions and Field_Dashboard's same-day rows)
  * @returns {{rows: Array, behind: Array}}   rows: every leader on today; behind: those with backlog still owed
  */
 export function buildCatchUp({ ledgerRows = [], schedule = [], members = [], today = [], minPerDay = MIN_PER_DAY }) {
@@ -226,6 +227,28 @@ export function buildCatchUp({ ledgerRows = [], schedule = [], members = [], tod
   }
   rows.sort((a, b) => b.owe - a.owe || a.name.localeCompare(b.name));
   return { rows, behind: rows.filter((r) => r.behind > 0 && r.owe > 0) };
+}
+
+/**
+ * Today's count per person from several sources that can hold the same
+ * observation (a suite submission shows up in Field_Dashboard after its next
+ * refresh): the larger count per person wins, never the sum.
+ * @param {...Array<{name:string, count?:number}>} lists
+ * @returns {Array<{name:string, count:number}>}
+ */
+export function mergeTodayCounts(...lists) {
+  const best = new Map();   // first name key → { name, count }
+  for (const list of lists) {
+    const sums = new Map();
+    for (const o of list || []) {
+      const k = nameKeys(o.name)[0];
+      if (!k) continue;
+      const n = Math.max(1, Math.round(Number(o.count) || 1));
+      sums.set(k, { name: o.name, count: (sums.get(k)?.count || 0) + n });
+    }
+    for (const [k, v] of sums) if (!best.has(k) || best.get(k).count < v.count) best.set(k, v);
+  }
+  return [...best.values()];
 }
 
 /**

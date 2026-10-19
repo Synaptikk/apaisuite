@@ -1,5 +1,5 @@
 /* modules/digitalschedule/styles.css
-   Digital Schedule: day strip, coverage grid (scheduler colours: blue = on
+   ScheduleRight: scope bar (workgroup / team / role / jobs), day strip, coverage grid (scheduler colours: blue = on
    guidance, yellow = short, red = over), queue + fitter side panel, roster.
    Every selector scoped under .module-digitalschedule. */
 
@@ -165,3 +165,60 @@
 .module-digitalschedule .ds-tip .out { color: var(--apai-ink-soft); }
 .module-digitalschedule .ds-tip .out::before { content: "- "; font-weight: 700; }
 .module-digitalschedule .ds-submit-state { margin-top: var(--sp-1); font-size: 12px; }
+
+/* scope bar: workgroup → team → role → jobs checklist */
+.module-digitalschedule .ds-scope { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); }
+.module-digitalschedule .ds-scope select { max-width: 16em; }
+.module-digitalschedule .ds-scope-sum { font-size: var(--fs-sm); }
+.module-digitalschedule .ds-dd { position: relative; }
+.module-digitalschedule .ds-dd > summary { list-style: none; cursor: pointer; min-width: 9em; display: inline-flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.module-digitalschedule .ds-dd > summary::-webkit-details-marker { display: none; }
+.module-digitalschedule .ds-dd > summary::after { content: "▾"; font-size: 10px; color: var(--apai-muted); }
+.module-digitalschedule .ds-dd-panel { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: 26em; max-width: 80vw; background: var(--apai-bg-elev); border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: var(--sp-2); }
+.module-digitalschedule .ds-dd-actions { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--apai-border-soft); padding-bottom: var(--sp-1); margin-bottom: var(--sp-1); }
+.module-digitalschedule .ds-dd-list { max-height: 22em; overflow: auto; display: grid; }
+.module-digitalschedule .ds-dd-team { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--apai-muted); padding: var(--sp-2) var(--sp-1) 2px; }
+.module-digitalschedule .ds-dd-job { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--sp-2); align-items: start; padding: 3px var(--sp-1); border-radius: var(--rad-sm, 4px); font-size: var(--fs-sm); color: var(--apai-ink); white-space: normal; cursor: pointer; }
+.module-digitalschedule .ds-dd-job:hover { background: var(--apai-bg-soft); }
+.module-digitalschedule .ds-dd-job input { margin-top: 3px; }
+.module-digitalschedule .ds-dd-job small { grid-column: 2; color: var(--apai-muted); font-size: 11px; }
+
+/* saved weeks (cache) */
+.module-digitalschedule .ds-saved { display: inline-flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; font-size: var(--fs-sm); }
+.module-digitalschedule .ds-chip { border: 1px solid var(--apai-border-soft); background: var(--apai-bg-elev); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--apai-ink); cursor: pointer; }
+.module-digitalschedule .ds-chip small { color: var(--apai-muted); margin-left: 4px; }
+.module-digitalschedule .ds-chip[aria-pressed="true"] { border-color: var(--ds-blue); background: var(--ds-blue-bg); }
+
+/* open-to-close areas */
+.module-digitalschedule .ds-area-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.module-digitalschedule .ds-area-table th, .module-digitalschedule .ds-area-table td { border: 1px solid var(--apai-border-soft); padding: 4px 6px; text-align: left; vertical-align: top; }
+.module-digitalschedule .ds-area-cell.is-ok { color: var(--ds-blue); }
+.module-digitalschedule .ds-area-cell.is-gap { background: var(--ds-under-bg); color: var(--apai-ink); }
+.module-digitalschedule .ds-area-cell .is-new { color: var(--ds-over); }
+.module-digitalschedule .ds-area-cell small { display: block; color: var(--apai-muted); }
+.module-digitalschedule .ds-area-edit { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.module-digitalschedule .ds-area-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.module-digitalschedule .ds-area-row .ds-grow { flex: 1 1 16em; }
+.module-digitalschedule .ds-area-row .ds-grow input { flex: 1; min-width: 10em; }
+
+.module-digitalschedule .ds-byrole > summary { cursor: pointer; font-weight: 600; font-size: var(--fs-sm); }
+.module-digitalschedule .ds-byrole td small { display: block; font-size: 11px; }
+
+.module-digitalschedule .ds-totals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-2); }
+@media (max-width: 900px) { .module-digitalschedule .ds-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.module-digitalschedule .ds-totals > div { border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: var(--sp-2) var(--sp-3); background: var(--apai-bg-elev); display: grid; gap: 2px; font-size: 12px; }
+.module-digitalschedule .ds-totals b { font-size: 16px; }
+
+.module-digitalschedule .ds-qsum { font-size: 12px; margin-top: var(--sp-1); }
+.module-digitalschedule .ds-qlist > summary { cursor: pointer; font-size: 12px; color: var(--apai-ink-soft); margin-top: var(--sp-1); }
+.module-digitalschedule .ds-shift.is-new { border: 1px solid var(--ds-blue); background: var(--ds-blue-bg); box-shadow: inset 3px 0 0 var(--ds-blue); }
+.module-digitalschedule .ds-shift.is-stretched { border: 1px dashed var(--ds-blue); background: var(--ds-blue-bg); }
+.module-digitalschedule .ds-shift.is-gone { text-decoration: line-through; opacity: .55; background: transparent; border: 1px dashed var(--apai-border-soft); cursor: default; font-weight: 400; }
+.module-digitalschedule .ds-shift.is-gone small { text-decoration: none; }
+.module-digitalschedule .ds-was { color: var(--apai-ink-soft); font-style: italic; }
+.module-digitalschedule .ds-num-cell .ds-was { display: block; font-size: 10px; }
+.module-digitalschedule .ds-shift-key { display: inline-block; padding: 0 5px; border-radius: 4px; font-size: 11px; }
+.module-digitalschedule .ds-shift-key.is-new { box-shadow: inset 3px 0 0 var(--ds-blue); background: var(--ds-blue-bg); border: 1px solid var(--ds-blue); }
+.module-digitalschedule .ds-shift-key.is-stretched { background: var(--ds-blue-bg); border: 1px dashed var(--ds-blue); }
+.module-digitalschedule .ds-shift-key.is-changed { background: var(--ds-under-bg); border: 1px dashed var(--apai-ink-soft); }
+.module-digitalschedule .ds-shift-key.is-gone { text-decoration: line-through; opacity: .6; border: 1px dashed var(--apai-border-soft); }

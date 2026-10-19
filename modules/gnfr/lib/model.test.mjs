@@ -140,3 +140,22 @@ test("deliveryPlan: who is off on their delivery day", async () => {
   assert.equal(plan[1].people[0].status, "unknown");                                                   // no schedule posted
   assert.equal(plan[2].people[0].status, "late");                                                      // past due: no off flag
 });
+
+test("deliveredOn: who had items on a day's delivery", async () => {
+  const { deliveredOn, arrivalDay } = await import("./model.js");
+  const today = "2026-10-19";
+  const ls = flatLines([
+    cart("c1", "1", "2026-10-08", [line({ desc: "TOWEL", status: "PO Created", delivered: false, po: "45", eta: "2026-10-09" }),
+                                    line({ desc: "BAGS", status: "PO Created", delivered: false, po: "45", eta: "2026-10-09" })]),
+    cart("c2", "2", "2026-10-01", [line({ desc: "GLOVES", eta: "2026-10-02", arrDay: "2026-10-09", trk: "5448" })]),   // arrival date wins
+    cart("c3", "3", "2026-10-07", [line({ desc: "EARLY", eta: "2026-10-08" })]),                                     // delivered, no arrival date
+    cart("c4", "4", "2026-10-08", [line({ desc: "WAITING", status: "Pending Approval", delivered: false, eta: "2026-10-09" })]),
+    cart("c5", "5", "2026-10-08", [line({ desc: "NOPE", status: "Rejected", delivered: false, eta: "2026-10-09" })]),
+  ], today);
+  assert.equal(arrivalDay(ls.find((l) => l.desc === "WAITING")), "");
+  const day = deliveredOn(ls, "2026-10-09");
+  assert.deepEqual(day.map((p) => [p.win, p.lines.map((l) => l.desc)]), [["1", ["BAGS", "TOWEL"]], ["2", ["GLOVES"]]]);
+  assert.equal(day[0].lines[0].truck, true);
+  assert.equal(day[1].lines[0].truck, false);
+  assert.deepEqual(deliveredOn(ls, "2026-10-09", { spread: 1 }).map((p) => p.win), ["1", "2", "3"]);
+});

@@ -7,7 +7,7 @@
 import { createAuth, SSO_SELECTORS } from "../../shared/auth.js";
 import { withKeepAwake } from "../../shared/sw_keepalive.js";
 import { getUserHomeStore, getUserHomeStoreSource } from "../../shared/userStore.js";
-import { SAFEIQ_ORIGIN, DASHBOARD_PATH, PAGE_SIZE, MAX_PAGES, sqlUrl, hazardSql, compactRow } from "./lib/sql.js";
+import { SAFEIQ_ORIGIN, DASHBOARD_PATH, PAGE_SIZE, MAX_PAGES, sqlUrl, hazardSql, compactRow, actionLogSql, compactActions } from "./lib/sql.js";
 import { IMAGE_SCHEMA, upgradeImageCache } from "./lib/image_cache.js";
 import { singleFlight } from "./lib/single_flight.js";
 import { gtaStoreInPage, decodeClocks } from "./lib/gta_store.js";
@@ -29,6 +29,9 @@ const LAST_STORE_KEY = `${MODULE_ID}.lastStore`;
 // only, never synced, pruned past ONCALL_KEEP_DAYS.
 const ONCALL_KEY   = (store) => `${MODULE_ID}.oncall.${store}`;
 const ONCALL_KEEP_DAYS = 60;
+// Who pressed Accept / Decline on each alert (detections_log), per store-day.
+// Names: local only, pruned on the same horizon as the punches.
+const ACTIONS_KEY  = (store) => `${MODULE_ID}.actions.${store}`;
 const CAMTEAM_TTL_MS   = 7 * 24 * 60 * 60 * 1000;
 const GTA_ORIGIN       = "https://timesheet.cloud.wal-mart.com";
 
@@ -272,7 +275,41 @@ async function pullOncall(msg) {
   }));
 }
 
+// ── accepted / declined / ignored ──────────────────────────────
+
+async function readActions(store) {
+  const { [ACTIONS_KEY(store)]: d } = await chrome.storage.local.get(ACTIONS_KEY(store));
+  return d || { byDate: {} };
+}
+
+async function getActions(msg) {
+  const { store } = await resolveStore(msg?.store);
+  if (!store) return { store: null, actions: null };
+  return { store, actions: await readActions(store) };
+}
+
+/** Pull the action log for msg.from..msg.to and replace those days in the cache. */
+async function pullActions(msg) {
+  const { store } = await resolveStore(msg?.store);
+  if (!store) return { ok: false, error: "No store number. Type one in the toolbar." };
+  const from = msg?.from || null, to = msg?.to || null;
+  return pullFlight(JSON.stringify(["actions", store, from, to]), () => withKeepAwake(`${MODULE_ID}.actions`, async () => {
+    broadcast("oncall-progress", { text: "Reading who accepted and declined…" });
+    const byDate = compactActions(await runSql(actionLogSql({ store, from, to })));
+    const doc = await readActions(store);
+    for (const iso of Object.keys(doc.byDate)) if ((!from || iso >= from) && (!to || iso <= to)) delete doc.byDate[iso];
+    Object.assign(doc.byDate, byDate);
+    const cutoff = localIso(Date.now() - ONCALL_KEEP_DAYS * 86_400_000);
+    for (const iso of Object.keys(doc.byDate)) if (iso < cutoff) delete doc.byDate[iso];
+    doc.at = Date.now();
+    await chrome.storage.local.set({ [ACTIONS_KEY(store)]: doc });
+    return { store, actions: doc };
+  }));
+}
+
 export const handlers = {
+  "get_actions":  getActions,
+  "pull_actions": pullActions,
   "get_state":   getState,
   "pull":        pull,
   "open_safeiq": openSafeIq,

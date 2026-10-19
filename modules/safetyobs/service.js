@@ -10,11 +10,14 @@
 //     (lib/form_fill.js). Submissions are the user's own: the form records the
 //     signed-in account.
 //
-//  2. Morning catch-up post. Field_Dashboard (Power BI) refreshes once, early
-//     in the morning, and never holds today's observations: the original
+//  2. Morning catch-up post. Field_Dashboard (Power BI) lags: the original
 //     4:45 PM "under 2 today" check flagged nearly every coach (measured
 //     2026-10-08: 1 observation for the day at both 10:49 AM and 3:54 PM).
-//     So at POST time (default 9:00) the alarm builds the ledger through
+//     It also refreshes during the day: 2026-10-17's 9:00 post counted 5
+//     observations for 10/16, Power BI held 8 for 10/16 by 1 PM, and the post
+//     named a coach who had caught up. So the alarm holds (re-checking every
+//     HOLD_RETRY_MIN, up to HOLD_UNTIL) until Power BI shows an observation
+//     dated today, proof a refresh ran after yesterday ended. At POST time (default 9:00) the alarm builds the ledger through
 //     yesterday (2 per scheduled day, current month to date, lib/coach_check.js),
 //     reads today's schedule (Digital Metrics' WFM import), and @mentions in
 //     the "1458 management" Workvivo chat each leader on today who is behind:
@@ -26,7 +29,7 @@ import { QUESTIONS, FORM_URL, missingAnswers, LOCATIONS, PROCESSES, TOOLS, TYPES
 import { FILL_FORM } from "./lib/form_fill.js";
 import { PAGE_URL, RESPONSES_URL, SILENT_SIGNIN_URL, FORMS_LOGIN_COOKIE, readPageTokens, buildResponseBody, responseHeaders } from "./lib/form_api.js";
 import { parseObservation, mergeAiPick } from "./lib/parse.js";
-import { buildCatchUp, buildCatchUpMessage, buildLedger, isCheckedTitle } from "./lib/coach_check.js";
+import { buildCatchUp, buildCatchUpMessage, buildLedger, isCheckedTitle, mergeTodayCounts } from "./lib/coach_check.js";
 import { fetchSubmitters } from "../livedashboard/lib/sources/recognition.js";
 import { schedules, safetyObs } from "../digitalmetrics/lib/firestore.js";
 import { postTextToWorkvivo, listChannelMembers } from "../metricshot/lib/sendbird.js";
@@ -46,7 +49,12 @@ const KEY = {
   me:       "safetyobs.me.v1",          // { displayName, at }: who this browser submits as
 };
 export const ALARM = "safetyobs.coachCheck";
+// One-shot re-check while the morning post waits for Field_Dashboard to
+// refresh. Its own name: ensureCheckAlarm would move ALARM to tomorrow.
+export const ALARM_RETRY = "safetyobs.coachCheck.retry";
 const LATE_LIMIT_MIN = 180;
+const HOLD_RETRY_MIN = 30;
+const HOLD_UNTIL = "12:00";   // past this the post goes out with what Power BI has
 const HISTORY_MAX = 50;
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -115,7 +123,7 @@ export async function ensureCheckAlarm() {
 }
 
 export async function onCheckAlarm(alarm) {
-  if (alarm?.name !== ALARM) return;
+  if (alarm?.name !== ALARM && alarm?.name !== ALARM_RETRY) return;
   try {
     const s = await readSettings();
     if (!s.checkEnabled) return;
@@ -170,22 +178,35 @@ async function runCheck({ post, trigger }) {
     const members = mem.ok ? mem.members : [];
 
     const live = await liveToday(s.storeNbr, dateIso);
-    const result = buildCatchUp({ ledgerRows: led.rows, schedule, members, today: live.entries });
+    const today = mergeTodayCounts(live.entries, led.todayObservations);
+    const result = buildCatchUp({ ledgerRows: led.rows, schedule, members, today });
     const message = buildCatchUpMessage(result.behind, { throughLabel: shortDay(throughIso), sinceLabel: monthDay(led.fromIso) });
 
     const rec = {
       dateIso, throughIso, fromIso: led.fromIso, at: Date.now(), trigger, ok: true,
       checked: result.rows, behind: result.behind.map((c) => c.name), message: message?.text || null,
       observationsThrough: led.observationsThrough,
+      observationsToday: led.observationsToday,
       liveToday: live.entries.length, liveError: live.error,
       membersError: mem.ok ? null : mem.error, posted: false,
     };
-    // Yesterday had a schedule but not one observation at the store: the
-    // overnight refresh has probably not landed, so the alarm holds off
-    // rather than post a backlog a day stale. "Post now" still sends.
-    if (post && trigger === "alarm" && led.scheduledThrough && !led.observationsThrough) {
-      rec.error = `No observations dated ${throughIso} yet; Field_Dashboard may not have refreshed. Not posted.`;
-      return saveCheck(rec);
+    // No observation dated today yet means Power BI has not refreshed since
+    // yesterday ended, so yesterday's late ones are missing and the post
+    // would name coaches who already caught up: re-check later. Past
+    // HOLD_UNTIL it posts anyway, unless yesterday (scheduled) still shows
+    // none at all, a backlog a day stale. "Post now" always sends.
+    const yesterdayMissing = led.scheduledThrough && !led.observationsThrough;
+    if (post && trigger === "alarm" && (yesterdayMissing || !led.observationsToday)) {
+      const retryAt = Date.now() + HOLD_RETRY_MIN * 60_000;
+      if (retryAt < nextAt(HOLD_UNTIL, new Date(new Date().setHours(0, 0, 0, 0)))) {
+        await chrome.alarms.create(ALARM_RETRY, { when: retryAt });
+        rec.held = `Waiting for Field_Dashboard to refresh (no observations dated ${yesterdayMissing ? throughIso : dateIso} yet). Re-checking at ${new Date(retryAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`;
+        return saveCheck(rec);
+      }
+      if (yesterdayMissing) {
+        rec.error = `No observations dated ${throughIso} by ${HOLD_UNTIL}; Field_Dashboard may not have refreshed. Not posted.`;
+        return saveCheck(rec);
+      }
     }
     if (post && message) {
       const sent = await postTextToWorkvivo({ channelName: s.channel, text: message.text, mentionedUserIds: message.mentionedUserIds });
@@ -317,13 +338,20 @@ async function ledgerThrough(s, throughIso, from) {
   const fromIso = asked > LEDGER_FLOOR ? asked : LEDGER_FLOOR;
   const days = await leaderSchedules(s.storeNbr, daysBetween(fromIso, throughIso));
   if (!days.length) return { ok: false, error: `No schedules for store ${s.storeNbr} from ${fromIso} to ${throughIso}.` };
-  const obs = await fetchSubmitters(s.storeNbr, fromIso, throughIso);
+  // Through today: its rows are not charged in the ledger, but they are
+  // today's progress and the proof Power BI has refreshed since yesterday.
+  const todayIso = localDay();
+  const obs = await fetchSubmitters(s.storeNbr, fromIso, todayIso > throughIso ? todayIso : throughIso);
   if (!obs.ok) { console.warn("[safetyobs] observations read failed:", obs.error); return { ok: false, error: "Couldn't load observations. Try again." }; }
-  const led = buildLedger({ days, observations: obs.rows, todayIso: throughIso });
+  const past = obs.rows.filter((r) => r.dateIso <= throughIso);
+  const todayObservations = obs.rows.filter((r) => r.dateIso === todayIso && todayIso > throughIso);
+  const led = buildLedger({ days, observations: past, todayIso: throughIso });
   return {
     ok: true, fromIso, toIso: throughIso, ...led,
     scheduledThrough: days.some((d) => d.dateIso === throughIso),
-    observationsThrough: obs.rows.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
+    observationsThrough: past.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
+    todayObservations: todayObservations.map(({ name, count }) => ({ name, count })),
+    observationsToday: todayObservations.reduce((n, r) => n + r.count, 0),
   };
 }
 
@@ -338,7 +366,7 @@ async function runLedger({ from } = {}) {
     const todayIso = localDay();
     const sched = await schedules.get(s.storeNbr, todayIso).catch((e) => ({ error: String(e?.message || e) }));
     const live = await liveToday(s.storeNbr, todayIso);
-    const cu = buildCatchUp({ ledgerRows: led.rows, schedule: sched?.associates || [], today: live.entries });
+    const cu = buildCatchUp({ ledgerRows: led.rows, schedule: sched?.associates || [], today: mergeTodayCounts(live.entries, led.todayObservations) });
     const rec = {
       ...led, at: Date.now(), todayIso,
       today: cu.rows.map(({ name, jobName, shiftStart, shiftEnd, doneToday, owe }) => ({ name, jobName, shiftStart, shiftEnd, doneToday, owe })),

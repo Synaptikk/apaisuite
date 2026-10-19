@@ -1,22 +1,29 @@
 // modules/digitalschedule/lib/coverage.js
 //
 // Pure helpers over the `read` result of lib/page.js:
-//   { ctx, dates[7], demand[{roleId,start,fte}], workers[{workerId,name,job,payType,
+//   { ctx, dates[7], demand[{roleId,start,fte}], roles[{id,name,jobs,guided}],
+//     workgroups[{id,name,teams[{id,name,jobs[{code,desc,roles}]}]}], workers[{workerId,name,job,payType,
 //     employmentType,minor,availability,exceptions,shifts[{day,dow,start,end,job,breaks}],otherEvents}] }
 //
 // Coverage math is the scheduler's own: every 15-minute slot an associate is on
 // the clock outside an unpaid break counts 0.25 toward that hour; "blue" means
 // scheduled EXACTLY equals guidance (checked against all 119 bars of WK 39).
 
-export const ROLES = {
-  1000271: "DPS", 1000560: "DPS ON", 1000545: "Digital TL", 1000415: "Digital AT",
-  1000270: "Digital DM", 1000635: "Digital Backroom", 1000525: "In Home Delivery",
-};
-// role -> job codes whose shifts count toward that role's bars
-export const ROLE_JOBS = { 1000271: ["1-936-1451"] };
+// Role names and role → job codes come from the scheduler (read → roles / workgroups).
 export const IN_HOME_JOB = "1-930-1481";
 export const DOW = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 export const SHORT = ["sat", "sun", "mon", "tue", "wed", "thu", "fri"];
+// The store's most important window (manager, 2026-10-18: 2p–5p): never short, favoured when adding hours.
+export const PEAK = [14, 15, 16];
+export const PEAK_LABEL = "2p–5p";
+export const isPeak = (h) => PEAK.includes(h);
+// Hours before DAY_START are overnight picking for the upcoming event (manager, 2026-10-18): their
+// guidance and coverage are ignored everywhere, and shifts in them (overnights) are never touched.
+export const DAY_START = 5;
+/** A shift that starts before DAY_START or runs past midnight: overnight picking, left alone. */
+export const isOvernight = (s) => { const [a, b] = shiftSpan(s); return a < DAY_START * 60 || b > 1440; };
+// Polaris minorStatus is "NOT_MINOR" for adults — a bare /minor/i matched everyone.
+export const isMinor = (w) => { const v = String(w?.minor ?? ""); return /minor/i.test(v) && !/^(not|non)[_ -]?minor/i.test(v); };
 
 export const toMin = (t) => { const m = String(t).match(/(\d{1,2}):(\d\d)/); return m ? +m[1] * 60 + +m[2] : NaN; };
 export const fmt = (m) => String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, "0") + ":" + String(((m % 60) + 60) % 60).padStart(2, "0");
@@ -36,17 +43,20 @@ export function paidHours(s) {
   return (b - a - unpaidWindows(s).reduce((t, [p, q]) => t + (q - p), 0)) / 60;
 }
 
-export function needFor(data, roleId) {
+/** Hourly guidance per day, summed over one role id or an array of them. */
+export function needFor(data, roleIds) {
+  const want = new Set([roleIds].flat().map(Number));
   const need = data.dates.map(() => Array(24).fill(0));
-  for (const d of data.demand || []) if (d.roleId === roleId) {
+  for (const d of data.demand || []) if (want.has(+d.roleId)) {
     const di = data.dates.indexOf(String(d.start).slice(0, 10));
-    if (di >= 0) need[di][+String(d.start).slice(11, 13)] += d.fte;
+    const h = +String(d.start).slice(11, 13);
+    if (di >= 0 && h >= DAY_START) need[di][h] += d.fte;
   }
   return need;
 }
 
-export function coverage(data, roleId, jobs) {
-  const need = needFor(data, roleId);
+export function coverage(data, roleIds, jobs) {
+  const need = needFor(data, roleIds);
   const days = data.dates.map((date, di) => ({ date, need: need[di], have: Array(24).fill(0) }));
   for (const w of data.workers) for (const s of w.shifts) {
     if (!jobs.includes(s.job)) continue;
@@ -55,7 +65,7 @@ export function coverage(data, roleId, jobs) {
     for (let m = a; m < b; m += 15) {
       if (off.some(([p, q]) => m >= p && m < q)) continue;
       const dd = di + Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
-      if (days[dd]) days[dd].have[h] += 0.25;
+      if (days[dd] && h >= DAY_START) days[dd].have[h] += 0.25;
     }
   }
   return days;

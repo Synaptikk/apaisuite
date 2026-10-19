@@ -1,6 +1,8 @@
 // modules/digitalschedule/module.js
 //
-// Digital Schedule — the wfm-schedule tools in the suite: read a week from the
+// ScheduleRight (was Digital Schedule; id kept as digitalschedule so saved queues,
+// rules and undo history carry over) — the wfm-schedule tools in the suite, for
+// any workgroup / team / role / job code: read a week from the
 // Polaris Workforce Planning scheduler, show coverage against its Hours
 // Guidance graph (blue = exactly on guidance), queue shift edits by hand or
 // from the guidance fitter, check them with the scheduler's own validator, save
@@ -12,10 +14,10 @@ import { handlers } from "./service.js";
 export default {
   manifest: {
     id:          "digitalschedule",
-    group:       "digital",
-    name:        "Digital Schedule",
-    description: "Week coverage vs the WFM Hours Guidance graph, shift edits checked by the scheduler's validator, fit-to-guidance suggestions, undo.",
-    version:     "0.1.0",
+    group:       "storeops",
+    name:        "ScheduleRight",
+    description: "Any team, role or job code: week coverage vs the WFM Hours Guidance graph, shift edits checked by the scheduler's validator, fit-to-guidance suggestions, undo.",
+    version:     "0.2.0",
     status:      "alpha",
     ui: {
       kind: "fullpage",

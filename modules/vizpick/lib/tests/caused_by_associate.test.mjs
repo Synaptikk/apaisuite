@@ -97,18 +97,71 @@ test("an empty or single-update day yields nothing rather than throwing", () => 
   assert.equal(causedByAssociate([E("2026-09-28T09:00:00Z", [B("a", 5, 0, "SHANE", "t1")])]).causedTotal, 0);
 });
 
-test("caused-and-still-open charges leftovers to the newest growth first", () => {
+test("a pull with no scanner nearby comes off the oldest picks first", () => {
   const day = [
     E("2026-09-28T09:00:00Z", [B("010/010", 0, 0, null, null)]),
     E("2026-09-28T13:00:00Z", [B("010/010", 12, 0, "SHANE", "t1")]),
     E("2026-09-28T17:00:00Z", [B("010/010", 14, 0, "MATT", "t2")]),
-    // 10 pulled with no new scan: oldest picks go first.
+    E("2026-09-28T19:00:00Z", [B("010/010", 14, 0, "MATT", "t2")]),
+    // 10 pulled with no new scan and none in the update before: oldest go first.
     E("2026-09-28T21:00:00Z", [B("010/010", 14, 10, "MATT", "t2")]),
   ];
   const { byWin } = causedByAssociate(day);
   assert.equal(byWin.get("MATT").causedOpen, 2);
   assert.equal(byWin.get("SHANE").causedOpen, 2);
   assert.deepEqual(byWin.get("SHANE").causedOpenBins, [{ location: "010/010", open: 2, caused: 12, due: 14, done: 10 }]);
+});
+
+// The analyst's rule (2026-10-19): whoever scans is who pulls, and a pull
+// comes off that person's own picks before anyone else's.
+test("each scanner's pulls come off their own picks", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("013/013", 0, 0, null, null)]),
+    // A surfaces 20 and pulls 10.
+    E("2026-09-28T12:00:00Z", [B("013/013", 20, 10, "A", "t1")]),
+    // B surfaces 10 more and pulls 5.
+    E("2026-09-28T15:00:00Z", [B("013/013", 30, 15, "B", "t2")]),
+  ];
+  const { byWin } = causedByAssociate(day);
+  assert.equal(byWin.get("A").causedOpen, 10);
+  assert.equal(byWin.get("B").causedOpen, 5);
+});
+
+test("B pulling nothing leaves A's 10 with A and B's 10 with B", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("014/014", 0, 0, null, null)]),
+    E("2026-09-28T12:00:00Z", [B("014/014", 20, 10, "A", "t1")]),
+    E("2026-09-28T15:00:00Z", [B("014/014", 30, 10, "B", "t2")]),
+  ];
+  const { byWin } = causedByAssociate(day);
+  assert.equal(byWin.get("A").causedOpen, 10);
+  assert.equal(byWin.get("B").causedOpen, 10);
+});
+
+test("a pull posted one update after a scan belongs to that scanner", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("015/015", 0, 0, null, null)]),
+    E("2026-09-28T12:00:00Z", [B("015/015", 8, 0, "A", "t1")]),
+    E("2026-09-28T14:00:00Z", [B("015/015", 12, 0, "B", "t2")]),
+    // B's pulls post an update late, with no new scan.
+    E("2026-09-28T15:00:00Z", [B("015/015", 12, 4, "B", "t2")]),
+  ];
+  const { byWin } = causedByAssociate(day);
+  assert.equal(byWin.get("A").causedOpen, 8);
+  assert.equal(byWin.get("B")?.causedOpen ?? 0, 0);
+});
+
+test("pulls beyond the puller's own picks come off the oldest", () => {
+  const day = [
+    E("2026-09-28T09:00:00Z", [B("016/016", 0, 0, null, null)]),
+    E("2026-09-28T12:00:00Z", [B("016/016", 10, 0, "A", "t1")]),
+    // B surfaces 2 and pulls 7: their own 2, then 5 of A's.
+    E("2026-09-28T15:00:00Z", [B("016/016", 12, 7, "B", "t2")]),
+  ];
+  const { byWin, causedOpenTotal } = causedByAssociate(day);
+  assert.equal(byWin.get("A").causedOpen, 5);
+  assert.equal(byWin.get("B").causedOpen, 0);
+  assert.equal(causedOpenTotal, 5);
 });
 
 test("caused picks that were all pulled leave nothing charged", () => {

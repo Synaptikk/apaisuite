@@ -47,3 +47,17 @@ test("store numbers are padded to five digits", () => {
   assert.equal(padStore(1458), "01458");
   assert.equal(padStore("#1215"), "01215");
 });
+
+// Real Ids from 2026-10-17: first Id per UTC date, and the suite's own
+// submissions with their PC times (CDT, UTC-5).
+test("localDayOf puts a UTC-dated evening response back on its local day", async () => {
+  const { localDayOf } = await import("../sources/recognition.js");
+  const starts = { "2026-10-15": 4901646, "2026-10-16": 4924140, "2026-10-17": 4952641 };
+  const cdt = 5;
+  assert.equal(localDayOf("2026-10-15", 4922689, starts, cdt), "2026-10-15");   // 6:42 PM 10/15
+  assert.equal(localDayOf("2026-10-16", 4924730, starts, cdt), "2026-10-15");   // 8:33 PM 10/15, dated 10/16
+  assert.equal(localDayOf("2026-10-16", 4934549, starts, cdt), "2026-10-16");   // 11:03 AM 10/16
+  assert.equal(localDayOf("2026-10-17", 4957158, starts, cdt), "2026-10-17");   // today, sized from 10/16
+  assert.equal(localDayOf("2026-10-16", 4924730, starts, 0), "2026-10-16");
+  assert.equal(localDayOf("2026-10-16", 0, starts, cdt), "2026-10-16");          // no Id: UTC date kept
+});

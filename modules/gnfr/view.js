@@ -3,14 +3,15 @@
 // Supply Orders — shell page. Reads the cached store doc (service.js::get),
 // refreshes it from MyGNFR on demand (service.js::pull) and renders five
 // views over the same filtered set: Orders (carts by day, expandable),
-// Items (every line, sortable), Who orders (by person / job title), Regular
+// Items (every line, sortable), Delivery day (who had items on one day's
+// delivery, to tell them to come get it), Who orders (by person / job title), Regular
 // items (rhythm + not reordered) and Spend. All derivation is lib/model.js.
 // Browser storage holds only view conveniences (tab, range, hidden regulars).
 
 import {
   flatLines, cartState, personOf, regulars, duplicates, people, spendBy,
   trackingUrl, parseApprovalLog, STAGE_LABEL, CARRIER, AREAS, daysBetween,
-  deliveryPlan, isIncoming,
+  deliveryPlan, isIncoming, deliveredOn, arrivalDay,
 } from "./lib/model.js";
 
 const NO_TITLE = "Not on recent schedule";
@@ -60,6 +61,8 @@ export async function mount(host, container) {
   let itemLimit = 300;
   let orderSort = "new";         // new | old | total | person | status
   const tableSort = {};          // data-st table name → { col, dir }
+  let arrDay = "";               // Delivery day tab: picked day ("" = today)
+  let arrSpread = 0;             // ± days around it (a truck early or late)
 
   try {
     const saved = await host.storage.local.get(null);
@@ -93,7 +96,7 @@ export async function mount(host, container) {
     const dupeKeys = new Set(dupes.flatMap((d) => [`${d.a.cart}|${d.a.art}`, `${d.b.cart}|${d.b.art}`]));
     const byCart = new Map();
     for (const l of lines) { if (!byCart.has(l.cart)) byCart.set(l.cart, []); byCart.get(l.cart).push(l); }
-    view = { today, fromDay, rangeDays, carts, lines, byCart, who, states, regs, dupes, dupeKeys };
+    view = { today, fromDay, rangeDays, carts, lines, allLines, byCart, who, states, regs, dupes, dupeKeys };
   }
 
   const P = (win) => view.who.get(win) || { win, name: `WIN ${win}`, job: "" };
@@ -379,6 +382,68 @@ export async function mount(host, container) {
       ${ls.length > itemLimit ? `<p class="gn-more"><button type="button" class="btn btn-sm btn-secondary" data-more>Show ${Math.min(300, ls.length - itemLimit)} more (${ls.length - itemLimit} left)</button></p>` : ""}`;
   }
 
+  // ── Delivery day ─────────────────────────────────────────────────────────
+  // Everyone who had items come in on one day, so they can be told to come
+  // get them. The day is the arrival date, else the expected date (see
+  // model.js::arrivalDay): pallet freight never gets an arrival date. Judged
+  // over everything loaded, not the order range. Search, person, job and
+  // area filters apply; the status filter doesn't.
+  const arrLineMatches = (l) => (!f.area || l.area === f.area) && (!f.q || f.q.toLowerCase().split(/\s+/)
+    .every((t) => `${l.desc} ${l.art} ${l.cart} ${l.po} ${l.trk} ${P(l.win).name} ${P(l.win).job}`.toLowerCase().includes(t)));
+  function arrivals() {
+    const day = arrDay || view.today;
+    const groups = deliveredOn(view.allLines.filter((l) => personMatches(l.win) && arrLineMatches(l)), day, { spread: arrSpread })
+      .map((g) => ({ ...g, p: P(g.win) }));
+    return { day, groups };
+  }
+  function renderArrivals() {
+    const { day, groups } = arrivals();
+    const n = groups.reduce((s, g) => s + g.lines.length, 0);
+    els.count.textContent = `${plural(groups.length, "person", "people")} · ${plural(n, "item line")}`;
+    // Recent days that had anything come in, to jump to.
+    const recent = new Map();
+    const lo = iso(new Date(Date.now() - 14 * DAY)), hi = iso(new Date(Date.now() + 3 * DAY));
+    for (const l of view.allLines) { const d = arrivalDay(l); if (d && d >= lo && d <= hi) recent.set(d, (recent.get(d) || 0) + 1); }
+    const rel = (d) => { const x = daysBetween(d, view.today); return x === 0 ? "Today" : x === 1 ? "Yesterday" : x === -1 ? "Tomorrow" : fmtDay(d, { weekday: "short", month: "short", day: "numeric" }); };
+    const bar = `<div class="gn-arr-bar">
+      <label class="gn-field">Day <input type="date" class="input" data-arr-day value="${esc(day)}"></label>
+      <button type="button" class="btn btn-sm btn-secondary" data-arr-jump="${esc(iso(new Date(Date.now() - DAY)))}">Yesterday</button>
+      <button type="button" class="btn btn-sm btn-secondary" data-arr-jump="${esc(view.today)}">Today</button>
+      <label class="gn-field" title="A truck can come a day before or after MyGNFR's expected date"><input type="checkbox" data-arr-spread${arrSpread ? " checked" : ""}> Include a day either side</label>
+      <span class="gn-spacer"></span>
+      <button type="button" class="btn btn-sm btn-primary" data-arr-copy${groups.length ? "" : " disabled"}>Copy list</button>
+    </div>
+    ${recent.size ? `<div class="gn-arr-recent"><small class="gn-muted">Recent delivery days:</small>${[...recent].sort((a, b) => b[0].localeCompare(a[0])).map(([d, c]) =>
+      `<button type="button" class="gn-chip${d === day ? " is-active" : ""}" data-arr-jump="${esc(d)}">${esc(rel(d))} · ${c}</button>`).join("")}</div>` : ""}
+    <p class="gn-hint">Uses MyGNFR's delivered date when it has one, else the expected date. Truck freight (pallets) has no tracking and rarely gets marked delivered, so it shows on its expected day.</p>`;
+    if (!groups.length) { els.pane.innerHTML = bar + `<div class="gn-empty-small">Nothing came in on ${esc(rel(day))}${arrSpread ? " (or a day either side)" : ""}.</div>`; return; }
+    els.pane.innerHTML = bar + groups.map((g) => `<section class="gn-arr-person">
+      <h3>${personCell(g.win)}<small>${plural(g.lines.length, "item")} · ${esc(money0(g.lines.reduce((s, l) => s + l.net, 0)))}</small>
+        <button type="button" class="btn btn-sm btn-secondary" data-who="${esc(g.win)}">All orders</button></h3>
+      <table class="gn-table gn-lines" data-st="arr-${esc(g.win)}">
+        <thead><tr><th></th><th>Item</th><th class="num">Qty</th><th>Came as</th><th>Status</th><th>Cart</th></tr></thead>
+        <tbody>${g.lines.map((l) => `<tr>
+          <td>${thumb(l.img)}</td>
+          <td data-v="${esc(l.desc)}"><b>${esc(l.desc)}</b><small>#${esc(l.art)} · ${esc(l.area)}</small></td>
+          <td class="num" data-v="${l.qty}">${esc(qtyText(l.qty, l.uom))}</td>
+          <td>${l.truck ? "Truck / pallet" : trackCell(l)}${l.inDay !== day ? `<small>${esc(fmtDay(l.inDay, { weekday: "short", month: "short", day: "numeric" }))}</small>` : ""}</td>
+          <td data-v="${lineRank(l)}">${l.stage === "delivered" ? pill("delivered") : `<span class="gn-pill st-ordered" title="MyGNFR hasn't marked it delivered; truck freight usually never is">Expected</span>`}</td>
+          <td><small>#${esc(l.cart)}${l.po ? ` · PO ${esc(l.po)}` : ""}</small></td>
+        </tr>`).join("")}</tbody>
+      </table></section>`).join("");
+  }
+  async function copyArrivals() {
+    const { day, groups } = arrivals();
+    const title = `Supplies in ${fmtDay(day, { weekday: "long", month: "short", day: "numeric" })}${arrSpread ? " (± 1 day)" : ""}: please come get yours`;
+    const item = (l) => `${qtyText(l.qty, l.uom)} × ${l.desc}`;
+    const text = [title, "", ...groups.flatMap((g) => [`${g.p.name}${g.p.job ? ` (${g.p.job})` : ""}: ${plural(g.lines.length, "item")}`, ...g.lines.map((l) => `  - ${item(l)}`), ""])].join("\n");
+    const html = `<p><b>${esc(title)}</b></p>` + groups.map((g) => `<p><b>${esc(g.p.name)}</b>${g.p.job ? ` (${esc(g.p.job)})` : ""}: ${plural(g.lines.length, "item")}<br>${g.lines.map((l) => `&nbsp;&nbsp;• ${esc(item(l))}`).join("<br>")}</p>`).join("");
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+      host.ui.toast(`Copied ${plural(groups.length, "person", "people")}. Paste into Teams or an email.`, { kind: "ok" });
+    } catch (e) { host.ui.toast(`Copy failed: ${e.message}`, { kind: "error" }); }
+  }
+
   // ── Who orders ───────────────────────────────────────────────────────────
   function renderPeople() {
     const ls = filtered();
@@ -575,8 +640,9 @@ export async function mount(host, container) {
     }
     els.pane.className = `gn-pane pane-${tab}`;
     els.csv.hidden = tab === "spend";
+    els.stage.hidden = tab === "arrivals";   // the day's list ignores status
     els.clear.hidden = !anyFilter();
-    ({ orders: renderOrders, items: renderItems, people: renderPeople, regulars: renderRegulars, spend: renderSpend })[tab]();
+    ({ orders: renderOrders, items: renderItems, arrivals: renderArrivals, people: renderPeople, regulars: renderRegulars, spend: renderSpend })[tab]();
     decorateTables(els.pane);
   }
   function setTab(t) {
@@ -606,6 +672,9 @@ export async function mount(host, container) {
     const t = e.target;
     if (t.closest("a")) return;
     if (t.closest("[data-clear]")) { clearAll(); return; }
+    const jump = t.closest("[data-arr-jump]");
+    if (jump) { arrDay = jump.dataset.arrJump; renderArrivals(); decorateTables(els.pane); return; }
+    if (t.closest("[data-arr-copy]")) { copyArrivals(); return; }
     const tsort = t.closest("[data-tsort]");
     if (tsort) {
       const table = tsort.closest("table[data-st]");
@@ -648,11 +717,13 @@ export async function mount(host, container) {
 
   els.pane.addEventListener("change", (e) => {
     const sel = e.target.closest("[data-order-sort]");
+    if (e.target.matches("[data-arr-day]")) { arrDay = e.target.value; renderArrivals(); decorateTables(els.pane); return; }
+    if (e.target.matches("[data-arr-spread]")) { arrSpread = e.target.checked ? 1 : 0; renderArrivals(); decorateTables(els.pane); return; }
     if (sel) { orderSort = sel.value; host.storage.local.set("orderSort", orderSort).catch(() => {}); renderOrders(); decorateTables(els.pane); }
   });
 
   els.csv.addEventListener("click", () => {
-    const ls = tab === "regulars" ? null : sortLines(filtered());
+    const ls = tab === "regulars" ? null : tab === "arrivals" ? arrivals().groups.flatMap((g) => g.lines) : sortLines(filtered());
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     let rows;
     if (ls) {
@@ -665,7 +736,7 @@ export async function mount(host, container) {
     const blob = new Blob([rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `supply-${tab === "regulars" ? "regular-items" : "orders"}-${Number(data.store)}-${view.today}.csv`;
+    a.download = `supply-${tab === "regulars" ? "regular-items" : tab === "arrivals" ? `delivery-${arrivals().day}` : "orders"}-${Number(data.store)}-${view.today}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   });

@@ -376,3 +376,37 @@ export function deliveryPlan(lines, { who, schedule = {}, roster = {}, today }) 
   const order = (d) => d.day || (d.late ? "9998" : "9999");
   return out.sort((a, b) => order(a).localeCompare(order(b)));
 }
+
+// ── what came in on a day ─────────────────────────────────────────────────
+/**
+ * The day a line came in (or is due to): its arrival date when MyGNFR has one,
+ * else its expected date. Only ~2% of delivered lines carry an arrival date;
+ * D-99 truck freight (a pallet) never gets one and often stays "PO Created",
+ * all its lines sharing the truck's expected date (1458, 10/09: 75 lines from
+ * 12 carts). "" for lines that never left approval or were rejected.
+ */
+export function arrivalDay(l) {
+  if (!["ordered", "shipped", "delivered"].includes(l.stage)) return "";
+  return l.arrDay || l.eta || "";
+}
+
+/**
+ * Who had items on the delivery of `day` (± `spread` days, for a truck that
+ * came early or late), so they can be told to come get them (the user,
+ * 2026-10-19). → [{ win, lines }] by item count, lines sorted by description.
+ * Each line gets `inDay` (its arrival day) and `truck` (no tracking number:
+ * pallet freight rather than a parcel).
+ */
+export function deliveredOn(lines, day, { spread = 0 } = {}) {
+  const from = new Date(Date.parse(day) - spread * DAY).toISOString().slice(0, 10);
+  const to = new Date(Date.parse(day) + spread * DAY).toISOString().slice(0, 10);
+  const byWin = new Map();
+  for (const l of lines) {
+    const d = arrivalDay(l);
+    if (!d || d < from || d > to) continue;
+    if (!byWin.has(l.win)) byWin.set(l.win, []);
+    byWin.get(l.win).push({ ...l, inDay: d, truck: !l.trk });
+  }
+  return [...byWin].map(([win, ls]) => ({ win, lines: ls.sort((a, b) => a.desc.localeCompare(b.desc)) }))
+    .sort((a, b) => b.lines.length - a.lines.length || a.win.localeCompare(b.win));
+}

@@ -1,7 +1,7 @@
 // node --test modules/safetyobs/lib/tests/coach_check.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkCoaches, buildMessage, isCheckedTitle } from "../coach_check.js";
+import { checkCoaches, buildMessage, isCheckedTitle, mergeTodayCounts } from "../coach_check.js";
 
 // Made-up names; titles and shift shapes copied from a real store day.
 const schedule = [
@@ -136,4 +136,11 @@ test("catch-up: today's live submissions come off what is owed", () => {
   assert.deepEqual(r.behind.map((c) => c.name), ["Alex Baker"]);   // Jordan: 1 + 2 − 3 = 0, caught up
   const m = buildCatchUpMessage(r.behind, { throughLabel: "Wed 10/7", sinceLabel: "8/22" });
   assert.match(m.text, /complete 3 more today \(3 behind \+ today's 2, 2 done so far\)/);
+});
+
+test("mergeTodayCounts takes the larger count per person, never the sum", () => {
+  const suite = [{ name: "Alex Baker" }, { name: "Alex Baker" }];
+  const pbi = [{ name: "ALEX BAKER", count: 1 }, { name: "Jordan Lee", count: 3 }];
+  const got = Object.fromEntries(mergeTodayCounts(suite, pbi).map((r) => [r.name.toUpperCase(), r.count]));
+  assert.deepEqual(got, { "ALEX BAKER": 2, "JORDAN LEE": 3 });
 });

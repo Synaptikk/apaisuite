@@ -38,6 +38,7 @@ import { createDayOfWeek }         from "./components/dayOfWeek.js";
 import { createOutlierPanel,
          filteredOutlierCount }    from "./components/outlierPanel.js";
 import { createDetailDrawer }      from "./components/detailDrawer.js";
+import { createCategoryPanel }     from "./components/categoryPanel.js";
 
 const NUMBER_FMT = new Intl.NumberFormat("en-US");
 const PROGRESS_KEY = "claimsdisposition.progress";
@@ -69,6 +70,7 @@ export async function mount(host, container) {
     error:         $("cd-error"),
     content:       $("cd-content"),
     summary:       $("cd-summary"),
+    categories:    $("cd-categories"),
     marketCharts:  $("cd-market-charts"),
     storeTable:    $("cd-store-table"),
     timeOfDay:     $("cd-time-of-day"),
@@ -163,6 +165,7 @@ export async function mount(host, container) {
   const summaryCmp      = createSummaryCards({
     getFilteredOutlierCount: (s) => filteredOutlierCount(s),
   });
+  const categoryCmp     = createCategoryPanel();
   const marketChartsCmp = createMarketCharts();
   const storeTableCmp   = createStoreTable({ onSelectStore: (sn) => setState({ selectedStore: sn }) });
   const timeOfDayCmp    = createTimeOfDay();
@@ -175,6 +178,7 @@ export async function mount(host, container) {
   els.header.replaceWith(headerCmp.root);
   els.filters.replaceWith(filterBarCmp.root);
   els.summary.appendChild(summaryCmp.root);
+  els.categories.appendChild(categoryCmp.root);
   els.marketCharts.appendChild(marketChartsCmp.root);
   els.storeTable.appendChild(storeTableCmp.root);
   els.timeOfDay.appendChild(timeOfDayCmp.root);
@@ -183,7 +187,7 @@ export async function mount(host, container) {
   els.drawerHost.appendChild(drawerCmp.root);
 
   const components = [
-    headerCmp, filterBarCmp, summaryCmp, marketChartsCmp,
+    headerCmp, filterBarCmp, summaryCmp, categoryCmp, marketChartsCmp,
     storeTableCmp, timeOfDayCmp, dayOfWeekCmp, outlierCmp, drawerCmp,
   ];
 
@@ -388,7 +392,7 @@ export async function mount(host, container) {
     els.progress.innerHTML = `
       <div class="cd-progress-row">
         <span class="cd-progress-label">
-          ${doc.finishedAt ? "Pull complete" : "Pulling claims data…"}
+          ${doc.fatal ? `Pull failed: ${escapeHtml(doc.fatal)}` : doc.finishedAt ? "Pull complete" : "Pulling claims data…"}
           <strong>${done} / ${total} stores</strong>
           · ${pct}%
         </span>
@@ -405,7 +409,7 @@ export async function mount(host, container) {
       renderProgressDetails(detailsBox, doc);
     });
 
-    if (doc.finishedAt) {
+    if (doc.finishedAt && !doc.fatal) {
       // Auto-hide 2s after completion. On click of Details we cancel this
       // so a curious user can keep the panel open.
       clearTimeout(progressHideTimer);
@@ -432,6 +436,15 @@ export async function mount(host, container) {
       `;
       box.appendChild(row);
     }
+  }
+
+  // A pull that fails (or whose service worker dies) never writes
+  // `finishedAt`, which left the bar reading "0 / N · 0%" forever. Close it
+  // out from this side whenever doPull gives up.
+  async function endProgress(reason) {
+    const doc = (await chrome.storage.session.get(PROGRESS_KEY).catch(() => null))?.[PROGRESS_KEY];
+    if (cancelled) return;
+    renderProgress({ ...(doc || { doneCount: 0, total: 1 }), finishedAt: Date.now(), fatal: doc?.fatal || reason });
   }
 
   // ── Pull → render flow ────────────────────────────────────────
@@ -478,7 +491,8 @@ export async function mount(host, container) {
           ? "Sign-in needed to load claims. Open the claims dashboard, sign in, then Pull again."
           : "Couldn't load claims data. Try Pull again.";
         console.warn("[claimsdisposition] pull failed:", resp.authFailure ? `auth, ${resp.reauthAttempts ?? 0} retries` : resp.error);
-        setState({ inFlightPull: false, error: msg });
+        endProgress(resp.error || msg);
+        setState({ inFlightPull: false, error: resp.error ? `${msg} (${resp.error})` : msg });
         return;
       }
       // Re-list pulls, switch to the new one, materialize records.
@@ -489,6 +503,7 @@ export async function mount(host, container) {
     } catch (e) {
       if (cancelled) return;
       console.error("[claimsdisposition] pull threw:", e);
+      endProgress(String(e?.message ?? e));
       setState({ inFlightPull: false, error: String(e?.message ?? e) });
     }
   }
@@ -566,6 +581,7 @@ export async function mount(host, container) {
       sourcePullMeta,
       cvpByStore: pull.cvp?.byStore || null,
       cvpMeta:    pull.cvp ? { latestWeek: pull.cvp.latestWeek, fetchedAt: pull.cvp.fetchedAt } : null,
+      cvpCategories: pull.cvpCategories || null,
       loading: false,
       filters: {
         storeNumbers:     [],
@@ -606,6 +622,10 @@ export async function mount(host, container) {
     if (cancelled) return;
     if (existing) {
       renderProgress({ ...doc, finishedAt: existing.pulledAt ?? Date.now() });
+    } else if (Date.now() - (doc.startedAt || 0) > 10 * 60_000) {
+      // The pull handler caps itself well under this; a doc this old belongs
+      // to a worker that died mid-pull. Show it ended rather than pulling.
+      renderProgress({ ...doc, finishedAt: Date.now(), fatal: doc.fatal || "the previous pull stopped before finishing — press Pull again" });
     } else {
       renderProgress(doc);
     }
@@ -664,4 +684,8 @@ function sendSW(type, payload = {}, timeoutMs = 60_000) {
       }
     );
   });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

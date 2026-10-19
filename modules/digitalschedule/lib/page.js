@@ -1,6 +1,6 @@
 // modules/digitalschedule/lib/page.js
 //
-// In-page half of the Digital Schedule module. Handed to
+// In-page half of the ScheduleRight module (id digitalschedule). Handed to
 // chrome.scripting.executeScript({ world: "MAIN", func: wfmInPage, args: [args] })
 // against the Polaris scheduler tab (workforce-planning-portal…/scheduler).
 // Same code as .claude/skills/wfm-schedule/scripts/page.js (the CLI evaluates
@@ -95,20 +95,26 @@ export async function wfmInPage(ARGS) {
     const exc = (w) => (w.availabilityExceptions?.generalAvailabilityExceptions || []).filter((e) => String(e.endDateTime) >= c.weekStart && String(e.beginDateTime) <= c.weekEnd + "T23:59")
       .map((e) => ({ from: isoOf(e.beginDateTime), to: isoOf(e.endDateTime), unavailable: e.unavailable ?? e.isUnavailable ?? null, slots: e.timeSlots ?? null }));
     const out = workers.map((x) => { const w = x.worker;
-      const shifts = DAYS.flatMap((_, di) => shiftsOn(x, di).map((e) => ({ day: DATES[di], dow: SHORT[di], shiftId: e.shift.shiftId, job: e.shift.jobName,
+      const shifts = DAYS.flatMap((_, di) => shiftsOn(x, di).map((e) => ({ day: DATES[di], dow: SHORT[di], shiftId: e.shift.shiftId, job: e.shift.jobName, src: e.shift.insTypeCd ?? null, ins: e.shift.insDtTm ?? null, upd: e.shift.lstUpdDtTm ?? null, why: e.shiftUpdateReasonDescription ?? null,
         start: e.shift.shiftStartDateTime.slice(11, 16), end: e.shift.shiftEndDateTime.slice(11, 16), breaks: (e.shift.breaks || []).map(brk) })));
       const other = DAYS.flatMap((_, di) => eventsOn(x, di).filter((e) => e.type !== "SHIFT" && e.type !== "AVAIL").map((e) => ({ day: DATES[di], type: e.type })));
       return { workerId: w.workerId, name: nm(w), job: w.job, payType: w.payType, employmentType: w.employmentType, minor: w.minorStatus ?? null,
         weekTotal: x.weekTotal ?? null, availability: avail(w), exceptions: exc(w), shifts, otherEvents: other }; });
     const demand = (state().scheduler.scheduleLaborDemand.data || []).map((d) => ({ roleId: d.laborRoleId, start: d.startTime, fte: d.fullTimeEquivalent, adjusted: d.adjustedFullTimeEquivalent }));
-    // Every role with guidance this week, named, with the job codes that count toward it (hierarchy.jobs → laborRoles).
-    const H = state().hierarchy || {}, roleJobs = {};
-    for (const j of Object.values(H.jobs?.data || {})) if (j.typeTxt === "JOB") for (const l of j.laborRoles || []) (roleJobs[l.id] ??= []).push(j.name);
-    const roles = [...new Set(demand.map((d) => d.roleId))].map((id) => ({ id, name: H.roles?.[id]?.name || String(id), jobs: roleJobs[id] || [] }))
+    // The store's job tree (Workgroup → Team → Job, hierarchy.jobs) and every labor role: the job
+    // codes that count toward each role (jobs[].laborRoles), and whether it has guidance this week.
+    const H = state().hierarchy || {}, J = H.jobs?.data || {}, roleJobs = {}, guided = new Set(demand.map((d) => d.roleId));
+    for (const j of Object.values(J)) if (j.typeTxt === "JOB") for (const l of j.laborRoles || []) (roleJobs[l.id] ??= []).push(j.name);
+    const kids = (n, type) => (n.childIds || []).map((id) => J[id]).filter((x) => x && x.typeTxt === type).sort((a, b) => a.name.localeCompare(b.name));
+    const workgroups = Object.values(J).filter((n) => n.typeTxt === "WORKGROUP").sort((a, b) => a.name.localeCompare(b.name)).map((g) => ({ id: g.id, name: g.name,
+      teams: kids(g, "TEAM").map((t) => ({ id: t.id, name: t.name,
+        jobs: kids(t, "JOB").map((j) => ({ code: j.name, desc: String(j.description || "").replace(" " + j.name, "") || j.name, roles: (j.laborRoles || []).map((l) => l.id) })) })) }));
+    const roleIds = new Set([...Object.keys(H.roles || {}).map(Number), ...guided, ...Object.keys(roleJobs).map(Number)]);
+    const roles = [...roleIds].map((id) => ({ id, name: H.roles?.[id]?.name || String(id), jobs: roleJobs[id] || [], guided: guided.has(id) }))
       .sort((a, b) => a.name.localeCompare(b.name));
     // The grid follows the scheduler's team picker; scheduleSummary always holds the whole store (no shifts).
     const total = (state().scheduler.scheduleSummary?.data?.workers || []).length || out.length;
-    return { ctx: c, dates: DATES, demand, roles, workers: out, filtered: out.length < total ? { shown: out.length, total } : null };
+    return { ctx: c, dates: DATES, demand, roles, workgroups, workers: out, filtered: out.length < total ? { shown: out.length, total } : null };
   }
 
   // ---------------------------------------------------------------- readback (server copy, via the scheduler's own GET)

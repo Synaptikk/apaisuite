@@ -50,6 +50,7 @@ export const CLAIM_RECORD_FIELDS = [
   "storeNumber",
   "marketNumber",
   "department",
+  "category",          // "fc" | "fresh" | "gm" | "other" (lib/categories.js)
   "itemNumber",
   "itemDescription",
   "upc",

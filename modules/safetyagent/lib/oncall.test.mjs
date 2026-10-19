@@ -81,6 +81,15 @@ test("a schedule that is another store's roster is ignored, titles come from oth
   assert.equal(a.takenBy.leader, 1);
 });
 
+test("an accepter missing from the day's people takes their title from the roster", () => {
+  const cache = {
+    camTeam: parseCamList({ value: [{ Camera_x0020_NAME: 'SAL_TOYS', Supercenter_x0020_Team: 'Seasonal', InScope: 'Yes' }] }),
+    days: { '2026-09-30': { sched: sched.map((s) => [s.name, s.jobName, s.shiftStart, s.shiftEnd]), punch: punches.map((p) => [p.gtaName, p.punches.map((x) => [x.kind, x.min, x.code || ''])]) } },
+  };
+  const a = analyzeOncall([row('14:00', 'NOBODY ONSHIFT', 1)], cache, COL);
+  assert.equal(a.takenBy.unknown, 1);
+});
+
 test('team mapping keeps leads out of wave 1', () => {
   assert.equal(teamForJob('Seasonal TA'), 'Seasonal');
   assert.equal(teamForJob('Seasonal TL'), null);

@@ -11,6 +11,7 @@
 
 import { normalizeDisposition } from "../data/schema.js";
 import { toIsoDate } from "./dates.js";
+import { categoryOfDept } from "./categories.js";
 
 /**
  * Materialize canonical records from one pull's stored row data.
@@ -66,12 +67,14 @@ export function rowToRecord(row, { storeNumber, marketNumber, index }) {
   const totalCost   = toNumber(row["Total Cost"]);
   const totalRetail = toNumber(row["Total Retail"]);
   const quantity    = toNumber(row["QTY"]) || 1;
+  const department  = cleanDept(row["Department"]);
 
   return {
     claimId: `S${storeNumber}-${index}`,
     storeNumber,
     marketNumber,
-    department:       cleanDept(row["Department"]),
+    department,
+    category:         categoryOfDept(department),
     itemNumber:       row["Item #"] || "",
     itemDescription:  row["Item Desc"] || "",
     upc:              row["UPC #"] || "",

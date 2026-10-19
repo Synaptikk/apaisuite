@@ -847,3 +847,18 @@
    .cd-no-print is kept as a class hook for any future selective hiding
    needs but currently has no associated rule — it's a no-op marker. */
 
+
+/* ── Store categories panel (components/categoryPanel.js) ── */
+.cd-cat-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.cd-cat-card { display: flex; flex-direction: column; gap: 4px; }
+.cd-cat-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cd-cat-card-other { opacity: 0.85; }
+.cd-cat-list {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+  margin: 8px 0 0; font-size: var(--fs-sm);
+}
+.cd-cat-list dt { color: var(--apai-muted); }
+.cd-cat-list dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.cd-cat-ops { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--apai-border); font-size: var(--fs-sm); }
+.cd-cat-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.cd-cat-card-head .cd-pill { white-space: nowrap; }

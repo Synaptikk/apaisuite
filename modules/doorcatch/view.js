@@ -105,19 +105,21 @@ export async function mount(host, container) {
     paint();
   }
 
-  async function refresh() {
+  async function refresh({ quiet = false } = {}) {
     els.refresh.disabled = true;
-    status("", data ? "Updating…" : "Loading…");
+    if (!quiet) status("", data ? "Updating…" : "Loading…");
     const res = await host.messaging.sendRaw("list", { from: els.from.value, to: els.to.value }).catch((err) => { console.warn("[doorcatch]", err?.message || err); return { ok: false, error: "Couldn't reach the extension. Try again." }; });
     els.refresh.disabled = false;
+    if (!alive) return;
     if (!res?.ok) {
+      if (quiet) return;
       // Keep showing what we have; a dropped connection shouldn't blank the page.
       if (!data) paint();
       status("error", res?.error || "Could not load catches.");
       if (/key|store/i.test(res?.error || "") && !res?.noAccess) els.setup.open = true;
       return;
     }
-    status("", "");
+    if (!quiet) status("", "");
     if (els.reviewKey.placeholder.startsWith("AP unlock")) loadSettings();   // just unlocked: show the door link
     await show(res);
     lookup();
@@ -356,5 +358,15 @@ export async function mount(host, container) {
     refresh();
   } else paint();
 
-  return () => { alive = false; link.remove(); };
+  // Other AP computers review the same store's catches: pick up their saves
+  // every minute while this page is in front, and on coming back to it.
+  // Skipped while a note is being typed so the input isn't repainted away.
+  const poll = () => {
+    if (document.visibilityState !== "visible" || !data || notes.size || els.refresh.disabled) return;
+    refresh({ quiet: true });
+  };
+  const timer = setInterval(poll, 60_000);
+  document.addEventListener("visibilitychange", poll);
+
+  return () => { alive = false; clearInterval(timer); document.removeEventListener("visibilitychange", poll); link.remove(); };
 }

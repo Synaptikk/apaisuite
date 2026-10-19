@@ -14,7 +14,7 @@
 //   t — deterministic join key, safe to use as a map key or to query on
 //   n — randomised ciphertext, display only, never a key
 
-import { identify, open } from "./crypto.js";
+import { identify, open, seal } from "./crypto.js";
 import { WRITER_SOURCE, SCHEMA_VERSION } from "./config.js";
 
 // The only metric columns that survive a write. Everything the donor's Excel
@@ -189,6 +189,27 @@ export async function encodeSafetyObs(doc) {
 export async function decodeSafetyObs(doc) {
   if (!doc) return null;
   return { ...doc, entries: await decodeRoster(doc.entries, false) };
+}
+
+// ── scheduleRules/current (modules/digitalschedule) ─────────────────────
+// The store's ScheduleRight rules, shared by every install at the store: the
+// people-rules text and the open-to-close areas both name associates, so each
+// travels as one sealed (AES-GCM) blob. Readers that can't open it get null.
+export async function encodeScheduleRules(doc) {
+  return stamp({
+    rulesSealed: await seal(String(doc.rules ?? "")) ?? "",
+    areasSealed: doc.areas == null ? "" : await seal(JSON.stringify(doc.areas)),
+    updatedAt:   doc.updatedAt ?? new Date().toISOString(),
+    store:       doc.store ?? null,
+  });
+}
+
+export async function decodeScheduleRules(doc) {
+  if (!doc) return null;
+  const rules = doc.rulesSealed ? await open(doc.rulesSealed) : "";
+  let areas = null;
+  if (doc.areasSealed) { try { areas = JSON.parse(await open(doc.areasSealed)); } catch { areas = null; } }
+  return { rules: rules ?? null, areas, updatedAt: doc.updatedAt ?? null, lastEditor: doc.lastEditor ?? null };
 }
 
 // ── suggestions/{date} ───────────────────────────────────────────────────

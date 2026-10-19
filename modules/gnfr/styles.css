@@ -165,3 +165,13 @@
   .module-gnfr .gn-cart-time { display: none; }
   .module-gnfr .gn-cart-state { grid-column: 1 / -1; order: 4; }
 }
+
+/* Delivery day */
+.module-gnfr .gn-arr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.module-gnfr .gn-arr-recent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.module-gnfr .gn-arr-recent .gn-chip { cursor: pointer; font: inherit; font-size: var(--fs-xs); }
+.module-gnfr .gn-arr-recent .gn-chip.is-active { background: var(--apai-blue); border-color: var(--apai-blue); color: #fff; }
+.module-gnfr .gn-arr-person { margin-bottom: var(--sp-4); }
+.module-gnfr .gn-arr-person h3 { display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-2); font-size: var(--fs-md, 1rem); }
+.module-gnfr .gn-arr-person h3 > small { color: var(--apai-ink-soft); font-weight: normal; }
+.module-gnfr .gn-arr-person h3 > .btn { margin-left: auto; }

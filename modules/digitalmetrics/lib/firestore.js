@@ -21,6 +21,7 @@ import {
   encodeAssignments, decodeAssignments,
   encodeSuggestions, decodeSuggestions,
   encodeSafetyObs, decodeSafetyObs,
+  encodeScheduleRules, decodeScheduleRules,
   assertNoPlaintextNames,
 } from "./codec.js";
 
@@ -238,6 +239,14 @@ const sobs = (s, d) => `stores/${s}/safetyObs/${d}`;
 export const safetyObs = {
   async get(s, d)      { return decodeSafetyObs(await getDoc(sobs(s, d))); },
   async put(s, d, doc) { return setDoc(sobs(s, d), await encodeSafetyObs(doc)); },
+};
+
+// modules/digitalschedule: one rules document per store, shared by every install there.
+const srl = (s) => `stores/${s}/scheduleRules/current`;
+
+export const scheduleRules = {
+  async get(s)      { return decodeScheduleRules(await getDoc(srl(s))); },
+  async put(s, doc) { return setDoc(srl(s), await encodeScheduleRules({ ...doc, store: s })); },
 };
 
 export const _internal = { toFields, fromFields, toValue, fromValue };

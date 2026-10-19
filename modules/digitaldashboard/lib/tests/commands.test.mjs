@@ -105,7 +105,7 @@ test("!store lists everyone with 50+ picks in full, the rest up to the cap", asy
   assert.match(text, /…and 8 more under 50 picks/);
 });
 
-test("!performance: every board picker under 75% of their elapsed PICK time spent picking", async () => {
+test("!performance: board pickers behind 90/hr for their elapsed PICK hours, most behind first", async () => {
   const { formatPerformance, parseCommand } = await import("../commands.js");
   assert.equal(parseCommand("!performance"), "performance");
   const t = (h, m) => new Date(2026, 9, 9, h, m).getTime();
@@ -124,7 +124,7 @@ test("!performance: every board picker under 75% of their elapsed PICK time spen
   ];
   const rows = [
     { name: "Jayla Hudgins", picks: 175, rate: 33.63, walks: 21, checkedAt: t(16, 51), status: "offclock" },  // 5h12m of 8h
-    { name: "Good Picker", picks: 700, rate: 100, walks: 20, checkedAt: t(16, 30), status: "offclock" },      // 7h of 8h
+    { name: "Good Picker", picks: 730, rate: 100, walks: 20, checkedAt: t(16, 30), status: "offclock" },      // 730 of 720 expected
     { name: "Mid Shift", picks: 150, rate: 100, walks: 5, checkedAt: t(10, 0), status: "notactive" },        // 1h30 of 3h = 50%
     { name: "Unread Person", picks: null },
     { name: "Short Day", picks: 200, rate: 100, checkedAt: t(16, 0), status: "offclock" },   // 2h of 4h = 50%
@@ -134,13 +134,13 @@ test("!performance: every board picker under 75% of their elapsed PICK time spen
   const walkMix = { "Jayla Hudgins": { walks: 3, items: 20, sections: { Oversized: 2, Ambient: 1 } } };
   const lines = formatPerformance({ rows, leaderboard, absences, walkMix }, board, new Date(2026, 9, 9, 17, 0)).split("\n\n");   // blank line between entries
   assert.ok(lines.every((l) => !l.includes("\n")));
-  assert.equal(lines[0], "Performance @ 5:00 PM - pickers under 75% of their scheduled pick time picking");
-  assert.equal(lines[1], "- Mid Shift: 50% - 1h 30m picking of 3h 00m scheduled - 150 picks @ 100/hr - 5 walks (avg 18m) - as of 10:00 AM");
-  assert.equal(lines[2], "- Short Day: 50% - 2h 00m picking of 4h 00m scheduled - 200 picks @ 100/hr - gone for the day");
-  assert.equal(lines[3], "- Jayla Hudgins: 65% - 5h 12m picking of 8h 00m scheduled - 175 picks @ 34/hr - 21 walks (avg 15m) - gone for the day - walks seen: Oversized 2, Ambient 1");
+  assert.equal(lines[0], "Performance @ 5:00 PM - pickers behind 90/hr for their scheduled PICK hours, most behind first");
+  assert.equal(lines[1], "- Jayla Hudgins: 545 picks behind - 175 of 720 for 8h 00m scheduled - 5h 12m picking (65%) @ 34/hr - 21 walks (avg 15m) - gone for the day - walks seen: Oversized 2, Ambient 1");
+  assert.equal(lines[2], "- Short Day: 160 picks behind - 200 of 360 for 4h 00m scheduled - 2h 00m picking (50%) @ 100/hr - gone for the day");
+  assert.equal(lines[3], "- Mid Shift: 120 picks behind - 150 of 270 for 3h 00m scheduled - 1h 30m picking (50%) @ 100/hr - 5 walks (avg 18m) - as of 10:00 AM");
   assert.equal(lines[4], "- Called out (IVR): Called Off (7:00am-4:00pm)");
   assert.equal(lines[5], "- Not in GIF today, no call-in: No Show (7:00am-4:00pm)");
-  assert.match(lines[6], /^\(8 scheduled to pick: 1 at 75%\+, 2 not read yet, 1 called out, 1 not in GIF, 1 marked absent\./);
+  assert.match(lines[6], /^\(8 scheduled to pick: 1 on pace, 2 not read yet, 1 called out, 1 not in GIF, 1 marked absent\. Expected = 90 picks per PICK hour passed/);
   assert.equal(lines.length, 7);
 });
 

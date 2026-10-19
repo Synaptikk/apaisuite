@@ -611,6 +611,20 @@ const server = http.createServer(async (req, res) => {
         if (!name) return send(res, 400, { error: "name required" });
         return send(res, 200, await run(`assoc ${name}`, () => R.readAssociateDetail(name)));
       }
+      case "/details": {
+        // manual only (user, 2026-10-19: "force a check on everyone assigned
+        // to pick") — one batched phone trip; picks land on the roster that
+        // !performance reads. Chat commands never call this.
+        const names = q("names", "").split("|").map((s) => s.trim()).filter(Boolean);
+        if (!names.length) return send(res, 400, { error: "names required" });
+        return send(res, 200, await run(`details ${names.length}`, async () => {
+          const got = await R.readAssociateDetails(names);
+          const picks = Object.fromEntries(Object.entries(got).map(([n, d]) => [n, detailFacts(d)]));
+          if (state.roster) { state.roster = applyDetails(state.roster, picks, Date.now()); state.rosterAt = Date.now(); save(); }
+          log(`store: forced detail read — ${Object.values(picks).filter((p) => !p.error).length}/${names.length}`);
+          return { read: Object.keys(got).length, details: got };
+        }));
+      }
       case "/breaks": {
         // names = who the assignment grid has on PICK this hour (the caller
         // knows the grid; the daemon only knows GIF).

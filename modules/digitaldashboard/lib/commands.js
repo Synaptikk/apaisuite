@@ -140,18 +140,18 @@ export function formatStore(s, now = new Date(), { max = 60 } = {}) {
 }
 
 /**
- * !performance — opportunities only (user, 2026-10-09): every associate with
- * PICK hours on the Daily Board who spent under 75% of their scheduled pick
- * time so far actually picking (a 4-hour PICK block with 2 h picking = 50%).
+ * !performance — who is behind, most behind first (user, 2026-10-19): every
+ * associate with PICK hours on the Daily Board whose picks trail the board's
+ * PICK hours × PERF_PICK_RATE (the store's usual 90-95/hr; the low end is used).
  *
- * Time picking = total picks ÷ GIF pick rate (GIF's rate covers all walks so
- * far), both from the same associate-detail read — taken when they stop
- * picking. It's compared with the PICK hours on the board that had passed by
- * that read, so a mid-shift read isn't held against hours still to come;
- * leaving early counts against them (those hours had passed).
+ * Picks come from an associate-detail read, taken when they stop picking, and
+ * are compared with the PICK hours on the board that had passed by that read,
+ * so a mid-shift read isn't held against hours still to come; leaving early
+ * counts against them (those hours had passed). Time picking (picks ÷ their
+ * GIF rate, which covers all walks so far) is shown alongside as context.
  */
 export const PERF_MIN_PICK_HOURS = 1;   // any PICK hours on the board
-export const PERF_TARGET_SHARE = 0.75;
+export const PERF_PICK_RATE = 90;       // expected picks per scheduled PICK hour
 const PERF_MIN_ELAPSED_MIN = 60;   // too early in the shift to judge
 
 export function pickingMinutes(r) {
@@ -181,7 +181,7 @@ function pickMinutesElapsed(hours, at) {
  */
 const ABSENT_AFTER_MIN = 30;
 
-export function performanceReview(rows, board, { minHours = PERF_MIN_PICK_HOURS, target = PERF_TARGET_SHARE, leaderboard = null, absences = null, now = new Date() } = {}) {
+export function performanceReview(rows, board, { minHours = PERF_MIN_PICK_HOURS, rate = PERF_PICK_RATE, leaderboard = null, absences = null, now = new Date() } = {}) {
   const out = { opportunities: [], onTrack: 0, notRead: [], tooEarly: 0, considered: 0, absent: [], calledOut: [], markedAbsent: 0 };
   const nowMin = now.getHours() * 60 + now.getMinutes();
   for (const b of board || []) {
@@ -196,16 +196,17 @@ export function performanceReview(rows, board, { minHours = PERF_MIN_PICK_HOURS,
       if (nowMin >= Math.min(...hours) * 60 + ABSENT_AFTER_MIN) { out.absent.push({ name: b.name, shift: b.shiftLabel || null }); continue; }
     }
     out.considered++;
-    const picked = r ? pickingMinutes(r) : null;
-    if (picked == null || !r.checkedAt) { out.notRead.push(r?.name ?? b.name); continue; }
+    if (!r || r.picks == null || !r.checkedAt) { out.notRead.push(r?.name ?? b.name); continue; }
     const sched = pickMinutesElapsed(hours, r.checkedAt);
     if (sched < PERF_MIN_ELAPSED_MIN) { out.tooEarly++; continue; }
-    const share = picked / sched;
-    if (share >= target) { out.onTrack++; continue; }
-    out.opportunities.push({ name: r.name, picked, sched, share, picks: r.picks, rate: r.rate, walks: r.walks,
-      at: r.checkedAt, gone: r.status === "offclock", shift: b.shiftLabel || null });
+    const expected = Math.round((sched / 60) * rate);
+    const behind = expected - r.picks;
+    if (behind <= 0) { out.onTrack++; continue; }
+    const picked = pickingMinutes(r);
+    out.opportunities.push({ name: r.name, behind, expected, picked, sched, share: picked != null ? picked / sched : null,
+      picks: r.picks, rate: r.rate, walks: r.walks, at: r.checkedAt, gone: r.status === "offclock", shift: b.shiftLabel || null });
   }
-  out.opportunities.sort((a, b) => a.share - b.share);
+  out.opportunities.sort((a, b) => b.behind - a.behind);
   return out;
 }
 
@@ -225,31 +226,31 @@ export function withLeaderboardRates(rows, leaderboard) {
 
 export function formatPerformance(s, board, now = new Date()) {
   const rv = performanceReview(withLeaderboardRates(s?.rows, s?.leaderboard), board, { leaderboard: s?.leaderboard, absences: s?.absences, now });
-  const pct = Math.round(PERF_TARGET_SHARE * 100);
-  const lines = [`Performance @ ${stamp(now)} - pickers under ${pct}% of their scheduled pick time picking`];
+  const lines = [`Performance @ ${stamp(now)} - pickers behind ${PERF_PICK_RATE}/hr for their scheduled PICK hours, most behind first`];
   if (!rv.considered && !rv.absent.length && !rv.calledOut.length) return `${lines[0]}\n- nobody on today's board with PICK hours`;
-  if (!rv.opportunities.length) lines.push("- none so far");
+  if (!rv.opportunities.length) lines.push("- nobody behind so far");
   for (const o of rv.opportunities) {
-    const walks = o.walks > 0 ? ` - ${o.walks} walk${o.walks === 1 ? "" : "s"} (avg ${Math.round(o.picked / o.walks)}m)` : "";
-    lines.push(`- ${o.name}: ${Math.round(o.share * 100)}% - ${dur(o.picked)} picking of ${dur(o.sched)} scheduled` +
-      ` - ${n(o.picks)} picks @ ${Math.round(o.rate)}/hr${walks}${o.gone ? " - gone for the day" : ` - as of ${clockOf(o.at)}`}` +
+    const time = o.picked != null ? ` - ${dur(o.picked)} picking (${Math.round(o.share * 100)}%) @ ${Math.round(o.rate)}/hr` : "";
+    const walks = o.walks > 0 ? ` - ${o.walks} walk${o.walks === 1 ? "" : "s"}${o.picked != null ? ` (avg ${Math.round(o.picked / o.walks)}m)` : ""}` : "";
+    lines.push(`- ${o.name}: ${n(o.behind)} picks behind - ${n(o.picks)} of ${n(o.expected)} for ${dur(o.sched)} scheduled` +
+      `${time}${walks}${o.gone ? " - gone for the day" : ` - as of ${clockOf(o.at)}`}` +
       (s?.walkMix?.[o.name] ? ` - walks seen: ${mixText(s.walkMix[o.name])}` : ""));
   }
   const who = (list) => list.map((a) => `${titleName(a.name)}${a.shift ? ` (${a.shift})` : ""}`).join(", ");
   if (rv.calledOut.length) lines.push(`- Called out (IVR): ${who(rv.calledOut)}`);
   if (rv.absent.length) lines.push(`- Not in GIF today, no call-in${s?.absences ? "" : " (IVR not checked)"}: ${rv.absent.map((a) => `${titleName(a.name)}${a.shift ? ` (${a.shift})` : ""}`).join(", ")}`);
-  const tail = [`${rv.onTrack} at ${pct}%+`];
+  const tail = [`${rv.onTrack} on pace`];
   if (rv.notRead.length) tail.push(`${rv.notRead.length} not read yet`);
   if (rv.tooEarly) tail.push(`${rv.tooEarly} too early to tell`);
   if (rv.calledOut.length) tail.push(`${rv.calledOut.length} called out`);
   if (rv.absent.length) tail.push(`${rv.absent.length} not in GIF`);
   if (rv.markedAbsent) tail.push(`${rv.markedAbsent} marked absent`);
-  lines.push(`(${rv.considered + rv.absent.length + rv.calledOut.length} scheduled to pick: ${tail.join(", ")}. Time picking = picks ÷ GIF pick rate, read when they stop.)`);
+  lines.push(`(${rv.considered + rv.absent.length + rv.calledOut.length} scheduled to pick: ${tail.join(", ")}. Expected = ${PERF_PICK_RATE} picks per PICK hour passed; picks read when they stop.)`);
   return lines.join("\n\n");   // blank line between associates (user, 2026-10-09: readability)
 }
 
 export function formatHelp() {
-  return "Digital Dashboard commands: !pph (picks per hour) · !express · !breaks · !breaklog (today's long breaks) · !store (roster + store help) · !performance (pickers under 75% time picking) · !staffing (pickers needed by hour) · !summary · !help";
+  return "Digital Dashboard commands: !pph (picks per hour) · !express · !breaks · !breaklog (today's long breaks) · !store (roster + store help) · !performance (pickers behind 90/hr, most behind first) · !staffing (pickers needed by hour) · !summary · !help";
 }
 
 /** Same question in the same chat within this long of its reply → no second reply. */

@@ -23,7 +23,8 @@ import {
 } from "./lib/looker.js";
 import { toCsv } from "./lib/looker_csv.js";
 import { putPull, pruneOldPulls, getPullById } from "./lib/db.js";
-import { fetchCvpForMarket } from "./lib/cvp.js";
+import { fetchCvpForStores, fetchOpsCvpByCategory } from "./lib/cvp.js";
+import { OPS_PORTAL_DEPTS } from "./lib/categories.js";
 import { classifyAuthResponse, isAuthFailureStatus, reloadTabAndWait } from "../../shared/auth.js";
 import { getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster } from "../../shared/marketRoster.js";
@@ -94,13 +95,23 @@ const KEEP_LAST_N_PULLS = 30;
 const LOG = (...args) => console.log("[claimsdisposition]", ...args);
 
 // ── Embed tab management ─────────────────────────────────────────────
+// The claims report on either Looker host, with or without "/embed" and with
+// an optional "/u/<n>" account slot. A browser signed into more than one
+// Google account lands on /embed/u/1/reporting/…; the old exact
+// "/embed/reporting/" check called that tab "waiting on datastudio.google.com"
+// and failed every pull (2026-10-18).
+const REPORT_TAB_RE =
+  /^https:\/\/(datastudio|lookerstudio)\.google\.com\/(embed\/)?(u\/\d+\/)?reporting\/4d607b7f-15b3-488a-b7a3-c426c7dc5b37(\/|$|\?)/;
+const isReportUrl = (url) => REPORT_TAB_RE.test(url || "");
+
 async function findEmbedTab() {
-  // Two URL shapes Looker uses for the embed; match both.
-  const queries = await Promise.all([
-    chrome.tabs.query({ url: "https://datastudio.google.com/embed/reporting/4d607b7f-15b3-488a-b7a3-c426c7dc5b37/*" }),
-    chrome.tabs.query({ url: "https://lookerstudio.google.com/embed/reporting/4d607b7f-15b3-488a-b7a3-c426c7dc5b37/*" }),
-  ]);
-  return queries.flat()[0] ?? null;
+  const tabs = await chrome.tabs.query({
+    url: ["https://datastudio.google.com/*", "https://lookerstudio.google.com/*"],
+  });
+  // Prefer a true embed tab; fall back to any tab on the report.
+  return tabs.find((t) => isReportUrl(t.url) && t.url.includes("/embed/"))
+      ?? tabs.find((t) => isReportUrl(t.url))
+      ?? null;
 }
 
 async function ensureEmbedTab({ openIfMissing = true } = {}) {
@@ -127,7 +138,7 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
     const t = await chrome.tabs.get(tab.id).catch(() => null);
     if (!t) return { ok: false, error: "embed tab was closed before it finished loading" };
     last = { status: t.status ?? "?", url: t.url ?? t.pendingUrl ?? "" };
-    if (last.status === "complete" && last.url.includes("/embed/reporting/")) {
+    if (last.status === "complete" && isReportUrl(last.url)) {
       await sleep(1500); // one more breath for the bootstrap
       await registerSessionTab("claimsdisposition", tab.id);
       return { ok: true, tabId: tab.id, opened: true };
@@ -144,8 +155,10 @@ async function ensureEmbedTab({ openIfMissing = true } = {}) {
   //    sign-in page. Foreground it instead and say so in the error. Google
   //    account auth has no auto-clickable SSO button, so this is the one
   //    case the suite's background-only auth rule allows a foreground tab.
-  const onEmbed = last.url.includes("/embed/reporting/");
-  const where = last.url ? new URL(last.url).host : "(no url yet)";
+  const onEmbed = isReportUrl(last.url);
+  // Host + path (no query), so a report shown at an unexpected address is
+  // distinguishable from a sign-in page in the error the user sees.
+  const where = last.url ? (() => { const u = new URL(last.url); return u.host + u.pathname; })() : "(no url yet)";
   if (!onEmbed && last.url) {
     LOG(`embed tab stuck on ${where} (status=${last.status}) — foregrounding for sign-in`);
     try { await chrome.tabs.update(tab.id, { active: true }); } catch (_) {}
@@ -364,6 +377,7 @@ export const handlers = {
     if (!tabRes.ok) {
       LOG(`ensureEmbedTab failed: ${tabRes.error}`);
       progress.fatal = tabRes.error;
+      progress.finishedAt = Date.now();
       await chrome.storage.session.set({ [STORAGE_PROGRESS_KEY]: progress });
       return { ok: false, error: tabRes.error };
     }
@@ -388,7 +402,7 @@ export const handlers = {
         timeoutMs: 30_000,
         waitForReady: async (tabId) => {
           const t = await chrome.tabs.get(tabId).catch(() => null);
-          return !!t?.url && t.url.includes("/embed/reporting/") && t.status === "complete";
+          return isReportUrl(t?.url) && t.status === "complete";
         },
       });
       if (!reloaded.ok) {
@@ -423,21 +437,27 @@ export const handlers = {
       totalRows += r.rows.length;
     }
     if (totalRows > 0) {
-      // Sidecar fetch: pull this market's CVP performance data (sell-through
-      // + 8-week history per store) from Hoops and bundle it into the same
-      // pull record. Non-fatal: if Hoops is unreachable, the pull still
-      // lands without CVP and the user just sees blank Sell-Through cells
-      // until the next pull retries.
+      // Sidecar fetch: CVP sell-through + 8-week history per pulled store
+      // from Ops Portal, bundled into the same pull record. Non-fatal: if
+      // Ops Portal is unreachable the pull still lands without CVP and the
+      // Sell-Through cells stay blank until the next pull retries.
       let cvp = null;
-      if (!marketNumber) {
-        LOG("CVP skipped: no home market set (Settings > Defaults)");
-      } else {
-        try {
-          cvp = await fetchCvpForMarket({ marketNbr: marketNumber });
-          LOG(`CVP fetched: market=${marketNumber} latestWeek=${cvp.latestWeek} stores=${Object.keys(cvp.byStore).length}`);
-        } catch (e) {
-          LOG(`CVP fetch failed (non-fatal): ${e?.message ?? e}`);
-        }
+      try {
+        cvp = await fetchCvpForStores(Object.keys(storesByNumber));
+        LOG(`CVP fetched: latestWeek=${cvp.latestWeek} stores=${Object.keys(cvp.byStore).length} errors=${cvp.errors.length}`);
+      } catch (e) {
+        LOG(`CVP fetch failed (non-fatal): ${e?.message ?? e}`);
+      }
+
+      // Second sidecar: Ops Portal's CVP adherence + sell-through split into
+      // F&C / Fresh / GM per store (the category panel). Also non-fatal.
+      let cvpCategories = null;
+      try {
+        cvpCategories = await fetchOpsCvpByCategory(Object.keys(storesByNumber), OPS_PORTAL_DEPTS);
+        LOG(`Ops Portal CVP by category: stores=${Object.keys(cvpCategories.byStore).length} errors=${cvpCategories.errors.length}`);
+        if (cvpCategories.errors.length) LOG(`  first error: ${cvpCategories.errors[0]}`);
+      } catch (e) {
+        LOG(`Ops Portal CVP by category failed (non-fatal): ${e?.message ?? e}`);
       }
 
       const pullRecord = {
@@ -453,6 +473,7 @@ export const handlers = {
           ms: r.ms, error: r.error ?? null, warning: r.warning ?? null,
         })),
         cvp,   // null on Hoops failure — view side handles missing CVP gracefully
+        cvpCategories,   // null on Ops Portal failure — category panel shows claims-only figures
       };
       try {
         await putPull(pullRecord);

@@ -273,21 +273,20 @@ export function rollupPeople(offers, people = {}) {
   return [...by.values()];
 }
 
-/**
- * The whole view-side pipeline over the service's cache.
- *
- * @param rows    compact alert rows (already date-filtered)
- * @param oncall  service cache: { camTeam: { cam: { team } }, days: { iso: { sched, punch } } }
- * @param COL     lib/aggregate.js::COL
- * @param today   { iso, min } — today's date and minutes now; open shifts run to it
- * @returns { offers, people, missingDays, unknownCams, schedFallbackDays, takenBy, summary }
- */
-export function analyzeOncall(rows, oncall, COL, today = null) {
+/** service cache camTeam { cam: { team } } → { cam: team } */
+export function camTeamMap(oncall) {
   const camTeam = {};
   for (const [cam, v] of Object.entries(oncall?.camTeam || {})) if (v?.team) camTeam[cam] = v.team;
+  return camTeam;
+}
 
-  // Schedules decoded once; a day whose schedule does not match its punches
-  // (wrong store's roster) contributes nothing to the roster either.
+/**
+ * People per store-day for every date the rows touch, from the service cache.
+ * Schedules decoded once; a day whose schedule does not match its punches
+ * (wrong store's roster) contributes nothing to the roster either.
+ * @returns { raw, days: { iso: people[] }, missingDays, schedFallbackDays }
+ */
+export function buildDays(rows, oncall, COL, today = null) {
   const raw = {};
   for (const [iso, d] of Object.entries(oncall?.days || {})) {
     const punches = (d.punch || []).map(([gtaName, ps]) => ({ gtaName, punches: ps.map(([kind, min, code]) => ({ kind, min, code: code || null })) }));
@@ -304,6 +303,21 @@ export function analyzeOncall(rows, oncall, COL, today = null) {
     if (!v.good) schedFallbackDays.push(iso);
     days[iso] = buildDay({ schedule: v.good ? v.schedule : [], punches: v.punches, roster, nowMin: today && iso === today.iso ? today.min : null });
   }
+  return { raw, roster, days, missingDays, schedFallbackDays };
+}
+
+/**
+ * The whole view-side pipeline over the service's cache.
+ *
+ * @param rows    compact alert rows (already date-filtered)
+ * @param oncall  service cache: { camTeam: { cam: { team } }, days: { iso: { sched, punch } } }
+ * @param COL     lib/aggregate.js::COL
+ * @param today   { iso, min } — today's date and minutes now; open shifts run to it
+ * @returns { offers, people, missingDays, unknownCams, schedFallbackDays, takenBy, summary }
+ */
+export function analyzeOncall(rows, oncall, COL, today = null) {
+  const camTeam = camTeamMap(oncall);
+  const { raw, roster, days, missingDays, schedFallbackDays } = buildDays(rows, oncall, COL, today);
 
   const offers = offeredTo(rows, camTeam, days, COL);
   const unknownCams = [...new Set(offers.filter((o) => o.skip === "no camera team").map((o) => rows[o.i][COL.camera]))];

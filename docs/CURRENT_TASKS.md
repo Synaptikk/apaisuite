@@ -10,6 +10,50 @@ notes live in `QRCallBox/public/extension/releases.json`.
 
 ## In-flight
 
+### 00000000. Safety Agent: accepted / declined / ignored per person (2026-10-19)
+
+**Asked:** per-associate breakdown of how they responded to SafeIQ alerts that
+were theirs, exportable for a date range. Rules from the user: team leads count
+only on their own area's cameras; coaches, the store manager and Digital leads
+are not counted.
+
+**Built:** `lib/sql.js::actionLogSql` + `compactActions` (detections_log names
+everyone who pressed Accept/Decline), `lib/response.js::responseBreakdown`,
+`get_actions` / `pull_actions` handlers (`safetyagent.actions.<store>`), new
+"Accepted, declined, ignored" section with Everyone / Team leads / Associates,
+a per-browser "Don't count" name list, and Export CSV. `oncall.js` day-building
+factored into `buildDays`. Verified live in debug Edge on 1458 10/1→10/19.
+
+**Open:** (1) Normal Edge needs an extension reload. (2) "Who was on the clock"
+still models escalation at 3 min and leads as wave 2 only; SafeIQ actually
+escalates at ~80 s and leads get their own area's alerts at once (measured from
+the log). (3) Hardlines had no lead until an F&C TL moved there on 10/11. Rows show each person's newest title (a TA promoted to TL mid-range is listed as a lead), and each alert is judged by the title held that day.
+
+### 0000000. Claims Disposition: category totals + associates hurting CVP (2026-10-18)
+
+**Asked:** separate totals for F&C, Fresh and GM (departments per Ops Portal),
+then the top associates affecting each store's CVP performance.
+
+**Built:** `lib/categories.js` (dept→category from Ops Portal
+`utils.dept.sbuIdDepts`; F&C excludes Fresh, Style/H&W/Fuel → "Other"),
+`record.category`, `metrics.js::byCategory` + `cvpAssociates` (adherence =
+CVP'd units / CVP-recommended units, Ops Portal's definition),
+`components/categoryPanel.js` under the summary cards, and a pull sidecar
+`pull.cvpCategories` (Ops Portal `metric.cvp.megaCard.CVPOverview` per store ×
+category). Verified: metrics on a 21.8k-row export, the fetcher live in an Ops
+Portal tab (1458 WK37 F&C 2,145 + Fresh 8,160 = portal F&C tile), panel render
+in a harness page.
+
+**Also fixed:** the Hoops Report Hub GraphQL (`api.hoops.wal-mart.com/report-hub/v1/graphql`)
+now answers 404, so every pull had `cvp: null` (blank Sell Through, drawer CVP
+panel, R10 rule). `lib/cvp.js::fetchCvpForStores` now reads the same shape from
+Ops Portal's CVPOverview store total. Verified with real 7-day pulls (1458, 5151)
+in debug Edge; the mirror's claimsdisposition was replaced with the repo copy
+(May copy backed up in that session's scratchpad).
+
+**Open:** (1) Normal Edge needs an extension reload + a new Pull. (2) Not in
+the PDF yet.
+
 ### 000000. MetricShot email report jobs: Closing List + VizPick (2026-10-08)
 
 **Asked:** closing list at 10:00 daily to email and "1458 Leadership"; VizPick
@@ -29,6 +73,55 @@ not been pressed end to end; first real fire is the next 10:00. (3) Both Edge
 installs share `metricshot.metrics` via storage.sync and dedupe per install —
 if both are open at 10:00 the group gets two emails; disable the jobs in one.
 (4) Recipients have no form field yet (kept across form saves; edit in storage).
+
+### 00000. ScheduleRight: 6-week cache, open-to-close areas, per-role fitting (2026-10-17)
+
+**Asked:** keep a rolling 6 weeks so the tool doesn't re-pull on open; outlying
+register areas (jewelry, electronics, sporting goods) need open-to-close
+coverage; a team-wide fit must still match each role's own graph.
+
+**Built:** (a) every read is cached in module storage (`weeks.index` +
+`weeks.<store>.<wk>`, newest 6 weekStarts per store, ~0.8 MB/week,
+unlimitedStorage); the tool opens the last week from cache; Load week uses the
+cache; Reload pulls fresh; Submit/undo always re-pull first. (b) `lib/areas.js`:
+areas {name, open, close, jobs, people}; defaults Electronics (1-640-7410/7210),
+Sporting Goods (1-640-7411/7200), Jewelry (nobody — the scheduler has no
+jewelry job; name the counter associates), 6a–11p (store hours not in the
+scheduler data). Card shows per-day gaps ("nobody" / "lunch gap"), new gaps
+from the queue, also listed in the Submit confirm and the assistant; fitter
+penalises any 15-min area slot with nobody on the floor. (c) Fitter fits each
+role to its own guidance (`roleJobs`), blue counted per role; "By role" table
+under the day strip. Verified live WK 38: GM › Fashion fit 163 → 182 blue
+(Fashion TA 38 → 54, same as alone), area gaps not increased. Tests 9/9.
+
+**Follow-up same day:** Jewelry = any Fashion associate (Fashion team hourly jobs; empty saved Jewelry areas are filled once). Gaps are now `nobody` / `lunch` (lunch overlap: 2+ on, all at lunch; Stagger lunches fixes, lunch 3–4 h in) / `solo` (no lunch cover: the only person is at lunch, needs an overlapping shift). Stagger lunches button + assistant tool; fitter can re-time just a lunch. WK 38 live: 1 overlap (Mon Electronics) fixed, the other 20.5 h are solo lunches / no one 6–7a.
+
+**Open:** user to confirm store hours; area
+gaps that exist today (Sporting Goods 6–7a most days) are shown, not auto-fixed
+unless shifts in scope can move.
+
+### 00000. ScheduleRight: Digital Schedule opened up to every team (2026-10-17)
+
+**Asked:** "Rename to ScheduleRight and allow all job codes, teams etc. drop
+downs for each group".
+
+**Built:** display name ScheduleRight, sidebar group Store Ops (module id stays
+`digitalschedule`, so queues, people rules, undo history and storage carry
+over). `read` (lib/page.js and the skill's twin) now returns `workgroups` —
+the scheduler's own tree `hierarchy.jobs` WORKGROUP → TEAM → JOB, with each
+job's labor roles — and every role with a `guided` flag. Scope bar:
+Workgroup (or Whole store) → Team → Role (roles with guidance first) → Jobs
+checklist. Guidance is summed over the picked role, or over every role of the
+checked jobs; `needFor`/`coverage`/`suggest` take one role id or an array.
+Hardcoded Digital ROLES/ROLE_JOBS removed. Old single-role prefs are placed
+under the team that holds that role. Verified live in debug Edge (WK 38, 1458):
+11 workgroups / 30 teams / 226 jobs, GM › Fashion, Fashion TA fitter
+(6 changes, blue 38 → 54, discarded). Tests 6/6.
+
+**Open:** (1) Normal Edge needs an extension reload (service-worker code
+changed). (2) Fitting several roles at once pools their guidance: the panel
+warns; one role at a time is exact. (3) In Home / weekend / 12–4 fitter rules
+are still the 1458 Digital ones and apply to every team.
 
 ### 00000. Digital Schedule module: the wfm-schedule tools in the suite (2026-10-08)
 
