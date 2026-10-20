@@ -45,6 +45,12 @@
     <p class="dc-muted dc-hosts-foot">Click a host to see their catches.</p>
   </div>
 
+  <div id="doorcatch-whoami" class="dc-card dc-whoami" hidden>
+    <h2>Who the suite thinks you are</h2>
+    <ul id="doorcatch-whoami-list" class="dc-team"></ul>
+    <div class="dc-review-actions"><button id="doorcatch-whoami-btn" class="btn btn-secondary btn-sm" type="button">Check again</button></div>
+  </div>
+
   <details id="doorcatch-setup" class="dc-setup">
     <summary>Setup</summary>
     <div class="dc-setup-grid">
@@ -53,7 +59,7 @@
         <label class="dc-field">Store <input id="doorcatch-store" class="input dc-store" inputmode="numeric" placeholder="1458"></label>
         <label class="dc-field">Review key <input id="doorcatch-review-key" class="input" type="password" autocomplete="off" placeholder="saved"></label>
         <label class="dc-field">Door key <input id="doorcatch-submit-key" class="input" type="password" autocomplete="off" placeholder="only to build the door link"></label>
-        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        <div class="dc-review-actions"><button class="btn btn-primary btn-sm" type="submit">Save</button><button id="doorcatch-whoami-open" class="btn btn-secondary btn-sm" type="button">Check who I am</button></div>
         <div id="doorcatch-link-box" class="dc-link" hidden>
           <div class="dc-muted">Door host link (post it as a QR code at the door):</div>
           <code id="doorcatch-link"></code>

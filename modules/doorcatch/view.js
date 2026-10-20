@@ -35,6 +35,8 @@ export async function mount(host, container) {
     cntCatches: $("#doorcatch-cnt-catches"), cntHosts: $("#doorcatch-cnt-hosts"), hostRows: $("#doorcatch-host-rows"),
     panelCatches: $("#doorcatch-panel-catches"), panelHosts: $("#doorcatch-panel-hosts"),
     teamForm: $("#doorcatch-team-form"), team: $("#doorcatch-team"), extra: $("#doorcatch-extra"),
+    whoami: $("#doorcatch-whoami"), whoamiList: $("#doorcatch-whoami-list"), whoamiBtn: $("#doorcatch-whoami-btn"),
+    whoamiOpen: $("#doorcatch-whoami-open"),
   };
 
   let data = null;          // last list response
@@ -92,6 +94,30 @@ export async function mount(host, container) {
     return res;
   }
 
+  // Per-source name check (shared/identity_probe.js) plus what the AP list
+  // said, so "couldn't tell who you are" names the source that is missing.
+  async function whoami() {
+    els.whoami.hidden = false;
+    els.whoamiBtn.disabled = true;
+    els.whoamiList.innerHTML = `<li class="dc-muted">Checking…</li>`;
+    const r = await host.messaging.sendRaw("whoami", {}, { timeoutMs: 60_000 }).catch(() => null);
+    els.whoamiBtn.disabled = false;
+    if (!alive) return;
+    if (!r?.ok) { els.whoamiList.innerHTML = `<li class="dc-no">Couldn't reach the extension. Try again.</li>`; return; }
+    const mark = (ok) => `<span class="${ok ? "dc-ok" : "dc-no"}">${ok ? "✓" : "✗"}</span>`;
+    const lines = [
+      `<li>${mark(!!r.identity.displayName)} <b>Name:</b> ${r.identity.displayName ? esc(r.identity.displayName) : "not found"}${r.identity.win ? ` <small>${esc(r.identity.win)}</small>` : ""}</li>`,
+      ...r.sources.map((x) => `<li>${mark(x.ok)} ${esc(x.label)}: ${esc(x.detail)}</li>`),
+    ];
+    if (r.access) {
+      lines.push(r.access.granted
+        ? `<li>${mark(true)} AP list: matched ${esc(r.access.match?.name || "")} <small>${esc(r.access.match?.jobName || "")}</small></li>`
+        : `<li>${mark(false)} AP list: ${esc(r.access.error || "not matched")}</li>`);
+    }
+    els.whoamiList.innerHTML = lines.join("");
+    if (r.access?.granted) { await loadSettings(); refresh(); }
+  }
+
   async function show(res) {
     data = res;
     els.hosts.value = (res.hosts || []).join("\n");
@@ -117,6 +143,7 @@ export async function mount(host, container) {
       if (!data) paint();
       status("error", res?.error || "Could not load catches.");
       if (/key|store/i.test(res?.error || "") && !res?.noAccess) els.setup.open = true;
+      if (res?.noAccess) whoami();
       return;
     }
     if (!quiet) status("", "");
@@ -339,6 +366,8 @@ export async function mount(host, container) {
     const res = await loadTeam(extra.length ? extra : [""]);
     status(res?.ok ? "" : "error", res?.ok ? "Saved who can open Door Catches." : res?.error || "Could not save.");
   });
+  els.whoamiBtn.addEventListener("click", whoami);
+  els.whoamiOpen.addEventListener("click", whoami);
   els.copy.addEventListener("click", () => navigator.clipboard.writeText(els.link.textContent).then(() => status("", "Door link copied.")));
   els.hostsForm.addEventListener("submit", async (e) => {
     e.preventDefault();

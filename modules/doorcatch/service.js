@@ -17,6 +17,8 @@
 // last 14 days of WFM schedule job titles (Digital Metrics' import) at most
 // every 12 h. A key granted that way is re-checked daily and dropped once the
 // person is off the AP team; a pasted key is never re-checked.
+//   whoami         looks for the user's name in every source (gscope, Auror),
+//                  then asks for AP access with it → { identity, sources, access }
 //   cached_list    the last list loaded here (instant paint on open)
 //   peek_items     { upcs } → cached item details only, no network
 //   lookup_items   { upcs, force } → name, brand, category, picture per UPC
@@ -24,6 +26,7 @@
 
 import { getUserHomeStore } from "../../shared/userStore.js";
 import { getIdentity } from "../../shared/identity.js";
+import { checkIdentity } from "../../shared/identity_probe.js";
 import { doorLink, listCatches, requestAccess, setHosts, setReview, setTeam } from "./lib/api.js";
 import { schedules } from "../digitalmetrics/lib/firestore.js";
 import { cachedItems, lookupItems } from "./lib/item_lookup.js";
@@ -53,7 +56,11 @@ async function settings() {
 // Ask QRCallBox for the store's keys as an AP associate. Returns the new
 // settings, or { error } (a 403 says why; a network failure keeps any old key).
 async function apAccess(s) {
-  const me = await getIdentity();
+  // The name is otherwise only learned as a side effect of other modules, so
+  // look for it now rather than sending none.
+  let me = await getIdentity();
+  let check = null;
+  if (!me.displayName) { check = await checkIdentity(); me = await getIdentity(); }
   const res = await requestAccess({ storeNbr: s.storeNbr, name: me.displayName || "", win: me.win || "" });
   if (res.ok) {
     const next = { storeNbr: s.storeNbr, reviewKey: res.reviewKey, submitKey: res.submitKey || "", via: "ap", accessAt: Date.now(), match: res.match || null };
@@ -62,7 +69,9 @@ async function apAccess(s) {
   }
   if (res.status === 403 || res.status === 404) {
     if (s.via === "ap") await chrome.storage.local.set({ [KEY]: { storeNbr: s.storeNbr } });
-    return { error: { ok: false, noAccess: true, error: res.error } };
+    const error = me.displayName ? res.error
+      : "The suite couldn't find your name. Sign in to gscope or Auror in this browser, then press Check again.";
+    return { error: { ok: false, noAccess: true, error, name: me.displayName || "", check: check?.sources || null } };
   }
   return s.reviewKey ? { s } : { error: res };
 }
@@ -145,6 +154,21 @@ export const handlers = {
 
   // The last list this browser loaded, so the page opens with it instantly
   // while a fresh one is fetched. Only returned for the same store.
+  // "Check who I am": every name source, then a fresh access request with
+  // whatever was found (a granted key is saved like any AP unlock).
+  async whoami() {
+    const check = await checkIdentity();
+    const s = await settings();
+    let access = null;
+    if (s.storeNbr) {
+      const got = await apAccess(s);
+      const fresh = got.s && got.s.via === "ap" && Date.now() - got.s.accessAt < 60_000;
+      access = fresh ? { granted: true, match: got.s.match || null }
+        : { granted: false, error: got.error?.error || (got.s ? "Couldn't reach the door catch service. Your saved key still works." : "") };
+    }
+    return { ok: true, storeNbr: s.storeNbr, identity: { displayName: check.displayName, win: check.win, store: check.store }, sources: check.sources, access };
+  },
+
   async cached_list() {
     const s = await settings();
     const got = (await chrome.storage.local.get(LAST_LIST_KEY))[LAST_LIST_KEY];

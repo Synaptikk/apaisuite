@@ -74,3 +74,7 @@
 .module-doorcatch .dc-badge.withdrawn { color: var(--apai-muted); border-style: dashed; }
 .module-doorcatch .dc-told { margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--apai-ink-soft); max-width: 28ch; overflow-wrap: anywhere; }
 .module-doorcatch .dc-hosts tr.dc-total td { font-weight: var(--fw-semi); border-top: 2px solid var(--apai-border-soft); cursor: default; }
+
+.module-doorcatch .dc-whoami { margin: var(--sp-3) 0; }
+.module-doorcatch .dc-whoami .dc-ok { color: var(--apai-success, #1a7f37); }
+.module-doorcatch .dc-whoami .dc-no { color: var(--apai-danger, #c62828); }

@@ -25,6 +25,7 @@
 
 import { FIREBASE_CONFIG, ANALYST_SOURCE } from "./firestore_config.js";
 import { observeIdentity, winFromAurorSub } from "../../../shared/identity.js";
+import { looksLikePersonName } from "../../../shared/identity_probe.js";
 
 const { projectId, databaseId, webApiKey } = FIREBASE_CONFIG;
 
@@ -112,8 +113,11 @@ export async function captureAurorIdentityFromJwt(rawHeader) {
   // the ONLY non-manual source of the home store for the whole suite, which
   // meant anyone who never opened AurorBuddy was permanently unidentified.
   // It is now one source among several — shared/identity.js ranks them.
-  if (next.aurorUserId) {
-    observeIdentity({ source: "auror_jwt", win: winFromAurorSub(next.aurorUserId) }).catch(() => {});
+  // The name claim doubles as the suite's display name (Door Catches matches
+  // it against the AP schedule) when it is a real "First Last".
+  if (next.aurorUserId || next.name) {
+    const displayName = looksLikePersonName(next.name) ? next.name : "";
+    observeIdentity({ source: "auror_jwt", win: winFromAurorSub(next.aurorUserId), displayName }).catch(() => {});
   }
   return next;
 }
