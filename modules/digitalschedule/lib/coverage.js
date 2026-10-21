@@ -24,6 +24,12 @@ export const DAY_START = 5;
 export const isOvernight = (s) => { const [a, b] = shiftSpan(s); return a < DAY_START * 60 || b > 1440; };
 // Polaris minorStatus is "NOT_MINOR" for adults — a bare /minor/i matched everyone.
 export const isMinor = (w) => { const v = String(w?.minor ?? ""); return /minor/i.test(v) && !/^(not|non)[_ -]?minor/i.test(v); };
+// Polaris minor rules, read off its validator on store 1458 (2026-10-21): at most 465 paid minutes
+// (7.75 h) a day (10004 HARD) and no start before 6:15 (10007 HARD, constraint 375). School
+// times (12024) are set per associate and not exposed, so minors also stay off weekday daytimes.
+export const MINOR_MAX_PAID_MIN = 465, MINOR_EARLIEST = 375;
+/** A minor's shift [start, start + len) in minutes, with the store's 1 h lunch over 6 h. */
+export const minorShiftOK = (start, len) => start >= MINOR_EARLIEST && len - (len > 360 ? 60 : 0) <= MINOR_MAX_PAID_MIN;
 
 export const toMin = (t) => { const m = String(t).match(/(\d{1,2}):(\d\d)/); return m ? +m[1] * 60 + +m[2] : NaN; };
 export const fmt = (m) => String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, "0") + ":" + String(((m % 60) + 60) % 60).padStart(2, "0");
@@ -99,8 +105,9 @@ export function summarize(days) {
 // the validator is asked. The server's answer (validate/save) is the truth.
 
 const dayIdx = (dates, d) => { if (d == null) return -1; const s = String(d).toLowerCase(); const i = dates.indexOf(s); return i >= 0 ? i : SHORT.indexOf(s.slice(0, 3)); };
-const findWorker = (data, ch) => data.workers.find((w) => (ch.workerId && w.workerId === ch.workerId) ||
-  (ch.name && String(w.name).toLowerCase() === String(ch.name).toLowerCase()));
+// workerId first: two associates can share a name (1458 has two Elizabeth Davis)
+const findWorker = (data, ch) => (ch.workerId != null && data.workers.find((w) => String(w.workerId) === String(ch.workerId)))
+  || (ch.name && data.workers.find((w) => String(w.name).toLowerCase() === String(ch.name).toLowerCase())) || undefined;
 
 export function applyChanges(data, changes) {
   const out = { ...data, workers: data.workers.map((w) => ({ ...w, shifts: w.shifts.map((s) => ({ ...s, breaks: (s.breaks || []).map((b) => ({ ...b })) })) })) };

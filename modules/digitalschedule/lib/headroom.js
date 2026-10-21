@@ -12,7 +12,7 @@
 // (school hours, validator 12024). Rest between shifts is not modelled —
 // check_with_scheduler catches it.
 
-import { DOW, coverage, paidHours, isMinor, IN_HOME_JOB } from "./coverage.js";
+import { DOW, coverage, paidHours, isMinor, IN_HOME_JOB, MINOR_EARLIEST, MINOR_MAX_PAID_MIN } from "./coverage.js";
 import { windowsFor } from "./suggest.js";
 
 const MIN_SHIFT = 240, BLOCK = 540;
@@ -47,14 +47,14 @@ export function headroom(data, { roleId, jobs, editableFrom = null } = {}) {
     const part = /part/i.test(`${w.employmentType} ${w.payType}`), cap = part ? 33.75 : 40, minor = isMinor(w);
     const now = w.shifts.reduce((a, s) => a + paidHours(s), 0);
     const worked = new Set(w.shifts.map((s) => s.day)), busy = new Set((w.otherEvents || []).map((e) => e.day));
-    const maxDays = part ? 6 : 5;
+    const maxDays = part && !minor ? 6 : 5;   // minors: 5 days a week (validator 10000)
     const open = [];
     data.dates.forEach((date, di) => {
       if (worked.has(date) || busy.has(date) || (editableFrom && date < editableFrom)) return;
       if (minor && di >= 2) return;
-      const wins = windowsFor(w, di, date).map(([a, b]) => [a, Math.min(b, 1440)]).filter(([a, b]) => b - a >= MIN_SHIFT);
+      const wins = windowsFor(w, di, date).map(([a, b]) => [minor ? Math.max(a, MINOR_EARLIEST) : a, Math.min(b, 1440)]).filter(([a, b]) => b - a >= MIN_SHIFT);
       if (!wins.length) return;
-      const best = bestShift(days[di], wins, BLOCK);
+      const best = bestShift(days[di], wins, minor ? Math.min(BLOCK, MINOR_MAX_PAID_MIN + 60) : BLOCK);
       if (best) open.push({ di, date, wins, ...best });
     });
     let room = Math.max(0, cap - now), slots = Math.max(0, maxDays - worked.size);

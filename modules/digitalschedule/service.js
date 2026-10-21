@@ -103,6 +103,26 @@ async function inPage(args) {
   });
 }
 
+// The scheduler tab keeps the week it loaded: a save through its API does NOT
+// refresh the grid, so reads after a submit came back with the pre-submit week
+// (2026-10-21: a second fit + submit ran on that stale copy — overlap errors,
+// "schedule changed?" skips). After a save the tab is marked stale; the next
+// week select / read reloads it first, as does every fresh pull.
+const STALE_KEY = "digitalschedule.schedulerStale";
+async function reloadScheduler() {
+  const tab = await schedulerTab();
+  await chrome.tabs.reload(tab.id);
+  await sleep(1000);
+  await waitComplete(tab.id);
+  await chrome.storage.local.remove(STALE_KEY);
+}
+async function freshen(force) {
+  if (force || (await chrome.storage.local.get(STALE_KEY))[STALE_KEY]) await reloadScheduler();
+}
+
+const STALE_MSG = "This week was saved since it was read — press Reload to pull the saved schedule, then fit or check again.";
+const isStale = async () => !!(await chrome.storage.local.get(STALE_KEY))[STALE_KEY];
+
 async function readHistory() {
   const got = await chrome.storage.local.get(HISTORY_KEY);
   return Array.isArray(got[HISTORY_KEY]) ? got[HISTORY_KEY] : [];
@@ -116,24 +136,27 @@ export const handlers = {
   async week(msg) {
     const wk = +String(msg.wk ?? "").replace(/\D/g, "");
     if (!wk) return { ok: false, error: "Type a WK number." };
-    try { return { ok: true, ctx: (await inPage({ cmd: "week", wk })).ctx }; } catch (e) { return fail(e); }
+    try { await freshen(!!msg.fresh); return { ok: true, ctx: (await inPage({ cmd: "week", wk })).ctx }; } catch (e) { return fail(e); }
   },
 
-  async read() {
-    try { return { ok: true, data: await inPage({ cmd: "read" }) }; } catch (e) { return fail(e); }
+  async read(msg = {}) {
+    try { await freshen(!!msg.fresh); return { ok: true, data: await inPage({ cmd: "read" }) }; } catch (e) { return fail(e); }
   },
 
   async validate(msg) {
     if (!Array.isArray(msg.changes) || !msg.changes.length) return { ok: false, error: "No changes to check." };
+    if (await isStale()) return { ok: false, error: STALE_MSG };
     try { return { ok: true, result: await inPage({ cmd: "validate", changes: msg.changes }) }; } catch (e) { return fail(e); }
   },
 
   async save(msg) {
     const changes = msg.changes;
     if (!Array.isArray(changes) || !changes.length) return { ok: false, error: "No changes to save." };
+    if (await isStale()) return { ok: false, error: STALE_MSG };
     try {
       const result = await inPage({ cmd: "save", changes, allowWarnings: !!msg.allowWarnings, allowSkips: !!msg.allowSkips });
       if (!result.saved) return { ok: true, result };
+      await chrome.storage.local.set({ [STALE_KEY]: Date.now() });
       // the server's copy, to check every change landed
       let misses = null;
       try {

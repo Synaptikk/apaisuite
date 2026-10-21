@@ -137,12 +137,25 @@ export async function wfmInPage(ARGS) {
   const push = (map, w, sh) => { if (!map.has(w.workerId)) map.set(w.workerId, { workerId: w.workerId, name: w.name, payType: w.payType, shifts: [] }); map.get(w.workerId).shifts.push(sh); };
   const noop = (e) => ({ isDeleted: false, shiftId: e.shift.shiftId, breaks: (e.shift.breaks || []).map((b) => ({ paidInd: b.paidInd, startDate: b.startDate, endDate: b.endDate })), jobId: e.shift.jobId, jobName: e.shift.jobName,
     shiftStartDateTime: e.shift.shiftStartDateTime, shiftEndDateTime: e.shift.shiftEndDateTime, shiftBlockIndex: shiftBlockIndex(e.shift.shiftStartDateTime, e.shift.shiftEndDateTime), tempId: e.tempId, shiftTemplateId: e.shift.shiftTemplateId, ...common });
-  const touched = new Set(); // "workerId|day" already consumed by an earlier change, so two changes can't both claim it
+  // workerId first: two associates can share a name (store 1458 has two Elizabeth Davis, AP and Digital)
+  const findWorker = (ch) => (ch.workerId != null && workers.find((w) => String(w.worker.workerId) === String(ch.workerId)))
+    || (ch.name && workers.find((w) => nm(w.worker).toLowerCase() === String(ch.name).toLowerCase())) || null;
+  const touched = new Set(); // "workerId|day" a change lands a shift on, so two changes can't both claim it
+  const consumed = new Set(); // shiftIds an earlier change already edits / moves / deletes
+  // Shifts this batch moves away or deletes: their day is free for another of the person's changes
+  // (Mon→Sat plus Thu→Mon), whichever order the two come in.
+  const vacated = new Set();
+  for (const ch of ARGS.changes) {
+    if (ch.action !== "move" && ch.action !== "delete") continue;
+    const x = findWorker(ch);
+    const di = dayIdx(ch.day); if (!x || di < 0) continue;
+    for (const e of shiftsOn(x, di)) if (!ch.from || hm(e.shift.shiftStartDateTime) === toMin(ch.from)) vacated.add(e);
+  }
 
   ARGS.changes.forEach((ch, idx) => {
     const tag = `#${idx} ${ch.name || ch.workerId} ${ch.action} ${ch.day}${ch.from ? " " + ch.from : ""}`;
     const fail = (why) => skipped.push({ idx, change: tag, why });
-    const x = workers.find((w) => (ch.workerId && w.worker.workerId === ch.workerId) || (ch.name && nm(w.worker).toLowerCase() === String(ch.name).toLowerCase()));
+    const x = findWorker(ch);
     if (!x) return fail("associate not found on this week's schedule");
     const w = x.worker, action = ch.action;
     if (!["edit", "move", "delete", "create"].includes(action)) return fail("action must be edit | move | delete | create");
@@ -155,10 +168,11 @@ export async function wfmInPage(ARGS) {
       if (cands.length === 0) return fail(`no ${ch.job ? ch.job + " " : ""}shift starting ${ch.from || "(any)"} on ${DATES[di]} — schedule changed?`);
       if (cands.length > 1) return fail(`${cands.length} shifts match on ${DATES[di]}; add "from" and/or "job"`);
       ev = cands[0];
+      if (consumed.has(ev.shift.shiftId)) return fail(`another change in this batch already changes the ${DATES[di]} ${fmt(hm(ev.shift.shiftStartDateTime))} shift`);
       if (ch.expectEnd && hm(ev.shift.shiftEndDateTime) !== toMin(ch.expectEnd)) return fail(`shift now ends ${ev.shift.shiftEndDateTime.slice(11, 16)}, expected ${ch.expectEnd} — schedule changed?`);
     }
     if (action === "move" || action === "create") {
-      const busy = eventsOn(x, ti).filter((e) => e.type !== "AVAIL" && !(action === "move" && e === ev) && !(e.type === "SHIFT" && ch.allowSecondShift));
+      const busy = eventsOn(x, ti).filter((e) => e.type !== "AVAIL" && !(action === "move" && e === ev) && !vacated.has(e) && !(e.type === "SHIFT" && ch.allowSecondShift));
       if (busy.length && !ch.force) return fail(`${DATES[ti]} is not free (${busy.map((e) => e.type).join(",")}); pass "force": true to try anyway`);
     }
     const key = w.workerId + "|" + ti; if (action !== "delete" && touched.has(key) && !ch.allowSecondShift) return fail(`another change already lands on ${DATES[ti]} for this associate`);
@@ -166,7 +180,7 @@ export async function wfmInPage(ARGS) {
     const orig = ev && { day: DATES[di], start: fmt(hm(ev.shift.shiftStartDateTime)), end: fmt(hm(ev.shift.shiftEndDateTime)), job: ev.shift.jobName, breaks: (ev.shift.breaks || []).map(brk) };
     if (action === "delete") {
       push(byWorker, w, { isDeleted: true, shiftId: ev.shift.shiftId, shiftStartDateTime: ev.shift.shiftStartDateTime, tempId: ev.tempId, shiftTemplateId: ev.shift.shiftTemplateId, ...common });
-      push(base, w, noop(ev)); touched.add(w.workerId + "|" + di);
+      push(base, w, noop(ev)); consumed.add(ev.shift.shiftId);
       applied.push({ idx, workerId: w.workerId, name: nm(w), action, orig, next: null }); return;
     }
 
@@ -202,7 +216,7 @@ export async function wfmInPage(ARGS) {
     else if (action === "move") { push(byWorker, w, { isDeleted: true, shiftId: ev.shift.shiftId, shiftStartDateTime: ev.shift.shiftStartDateTime, tempId: ev.tempId, shiftTemplateId: ev.shift.shiftTemplateId, ...common });
       push(byWorker, w, { isDeleted: false, shiftId: null, shiftTemplateId: null, ...shape }); push(base, w, noop(ev)); }
     else { push(byWorker, w, { isDeleted: false, shiftId: null, shiftTemplateId: null, ...shape }); const any = DAYS.flatMap((_, d) => shiftsOn(x, d))[0]; if (any && !base.has(w.workerId)) push(base, w, noop(any)); }
-    touched.add(key); if (ev) touched.add(w.workerId + "|" + di);
+    touched.add(key); if (ev) consumed.add(ev.shift.shiftId);
     applied.push({ idx, workerId: w.workerId, name: nm(w), action, orig, next });
   });
 
@@ -213,7 +227,9 @@ export async function wfmInPage(ARGS) {
   const [v, b] = await Promise.all([api.EY(DATES[0], DATES[6], c.locationId, c.locationName, payload), basePayload.length ? api.EY(DATES[0], DATES[6], c.locationId, c.locationName, basePayload) : Promise.resolve({ data: [] })]);
   const after = viol(v.data), before = new Set(viol(b.data).map((x) => x.workerId + "|" + x.code));
   const names = Object.fromEntries(payload.map((w) => [w.workerId, nm(w)]));
-  result.hard = after.filter((x) => x.type === "HARD").map((x) => ({ ...x, name: names[x.workerId] }));
+  // A HARD the saved schedule already has (same associate + code) is not this batch's doing.
+  result.hard = after.filter((x) => x.type === "HARD" && !before.has(x.workerId + "|" + x.code)).map((x) => ({ ...x, name: names[x.workerId] }));
+  result.preexistingHard = after.filter((x) => x.type === "HARD" && before.has(x.workerId + "|" + x.code)).map((x) => ({ ...x, name: names[x.workerId] }));
   result.newWarnings = after.filter((x) => x.type !== "HARD" && !before.has(x.workerId + "|" + x.code)).map((x) => ({ ...x, name: names[x.workerId] }));
   result.preexistingWarnings = after.filter((x) => x.type !== "HARD" && before.has(x.workerId + "|" + x.code)).length;
   if (ARGS.cmd === "validate") return result;

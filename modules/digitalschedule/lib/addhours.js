@@ -20,11 +20,12 @@
 //     1 h unpaid lunch 3–4 h in for anything over 6 h.
 // Limits: weekly cap (part-time 33.75, else 40) over ALL jobs, 5 working days
 // for full-timers / 6 for part-timers, availability + exceptions + PTO days,
-// people rules (keep, fixed, days, window), minors weekends only, 10 h rest
+// people rules (keep, fixed, days, window), minors weekends only and within
+// coverage.js minorShiftOK (7.75 paid h, not before 6:15), 10 h rest, `lock`
 // between shifts (neighbouring weeks included), In Home drivers untouched,
 // today and earlier never touched, shifts already in the queue left alone.
 
-import { toMin, fmt, coverage, needFor, paidHours, shiftSpan, unpaidWindows, isMinor, isPeak, isOvernight, DAY_START, IN_HOME_JOB } from "./coverage.js";
+import { toMin, fmt, coverage, needFor, paidHours, shiftSpan, unpaidWindows, isMinor, minorShiftOK, isPeak, isOvernight, DAY_START, IN_HOME_JOB } from "./coverage.js";
 import { windowsFor } from "./suggest.js";
 import { nameKey } from "./rules.js";
 
@@ -35,7 +36,8 @@ const lenFor = (paidH) => { const h = Math.floor(paidH + 1e-9); return h < 4 ? 0
 
 export function addHours(data, opts = {}) {
   const { roleId, jobs, roleJobs = null, extra = 0, editableFrom = null, rules = null, neighbors = {},
-    weekendBoost = 0.25, peakBoost = 0.5, allowExtend = true, allowCreate = true } = opts;
+    weekendBoost = 0.25, peakBoost = 0.5, allowExtend = true, allowCreate = true, lock = [] } = opts;
+  const locked = new Set(lock.map(String));
   const D = data.dates;
 
   // ── per-role grids: need / have / target ──────────────────────────────────
@@ -75,7 +77,7 @@ export function addHours(data, opts = {}) {
   for (const w of data.workers.filter(inScope)) {
     const k = nameKey(w.name);
     if (String(w.job || "").includes(IN_HOME_JOB) || w.shifts.some((s) => s.job === IN_HOME_JOB)) continue;
-    if (rk.keep.has(k) || rk.fixed.has(k)) continue;
+    if (rk.keep.has(k) || rk.fixed.has(k) || locked.has(String(w.workerId)) || locked.has(k)) continue;
     if (w.shifts.some(isOvernight)) continue;   // overnight pickers (before 5am / past midnight) stay on the event
     const part = /part/i.test(`${w.employmentType} ${w.payType}`);
     const homeJob = roleOfJob.has(String(w.job || "")) ? String(w.job) : (() => { const c = {}; w.shifts.filter((s) => roleOfJob.has(s.job)).forEach((s) => { c[s.job] = (c[s.job] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; })();
@@ -83,7 +85,8 @@ export function addHours(data, opts = {}) {
     const nb = neighbors[w.workerId] || {};
     if (nb.prevEnd != null) spans.push([nb.prevEnd - 1, nb.prevEnd]);
     if (nb.nextStart != null) spans.push([nb.nextStart, nb.nextStart + 1]);
-    people.push({ w, k, part, minor: isMinor(w), homeJob, cap: part ? 33.75 : 40, maxDays: part ? 6 : 5,
+    people.push({ w, k, part, minor: isMinor(w), homeJob, cap: part ? 33.75 : 40, maxDays: part && !isMinor(w) ? 6 : 5,   // minors: 5 days (validator 10000, 2026-10-21)
+     
       paid: w.shifts.reduce((a, s) => a + paidHours(s), 0), before: w.shifts.reduce((a, s) => a + paidHours(s), 0),
       days: new Set(w.shifts.map((s) => s.day)), busy: new Set((w.otherEvents || []).map((e) => e.day)), spans });
   }
@@ -128,6 +131,7 @@ export function addHours(data, opts = {}) {
           if (L < MIN_SHIFT || b0 - wa < L) continue;
           for (let a = Math.ceil(wa / 60) * 60; a + L <= b0; a += 60) {
             if (!restOk(P, di, a, a + L)) continue;
+            if (P.minor && !minorShiftOK(a, L)) continue;
             const lay = layout(g, di, a, a + L); const v = lay.v ?? valueOf(g, lay.sl);
             const paid = paidOf(L), score = v - 4 - 1.2 * Math.max(0, 8 - paid);   // a new shift has a fixed cost; short shifts cost more
             if (!best || score > best.score) best = { kind: "create", P, g, di, a, b: a + L, lunch: lay.lunch, sl: lay.sl, paid, score };
@@ -151,6 +155,7 @@ export function addHours(data, opts = {}) {
       for (let na = a; na >= Math.max(a - 240, DAY_START * 60); na -= 60) for (let nb = b; nb <= Math.min(b + 240, 1440); nb += 60) {
         if (na === a && nb === b) continue;
         const L = nb - na; if (L > BLOCK) continue;
+        if (P.minor && !minorShiftOK(na, L)) continue;
         const add = paidOf(L) - paidHours(s); if (add < 1 - 1e-9 || add > room + 1e-9) continue;
         if (!ws.some(([wa, wb]) => na >= wa && nb <= wb)) continue;
         if (!restOk(P, di, na, nb, span)) continue;

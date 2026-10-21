@@ -15,9 +15,8 @@
 import { GAP_LABEL, areaGaps, areaDelta, staggerLunches } from "./areas.js";
 import { DOW, SHORT, toMin, coverage, summarize, applyChanges, describe, paidHours, IN_HOME_JOB, isMinor, PEAK_LABEL } from "./coverage.js";
 import { parseRules } from "./rules.js";
-import { suggest } from "./suggest.js";
+import { fitClean } from "./fitclean.js";
 import { headroom, headroomText, bestShift, lenFor } from "./headroom.js";
-import { addHours } from "./addhours.js";
 
 const r2 = (x) => Math.round(x * 100) / 100;
 const fmtHM = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -64,7 +63,7 @@ Scope being fitted: ${ctl.scopeLabel?.() || `role id ${ctl.roleId()}`} — guida
 
 HOW TO WORK
 - Use find_associates when you need anyone not listed below, or to re-check someone. Names must match the roster exactly.
-- Queue with queue_changes, then ALWAYS run check_with_scheduler and report the result (HARD = scheduler refuses; NEW WARN = this change adds a warning; about 20 soft warnings already sit on any week and are ignored).
+- Queue with queue_changes, then ALWAYS run check_with_scheduler (HARD = scheduler refuses; NEW WARN = soft, the manager accepts those — don't list them unless asked; about 20 soft warnings already sit on any week).
 - If a check fails, fix the change (lunch timing, another day) and re-check — don't hide problems. When rules conflict, ask the manager which one bends.
 - For "fix the week to the guidance"-type requests use suggest_fit, then describe what it did and where it bent.
 - The manager decides. If a request costs blue hours or payroll (adding hours over guidance, staffing past the graph), say so ONCE in a line with the number, then do it — don't refuse, don't make them ask twice, don't offer a menu instead of acting. Only push back on what the scheduler itself refuses (HARD) or a people/store rule; for those, do the legal part and list what was left out.
@@ -81,7 +80,8 @@ STORE RULES (hard unless the manager says otherwise)
 - Goal: as many "blue" hours as possible (scheduled EXACTLY equals guidance). Coverage: each 15 min on the clock outside unpaid lunch = 0.25 for that hour.
 - Saturday/Sunday are the hardest days: never leave them short, never move a shift off a weekend day. ${PEAK_LABEL} is the most important window: never short.
 - No hour below ~85% of guidance. Whole-hour starts. Prefer 9-hour blocks (8 paid + 1 h lunch). Every shift over 6 h needs a 1 h unpaid lunch starting 3–4 h in (validator 10017/10054).
-- Leave In Home Delivery drivers (job ${IN_HOME_JOB}, tagged IN-HOME) alone. Minors (MINOR): never onto weekdays or earlier on a weekday (school hours, validator 12024 is HARD).
+- Leave In Home Delivery drivers (job ${IN_HOME_JOB}, tagged IN-HOME) alone. Minors (MINOR): never onto weekdays or earlier on a weekday (school hours, validator 12024 is HARD), at most 7.75 paid h in a day (10004 HARD: a 9 h block is too long — 8:45 with lunch or 7:45 without is the most), no start before 6:15a (10007 HARD; use 7a).
+- HARD errors must never be left in the queue. suggest_fit already checks with the scheduler and leaves anyone refused as saved. After queue_changes, run check_with_scheduler; if it returns HARD, remove or fix those lines yourself and check again before replying. Report what you dropped in one line. HARD errors marked "already on the SAVED schedule" are not from the queue — mention them once, don't remove lines for them.
 - Part-timers cap around 33.75 paid h/week (10003); no more than 6 days in a row across weeks (10001); 10 h rest between shifts.
 - Never place a lunch at a time the person won't really take it just to make the graph look better.
 - OPEN-TO-CLOSE AREAS (registers away from the front end): each needs at least one associate on the floor every minute between its open and close, counting every job. A lunch with nobody else on is a gap — stagger lunches of people closing (or opening) together (stagger_lunches does it). Never queue a change that opens a gap; queue_changes reports any it opens — undo or fix those.
@@ -211,22 +211,31 @@ export async function runTool(name, input, ctl) {
       if (!r || r.error) return { text: `Validator call failed: ${r?.error || "unknown"}`, activity: "check failed" };
       const lines = [...(r.skipped || []).map((s) => `SKIPPED ${s.change} — ${s.why}`), ...(r.hard || []).map((h) => `HARD ${h.name}: ${h.code} ${h.message} ${h.value ?? ""}`),
         ...(r.newWarnings || []).map((h) => `NEW WARN ${h.name}: ${h.code} ${h.message} ${h.value ?? ""}`)];
+      const pre = (r.preexistingHard || []).map((h) => `${h.name}: ${h.code} ${h.message}`);
+      const preText = pre.length ? `\nAlready on the SAVED schedule, not caused by the queue (don't remove queue lines for these; tell the manager once): ${pre.join("; ")}` : "";
       const clean = !lines.length;
-      return { text: clean ? `CLEAN: ${r.applied.length} change(s) pass (${r.preexistingWarnings} pre-existing warnings ignored). The manager can press Submit changes.` : lines.join("\n"),
+      return { text: (clean ? `CLEAN: ${r.applied.length} change(s) pass (${r.preexistingWarnings} pre-existing warnings ignored). The manager can press Submit changes.` : lines.join("\n")) + preText,
         activity: clean ? "checked with the scheduler: clean" : `checked with the scheduler: ${lines.length} issue(s)` };
     }
     case "suggest_fit": {
+      // lib/fitclean.js: the proposal is checked with the scheduler and anyone it refuses is left
+      // as saved before anything is queued — a HARD never reaches the queue.
       const base = ctl.fitOpts();
-      const out = suggest(data, { ...base, rules: parseRules(ctl.rulesText()),
-        ...(input.floorPct ? { floorPct: input.floorPct } : {}), ...(input.chaseBlue ? { matchBonus: { off: 0, some: 5, strong: 15 }[input.chaseBlue] } : {}),
-        ...(input.allowDayMoves != null ? { allowDayMoves: input.allowDayMoves } : {}), ...(input.allowStretch != null ? { allowExtend: input.allowStretch } : {}) });
-      const before = queued();
-      const fitted = input.replaceQueue === false ? [...ctl.queue(), ...out.changes] : out.changes;
+      const before = queued(), keep = input.replaceQueue === false ? ctl.queue() : [];
       const extra = Math.max(0, +input.extraHours || 0), W = { none: 0, some: 0.25, strong: 0.6 }, PW = { none: 0, some: 0.25, strong: 0.5, "very strong": 1 };
-      const add = extra > 0 ? addHours(applyChanges(data, fitted).data, { roleId: ctl.roleId(), jobs: ctl.jobs(), roleJobs: base.roleJobs, extra, rules: parseRules(ctl.rulesText()),
-        neighbors: base.neighbors, editableFrom: base.editableFrom, weekendBoost: W[input.weekendWeight] ?? 0.25, peakBoost: PW[input.peakWeight] ?? 0.5, allowExtend: input.allowStretch !== false }) : null;
-      ctl.setQueue(add ? [...fitted, ...add.changes] : fitted);
+      const fit = await fitClean(data,
+        { ...base, rules: parseRules(ctl.rulesText()),
+          ...(input.floorPct ? { floorPct: input.floorPct } : {}), ...(input.chaseBlue ? { matchBonus: { off: 0, some: 5, strong: 15 }[input.chaseBlue] } : {}),
+          ...(input.allowDayMoves != null ? { allowDayMoves: input.allowDayMoves } : {}), ...(input.allowStretch != null ? { allowExtend: input.allowStretch } : {}) },
+        extra > 0 ? { roleId: ctl.roleId(), jobs: ctl.jobs(), roleJobs: base.roleJobs, extra, neighbors: base.neighbors, editableFrom: base.editableFrom,
+          weekendBoost: W[input.weekendWeight] ?? 0.25, peakBoost: PW[input.peakWeight] ?? 0.5, allowExtend: input.allowStretch !== false } : null,
+        async (list) => { const r = await ctl.validateList([...keep, ...list]); if (!r || r.error) return r;
+          return { ...r, skipped: (r.skipped || []).map((x) => ({ ...x, idx: x.idx - keep.length })).filter((x) => x.idx >= 0) }; });
+      if (fit.error) return { text: `The scheduler check failed (${fit.error}); nothing was queued. Try again in a moment.`, activity: "fit not checked" };
+      const { out, add } = fit;
+      ctl.setQueue([...keep, ...fit.changes]);
       const s = out.stats;
+      const heldText = fit.held.length ? `\nLeft as saved because the scheduler refused changing them (already handled — don't re-add them or report them as queue errors): ${fit.held.map((h) => `${h.name} (${h.why})`).join("; ")}` : "";
       const addText = add ? `\nExtra hours: +${add.stats.added} of ${extra} h (${add.stats.created} new shifts, ${add.stats.extended} stretched). By day: ${add.stats.byDay.map((h, i) => `${DOW[i]} +${h}`).join(", ")}.`
         + (add.stats.stopWhy ? ` Stopped early: ${add.stats.stopWhy}.` : "") + `\nPeople: ${add.people.map((p) => `${p.name} ${p.before}→${p.after}`).join(", ") || "none"}\n` + add.changes.map((ch) => `- ${ch.name}: ${describe(ch, data.dates)}`).join("\n") : "";
       return { text: `Fitter queued ${out.changes.length} change(s): blue hours ${s.blueBefore}→${s.blueAfter}, ${s.dayMoves} day moves, ${s.stretched} stretched to 9 h, ${s.added} shift(s) added on open days.\n`
@@ -234,7 +243,8 @@ export async function runTool(name, input, ctl) {
         + (out.hours.some((h) => h.why) ? `Full-timers under target (40 less 8 per PTO day): ${out.hours.filter((h) => h.why).map((h) => `${h.name} ${h.after}/${h.target} h (${h.why})`).join(", ")}\n` : "")
         + out.changes.map((ch) => `- ${ch.name}: ${describe(ch, data.dates)}`).join("\n")
         + (out.notes.length ? `\nLeft alone: ${out.notes.map((n) => `${n.names.join("+")} ${n.day} ${n.shift} (${n.why})`).join("; ")}` : "")
-        + addText
+        + addText + heldText
+        + `\nChecked with the scheduler: ${fit.leftover ? "some lines are still flagged — run check_with_scheduler and remove them" : "no HARD errors, ready for the manager to Submit"}.`
         + `\nCoverage effect vs before: ${effect(ctl, before, queued()).join("; ") || "none"}`,
         activity: `ran fit to guidance: ${out.changes.length} change(s), blue ${s.blueBefore}→${s.blueAfter}${add ? `, +${add.stats.added} extra h` : ""}` };
     }

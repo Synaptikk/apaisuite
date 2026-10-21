@@ -13,7 +13,10 @@
 //   - whole-hour starts; 9 h blocks; 1 h unpaid lunch on every shift over 6 h,
 //     placed 3-4 h in (validator 10017 / 10054)
 //   - In Home Delivery drivers untouched; minors never moved onto weekdays or
-//     earlier on a weekday (school hours, validator 12024 HARD)
+//     earlier on a weekday (school hours, validator 12024 HARD), never past 7.75 paid h
+//     a day or before 6:15 (10004 / 10007 HARD, coverage.js minorShiftOK)
+//   - `lock` (worker ids / name keys) keeps people untouched: fitClean locks anyone the
+//     validator returns HARD for and fits again
 //   - 10 h rest between shifts (hard; the legal floor is 8) and a cost for every hour under 12
 //     (store rule: no closing late and coming right back) — checked across the week edges too
 //     when `neighbors` carries last week's Friday end / next week's Saturday start;
@@ -30,7 +33,7 @@
 //
 // Output is a changes list in the same shape lib/page.js validates and saves.
 
-import { toMin, fmt, IN_HOME_JOB, needFor, unpaidWindows, shiftSpan, paidHours, isMinor, PEAK, isOvernight, DAY_START } from "./coverage.js";
+import { toMin, fmt, IN_HOME_JOB, needFor, unpaidWindows, shiftSpan, paidHours, isMinor, minorShiftOK, PEAK, isOvernight, DAY_START } from "./coverage.js";
 import { nameKey } from "./rules.js";
 import { inArea, isSetUp } from "./areas.js";
 
@@ -258,6 +261,8 @@ export function suggest(data, opts = {}) {
         for (const st of starts) {
           if (st < win[0] || st + len > win[1]) continue;
           if (u.members.some((m) => m.P.minor) && di >= 2 && (di !== u.di || st < u.s)) continue;
+          // minors: the scheduler's daily cap and earliest start (the current shift itself stays allowed)
+          if (u.members.some((m) => m.P.minor) && !(di === u.di && st === u.s && len === u.len) && !minorShiftOK(st, len)) continue;
           if (!u.members.every((m) => restOK(m.P, di, st, st + len, u))) continue;
           // same shift: keep it, or only re-time its lunch (staggers lunches inside an area)
           if (di === u.di && st === u.s && len === u.len) { out.push({ di, s: st, len, lo: null }); if (len > LUNCH_MIN) for (const lo of LUNCH_OFFS(len)) if (lo != null) out.push({ di, s: st, len, lo }); }

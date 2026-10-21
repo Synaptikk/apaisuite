@@ -23,7 +23,7 @@ export const totals = (d, k) => ({ sched: sum(d[k]), need: sum(d.need) });
 export function movesFromQueue(data, queue) {
   const idx = (x) => { const s = String(x ?? "").toLowerCase(); const i = data.dates.indexOf(s); return i >= 0 ? i : SHORT.indexOf(s.slice(0, 3)); };
   return queue.map((ch) => {
-    const w = data.workers.find((x) => x.workerId === ch.workerId || x.name === ch.name);
+    const w = (ch.workerId != null && data.workers.find((x) => x.workerId === ch.workerId)) || data.workers.find((x) => x.name === ch.name);
     const di = idx(ch.day), ti = ch.action === "move" ? idx(ch.toDay) : di;
     const orig = ch.action === "create" ? null : w?.shifts.find((s) => s.day === data.dates[di] && toMin(s.start) === toMin(ch.from));
     const from = orig ? shiftSpan(orig) : null;

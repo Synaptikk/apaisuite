@@ -24,8 +24,7 @@
 
 import { DOW, toMin, fmt12, coverage, summarize, hourState, applyChanges, describe, paidHours, IN_HOME_JOB, isMinor, isPeak, PEAK_LABEL, shiftSpan } from "./lib/coverage.js";
 import { parseRules, unknownNames } from "./lib/rules.js";
-import { suggest } from "./lib/suggest.js";
-import { addHours } from "./lib/addhours.js";
+import { fitClean } from "./lib/fitclean.js";
 import { mountChat } from "./chat_view.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
 import { DEFAULT_AREAS, GAP_LABEL, areaGaps, areaDelta, isSetUp, normalizeAreas, staggerLunches } from "./lib/areas.js";
@@ -170,7 +169,16 @@ export async function mount(host, container) {
     daymoves: els.daymoves.checked, extend: els.extend.checked }).catch(() => {});
 
   const qKey = () => data ? `queue.${data.ctx.store}.${data.ctx.wk}` : null;
-  const persistQueue = () => { if (qKey()) host.storage.local.set(qKey(), queue).catch(() => {}); };
+  const ownWrites = [];   // JSON of this page's last few queue writes: their change events are echoes
+  const persistQueue = () => { if (!qKey()) return; ownWrites.push(JSON.stringify(queue)); if (ownWrites.length > 8) ownWrites.shift(); host.storage.local.set(qKey(), queue).catch(() => {}); };
+  // Another ScheduleRight page in this browser changed the same week's queue: take its copy, so
+  // the two pages never write their own versions over each other (removals coming back, 2026-10-21).
+  const unwatchQueue = host.storage.local.onChange((changes) => {
+    const c = qKey() && changes[qKey()]; if (!c || !alive) return;
+    const next = c.newValue || [], j = JSON.stringify(next);
+    if (j === JSON.stringify(queue) || ownWrites.includes(j)) return;
+    queue = next; check = null; renderCoverage(); renderQueue(); renderRoster(); renderAreas();
+  });
 
   function status(text, kind = "") { els.msg.hidden = !text; els.msg.textContent = text || ""; els.msg.className = `ds-status ${kind}`; }
   function setBusy(on, text) {
@@ -246,9 +254,10 @@ export async function mount(host, container) {
     }
     setBusy(true, wk ? `Selecting WK ${wk} in the scheduler…` : "Reading the week from the scheduler (can take a minute)…");
     try {
-      if (wk) { const r = await send("week", { wk }); if (!r.ok) throw new Error(r.error); }
+      // fresh: the scheduler tab is reloaded first (its grid doesn't follow saves made through the API)
+      if (wk) { const r = await send("week", { wk, fresh }); if (!r.ok) throw new Error(r.error); }
       if (wk) status("Reading the week from the scheduler…", "busy");
-      const r = await send("read"); if (!r.ok) throw new Error(r.error);
+      const r = await send("read", { fresh: fresh && !wk }); if (!r.ok) throw new Error(r.error);
       if (!alive) return;
       r.data.savedAt = new Date().toISOString();
       await cacheWeek(r.data);
@@ -488,7 +497,7 @@ export async function mount(host, container) {
     if (r) {
       for (const s of r.skipped || []) flagged.set(s.idx, `not built: ${s.why}`);
       const byW = new Map(); for (const x of [...(r.hard || []), ...(r.newWarnings || [])]) { if (!byW.has(x.workerId)) byW.set(x.workerId, []); byW.get(x.workerId).push(`${x.type === "HARD" ? "HARD " : ""}${x.code} ${x.message}`); }
-      queue.forEach((ch, i) => { const w = data.workers.find((x) => x.name === ch.name || x.workerId === ch.workerId); const v = w && byW.get(w.workerId); if (v && !flagged.has(i)) flagged.set(i, v.join(" · ")); });
+      queue.forEach((ch, i) => { const w = (ch.workerId != null && data.workers.find((x) => x.workerId === ch.workerId)) || data.workers.find((x) => x.name === ch.name); const v = w && byW.get(w.workerId); if (v && !flagged.has(i)) flagged.set(i, v.join(" · ")); });
     }
     const kindOf = (ch) => (ch.action === "edit" && ch.stretched ? "stretch" : ch.action), kinds = {};
     queue.forEach((ch) => { kinds[kindOf(ch)] = (kinds[kindOf(ch)] || 0) + 1; });
@@ -510,6 +519,7 @@ export async function mount(host, container) {
       els.check.innerHTML = clean
         ? `Clean: ${r.applied.length} change(s) ready.`
         : `${r.hard?.length ? `<b>${r.hard.length} hard</b> (scheduler will refuse) · ` : ""}${r.newWarnings?.length ? `${r.newWarnings.length} new warning(s) · ` : ""}${r.skipped?.length ? `${r.skipped.length} could not be built · ` : ""}${r.preexistingWarnings || 0} existing warnings ignored. Flagged lines are marked above.`;
+      if (r.preexistingHard?.length) els.check.innerHTML += ` <span class="ds-muted">${r.preexistingHard.length} hard error(s) are already on the saved schedule (${esc([...new Set(r.preexistingHard.map((x) => x.name || x.workerId))].join(", "))}), not from these changes.</span>`;
     } else els.check.hidden = true;
     els.save.disabled = busy || !canSubmit();
     els.submitState.textContent = !queue.length ? "" : canSave() ? "Verified — ready to submit."
@@ -729,36 +739,51 @@ export async function mount(host, container) {
   }
 
   // ── suggest ───────────────────────────────────────────────────────────────
-  function runSuggest() {
+  // Fit (+ extra hours), checked with the scheduler before queuing: anyone the validator
+  // returns HARD for is left as saved and the fit re-runs (lib/fitclean.js).
+  async function runSuggest() {
+    if (busy) return;
     const rules = parseRules(els.rules.value);
     if (rules.errors.length) { status(`People rules: ${rules.errors.join(" · ")}`, "error"); return; }
-    status("Fitting shifts to guidance…", "busy");
-    setTimeout(() => {   // let the status paint before the CPU-bound run
-      try {
-        const t0 = performance.now();
-        const out = suggest(data, { roleId: roleId(), jobs: jobs(), rules, floorPct: (+els.floor.value || 85) / 100, matchBonus: +els.bonus.value,
-          allowDayMoves: els.daymoves.checked, allowExtend: els.extend.checked, editableFrom: tomorrow(), areas: activeAreas(), roleJobs: roleJobs(), neighbors });
-        const replaced = queue.length;
-        // extra hours on top of the fitted week (0 = fit only)
-        const extra = Math.max(0, +els.addN.value || 0);
-        const add = extra > 0 ? addHours(applyChanges(data, out.changes).data, { roleId: roleId(), jobs: jobs(), roleJobs: roleJobs(), extra, rules, neighbors, editableFrom: tomorrow(),
-          weekendBoost: +els.addWkend.value, peakBoost: +els.addPeak.value, allowExtend: els.extend.checked }) : null;
-        setQueue(add ? [...out.changes, ...add.changes] : out.changes);
+    setBusy(true, "Fitting shifts to guidance…");
+    await new Promise((r) => setTimeout(r, 30));   // let the status paint before the CPU-bound run
+    let res;
+    try {
+      const t0 = performance.now();
+      const extra = Math.max(0, +els.addN.value || 0);   // extra hours on top of the fitted week (0 = fit only)
+      res = await fitClean(data,
+        { roleId: roleId(), jobs: jobs(), rules, floorPct: (+els.floor.value || 85) / 100, matchBonus: +els.bonus.value,
+          allowDayMoves: els.daymoves.checked, allowExtend: els.extend.checked, editableFrom: tomorrow(), areas: activeAreas(), roleJobs: roleJobs(), neighbors },
+        extra > 0 ? { roleId: roleId(), jobs: jobs(), roleJobs: roleJobs(), extra, neighbors, editableFrom: tomorrow(),
+          weekendBoost: +els.addWkend.value, peakBoost: +els.addPeak.value, allowExtend: els.extend.checked } : null,
+        async (list) => { const r = await send("validate", { changes: list }); return r.ok ? r.result : { error: r.error }; },
+        (t) => status(t, "busy"));
+      if (!alive) return;
+      if (res.error) { status(`Couldn't check the suggestion with the scheduler (${res.error}), so nothing was queued. Try again.`, "error"); return; }
+      const { out, add } = res;
+      const replaced = queue.length;
+      setQueue(res.changes);
+      if (res.check && !res.leftover) { check = { sig: sig(), result: res.check }; renderQueue(); }
+      {
         const s = out.stats;
-        els.suggestOut.textContent = `${out.changes.length + (add?.changes.length || 0)} change(s)${add ? ` · +${f2(add.stats.added)} of ${extra} extra h (${add.stats.created} new, ${add.stats.extended} stretched)` : ""} · fit: blue hours ${s.blueBefore} → ${s.blueAfter} · ${s.dayMoves} day move(s) · ${s.stretched} stretched · ${s.added} shift(s) added${activeAreas().length && (s.areaGapHrsBefore || s.areaGapHrsAfter) ? ` · area gaps ${f2(s.areaGapHrsBefore)} → ${f2(s.areaGapHrsAfter)} h` : ""} · ${Math.round(performance.now() - t0)} ms${replaced ? ` · replaced ${replaced} queued` : ""}`;
+        els.suggestOut.textContent = `${res.changes.length} change(s), checked with the scheduler${res.held.length ? ` · ${res.held.length} associate(s) left as saved` : ""}${add ? ` · +${f2(add.stats.added)} of ${extra} extra h (${add.stats.created} new, ${add.stats.extended} stretched)` : ""} · fit: blue hours ${s.blueBefore} → ${s.blueAfter} · ${s.dayMoves} day move(s) · ${s.stretched} stretched · ${s.added} shift(s) added${activeAreas().length && (s.areaGapHrsBefore || s.areaGapHrsAfter) ? ` · area gaps ${f2(s.areaGapHrsBefore)} → ${f2(s.areaGapHrsAfter)} h` : ""} · ${Math.round(performance.now() - t0)} ms${replaced ? ` · replaced ${replaced} queued` : ""}`;
         const unk = unknownNames(rules, data.workers);
         const byRole = out.roles.length > 1 ? out.roles.filter((r) => r.blueBefore !== r.blueAfter).map((r) => `<li>${esc(roleName(r.roleId))}: blue hours ${r.blueBefore} → ${r.blueAfter}</li>`) : [];
+        const heldNotes = res.held.map((h) => `<li class="ds-k-under"><b>${esc(h.name || h.workerId)}</b> left as saved — the scheduler refused: ${esc(h.why)}</li>`);
         const addNotes = add ? [`<li>Extra hours by day: ${add.stats.byDay.map((x, i) => `${DOW[i]} +${f2(x)}`).join(" · ")}</li>`, ...(add.stats.stopWhy ? [`<li class="ds-k-under">Extra hours stopped at ${f2(add.stats.added)} of ${extra}: ${esc(add.stats.stopWhy)}</li>`] : [])] : [];
-        els.notes.innerHTML = [...addNotes, ...byRole, ...unk.map((u) => `<li>rule names “${esc(u)}”, who isn't on this week's roster</li>`),
+        els.notes.innerHTML = [...heldNotes, ...addNotes, ...byRole, ...unk.map((u) => `<li>rule names “${esc(u)}”, who isn't on this week's roster</li>`),
           ...out.turnarounds.filter((t) => t.restH < 12).map((t) => `<li class="${t.restH < 10 ? "ds-k-under" : "ds-muted"}"><b>${esc(t.name)}</b>: only ${f2(t.restH)} h off before ${t.day === "next week" ? "next week's first shift" : `${esc(DOW[data.dates.indexOf(t.day)])} ${esc(t.start)}`}${t.restH < 8 ? " (under the legal 8 h)" : ""}</li>`),
           ...out.hours.filter((h) => h.after !== h.before).map((h) => `<li><b>${esc(h.name)}</b>: ${f2(h.before)} → ${f2(h.after)} paid h this week</li>`),
           ...out.hours.filter((h) => h.why).map((h) => `<li><b>${esc(h.name)}</b> (full-time) at ${f2(h.after)} h${h.pto ? ` + ${h.pto} PTO day(s)` : ""}, target ${f2(h.target)}: ${esc(h.why)}</li>`),
           ...out.notes.map((n) => `<li><b>${esc(n.names.join(" + "))}</b> ${esc(DOW[data.dates.indexOf(n.day)])} ${esc(n.shift)}: ${esc(n.why)}</li>`)].join("");
         const nNotes = els.notes.children.length, nw = container.querySelector("#digitalschedule-notes-wrap");
         nw.hidden = !nNotes; container.querySelector("#digitalschedule-notes-sum").textContent = `Details (${nNotes})`;
-        status(out.changes.length ? "Suggestion queued. Review it in the grid, then Verify or Submit changes." : "No change improves the fit under these rules.");
-      } catch (e) { status(`Fit failed: ${e.message}`, "error"); }
-    }, 30);
+        status(res.leftover ? "Suggestion queued, but the scheduler still flags some lines — they're marked. Remove them before submitting."
+          : res.changes.length ? "Suggestion queued and checked with the scheduler: no hard errors. Review it in the grid, then Submit changes."
+          : "No change improves the fit under these rules.");
+      }
+    } catch (e) { status(`Fit failed: ${e.message}`, "error"); }
+    finally { if (alive) setBusy(false); }
   }
 
   // ── events ────────────────────────────────────────────────────────────────
@@ -825,6 +850,8 @@ export async function mount(host, container) {
       return (await Promise.all(ents.map((e) => host.storage.local.get(wKey(e.store, e.wk)).catch(() => null)))).filter(Boolean);
     },
     validate: async () => (busy ? { error: "the page is busy with another scheduler call" } : validate()),
+    // a list that isn't the queue (fitClean's proposal): no page busy state, nothing rendered
+    validateList: async (list) => { const r = await send("validate", { changes: list }); return r.ok ? r.result : { error: r.error }; },
   });
 
   // ── boot ──────────────────────────────────────────────────────────────────
@@ -834,5 +861,5 @@ export async function mount(host, container) {
   if (lastWk) await load({ wk: lastWk });
   else status("Type a WK number and press Load week, or Reload to read the week the scheduler tab is on.");
 
-  return () => { alive = false; if (pushTimer) { clearTimeout(pushTimer); pushShared(); } closeChat(); document.removeEventListener("click", closeDd); link.remove(); };
+  return () => { alive = false; unwatchQueue(); if (pushTimer) { clearTimeout(pushTimer); pushShared(); } closeChat(); document.removeEventListener("click", closeDd); link.remove(); };
 }
