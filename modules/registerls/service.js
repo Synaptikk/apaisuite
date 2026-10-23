@@ -9,6 +9,11 @@
 //                      the verdict/evidence bundle (cached per work item)
 //   get_state          everything the view paints, with grid-only pre-verdicts
 //   set_store_override / clear_cache
+//   sync_shared        share the analyst's records (cashier ledger, completed
+//                      log, causes, coaching notes, pantry list, register
+//                      types, till-log days) with the store's other AP users —
+//                      doorcatch's lib/store_sync.js, behind the Door Catches
+//                      key; also runs a few seconds after any local change
 //
 // Storage: raw chrome.storage.local, keys prefixed "registerls." (service.js
 // has no host object — MODULE_CONTRACT.md §4).
@@ -33,6 +38,7 @@ import { parsePantryText, mergePantry } from "./lib/pantry.js";
 import { tillsFor, wrongRegisterMoves, mergeDatedRows } from "./lib/till_events.js";
 import { buildLedger, pantryEvents, pantryKey, cashierCsv, safeFileName, eventKey, aggregateEvents, ERROR_TYPES } from "./lib/cashiers.js";
 import { buildRegisterMap, wideRegistersOf, ROLES, isRole } from "./lib/registers.js";
+import { prefixCollection, syncCollections, watchStorage } from "../doorcatch/lib/store_sync.js";
 
 const TAG = "[registerls]";
 const KEYS = {
@@ -161,7 +167,108 @@ function preVerdict(item, match, tillRows = null, cfg = DEFAULT_CFG) {
 
 const SAFE = new Set(["flip", "bounceback"]);
 
+// ── store-wide sharing ──────────────────────────────────────────
+// What analysts decided or typed, plus the till-log days (the Cash Recycler
+// report only keeps ~60 days, so older days exist only in some browser's
+// merge). Each browser still pulls WorkView / Power BI / APPRISS itself.
+function applyChanges(map, changes) {
+  for (const [id, v] of Object.entries(changes)) { if (v == null) delete map[id]; else map[id] = v; }
+}
+const SHARED = [
+  {
+    ns: "registerls_ledger",   // "e|<key>" → cashier event, "p|<key>" → pantry run (both per store)
+    async read(store) {
+      const ledger = (await get(KEYS.ledger)) || { events: {} };
+      const out = {};
+      for (const [k, e] of Object.entries(ledger.events || {})) if (e.storeNbr === store) out[`e|${k}`] = e;
+      for (const [k, e] of Object.entries(ledger.pantry || {})) if (e.storeNbr === store) out[`p|${k}`] = e;
+      return out;
+    },
+    async write(store, changes) {
+      const ledger = (await get(KEYS.ledger)) || { events: {} };
+      ledger.events = ledger.events || {}; ledger.pantry = ledger.pantry || {};
+      for (const [id, v] of Object.entries(changes)) {
+        const map = id.startsWith("p|") ? ledger.pantry : ledger.events;
+        applyChanges(map, { [id.slice(2)]: v });
+      }
+      ledger.updatedAt = new Date().toISOString();
+      await set(KEYS.ledger, ledger);
+    },
+  },
+  {
+    ns: "registerls_completed",
+    async read(store) {
+      const out = {};
+      for (const c of (await get(KEYS.completed)) || []) if (c?.id && String(c.store || "") === store) out[c.id] = c;
+      return out;
+    },
+    async write(store, changes) {
+      const byId = new Map(((await get(KEYS.completed)) || []).map((c) => [c.id, c]));
+      for (const [id, v] of Object.entries(changes)) { if (v == null) byId.delete(id); else byId.set(id, v); }
+      const done = [...byId.values()].sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+      await set(KEYS.completed, done.slice(0, 500));
+    },
+  },
+  prefixCollection("registerls_cause", "registerls.cause."),
+  prefixCollection("registerls_coaching", "registerls.coaching."),
+  {
+    ns: "registerls_settings",   // the store's pantry additions and register-type overrides
+    async read(store) {
+      const [pantry, registers] = await Promise.all([get(KEYS.pantry(store)), get(KEYS.registers(store))]);
+      return { ...(pantry ? { pantry } : {}), ...(registers ? { registers } : {}) };
+    },
+    async write(store, changes) {
+      for (const [id, v] of Object.entries(changes)) {
+        const key = id === "pantry" ? KEYS.pantry(store) : id === "registers" ? KEYS.registers(store) : null;
+        if (!key) continue;
+        if (v == null) await chrome.storage.local.remove(key); else await set(key, v);
+      }
+    },
+  },
+  {
+    ns: "registerls_tills",   // one record per day: that day's till-log rows
+    async read(store) {
+      const t = await get(KEYS.tills);
+      const out = {};
+      if (!t || t.storeNbr !== store) return out;
+      for (const r of t.rows || []) if (r?.date) (out[r.date] ||= []).push(r);
+      return out;
+    },
+    async write(store, changes) {
+      const cur = await get(KEYS.tills);
+      const t = cur && cur.storeNbr === store ? cur : { storeNbr: store, rows: [] };
+      const byDay = {};
+      for (const r of t.rows || []) if (r?.date) (byDay[r.date] ||= []).push(r);
+      applyChanges(byDay, changes);
+      const days = Object.keys(byDay).sort();
+      t.rows = days.flatMap((d) => byDay[d]);
+      t.dateMin = days[0] || null; t.dateMax = days.at(-1) || null;
+      await set(KEYS.tills, t);
+    },
+  },
+];
+const SHARED_KEYS = new Set([KEYS.ledger, KEYS.completed, KEYS.tills]);
+const SHARED_PREFIXES = ["registerls.cause.", "registerls.coaching.", "registerls.pantry.", "registerls.registers."];
+
+async function syncShared(storeNbr, opts) {
+  const res = await syncCollections(storeNbr, SHARED, opts);
+  if (res.ok && Object.keys(res.applied).length) broadcast("shared_changed", { storeNbr, applied: res.applied });
+  return res;
+}
+
+// Push a local change to the store a few seconds after it lands. Registered
+// at load so it is live whenever the service worker is.
+watchStorage((k) => SHARED_KEYS.has(k) || SHARED_PREFIXES.some((p) => k.startsWith(p)), async () => {
+  const store = await resolveStore();
+  if (store.storeNbr) syncShared(store.storeNbr, { pushOnly: true }).catch((err) => console.warn(TAG, "share failed:", err?.message || err));
+});
+
 export const handlers = {
+  async sync_shared(msg = {}) {
+    const store = await resolveStore(msg);
+    return syncShared(store.storeNbr);
+  },
+
   async get_state(msg = {}) {
     const store = await resolveStore(msg);
     const [queue, grid, tillsCache, cftCache, completedLog] = await Promise.all([get(KEYS.queue), get(KEYS.grid), get(KEYS.tills), get(KEYS.cft), get(KEYS.completed)]);

@@ -53,7 +53,7 @@ export async function mount(host, container) {
   const $ = (sel) => container.querySelector(sel);
   const els = {
     store: $("#boblisa-store"), storeSrc: $("#boblisa-store-src"), from: $("#boblisa-from"), to: $("#boblisa-to"),
-    pull: $("#boblisa-pull"), repull: $("#boblisa-repull"), progress: $("#boblisa-progress"), status: $("#boblisa-status"),
+    pull: $("#boblisa-pull"), repull: $("#boblisa-repull"), progress: $("#boblisa-progress"), status: $("#boblisa-status"), shared: $("#boblisa-shared"),
     summary: $("#boblisa-summary"), trainings: $("#boblisa-trainings"),
   };
 
@@ -171,11 +171,17 @@ export async function mount(host, container) {
     const pulledDays = (state.days || []).filter((d) => d.fetchedAt).length;
     const failedDays = (state.days || []).filter((d) => d.error);
     const reviewed = pairs.filter((p) => isDone(p.key)).length;
+    // Confirmed = documented misses dated inside the range on screen.
+    const inRange = (d) => !state.range || (d >= state.range.from && d <= state.range.to);
+    const confirmed = Object.values(state.misses || {}).filter((r) => inRange(r.date));
+    const sumOf = (cat) => confirmed.filter((r) => (r.category || "manned") === cat).reduce((t, r) => t + (r.missedCents || 0), 0);
+    const countOf = (cat) => confirmed.filter((r) => (r.category || "manned") === cat).length;
     const tiles = [
       ["pairs", pairs.length - reviewed, "pairs to review", `${reviewed} reviewed · ${pulledDays} of ${(state.days || []).length} days pulled`],
       ["manned", openCount("manned"), "manned lanes", `${manned.filter((p) => p.training && !isDone(p.key)).length} confirmed by training receipt · ${reviewedCount("manned")} reviewed`],
       ["unmanned", openCount("unmanned"), "unmanned registers", `${unmanned.filter((p) => p.t2.type === "Self-checkout" && !isDone(p.key)).length} second trips at self-checkout · ${reviewedCount("unmanned")} reviewed`],
       ["train", (state.trainings || []).length, "training receipts", `${(state.trainings || []).filter((t) => t.paid.length).length} traced to a paid sale, ${unpaidRows().length} unpaid`],
+      ["value", MONEY(sumOf("manned") + sumOf("unmanned")), "confirmed misses value", `Manned ${MONEY(sumOf("manned"))} (${countOf("manned")}) · Unmanned ${MONEY(sumOf("unmanned"))} (${countOf("unmanned")})`],
     ];
     els.summary.innerHTML = tiles.map(([k, n, l, s]) => `<div class="bl-sum bl-sum-${k}"><div class="bl-sum-n">${n}</div><div class="bl-sum-l">${esc(l)}</div><div class="bl-sum-s">${esc(s)}</div></div>`).join("")
       + (failedDays.length ? `<div class="bl-failed">Not pulled: ${failedDays.map((d) => `<span title="${esc(d.error || "")}">${esc(withWeekday(d.date))}</span>`).join(", ")}</div>` : "")
@@ -685,13 +691,36 @@ export async function mount(host, container) {
     host.ui.toast(res?.ok ? `${res.rows} row${res.rows === 1 ? "" : "s"} saved to Downloads` : (res?.error || "Export failed."), { kind: res?.ok ? "ok" : "error", durationMs: 6000 });
   });
 
+  // ── store-wide sharing ────────────────────────────────────────
+  // Documented misses, Clear/Undo and operator names are shared with the
+  // store's other AP users through the Door Catches key. Pull now, every
+  // minute while the page is visible, and when it comes back into view;
+  // anything that arrives repaints through the state_changed echo.
+  async function syncShared() {
+    if (document.hidden) return;
+    const res = await host.messaging.sendRaw("sync_shared", {}).catch(() => null);
+    if (!res) return;
+    if (res.ok) {
+      els.shared.textContent = `Shared with store ${state?.store || ""} AP`;
+      els.shared.title = `Last synced ${new Date().toLocaleTimeString()}`;
+    } else {
+      els.shared.textContent = "Not shared";
+      els.shared.title = res.error || "Sharing is unavailable.";
+    }
+  }
+  const syncTimer = setInterval(syncShared, 60_000);
+  document.addEventListener("visibilitychange", syncShared);
+
   // ── boot ──────────────────────────────────────────────────────
   await loadPrefs();
   await refresh();
+  syncShared();
   if (state?.store && state.missing?.length) pull();
 
   return () => {
     for (const u of unsubs) { try { u(); } catch {} }
+    clearInterval(syncTimer);
+    document.removeEventListener("visibilitychange", syncShared);
     link.remove();
   };
 }

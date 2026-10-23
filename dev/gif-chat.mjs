@@ -21,7 +21,8 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseCommand, groupCommands, formatPph, formatExpress, formatSummary, formatBreaks, formatStore, formatHelp, formatBreakLog, formatPerformance } from "../modules/digitaldashboard/lib/commands.js";
-import { HOME_STORE, BREAK_LIMIT_MIN, pickersNow, normName, sameName } from "../modules/digitaldashboard/lib/gif_metrics.js";
+import { HOME_STORE, BREAK_LIMIT_MIN, pickersNow, normName, sameName, boardDay } from "../modules/digitaldashboard/lib/gif_metrics.js";
+import { withMeals, watchWithMeals } from "../modules/digitaldashboard/lib/break_log.js";
 import { rosterRows, rosterTotals } from "../modules/digitaldashboard/lib/store_roster.js";
 import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePickers, outputPickers } from "../modules/digitaldashboard/lib/staffing.js";
 import { decodeAssignments, decodeClassifications } from "../modules/digitalmetrics/lib/codec.js";
@@ -115,7 +116,7 @@ async function classifier() {
 }
 
 // ── Answers (mirror digitaldashboard/service.js::answerCommand) ──
-export function createChat({ port, log }) {
+export function createChat({ port, log, punchesFor = () => ({}) }) {
   const local = async (path, params, timeoutMs) => {
     const u = new URL(path, `http://127.0.0.1:${port}`);
     for (const [k, v] of Object.entries(params)) if (v != null) u.searchParams.set(k, String(v));
@@ -181,10 +182,16 @@ export function createChat({ port, log }) {
     if (cmd === "help") return formatHelp();
     if (cmd === "unknown") return `Unknown command. ${formatHelp()}`;
     // stamped with when the watch last ran, not when the question was asked
-    if (cmd === "breaks") return currentWatch().then((w) => formatBreaks(w, new Date(w.checkedAt)), (e) => `Couldn't check breaks: ${e.message}`);
+    // Punched lunches come out and anyone over 45 min is held until a punch read
+    // rules lunch out (the extension hands punches over via /punches).
+    if (cmd === "breaks") return currentWatch().then((w) => {
+      const at = new Date(w.checkedAt);
+      return formatBreaks(watchWithMeals(w, punchesFor(boardDay(at)), boardDay(at), { limitMin: w.limitMin, now: at }), at);
+    }, (e) => `Couldn't check breaks: ${e.message}`);
     // the day's long-break log, from the daemon's cache (fed by every watch run)
     if (cmd === "breaklog") return local("/breaklog", {}, 15_000).then(
-      (r) => formatBreakLog(r.episodes, r.day, r.lastAt ? new Date(r.lastAt) : now(), { limitMin: r.limitMin }),
+      (r) => formatBreakLog(withMeals(r.episodes, punchesFor(r.day), r.day, { limitMin: r.limitMin, now: r.lastAt || Date.now() }),
+        r.day, r.lastAt ? new Date(r.lastAt) : now(), { limitMin: r.limitMin }),
       (e) => `Couldn't read the break log: ${e.message}`);
     if (cmd === "store") return getStore().then((s) => formatStore(s, now()), (e) => `Couldn't read the roster: ${e.message}`);
     if (cmd === "performance") return Promise.all([getStore(), todaysRoster()]).then(([s, board]) => formatPerformance(s, board, now()), (e) => `Couldn't read the roster: ${e.message}`);

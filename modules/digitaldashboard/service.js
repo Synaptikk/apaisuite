@@ -32,6 +32,9 @@ import { assignments, classifications } from "../digitalmetrics/lib/firestore.js
 import { isoDay } from "../digitalmetrics/lib/pull_schedule.js";
 import { HOME_STORE, BREAK_LIMIT_MIN, pickersNow, normName, sameName } from "./lib/gif_metrics.js";
 import { hourlyBars } from "./lib/pick_history.js";
+import { withMeals, watchWithMeals, needsLunchCheck, clockToMs, episodeMinutes, LUNCH_CHECK_MIN } from "./lib/break_log.js";
+import { handlers as metricsHandlers } from "../digitalmetrics/service.js";
+import { openOutlookDraft } from "../../shared/outlook_send.js";
 import { PICK_DAYS_KEY, upsertDay } from "./lib/pick_days.js";
 import { rosterRows, rosterTotals } from "./lib/store_roster.js";
 import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePickers, outputPickers } from "./lib/staffing.js";
@@ -46,6 +49,9 @@ const K = {
   store:    "digitaldashboard.gif.store",
   listen:   "digitaldashboard.gif.listenState",
   alerted:  "digitaldashboard.gif.alerted",
+  punchReads: "digitaldashboard.gif.punchReads",   // { "day|NAME": ms } — when this module last read their punches
+  punchTry:   "digitaldashboard.gif.punchTry",     // { "day|NAME": ms } — last attempt (throttle)
+  autoPunchAt: "digitaldashboard.gif.autoPunchAt", // { day: ms } — Digital Metrics' hourly pull covered that day
 };
 
 // Digital Metrics classifications that count as "digital team" (vs Store Help).
@@ -172,16 +178,97 @@ export async function checkBreaks({ wait = 90, maxAge = 120 } = {}) {
   }
   const { limitMin } = await getSettings();
   const r = await daemon("/breaks", { names: scheduled.join("|"), limit: limitMin, maxAge, wait }, { timeoutMs: (wait + 60) * 1000 });
-  const watch = { ...r, checkedAt: new Date().toISOString() };
+  // Nobody over LUNCH_CHECK_MIN is reported until a punch read rules out lunch.
+  const now = new Date(), day = isoDay(now);
+  const punches = await lunchChecked(day, r?.suspects || [], {
+    startOf: (x) => (x.over && x.lastSeen != null ? clockToMs(x.lastSeen, now) : null), outOf: (x) => x.idleMin });
+  pushPunches(day, punches);
+  const watch = { ...watchWithMeals(r, punches, day, { limitMin, now }), checkedAt: now.toISOString() };
   await lset(K.watch, watch);
   return watch;
 }
 
 export async function cachedWatch() { return lget(K.watch, null); }
 
-/** The daemon's long-break log for one board day (default today). Cache only — no GIF read. */
+// GTA punches Digital Metrics pulls hourly (PII, this browser only).
+const CLOCK_KEY = "digitalmetrics.clockIns";
+const CLOCK_STATE_KEY = "digitalmetrics.clockPullState";
+const PUNCH_RETRY_MS = 5 * 60_000;
+
+/** The day's punches, each with `_at` = when they were read (hourly pull or our own). */
+async function punchesFor(day) {
+  const got = await chrome.storage.local.get([CLOCK_KEY, CLOCK_STATE_KEY, K.punchReads, K.autoPunchAt]);
+  const st = got[CLOCK_STATE_KEY], autoAt = { ...(got[K.autoPunchAt] || {}) };
+  if (st?.auto && !st.error && st.from <= day && day <= st.to && st.store === HOME_STORE) {
+    const at = Date.parse(st.at) - (st.ms || 0);   // reads happened during the pull
+    if (at > (autoAt[day] || 0)) { autoAt[day] = at; await lset(K.autoPunchAt, autoAt); }
+  }
+  const reads = got[K.punchReads] || {};
+  const out = {};
+  for (const [name, p] of Object.entries(got[CLOCK_KEY]?.[HOME_STORE]?.[day] || {})) {
+    out[name] = { ...p, _at: Math.max(autoAt[day] || 0, reads[`${day}|${name}`] || 0) };
+  }
+  return out;
+}
+
+/**
+ * Read the timesheet now for anyone out over LUNCH_CHECK_MIN whose punches
+ * were last read too early to show a lunch (Digital Metrics' clock-in pull,
+ * a few seconds). Returns the day's punches afterwards. A failed read leaves
+ * them unverified — held back, not reported.
+ */
+async function lunchChecked(day, items, { startOf, outOf }) {
+  let punches = await punchesFor(day);
+  const need = needsLunchCheck(items, punches, { checkOverMin: LUNCH_CHECK_MIN, startOf, outOf });
+  if (!need.length) return punches;
+  const tries = await lget(K.punchTry, {});
+  const now = Date.now();
+  // the timesheet name: the one already on file, else the grid's spelling
+  const roster = (await assignments.get(HOME_STORE, day).catch(() => null))?.associates || [];
+  const people = [...new Set(need.map((x) => Object.keys(punches).find((n) => sameName(n, x.name))
+    || roster.find((r) => sameName(r.name, x.name))?.name || String(x.name).toUpperCase()))]
+    .filter((n) => now - (tries[`${day}|${n}`] || 0) > PUNCH_RETRY_MS);
+  if (!people.length) return punches;
+  for (const n of people) tries[`${day}|${n}`] = now;
+  await lset(K.punchTry, tries);
+  const res = await metricsHandlers.pull_clockins({ store: HOME_STORE, from: day, to: day, people }).catch((e) => ({ error: e?.message }));
+  if (res?.error) { console.warn("[digitaldashboard] lunch punch check:", res.error); return punches; }
+  const reads = await lget(K.punchReads, {});
+  for (const n of people) reads[`${day}|${n}`] = now;
+  for (const k of Object.keys(reads)) if (k.slice(0, 10) < isoDay(new Date(now - 3 * 86_400_000))) delete reads[k];
+  await lset(K.punchReads, reads);
+  return punchesFor(day);
+}
+
+// The PC daemon answers most !commands; hand it the day's punches (minutes
+// only, localhost, write-only route, memory only there) when they change.
+let pushedPunches = "";
+async function pushPunches(day, punches) {
+  const set = {};
+  // NAME: [clockIn, clockOut, mealOut, mealIn, readAt] — compact, it rides in the query string
+  for (const [n, p] of Object.entries(punches)) if (p.clockIn != null) set[n] = [p.clockIn, p.clockOut, p.mealOut, p.mealIn, p._at];
+  const sig = `${day}:${JSON.stringify(set)}`;
+  if (sig === pushedPunches || !Object.keys(set).length) return;
+  await daemon("/punches", { day, set: JSON.stringify(set) }, { timeoutMs: 8000 })
+    .then(() => { pushedPunches = sig; }, (e) => console.warn("[digitaldashboard] punches → daemon:", e?.message ?? e));
+}
+
+/**
+ * The daemon's long-break log for one board day (default today). Cache only —
+ * no GIF read. Punched meals are taken out (break_log.withMeals) so a lunch is
+ * never reported as a long break, and nothing over LUNCH_CHECK_MIN is reported
+ * before a punch read rules lunch out; `punches` says whether that day had any.
+ */
 export async function getBreakLog(day) {
-  return daemon("/breaklog", { day: /^\d{4}-\d{2}-\d{2}$/.test(day || "") ? day : null }, { timeoutMs: 10_000 });
+  const r = await daemon("/breaklog", { day: /^\d{4}-\d{2}-\d{2}$/.test(day || "") ? day : null }, { timeoutMs: 10_000 });
+  if (!r?.day || !Array.isArray(r.episodes)) return r;
+  const now = Date.now();
+  const punches = await lunchChecked(r.day, r.episodes, {
+    startOf: (e) => e.lastSeenActiveAt ?? e.firstFlaggedAt,
+    outOf: (e) => (e.status === "open" ? Math.round((now - (e.lastSeenActiveAt ?? e.firstFlaggedAt)) / 60_000) : episodeMinutes(e)) });
+  pushPunches(r.day, punches);
+  const limitMin = r.limitMin ?? (await getSettings()).limitMin;
+  return { ...r, punches: Object.keys(punches).length > 0, episodes: withMeals(r.episodes, punches, r.day, { limitMin, now: r.lastAt || now }) };
 }
 
 // ── Store roster (!store): who picked today, coded digital vs store help ──
@@ -228,7 +315,7 @@ export async function cachedStore() { return lget(K.store, null); }
 
 /** "Associate X has been out of a pick walk for N minutes." Duration only. */
 function alertLine(s) {
-  return `${s.name} has been out of a pick walk for ${s.idleMin} minutes.`;
+  return `${s.name} has been out of a pick walk for ${s.mealMin ? `${s.netMin} minutes, not counting lunch` : `${s.idleMin} minutes`}.`;
 }
 
 /**
@@ -399,6 +486,8 @@ export const handlers = {
   "check_breaks":    (m) => checkBreaks({ maxAge: m?.maxAge ?? 120, wait: m?.wait ?? 90 }),
   "cached_watch":    () => cachedWatch(),
   "break_log":       (m) => getBreakLog(m?.day),
+  // One associate's long breaks as an Outlook draft (opened, filled, never sent).
+  "break_email":     (m) => openOutlookDraft({ subject: String(m?.subject || ""), html: String(m?.html || "") }),
   "store":           (m) => getStore({ pass: m?.pass ?? true, budget: m?.budget ?? 5, wait: m?.wait ?? 160 }),
   "cached_store":    () => cachedStore(),
   "health":          () => daemon("/health", {}, { timeoutMs: 8000 }).then((h) => ({ ok: true, ...h })).catch((e) => ({ ok: false, error: e.message, kind: e.kind })),

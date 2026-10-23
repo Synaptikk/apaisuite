@@ -714,9 +714,27 @@ export async function mount(host, container) {
     const el = $("[data-progress]"); if (el) el.textContent = msg?.payload?.text || msg?.text || "";
   });
 
+  // Ledger, completed log, causes, coaching notes, pantry list, register
+  // types and till-log days are shared with the store's other AP users
+  // through the Door Catches key. Pull on open, every minute while visible
+  // and on refocus; repaint when anything arrived.
+  async function syncShared() {
+    if (document.hidden || unmounted) return;
+    const res = await host.messaging.sendRaw("sync_shared", {}).catch(() => null);
+    const d = res && res.data !== undefined ? res.data : res;
+    const el = $("[data-shared]");
+    if (!d || !el) return;
+    el.textContent = d.ok ? `Shared with store ${state?.store?.storeNbr || ""} AP` : "Not shared";
+    el.title = d.ok ? `Last synced ${new Date().toLocaleTimeString()}` : (d.error || "Sharing is unavailable.");
+    if (d.ok && Object.keys(d.applied || {}).length && !unmounted) { await reloadSelected(); await load(); }
+  }
+  const syncTimer = setInterval(syncShared, 60_000);
+  document.addEventListener("visibilitychange", syncShared);
+
   await load();
+  syncShared();
   await bootstrap();
-  return () => { unmounted = true; unsubProgress(); link.remove(); };
+  return () => { unmounted = true; unsubProgress(); clearInterval(syncTimer); document.removeEventListener("visibilitychange", syncShared); link.remove(); };
 
   // Opening the module loads everything the board needs, in order, so a
   // fresh profile (or a stale one) never sits on "not pulled" waiting for

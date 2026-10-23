@@ -32,6 +32,13 @@
 //                                     with minutes since last seen
 // GET /breaklog?day=YYYY-MM-DD        the day's long-break log (cache only;
 //                                     default today, ~60 days kept)
+// GET /punches?day=YYYY-MM-DD&set={}  the extension hands over that day's GTA
+//                                     clock/meal minutes so !breaks/!breaklog
+//                                     can leave lunches out and hold anything
+//                                     over 45 min until one rules lunch out.
+//                                     set = { NAME: [in, out, mealOut, mealIn, readAt] }.
+//                                     WRITE-ONLY (responses carry CORS *),
+//                                     memory only, today + yesterday.
 // GET /stop                           stop the emulator now
 //
 // SOURCE (GIF_SOURCE, default "phone"): since 2026-10-09 the readings come
@@ -103,6 +110,8 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(sig, (
 // ── State ────────────────────────────────────────────────────────
 let state = { history: null, gaps: {}, opd: null, opdAt: 0, notActive: null, notActiveAt: 0, watch: null, watchAt: 0, roster: null, rosterAt: 0, rosterUpdated: null };
 try { if (existsSync(STATE_FILE)) state = { ...state, ...JSON.parse(readFileSync(STATE_FILE, "utf8")) }; } catch (e) { log("state load failed:", e.message); }
+// GTA punches from the extension (/punches): PII, so memory only — never gif-state.json.
+const punches = {};
 function save() { try { writeFileSync(STATE_FILE, JSON.stringify(state)); } catch (e) { log("state save failed:", e.message); } }
 
 // ── Emulator ─────────────────────────────────────────────────────
@@ -648,6 +657,17 @@ const server = http.createServer(async (req, res) => {
           episodes: breakLogDay(state.breakLog, day, now),
         });
       }
+      case "/punches": {
+        const day = q("day", "");
+        let set = null;
+        try { set = JSON.parse(q("set", "")); } catch { /* bad payload */ }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !set || typeof set !== "object") return send(res, 400, { error: "day and set required" });
+        // NAME: [clockIn, clockOut, mealOut, mealIn, readAt] (digitaldashboard/service.js pushPunches)
+        punches[day] = Object.fromEntries(Object.entries(set).filter(([, v]) => Array.isArray(v)).map(([n, [clockIn, clockOut, mealOut, mealIn, _at]]) =>
+          [n, { clockIn, clockOut, mealOut, mealIn, _at }]));
+        for (const d of Object.keys(punches)) if (d < boardDay(new Date(Date.now() - 2 * 86_400_000))) delete punches[d];
+        return send(res, 200, { ok: true, n: Object.keys(set).length });
+      }
       case "/scope": {
         // who gets totals read on stop: today's board PICK names + store help (gif-chat, every 10 min)
         state.scope = q("names", "").split("|").map((x) => x.trim()).filter(Boolean);
@@ -706,5 +726,5 @@ server.listen(PORT, "127.0.0.1", () => {
   log(`gif-daemon on http://127.0.0.1:${PORT} (store ${HOME_STORE}, source ${SOURCE}${PHONE ? "" : `, idle stop ${IDLE_MIN || "off"} min`})`);
   // Workvivo !commands through QRCallBox's chat relay (dev/gif-chat.mjs);
   // GIF_CHAT=0 turns it off.
-  if (process.env.GIF_CHAT !== "0") { chat = createChat({ port: PORT, log }); chat.start(); }
+  if (process.env.GIF_CHAT !== "0") { chat = createChat({ port: PORT, log, punchesFor: (day) => punches[day] || {} }); chat.start(); }
 });

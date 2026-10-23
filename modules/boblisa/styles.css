@@ -17,7 +17,7 @@
 .module-boblisa .bl-status a { color: inherit; text-decoration: underline; }
 
 /* summary strip */
-.module-boblisa .bl-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
+.module-boblisa .bl-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-3); }
 @media (max-width: 900px) { .module-boblisa .bl-summary { grid-template-columns: repeat(2, 1fr); } }
 .module-boblisa .bl-sum { border: 1px solid var(--apai-border-soft); border-radius: var(--rad-md); padding: var(--sp-3) var(--sp-4); background: var(--apai-bg-elev); display: grid; gap: 2px; }
 .module-boblisa .bl-sum-n { font-size: var(--fs-2xl); font-weight: var(--fw-bold); line-height: 1; font-variant-numeric: tabular-nums; }
@@ -25,6 +25,7 @@
 .module-boblisa .bl-sum-s { color: var(--apai-muted); font-size: var(--fs-xs); }
 .module-boblisa .bl-sum-manned .bl-sum-n { color: var(--module-accent, var(--apai-blue)); }
 .module-boblisa .bl-sum-train .bl-sum-n { color: var(--apai-success); }
+.module-boblisa .bl-sum-value .bl-sum-n { color: var(--apai-error); }
 .module-boblisa .bl-failed, .module-boblisa .bl-empty { grid-column: 1 / -1; color: var(--apai-muted); font-size: var(--fs-sm); }
 .module-boblisa .bl-failed span { text-decoration: underline dotted; }
 .module-boblisa td.bl-empty { padding: var(--sp-8); text-align: center; }

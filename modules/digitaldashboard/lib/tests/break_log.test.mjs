@@ -1,8 +1,8 @@
 // node --test modules/digitaldashboard/lib/tests/break_log.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeBreakLog, breakLogDay, episodeMinutes, breakLogDays, clockToMs, BREAK_LOG_KEEP_DAYS } from "../break_log.js";
-import { parseCommand, formatBreakLog, formatHelp } from "../commands.js";
+import { mergeBreakLog, breakLogDay, episodeMinutes, breakLogDays, clockToMs, withMeals, watchWithMeals, BREAK_LOG_KEEP_DAYS } from "../break_log.js";
+import { parseCommand, formatBreakLog, formatBreaks, formatHelp } from "../commands.js";
 
 const at = (h, m = 0, day = 9) => new Date(2026, 9, day, h, m);
 const sus = (name, lastSeenMin, idleMin, over = true) => ({ name, lastSeen: lastSeenMin, location: "A1", idleMin, over });
@@ -109,4 +109,66 @@ test("!breaklog parses and formats one line per episode", () => {
     "• Blake Sample · still out since 1:05pm (32 min)",
   ].join("\n"));
   assert.match(formatBreakLog([], DAY, at(9, 0)), /none logged over 18 min/);
+});
+
+test("withMeals: lunches, the 4-min walk each way, the 45-min punch check, a twice-logged stretch", () => {
+  const ep = (name, out, back, extra = {}) => ({ name, lastSeenActiveAt: at(...out).getTime(), firstFlaggedAt: at(...out).getTime() + 20 * 60_000,
+    lastFlaggedAt: at(...back).getTime(), cleared: at(...back).getTime(), status: "cleared", longestMin: 20, ...extra });
+  const read = at(23).getTime();
+  const punches = {
+    "AVERY STONE": { clockIn: 7 * 60, mealOut: 12 * 60 + 4, mealIn: 13 * 60 + 5, clockOut: 16 * 60, _at: read },
+    "BLAKE RIVERS": { clockIn: 9 * 60, mealOut: 13 * 60, mealIn: 14 * 60, clockOut: 18 * 60, _at: read },
+    "CASEY MOON": { clockIn: 13 * 60, mealOut: null, mealIn: null, clockOut: 18 * 60, _at: read },
+    "ELLIS GREY": { clockIn: 7 * 60, mealOut: 12 * 60 + 4, mealIn: 13 * 60 + 4, clockOut: 16 * 60, _at: read },
+    "FINN LAKE": { clockIn: 7 * 60, mealOut: null, mealIn: null, clockOut: null, _at: at(9).getTime() },
+  };
+  const out = withMeals([
+    ep("Avery Stone", [11, 57], [13, 13]),          // 7 before punch-out, 8 after punch-in → 3 + 1 past the walk
+    ep("Ellis Grey", [12, 2], [13, 9]),             // 2 before, 5 after → a plain lunch
+    ep("Blake Rivers", [12, 40], [14, 10]),         // 90 min, 60 meal → 30 net, still a break
+    ep("Casey Moon", [17, 30], [18, 5]),            // 35 min, 5 after clock-out → 30 net
+    ep("Casey Moon", [17, 30], [18, 5]),            // logged twice → folded
+    ep("Drew Park", [15, 0], [15, 30]),             // no punches, under 45 → still reported
+    ep("Finn Lake", [14, 0], [15, 0]),              // 60 min, punches read at 9 AM → held
+    ep("Gale Hart", [14, 0], [15, 0]),              // 60 min, no punches at all → held
+  ], punches, DAY, { limitMin: 18 });
+  assert.equal(out.length, 7);
+  const by = Object.fromEntries(out.map((e) => [e.name, e]));
+  assert.deepEqual([by["Avery Stone"].kind, by["Avery Stone"].beforeMin, by["Avery Stone"].afterMin, by["Avery Stone"].lunchOverMin], ["lunch-over", 7, 8, 4]);
+  assert.deepEqual(by["Avery Stone"].meal, [12 * 60 + 4, 13 * 60 + 5]);
+  assert.deepEqual([by["Ellis Grey"].kind, by["Ellis Grey"].lunchOverMin], ["lunch", 0]);
+  assert.deepEqual([by["Blake Rivers"].kind, by["Blake Rivers"].netMin], ["break", 30]);
+  assert.deepEqual([by["Casey Moon"].offClockMin, by["Casey Moon"].netMin], [5, 30]);
+  assert.equal(by["Drew Park"].kind, "unchecked");
+  assert.equal(by["Finn Lake"].kind, "unverified");
+  assert.equal(by["Gale Hart"].kind, "unverified");
+  // once a late-enough read shows no lunch, it is a long break
+  const again = withMeals([ep("Finn Lake", [14, 0], [15, 0])], { "FINN LAKE": { ...punches["FINN LAKE"], _at: read } }, DAY, { limitMin: 18 });
+  assert.equal(again[0].kind, "break");
+
+  const text = formatBreakLog(out, DAY, at(19));
+  assert.doesNotMatch(text, /Ellis|Finn|Gale/);
+  assert.match(text, /Avery Stone · lunch .*7 min from last pick to punching out, 8 from punching back in to picking — 4 min past/);
+  assert.match(text, /Blake Rivers .*30 min, not counting 60 min lunch/);
+  assert.match(text, /1 punched lunch left out/);
+  assert.match(text, /2 over 45 min held until their lunch punch is checked/);
+});
+
+test("watchWithMeals: on lunch is held, over 45 min is held until a late read", () => {
+  const now = at(13, 0);
+  const w = { limitMin: 18, scheduledCount: 3, suspects: [
+    { name: "Avery Stone", lastSeen: 12 * 60 - 3, idleMin: 63, over: true },     // on lunch since 12:04
+    { name: "Finn Lake", lastSeen: 12 * 60 - 3, idleMin: 63, over: true },       // no read since 9
+    { name: "Blake Rivers", lastSeen: 12 * 60 + 30, idleMin: 30, over: true },   // under 45, reported
+  ] };
+  const punches = {
+    "AVERY STONE": { clockIn: 7 * 60, mealOut: 12 * 60 + 4, mealIn: null, clockOut: null, _at: now.getTime() },
+    "FINN LAKE": { clockIn: 7 * 60, mealOut: null, mealIn: null, clockOut: null, _at: at(9).getTime() },
+  };
+  const r = watchWithMeals(w, punches, DAY, { limitMin: 18, now });
+  const by = Object.fromEntries(r.suspects.map((s) => [s.name, s]));
+  assert.deepEqual([by["Avery Stone"].over, by["Avery Stone"].held], [false, "lunch"]);
+  assert.deepEqual([by["Finn Lake"].over, by["Finn Lake"].held], [false, "unverified"]);
+  assert.equal(by["Blake Rivers"].over, true);
+  assert.match(formatBreaks(r, now), /Blake Rivers[\s\S]*1 on a punched lunch · 1 over 45 min held/);
 });

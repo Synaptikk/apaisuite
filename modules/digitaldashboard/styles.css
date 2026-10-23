@@ -177,6 +177,11 @@
 .module-digitaldashboard .dd-row-short th,
 .module-digitaldashboard .dd-row-short td { background: var(--apai-warn-bg); }
 
+/* long-break log: a punched lunch is shown, not counted */
+.module-digitaldashboard .dd-row-lunch th,
+.module-digitaldashboard .dd-row-lunch td { color: var(--apai-muted); }
+.module-digitaldashboard .dd-sub { display: block; font-size: 0.85em; color: var(--apai-muted); }
+
 .module-digitaldashboard .dd-row-muted th,
 .module-digitaldashboard .dd-row-muted td { color: var(--apai-ink-soft); }
 

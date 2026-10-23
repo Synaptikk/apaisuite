@@ -11,12 +11,7 @@
 //   team           { extra? } → the store's AP team (re-read from WFM schedules
 //                  now) plus the hand-kept extra names; `extra` saves that list
 //
-// Access: a browser with no review key asks QRCallBox for one with the name
-// the suite read from the user's Walmart session. It is granted when that
-// name is on the store's AP team, which any keyed suite refreshes from the
-// last 14 days of WFM schedule job titles (Digital Metrics' import) at most
-// every 12 h. A key granted that way is re-checked daily and dropped once the
-// person is off the AP team; a pasted key is never re-checked.
+// Access (lib/access.js): AP associates unlock with no key pasted.
 //   whoami         looks for the user's name in every source (gscope, Auror),
 //                  then asks for AP access with it → { identity, sources, access }
 //   cached_list    the last list loaded here (instant paint on open)
@@ -24,57 +19,17 @@
 //   lookup_items   { upcs, force } → name, brand, category, picture per UPC
 //                  (lib/item_lookup.js: go-upc.com, then upcitemdb.com; cached)
 
-import { getUserHomeStore } from "../../shared/userStore.js";
 import { getIdentity } from "../../shared/identity.js";
 import { checkIdentity } from "../../shared/identity_probe.js";
-import { doorLink, listCatches, requestAccess, setHosts, setReview, setTeam } from "./lib/api.js";
+import { doorLink, listCatches, setHosts, setReview, setTeam } from "./lib/api.js";
+import { KEY, apAccess, ready, settings } from "./lib/access.js";
 import { schedules } from "../digitalmetrics/lib/firestore.js";
 import { cachedItems, lookupItems } from "./lib/item_lookup.js";
 
-const KEY = "doorcatch.settings";
 const LAST_LIST_KEY = "doorcatch.lastList";
 const TEAM_SYNC_KEY = "doorcatch.teamSyncAt";
-const RECHECK_MS = 24 * 3600_000;
 const TEAM_SYNC_MS = 12 * 3600_000;
 const AP_JOB = /^AP\b|asset protection/i;
-
-async function settings() {
-  const got = (await chrome.storage.local.get(KEY))[KEY] || {};
-  const storeNbr = got.storeNbr || String((await getUserHomeStore().catch(() => null)) || "");
-  // A saved key for another store is not this store's key.
-  const keyed = !got.storeNbr || got.storeNbr === storeNbr;
-  return {
-    storeNbr,
-    reviewKey: keyed ? got.reviewKey || "" : "",
-    submitKey: keyed ? got.submitKey || "" : "",
-    via: keyed ? got.via || "" : "",          // "ap" = granted by the AP team check
-    accessAt: keyed ? got.accessAt || 0 : 0,
-    match: keyed ? got.match || null : null,
-  };
-}
-
-// Ask QRCallBox for the store's keys as an AP associate. Returns the new
-// settings, or { error } (a 403 says why; a network failure keeps any old key).
-async function apAccess(s) {
-  // The name is otherwise only learned as a side effect of other modules, so
-  // look for it now rather than sending none.
-  let me = await getIdentity();
-  let check = null;
-  if (!me.displayName) { check = await checkIdentity(); me = await getIdentity(); }
-  const res = await requestAccess({ storeNbr: s.storeNbr, name: me.displayName || "", win: me.win || "" });
-  if (res.ok) {
-    const next = { storeNbr: s.storeNbr, reviewKey: res.reviewKey, submitKey: res.submitKey || "", via: "ap", accessAt: Date.now(), match: res.match || null };
-    await chrome.storage.local.set({ [KEY]: next });
-    return { s: next };
-  }
-  if (res.status === 403 || res.status === 404) {
-    if (s.via === "ap") await chrome.storage.local.set({ [KEY]: { storeNbr: s.storeNbr } });
-    const error = me.displayName ? res.error
-      : "The suite couldn't find your name. Sign in to gscope or Auror in this browser, then press Check again.";
-    return { error: { ok: false, noAccess: true, error, name: me.displayName || "", check: check?.sources || null } };
-  }
-  return s.reviewKey ? { s } : { error: res };
-}
 
 // The store's AP associates from the last 14 days of WFM schedules.
 async function scheduledApTeam(storeNbr) {
@@ -112,13 +67,6 @@ function publicSettings(s) {
     match: s.match || null,
     doorLink: s.storeNbr && s.submitKey ? doorLink(s.storeNbr, s.submitKey) : "",
   };
-}
-
-async function ready() {
-  const s = await settings();
-  if (!s.storeNbr) return { error: { ok: false, error: "Set the store first." } };
-  if (!s.reviewKey || (s.via === "ap" && Date.now() - s.accessAt > RECHECK_MS)) return apAccess(s);
-  return { s };
 }
 
 export const handlers = {

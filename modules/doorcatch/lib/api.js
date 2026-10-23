@@ -13,6 +13,8 @@
 //        → { ok, team, extra, teamAt }
 //   POST /api/door/access  { store, name, win } → { ok, reviewKey, submitKey, match } | 403
 //        (no key: unlocks for a name on the store's AP schedule or extra list)
+//   POST /api/door/sync    X-API-Key  { store, ns, since, by, puts: [{ id, at, data } | { id, at, deleted }] }
+//        → { ok, items: [{ id, at, by, deleted, data }], rev, more }   (lib/store_sync.js)
 //   401 = wrong review key for that store.
 //
 // The door hosts' page is https://qrcallbox.com/door?s=<store>&k=<submitKey>.
@@ -66,6 +68,10 @@ export const setTeam = ({ storeNbr, reviewKey, team, extra, by }) =>
 
 export const requestAccess = ({ storeNbr, name, win }) =>
   call("/api/door/access", { method: "POST", body: { store: storeNbr, name, win } });
+
+// Shared records for other modules (lib/store_sync.js).
+export const syncShared = ({ storeNbr, reviewKey, ns, since, puts, by }) =>
+  call("/api/door/sync", { method: "POST", body: { store: storeNbr, ns, since, puts, by }, reviewKey });
 
 // CSV of the catches as listed: one row per item line, so a catch with three
 // UPCs is three rows sharing its id, time and host.

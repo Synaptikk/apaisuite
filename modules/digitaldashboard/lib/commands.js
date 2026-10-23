@@ -8,7 +8,7 @@
 // replies (none of which start with "!").
 
 import { clockText, BREAK_LIMIT_MIN, minutesOfDay, sameName, SLOT_START_HOUR } from "./gif_metrics.js";
-import { episodeMinutes } from "./break_log.js";
+import { episodeMinutes, LUNCH_TRAVEL_MIN } from "./break_log.js";
 import { mixText } from "./walk_log.js";
 
 const ALIASES = [
@@ -71,11 +71,21 @@ export function formatBreaks(w, now = new Date()) {
   if (!w) return "Breaks: no check has run yet.";
   const limit = w.limitMin ?? BREAK_LIMIT_MIN;
   const over = (w.suspects || []).filter((s) => s.over);
+  // held (break_log.watchWithMeals): on a punched lunch, or over 45 min with no punch read yet
+  const atLunch = (w.suspects || []).filter((s) => s.held === "lunch").length;
+  const pending = (w.suspects || []).filter((s) => s.held === "unverified").length;
+  const tail = [atLunch ? `${atLunch} on a punched lunch` : "", pending ? `${pending} over 45 min held until their lunch punch is checked` : ""].filter(Boolean).join(" · ");
   if (!w.scheduledCount) return `No one is on the grid to pick this hour (${stamp(now)}).`;
-  if (!over.length) return `All ${w.scheduledCount} scheduled pickers are within ${limit} min (${stamp(now)}).`;
+  if (!over.length) return `All ${w.scheduledCount} scheduled pickers are within ${limit} min (${stamp(now)}).${tail ? ` (${tail})` : ""}`;
   const lines = [`Out of pick walks > ${limit} min (${stamp(now)}):`];
-  for (const s of over) lines.push(`• ${s.name} — last pick ${clockText(s.lastSeen)}${s.location ? ` at ${s.location}` : ""} (${s.idleMin} min)`);
+  for (const s of over) lines.push(`• ${s.name} — last pick ${clockText(s.lastSeen)}${s.location ? ` at ${s.location}` : ""} (${s.mealMin ? `${s.netMin} min not counting ${s.mealMin} min lunch` : `${s.idleMin} min`})`);
+  if (tail) lines.push(`(${tail})`);
   return lines.join("\n");
+}
+
+/** "7 min from last pick to punching out, 10 from punching back in to picking — 6 min past the 4-min walk each way" */
+export function lunchTravel(e) {
+  return `${e.beforeMin} min from last pick to punching out, ${e.afterMin} from punching back in to picking — ${e.lunchOverMin} min past the ${LUNCH_TRAVEL_MIN}-min walk each way`;
 }
 
 /** "11:42am" for a ms timestamp. */
@@ -88,19 +98,28 @@ const shortClock = (ms) => (ms == null ? "?" : clockText(minutesOfDay(new Date(m
 export function formatBreakLog(episodes, day, asOf = new Date(), { limitMin = BREAK_LIMIT_MIN, max = 60 } = {}) {
   const [y, m, d] = String(day).split("-").map(Number);
   const date = y ? new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" }) : day;
-  const eps = episodes || [];
-  if (!eps.length) return `Long breaks ${date}: none logged over ${limitMin} min (as of ${stamp(asOf)}).`;
+  // Punched lunches (break_log.withMeals) are not long breaks unless the time
+  // around them is past the walk allowance ("lunch-over"); over 45 min with no
+  // punch read yet ("unverified") is held back.
+  const all = episodes || [];
+  const eps = all.filter((e) => e.kind !== "lunch" && e.kind !== "clocked-out" && e.kind !== "unverified");
+  const lunches = all.filter((e) => e.kind === "lunch" || e.kind === "clocked-out").length;
+  const held = all.filter((e) => e.kind === "unverified").length;
+  if (!eps.length) return `Long breaks ${date}: none logged over ${limitMin} min${lunches ? ` (${lunches} punched lunch${lunches === 1 ? "" : "es"} left out)` : ""} (as of ${stamp(asOf)}).`;
   const open = eps.filter((e) => e.status === "open").length;
   const lines = [`Long breaks ${date} — ${eps.length} logged over ${limitMin} min${open ? `, ${open} still out` : ""} (as of ${stamp(asOf)}):`];
   for (const e of eps.slice(0, max)) {
-    const min = episodeMinutes(e);
-    const mins = min == null ? "" : ` (${min} min)`;
+    const min = e.netMin ?? episodeMinutes(e);
+    const mins = min == null ? "" : ` (${min} min${e.mealMin ? `, not counting ${e.mealMin} min lunch` : ""})`;
     const out = e.lastSeenActiveAt ?? e.firstFlaggedAt;
+    if (e.kind === "lunch-over") { lines.push(`• ${e.name} · lunch ${shortClock(out)} → ${shortClock(e.cleared)}: ${lunchTravel(e)}`); continue; }
     lines.push(e.status === "open"
       ? `• ${e.name} · still out since ${shortClock(out)}${mins}`
       : `• ${e.name} · out ${shortClock(out)} → back ${shortClock(e.cleared)}${mins}`);
   }
   if (eps.length > max) lines.push(`…and ${eps.length - max} more (full list on the dashboard)`);
+  if (lunches) lines.push(`(${lunches} punched lunch${lunches === 1 ? "" : "es"} left out)`);
+  if (held) lines.push(`(${held} over 45 min held until their lunch punch is checked)`);
   return lines.join("\n");
 }
 
@@ -224,6 +243,18 @@ export function withLeaderboardRates(rows, leaderboard) {
   });
 }
 
+/**
+ * " (last one 6:52 AM)" when the picker's last walk card left the OPD screens
+ * an hour or more before the picks were read: the PICK hours after it still
+ * count as expected (user, 2026-10-19), so say when picking actually stopped —
+ * a moved-to-other-work or gone-early picker reads very different from a slow
+ * one (2026-10-23, Deborah Greene: 1 walk ending 6:52, read at 10:50).
+ */
+const STALE_WALK_MIN = 60;
+function staleWalk(mix, at) {
+  return mix?.lastSeen && at && at - mix.lastSeen >= STALE_WALK_MIN * 60_000 ? ` (last one ${clockOf(mix.lastSeen)})` : "";
+}
+
 export function formatPerformance(s, board, now = new Date()) {
   const rv = performanceReview(withLeaderboardRates(s?.rows, s?.leaderboard), board, { leaderboard: s?.leaderboard, absences: s?.absences, now });
   const lines = [`Performance @ ${stamp(now)} - pickers behind ${PERF_PICK_RATE}/hr for their scheduled PICK hours, most behind first`];
@@ -234,7 +265,7 @@ export function formatPerformance(s, board, now = new Date()) {
     const walks = o.walks > 0 ? ` - ${o.walks} walk${o.walks === 1 ? "" : "s"}${o.picked != null ? ` (avg ${Math.round(o.picked / o.walks)}m)` : ""}` : "";
     lines.push(`- ${o.name}: ${n(o.behind)} picks behind - ${n(o.picks)} of ${n(o.expected)} for ${dur(o.sched)} scheduled` +
       `${time}${walks}${o.gone ? " - gone for the day" : ` - as of ${clockOf(o.at)}`}` +
-      (s?.walkMix?.[o.name] ? ` - walks seen: ${mixText(s.walkMix[o.name])}` : ""));
+      (s?.walkMix?.[o.name] ? ` - walks seen: ${mixText(s.walkMix[o.name])}${staleWalk(s.walkMix[o.name], o.at)}` : ""));
   }
   const who = (list) => list.map((a) => `${titleName(a.name)}${a.shift ? ` (${a.shift})` : ""}`).join(", ");
   if (rv.calledOut.length) lines.push(`- Called out (IVR): ${who(rv.calledOut)}`);

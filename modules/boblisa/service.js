@@ -21,6 +21,10 @@
 //                       the cashier ledger (boblisa.cashiers.<store>): misses
 //                       and second-transaction dollars per manned-lane
 //                       operator, rebuilt from the records on every save
+//   sync_shared         share documented misses, review state and operator
+//                       names with the store's other AP users (doorcatch's
+//                       lib/store_sync.js, behind the Door Catches key); also
+//                       runs a few seconds after any local change to them
 //   find_operator       register + date + time → the EJ sales rung on that
 //                       register around then (op, banner name, TR#): names the
 //                       cashier for a paid training receipt with no earlier same-card sale
@@ -45,6 +49,7 @@ import { fetchOpenDrawer, linkVideo } from "../registerls/lib/open_drawer.js";
 import { probeCameras } from "./lib/video.js";
 import { fetchEmployee } from "./lib/appriss_people.js";
 import { apprissAuthGate, APPRISS_ORIGIN } from "../../shared/appriss.js";
+import { syncCollections, watchStorage } from "../doorcatch/lib/store_sync.js";
 
 const TAG = "[boblisa]";
 const KEYS = {
@@ -156,6 +161,72 @@ async function saveMissesAndLedger(storeNbr, doc) {
   return ledger;
 }
 
+// ── store-wide sharing ─────────────────────────────────────────
+// The analyst's work, not the pulled journal: documented misses, Clear/Undo,
+// and operator names (banner + APPRISS). The cashier ledger is rebuilt from
+// the records after anything arrives.
+function applyChanges(map, changes) {
+  for (const [id, v] of Object.entries(changes)) { if (v == null) delete map[id]; else map[id] = v; }
+}
+const SHARED = [
+  {
+    ns: "boblisa_misses",
+    read: async (store) => (await loadMisses(store)).records,
+    async write(store, changes) {
+      const doc = await loadMisses(store);
+      applyChanges(doc.records, changes);
+      await saveMissesAndLedger(store, doc);
+    },
+  },
+  {
+    ns: "boblisa_review",
+    read: async (store) => (await loadReview(store)).items,
+    async write(store, changes) {
+      const doc = await loadReview(store);
+      applyChanges(doc.items, changes);
+      doc.updatedAt = new Date().toISOString();
+      await set(KEYS.review(store), doc);
+    },
+  },
+  {
+    ns: "boblisa_operators",   // "n|<op>" → banner name, "p|<op>" → APPRISS person
+    async read(store) {
+      const doc = await loadOperators(store);
+      const out = {};
+      for (const [op, name] of Object.entries(doc.names)) out[`n|${op}`] = name;
+      for (const [op, person] of Object.entries(doc.people)) out[`p|${op}`] = person;
+      return out;
+    },
+    async write(store, changes) {
+      const doc = await loadOperators(store);
+      for (const [id, v] of Object.entries(changes)) {
+        const [kind, op] = [id.slice(0, 1), id.slice(2)];
+        const map = kind === "p" ? doc.people : doc.names;
+        if (v == null) delete map[op]; else map[op] = v;
+      }
+      doc.updatedAt = new Date().toISOString();
+      await set(KEYS.operators(store), doc);
+    },
+  },
+];
+const SHARED_PREFIXES = ["boblisa.misses.", "boblisa.review.", "boblisa.operators."];
+
+async function syncShared(storeNbr, opts) {
+  const res = await syncCollections(storeNbr, SHARED, opts);
+  if (res.ok && Object.keys(res.applied).length) {
+    await saveMissesAndLedger(storeNbr, await loadMisses(storeNbr));   // names / records changed → ledger follows
+    broadcast("state_changed", { storeNbr, shared: res.applied });
+  }
+  return res;
+}
+
+// Push a local change to the store a few seconds after it lands. Registered
+// at load so it is live whenever the service worker is.
+watchStorage((k) => SHARED_PREFIXES.some((p) => k.startsWith(p)), async () => {
+  const store = await resolveStore();
+  if (store.storeNbr) syncShared(store.storeNbr, { pushOnly: true }).catch((err) => console.warn(TAG, "share failed:", err?.message || err));
+});
+
 async function stateFor(storeNbr, range) {
   const dates = datesBetween(range.from, range.to);
   const rows = await loadDays(storeNbr, dates);
@@ -180,6 +251,11 @@ async function stateFor(storeNbr, range) {
 }
 
 export const handlers = {
+  async sync_shared(msg = {}) {
+    const store = await resolveStore(msg);
+    return syncShared(store.storeNbr);
+  },
+
   async get_state(msg) {
     const store = await resolveStore(msg);
     const range = await resolveRange(msg);

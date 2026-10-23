@@ -272,11 +272,14 @@ export async function mount(host, container) {
     if (watch.error) { el.innerHTML = `<p class="dd-empty">Couldn't check: ${esc(watch.error)}</p>`; return; }
     if (!watch.scheduledCount) { el.innerHTML = `<p class="dd-empty">${esc(watch.note || "No one on the board to pick this hour.")}</p>`; return; }
     const over = (watch.suspects || []).filter((s) => s.over);
-    const head = `<p class="dd-footnote">${watch.scheduledCount} scheduled to pick this hour · checked ${ago(watch.checkedAt)}</p>`;
+    // held by the service (break_log.watchWithMeals): on a punched lunch, or over 45 min with no punch read yet
+    const held = (k) => (watch.suspects || []).filter((s) => s.held === k).map((s) => esc(s.name));
+    const atLunch = held("lunch"), pending = held("unverified");
+    const head = `<p class="dd-footnote">${watch.scheduledCount} scheduled to pick this hour · checked ${ago(watch.checkedAt)}${atLunch.length ? ` · on a punched lunch: ${atLunch.join(", ")}` : ""}${pending.length ? ` · over 45 min, held until their lunch punch is checked: ${pending.join(", ")}` : ""}</p>`;
     if (!over.length) { el.innerHTML = `<div class="status-strip status-strip-ok">Everyone scheduled is within ${watch.limitMin ?? 18} min.</div>${head}`; return; }
     const rows = over.map((s) => `<tr>
         <th scope="row">${esc(s.name)}</th>
-        <td class="dd-num"><span class="badge badge-warn">${s.idleMin} min</span></td>
+        <td class="dd-num"><span class="badge badge-warn">${s.mealMin ? s.netMin : s.idleMin} min</span>${s.mealMin ? `<span class="dd-sub">not counting ${s.mealMin} min lunch</span>` : ""}</td>
         <td class="dd-num">last pick ${clockText(s.lastSeen)}</td>
       </tr>`).join("");
     el.innerHTML = `<table class="data-table data-table-compact dd-table"><thead><tr><th>Associate</th><th class="dd-num">Out</th><th class="dd-num"></th></tr></thead><tbody>${rows}</tbody></table>${head}`;
@@ -285,6 +288,10 @@ export async function mount(host, container) {
   // ── long-break log (daemon /breaklog, fed by every watch run) ────
   let breakLog = null, breakLogDay = "";
   const hm = (ms) => (ms == null ? "—" : clockText(new Date(ms).getHours() * 60 + new Date(ms).getMinutes()));
+  // kind/netMin/lunchOverMin come from the punched meals (service getBreakLog → break_log.withMeals)
+  const notCounted = (e) => e.kind === "lunch" || e.kind === "clocked-out" || e.kind === "unverified";
+  const mealText = (e) => `punched ${clockText(e.meal[0])}–${e.meal[1] == null ? "still out" : clockText(e.meal[1])}`;
+  const travelText = (e) => `${e.beforeMin} min last pick → punch-out, ${e.afterMin} min punch-in → picking (4 allowed each way)`;
   function paintBreakLog() {
     const el = $("[data-breaklog]");
     if (!breakLog) return;
@@ -296,23 +303,77 @@ export async function mount(host, container) {
     const head = container.querySelector(".dd-breaklog-head h3");
     if (head) head.textContent = breakLog.day === breakLog.today ? "Today's long breaks" : `Long breaks ${breakLog.day}`;
     const eps = breakLog.episodes || [];
+    $("[data-breaklog-email]").hidden = !eps.some((e) => !notCounted(e));
     if (!eps.length) { el.innerHTML = `<p class="dd-empty">No long breaks logged${breakLog.day === breakLog.today ? " yet today" : " that day"}.</p>`; return; }
     const rows = eps.map((e) => {
       const open = e.status === "open";
-      const min = open || e.cleared == null || e.lastSeenActiveAt == null ? e.longestMin
-        : Math.max(e.longestMin ?? 0, Math.round((e.cleared - e.lastSeenActiveAt) / 60000));
-      return `<tr${open ? ' class="dd-row-short"' : ""}>
+      const min = e.netMin ?? e.longestMin;
+      let cell;
+      if (e.kind === "unverified") cell = `<span class="badge">over 45 min · checking lunch punch</span>`;
+      else if (e.kind === "lunch") cell = `<span class="badge">lunch (${esc(mealText(e))})</span>`;
+      else if (e.kind === "clocked-out") cell = `<span class="badge">clocked out</span>`;
+      else if (e.kind === "lunch-over") cell = `<span class="badge badge-warn">lunch +${e.lunchOverMin} min</span><span class="dd-sub">${esc(travelText(e))}; ${esc(mealText(e))}</span>`;
+      else {
+        const note = [e.mealMin ? `${e.mealMin} min lunch (${mealText(e)})` : "", e.offClockMin ? `${e.offClockMin} min after clock-out` : ""].filter(Boolean).join(", ");
+        cell = `${min == null ? "—" : `${min} min`}${note ? `<span class="dd-sub">not counting ${esc(note)}</span>` : ""}`;
+      }
+      return `<tr class="${open && !notCounted(e) ? "dd-row-short" : ""}${notCounted(e) ? " dd-row-lunch" : ""}">
         <th scope="row">${esc(e.name)}</th>
         <td class="dd-num">${hm(e.lastSeenActiveAt)}</td>
         <td class="dd-num">${hm(e.firstFlaggedAt)}</td>
         <td class="dd-num">${open ? '<span class="badge badge-warn">still out</span>' : hm(e.cleared)}</td>
-        <td class="dd-num">${min == null ? "—" : `${min} min`}</td>
+        <td class="dd-num">${cell}</td>
       </tr>`;
     }).join("");
-    const open = eps.filter((e) => e.status === "open").length;
+    const counted = eps.filter((e) => !notCounted(e));
+    const open = counted.filter((e) => e.status === "open").length;
+    const overLunch = counted.filter((e) => e.kind === "lunch-over").length;
+    const lunches = eps.filter((e) => e.kind === "lunch" || e.kind === "clocked-out").length;
+    const pending = eps.filter((e) => e.kind === "unverified").length;
+    const check = breakLog.punches
+      ? [lunches ? `${lunches} punched lunch${lunches === 1 ? "" : "es"} not counted` : "checked against punched lunches",
+         overLunch ? `${overLunch} lunch${overLunch === 1 ? "" : "es"} with more than 4 min walking each way` : ""].filter(Boolean).map((t) => ` · ${t}`).join("")
+      : " · no clock-ins for this day yet";
+    const held = pending ? ` · ${pending} over 45 min held until their lunch punch is checked (needs the timesheet signed in)` : "";
     el.innerHTML = `<table class="data-table data-table-compact dd-table"><thead><tr><th>Associate</th><th class="dd-num">Went inactive</th><th class="dd-num">Flagged</th><th class="dd-num">Back</th><th class="dd-num">Minutes</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="dd-footnote">${eps.length} logged${open ? ` · ${open} still out` : ""}${breakLog.lastAt ? ` · watch ran ${ago(breakLog.lastAt)}` : ""}</p>`;
+      <p class="dd-footnote">${counted.length} flagged${open ? ` · ${open} still out` : ""}${check}${held}${breakLog.lastAt ? ` · watch ran ${ago(breakLog.lastAt)}` : ""}</p>`;
   }
+
+  // The day's long breaks, grouped by associate, as an Outlook draft for their
+  // leaders. Information only: leaders know who was pulled to other tasks and
+  // follow up themselves, so no judgement or form fields here.
+  function breakEmail() {
+    const shown = (breakLog.episodes || []).filter((e) => !notCounted(e));
+    const byName = new Map();
+    for (const e of shown) byName.set(e.name, [...(byName.get(e.name) || []), e]);
+    const people = [...byName.keys()].sort((a, b) => a.localeCompare(b));
+    const [y, m, d] = breakLog.day.split("-").map(Number);
+    const date = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const limit = breakLog.limitMin ?? settings?.limitMin ?? 18;
+    const cell = 'style="border:1px solid #999;padding:4px 8px;text-align:left"';
+    const minsOf = (e) => e.netMin ?? e.longestMin ?? 0;
+    const detail = (e) => (e.kind === "lunch-over"
+      ? `Around lunch (${mealText(e)}): ${e.beforeMin} min from last pick to punch-out, ${e.afterMin} min from punch-in to back picking`
+      : [e.mealMin ? `${e.mealMin} min punched lunch not counted` : "", e.offClockMin ? `${e.offClockMin} min after clock-out not counted` : ""].filter(Boolean).join("; "));
+    const summary = people.map((n) => {
+      const eps = byName.get(n);
+      return `<tr><td ${cell}>${esc(n)}</td><td ${cell}>${eps.length}</td><td ${cell}>${eps.reduce((t, e) => t + minsOf(e), 0)} min</td></tr>`;
+    }).join("");
+    const sections = people.map((n) => {
+      const rows = byName.get(n).map((e) => `<tr><td ${cell}>${hm(e.lastSeenActiveAt)}</td><td ${cell}>${e.status === "open" ? "still out" : hm(e.cleared)}</td>
+        <td ${cell}>${e.kind === "lunch-over" ? `${e.beforeMin + e.afterMin} min` : `${minsOf(e)} min`}</td><td ${cell}>${esc(e.location || "")}</td><td ${cell}>${esc(detail(e))}</td></tr>`).join("");
+      return `<p style="margin:16px 0 4px"><b>${esc(n)}</b></p>
+        <table style="border-collapse:collapse"><thead><tr><th ${cell}>Last pick</th><th ${cell}>Back</th><th ${cell}>Time without a pick</th><th ${cell}>Last pick location</th><th ${cell}>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }).join("");
+    const pending = (breakLog.episodes || []).filter((e) => e.kind === "unverified").length;
+    const html = `<p><b>Digital long breaks — Store 1458 — ${esc(date)}</b></p>
+      <p>For your review. These are stretches where an associate scheduled to pick went more than ${limit} minutes without a pick in GIF, plus time around a punched lunch beyond about 4 minutes each way. Some may have a reason, such as being pulled to another task; this list is information only.</p>
+      <table style="border-collapse:collapse"><thead><tr><th ${cell}>Associate</th><th ${cell}>Long breaks</th><th ${cell}>Total time</th></tr></thead><tbody>${summary}</tbody></table>
+      ${sections}
+      <p style="color:#666;margin-top:16px">"Back" is the first 3-minute GIF check that no longer had them out — picking again, or their hour on the board was no longer Pick — so it can be a few minutes late. Punched lunches and time after clock-out are not counted.${pending ? ` ${pending} stretch${pending === 1 ? "" : "es"} over 45 minutes ${pending === 1 ? "is" : "are"} left out until the lunch punch can be checked.` : ""}</p>`;
+    return { subject: `Digital long breaks — ${date}`, html };
+  }
+
   async function loadBreakLog(day = breakLogDay) {
     try { breakLog = await ask("break_log", { day: day || undefined }, { timeoutMs: 20_000 }); }
     catch (e) { breakLog = { error: e?.message || "try again" }; }
@@ -408,6 +469,15 @@ export async function mount(host, container) {
   $('[data-action="refresh"]').addEventListener("click", () => refresh());
   $('[data-action="check-breaks"]').addEventListener("click", checkBreaks);
   $('[data-action="refresh-store"]').addEventListener("click", refreshStore);
+  $("[data-breaklog-email]").addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    if (!breakLog?.episodes?.length) return;
+    btn.disabled = true; btn.textContent = "Opening Outlook…";
+    const r = await ask("break_email", breakEmail(), { timeoutMs: 120_000 }).catch((err) => ({ ok: false, error: err?.message }));
+    if (disposed) return;
+    btn.disabled = false; btn.textContent = r?.ok === false ? "Try again" : "Email to leaders";
+    btn.title = r?.ok === false ? `Couldn't open the draft: ${r.error || "try again"}` : "Open an Outlook draft listing every associate's long breaks for this day";
+  });
   $("[data-breaklog-day]").addEventListener("change", (ev) => {
     breakLogDay = ev.target.value === breakLog?.today ? "" : ev.target.value;
     loadBreakLog();

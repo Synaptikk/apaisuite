@@ -131,13 +131,16 @@ test("!performance: board pickers behind 90/hr for their elapsed PICK hours, mos
   ];
   const leaderboard = { at: t(16, 0), rows: [{ rank: 1, name: "Early Bird", rate: 80 }] };
   const absences = { rows: [{ name: "Called Off", type: "Absence" }] };
-  const walkMix = { "Jayla Hudgins": { walks: 3, items: 20, sections: { Oversized: 2, Ambient: 1 } } };
+  const walkMix = {
+    "Jayla Hudgins": { walks: 3, items: 20, lastSeen: t(14, 5), sections: { Oversized: 2, Ambient: 1 } },   // stopped 2h46m before the read
+    "Mid Shift": { walks: 5, items: 150, lastSeen: t(9, 30), sections: { Ambient: 5 } },                    // recent: no "last one"
+  };
   const lines = formatPerformance({ rows, leaderboard, absences, walkMix }, board, new Date(2026, 9, 9, 17, 0)).split("\n\n");   // blank line between entries
   assert.ok(lines.every((l) => !l.includes("\n")));
   assert.equal(lines[0], "Performance @ 5:00 PM - pickers behind 90/hr for their scheduled PICK hours, most behind first");
-  assert.equal(lines[1], "- Jayla Hudgins: 545 picks behind - 175 of 720 for 8h 00m scheduled - 5h 12m picking (65%) @ 34/hr - 21 walks (avg 15m) - gone for the day - walks seen: Oversized 2, Ambient 1");
+  assert.equal(lines[1], "- Jayla Hudgins: 545 picks behind - 175 of 720 for 8h 00m scheduled - 5h 12m picking (65%) @ 34/hr - 21 walks (avg 15m) - gone for the day - walks seen: Oversized 2, Ambient 1 (last one 2:05 PM)");
   assert.equal(lines[2], "- Short Day: 160 picks behind - 200 of 360 for 4h 00m scheduled - 2h 00m picking (50%) @ 100/hr - gone for the day");
-  assert.equal(lines[3], "- Mid Shift: 120 picks behind - 150 of 270 for 3h 00m scheduled - 1h 30m picking (50%) @ 100/hr - 5 walks (avg 18m) - as of 10:00 AM");
+  assert.equal(lines[3], "- Mid Shift: 120 picks behind - 150 of 270 for 3h 00m scheduled - 1h 30m picking (50%) @ 100/hr - 5 walks (avg 18m) - as of 10:00 AM - walks seen: Ambient 5");
   assert.equal(lines[4], "- Called out (IVR): Called Off (7:00am-4:00pm)");
   assert.equal(lines[5], "- Not in GIF today, no call-in: No Show (7:00am-4:00pm)");
   assert.match(lines[6], /^\(8 scheduled to pick: 1 on pace, 2 not read yet, 1 called out, 1 not in GIF, 1 marked absent\. Expected = 90 picks per PICK hour passed/);
