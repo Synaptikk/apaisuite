@@ -100,8 +100,23 @@ function fromFields(fields) {
 
 // ─── Transport ─────────────────────────────────────────────────────────────
 
-async function request(path, { method = "GET", body } = {}) {
-  const res = await fetch(`${BACKEND.root}/${path}`, {
+/** Thrown by request() when a write's precondition lost (someone else wrote). */
+class PreconditionFailed extends Error {}
+
+/** Does a failed Firestore response mean "precondition lost"? 409 ALREADY_EXISTS
+ *  (exists:false on a doc that now exists), 400 FAILED_PRECONDITION (updateTime
+ *  moved on), 404 NOT_FOUND on a precondition'd write (doc deleted under us),
+ *  ABORTED (contention). Exported via _internal for tests. */
+function isPreconditionFailure(status, text, hadPrecondition) {
+  if (!hadPrecondition) return false;
+  if (status === 409) return true;
+  if (status === 404) return true;
+  return /FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED/.test(String(text || ""));
+}
+
+async function request(path, { method = "GET", body, query } = {}) {
+  const qs = query ? `${path.includes("?") ? "&" : "?"}${new URLSearchParams(query)}` : "";
+  const res = await fetch(`${BACKEND.root}/${path}${qs}`, {
     method,
     headers: {
       "Content-Type":  "application/json",
@@ -110,27 +125,68 @@ async function request(path, { method = "GET", body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 404 && method === "GET") return null;
-  if (!res.ok) throw new Error(`digitalmetrics: ${method} ${path} → ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    if (isPreconditionFailure(res.status, text, !!query && Object.keys(query).some((k) => k.startsWith("currentDocument.")))) {
+      throw new PreconditionFailed(`digitalmetrics: ${method} ${path} precondition failed (${res.status})`);
+    }
+    throw new Error(`digitalmetrics: ${method} ${path} → ${res.status} ${text}`);
+  }
   return res.status === 204 ? null : res.json();
 }
 
 async function getDoc(path) {
-  const doc = await request(path);
-  if (!doc) return null;
-  const decoded = fromFields(doc.fields);
-  decoded.lastEditor = await decodeEditor(decoded.lastEditor);
-  return decoded;
+  return (await getDocWithMeta(path)).doc;
 }
 
-async function setDoc(path, obj) {
+/**
+ * The decoded (still codec-encoded) document plus its server `updateTime`,
+ * the token a compare-and-set write passes back as `ifUpdateTime`.
+ * → { doc: object|null, updateTime: string|null }  (null/null when missing)
+ */
+async function getDocWithMeta(path) {
+  const raw = await request(path);
+  if (!raw) return { doc: null, updateTime: null };
+  const decoded = fromFields(raw.fields);
+  decoded.lastEditor = await decodeEditor(decoded.lastEditor);
+  return { doc: decoded, updateTime: raw.updateTime || null };
+}
+
+/**
+ * Whole-document write.
+ * @param {object} [opts]
+ * @param {string|null} [opts.ifUpdateTime]  Compare-and-set precondition:
+ *   undefined → unconditional (the historical behaviour);
+ *   a string  → only if the doc's updateTime still equals it;
+ *   null      → only if the doc does not exist yet (the read found nothing).
+ * @returns {Promise<{ok:true, updateTime:string|null, data:object}
+ *   | {ok:false, conflict:true, errorClass:"CONFLICT", error:string}
+ *   | {ok:false, error:string}>}
+ *   A lost precondition is RETURNED (conflict:true), never thrown; every
+ *   other transport failure still throws, as before.
+ */
+async function setDoc(path, obj, { ifUpdateTime } = {}) {
   if (!(await writerEnabled())) return { ok: false, error: "writer disabled" };
   obj = { ...obj, lastEditor: await encodeEditor() };
   // Last line of defence before anything leaves the device.
   assertNoPlaintextNames(obj);
   // PATCH with no updateMask overwrites the whole document — the REST
   // equivalent of the donor's .set(), which is the semantics every caller wants.
-  await request(path, { method: "PATCH", body: { fields: toFields(obj) } });
-  return { ok: true, data: { lastEditor: await decodeEditor(obj.lastEditor) } };
+  // `currentDocument.*` is the REST precondition (query parameter on PATCH).
+  let query;
+  if (ifUpdateTime === null)            query = { "currentDocument.exists": "false" };
+  else if (typeof ifUpdateTime === "string" && ifUpdateTime) query = { "currentDocument.updateTime": ifUpdateTime };
+  let written;
+  try {
+    written = await request(path, { method: "PATCH", body: { fields: toFields(obj) }, query });
+  } catch (e) {
+    if (e instanceof PreconditionFailed) return { ok: false, conflict: true, errorClass: "CONFLICT", error: e.message };
+    throw e;
+  }
+  const updateTime = written?.updateTime || null;
+  // updateTime also inside `data`: the SW dispatcher passes {ok,...} results
+  // through as-is and the views read res.data.
+  return { ok: true, updateTime, data: { lastEditor: await decodeEditor(obj.lastEditor), updateTime } };
 }
 
 async function listDocs(collectionPath, { pageSize = 300 } = {}) {
@@ -211,7 +267,13 @@ export const schedules = {
 
 export const assignments = {
   async get(s, d)      { return decodeAssignments(await getDoc(asg(s, d))); },
-  async put(s, d, doc) { return setDoc(asg(s, d), await encodeAssignments(doc)); },
+  /** → { doc, updateTime } for a compare-and-set put (updateTime null = no doc yet). */
+  async getWithMeta(s, d) {
+    const { doc, updateTime } = await getDocWithMeta(asg(s, d));
+    return { doc: await decodeAssignments(doc), updateTime };
+  },
+  /** opts.ifUpdateTime: see setDoc — a lost precondition returns { ok:false, conflict:true }. */
+  async put(s, d, doc, opts) { return setDoc(asg(s, d), await encodeAssignments(doc), opts); },
 
   /**
    * The most recent N assignment documents, newest first.
@@ -238,7 +300,13 @@ const sobs = (s, d) => `stores/${s}/safetyObs/${d}`;
 
 export const safetyObs = {
   async get(s, d)      { return decodeSafetyObs(await getDoc(sobs(s, d))); },
-  async put(s, d, doc) { return setDoc(sobs(s, d), await encodeSafetyObs(doc)); },
+  /** → { doc, updateTime } for shareToday's compare-and-set loop. */
+  async getWithMeta(s, d) {
+    const { doc, updateTime } = await getDocWithMeta(sobs(s, d));
+    return { doc: await decodeSafetyObs(doc), updateTime };
+  },
+  /** opts.ifUpdateTime: see setDoc — a lost precondition returns { ok:false, conflict:true }. */
+  async put(s, d, doc, opts) { return setDoc(sobs(s, d), await encodeSafetyObs(doc), opts); },
 };
 
 // modules/digitalschedule: one rules document per store, shared by every install there.
@@ -249,4 +317,4 @@ export const scheduleRules = {
   async put(s, doc) { return setDoc(srl(s), await encodeScheduleRules({ ...doc, store: s })); },
 };
 
-export const _internal = { toFields, fromFields, toValue, fromValue };
+export const _internal = { toFields, fromFields, toValue, fromValue, isPreconditionFailure };

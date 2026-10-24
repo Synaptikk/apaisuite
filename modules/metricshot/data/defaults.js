@@ -142,15 +142,22 @@ export const SEED_URL_MIGRATIONS = [
 const LEADERSHIP_1458 = "1458leadership@walmart.onmicrosoft.com";
 const EVERY_DAY = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
 
+// enabled:false for NEW installs (2026-10-24): every 1458 install got these
+// enabled, and nothing was shared between browsers, so two users at the store
+// both posted to "1458 Leadership" and both emailed. One person turns them on;
+// shared/post_claims.js now also stops a second install posting the same slot.
+// seedStore: service.js skips the job (no email, no post) when the install's
+// home store is not this one, e.g. after a store switch.
 export const REPORT_JOB_SEEDS = [
   {
     store: "1458",
     metric: {
       id: "closing-list-daily",
+      seedStore: "1458",
       kind: "closinglist",
       name: "Closing List",
       url: "https://radapps3.wal-mart.com/Protected/CaseVisibility/html/main.html",
-      enabled: true,
+      enabled: false,
       timezone: "local",
       schedules: [{ days: EVERY_DAY, time: "10:00" }],
       destination: { type: "workvivo-sendbird", channelName: "1458 Leadership" },
@@ -163,10 +170,11 @@ export const REPORT_JOB_SEEDS = [
     store: "1458",
     metric: {
       id: "vizpick-email",
+      seedStore: "1458",
       kind: "vizpick-email",
       name: "VizPick Report (email)",
       url: "https://stores.tableau.wal-mart.com/t/OnlineGrocery/views/VizPick/VizPickDetails?:embed=y&:toolbar=n",
-      enabled: true,
+      enabled: false,
       timezone: "local",
       schedules: [
         { days: EVERY_DAY, time: "10:00", reportDay: "previous" },

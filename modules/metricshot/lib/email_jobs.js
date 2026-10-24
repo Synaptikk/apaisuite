@@ -20,7 +20,8 @@
 // Workvivo post does not email the group a second time.
 
 import { sendOutlookMail } from "../../../shared/outlook_send.js";
-import { postScreenshotToWorkvivo, postTextToWorkvivo } from "./sendbird.js";
+import { postScreenshotToWorkvivo, postTextToWorkvivo, findPostedMarker } from "./sendbird.js";
+import { guardedPost, readBack } from "./post_guard.js";
 import { ensureTodayRowForStore } from "../../vizpick/lib/ensure_today_store.js";
 import { handlers as vizpickHandlers } from "../../vizpick/service.js";
 import { partsInZone } from "./scheduler.js";
@@ -79,7 +80,17 @@ export function reportDayFor(metric, hhmm) {
 /**
  * Build + deliver one report. Never throws.
  * @param {object} metric
- * @param {object} ctx { scheduledAt, hhmm, store, priorParts, reportDay?, onStep }
+ * @param {object} ctx { scheduledAt, hhmm, store, priorParts, reportDay?, onStep,
+ *   marker?, needReadBack?, onPart? }
+ *   marker       run marker (post_guard.js::markerFor); the Workvivo part posts
+ *                and reads back `${marker}:wv`.
+ *   needReadBack the previous attempt's outcome is unknown — look for the
+ *                Workvivo part in the channel BEFORE building anything.
+ *   onPart(parts) called as each part lands, so the caller can persist it at
+ *                once (a crash between the email and the end of the run must
+ *                not email the group again on resume).
+ * The caller (service.js::_runReportJob) holds the shared slot claim before
+ * calling this, so the email is only ever attempted by the claim winner.
  * @returns {Promise<{ok:boolean, parts:object, stage?:string, error?:string, subject?:string}>}
  */
 export async function runReportMetric(metric, ctx) {
@@ -89,8 +100,26 @@ export async function runReportMetric(metric, ctx) {
   const at = ctx.scheduledAt || Date.now();
   const wantEmail = !!metric.email?.to;
   const wantWv = !!metric.destination?.channelName;
+  const wvMarker = ctx.marker ? `${ctx.marker}:wv` : null;
+  const deps = { findPostedMarker };
+  const notePart = async () => { try { await ctx.onPart?.({ ...parts }); } catch { /* best-effort */ } };
 
   try {
+    // Resume / takeover: the Workvivo part is posted only after the email
+    // succeeded, so finding it proves both landed — no rebuild, no re-send.
+    if (ctx.needReadBack && wantWv && wvMarker && !parts.workvivo) {
+      step("read-back");
+      const rb = await readBack({ channelName: metric.destination.channelName, marker: wvMarker, sinceTs: at, deps });
+      if (rb.error) return { ok: false, parts, stage: "readback", error: rb.error, unknownOutcome: true };
+      if (rb.found) {
+        parts.workvivo = Date.now();
+        parts.recovered = true;
+        if (wantEmail && !parts.email) { parts.email = Date.now(); parts.emailInferred = true; }
+        await notePart();
+        return { ok: true, parts, subject: null, messageId: rb.messageId };
+      }
+    }
+
     let built;
     if (metric.kind === "closinglist") {
       step("build", { kind: "closinglist" });
@@ -133,19 +162,25 @@ export async function runReportMetric(metric, ctx) {
       const sent = await sendOutlookMail({ to: metric.email.to, subject: built.subject, text: built.emailText, images, onStep: (n) => step(`email:${n}`) });
       if (!sent.ok) return { ok: false, parts, stage: "email", error: sent.error, errorClass: sent.errorClass, subject: built.subject };
       parts.email = Date.now();
+      await notePart();
     }
     if (wantWv && !parts.workvivo) {
       step("workvivo");
-      const post = built.pngBase64
-        ? await postScreenshotToWorkvivo({
+      const send = () => (built.pngBase64
+        ? postScreenshotToWorkvivo({
             channelName: metric.destination.channelName,
             pngBase64: built.pngBase64,
             fileName: `${metric.id}-${at}.png`,
             caption: built.subject,
+            marker: wvMarker,
           })
-        : await postTextToWorkvivo({ channelName: metric.destination.channelName, text: built.wvText });
-      if (!post.ok) return { ok: false, parts, stage: "workvivo", error: post.error, errorClass: post.errorClass, subject: built.subject };
+        : postTextToWorkvivo({ channelName: metric.destination.channelName, text: built.wvText, marker: wvMarker }));
+      const post = await guardedPost({ channelName: metric.destination.channelName, marker: wvMarker, sinceTs: at, send, deps });
+      if (!post.ok) return { ok: false, parts, stage: "workvivo", error: post.error, errorClass: post.errorClass, subject: built.subject, unknownOutcome: !!post.unknownOutcome };
       parts.workvivo = Date.now();
+      if (post.recovered) parts.recovered = true;
+      await notePart();
+      return { ok: true, parts, subject: built.subject, messageId: post.messageId };
     }
     return { ok: true, parts, subject: built.subject };
   } catch (e) {

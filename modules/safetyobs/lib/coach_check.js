@@ -179,6 +179,69 @@ export function buildLedger({ days = [], observations = [], todayIso, nowMin = 2
   return { rows, excludedDays: excludedDays.sort(), days: good.map((d) => d.dateIso).sort() };
 }
 
+// ── Overnight shifts (2026-10-24) ──────────────────────────────────
+//
+// An overnight coach's shift (Overnight Stocking Coach, 8:00pm–8:00am) sits
+// on the schedule day it starts, but what they log after midnight carries
+// the next date. The 9 AM post counts through yesterday, so last night's
+// after-midnight observations fell out of the ledger and into "done so far
+// today": a coach who did their 2 at 3 AM read "2 behind + today's 2, 2 done
+// so far" and was @mentioned every morning while caught up. Observations are
+// credited to the shift day instead.
+//
+// Field_Dashboard rows hold no time of day, so a row dated D by someone whose
+// shift on D−1 ran past midnight goes to D−1. On back-to-back nights a row
+// from before midnight on D moves a day early too; the running total does not
+// change. Left alone: the person also had a day shift on D (either is
+// possible), or the entry has a time (suite submissions) later than the
+// overnight shift's end plus OVERNIGHT_GRACE_MIN.
+
+export const OVERNIGHT_GRACE_MIN = 120;
+
+export function crossesMidnight(s) {
+  const a = clockToMin(s?.shiftStart), b = clockToMin(s?.shiftEnd);
+  return a != null && b != null && b <= a;
+}
+
+/**
+ * @param {object} p
+ * @param {Array<{dateIso:string, schedule:Array}>} p.days   schedule days, through the observations' last date
+ * @param {Array<{dateIso:string, name:string, count?:number, at?:number}>} p.observations
+ * @returns {Array} the observations, `dateIso` moved to the shift day where it applies (`shiftedFrom` set)
+ */
+export function creditShiftDays({ days = [], observations = [] }) {
+  const overnight = new Map();   // "key|date" → shift that started that date and crossed midnight
+  const dayShift = new Set();    // "key|date" → a shift that stayed within the date
+  for (const d of days) {
+    for (const s of d.schedule || []) {
+      if (!isCheckedTitle(s.jobName)) continue;
+      for (const k of nameKeys(s.name)) {
+        if (crossesMidnight(s)) overnight.set(`${k}|${d.dateIso}`, s);
+        else if (clockToMin(s.shiftStart) != null) dayShift.add(`${k}|${d.dateIso}`);
+      }
+    }
+  }
+  return observations.map((o) => {
+    if (!o?.dateIso) return o;
+    const prev = shiftIsoDay(o.dateIso, -1);
+    const keys = nameKeys(o.name);
+    const shift = keys.map((k) => overnight.get(`${k}|${prev}`)).find(Boolean);
+    if (!shift) return o;
+    if (keys.some((k) => dayShift.has(`${k}|${o.dateIso}`))) return o;
+    if (o.at != null) {
+      const t = new Date(o.at);
+      if (t.getHours() * 60 + t.getMinutes() > clockToMin(shift.shiftEnd) + OVERNIGHT_GRACE_MIN) return o;
+    }
+    return { ...o, dateIso: prev, shiftedFrom: o.dateIso };
+  });
+}
+
+function shiftIsoDay(iso, n) {
+  const d = new Date(iso + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 // ── Morning catch-up (2026-10-08) ──────────────────────────────────
 //
 // Field_Dashboard lags (measured 2026-10-08: no same-day rows; 2026-10-17:
@@ -221,6 +284,7 @@ export function buildCatchUp({ ledgerRows = [], schedule = [], members = [], tod
     const member = keys.map((k) => memberByKey.get(k)).find(Boolean) || null;
     rows.push({
       name: titleCase(s.name), jobName: s.jobName, shiftStart: s.shiftStart, shiftEnd: s.shiftEnd,
+      overnight: crossesMidnight(s),
       behind, doneToday, owe: Math.max(0, behind + minPerDay - doneToday),
       member: member ? { userId: String(member.userId), nickname: member.nickname } : null,
     });
@@ -264,7 +328,8 @@ export function buildCatchUpMessage(behind, { throughLabel, sinceLabel, minPerDa
   const lines = behind.map((c) => {
     const who = c.member ? `@[${c.member.nickname}](person:${c.member.userId})` : c.name;
     const done = c.doneToday ? `, ${c.doneToday} done so far` : "";
-    return `• ${who}: complete ${c.owe}${c.doneToday ? " more" : ""} today (${c.behind} behind + today's ${minPerDay}${done})`;
+    const when = c.overnight ? "tonight" : "today";
+    return `• ${who}: complete ${c.owe}${c.doneToday ? " more" : ""} ${when} (${c.behind} behind + ${when}'s ${minPerDay}${done})`;
   });
   return {
     text: [

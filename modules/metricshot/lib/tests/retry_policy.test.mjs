@@ -106,3 +106,53 @@ test("failure entries carry the diagnosis forward", () => {
   assert.equal(bare.stage, null);
   assert.equal(bare.error, null);
 });
+
+// ── Post-once statuses (2026-10-24: duplicate scheduled posts across installs) ──
+
+import { SENDING_STALE_MS, sendingEntry, postOutcomeUnknown } from "../retry_policy.js";
+
+test("skipped-claimed is terminal, like ok", () => {
+  const d = runDecision({ status: "skipped-claimed", at: 0, owner: "other" }, 10 * 60 * MIN);
+  assert.equal(d.run, false);
+  assert.equal(d.reason, "claimed-elsewhere");
+});
+
+test("skipped-store is terminal", () => {
+  assert.equal(runDecision({ status: "skipped-store", at: 0 }, 60 * MIN).run, false);
+});
+
+test("a young 'sending' entry is in flight; an old one resumes", () => {
+  const e = sendingEntry(undefined, 0, "cid");
+  assert.deepEqual(runDecision(e, SENDING_STALE_MS - 1), { run: false, reason: "in-flight" });
+  assert.deepEqual(runDecision(e, SENDING_STALE_MS + 1), { run: true, reason: "resume" });
+});
+
+test("a resumable 'sending' still honours the give-up ceiling", () => {
+  const e = sendingEntry({ status: "failed", failures: MAX_RUN_FAILURES }, 0);
+  assert.equal(runDecision(e, SENDING_STALE_MS + 1).reason, "gave-up");
+});
+
+test("sendingEntry keeps the failure count and delivered parts", () => {
+  const prior = failureEntry({ failures: 1 }, 0, { stage: "post" });
+  const e = sendingEntry({ ...prior, parts: { email: 5 } }, 10, "cid");
+  assert.equal(e.status, "sending");
+  assert.equal(e.failures, 2);
+  assert.deepEqual(e.parts, { email: 5 });
+  assert.equal(e.claimId, "cid");
+  assert.equal(failureEntry(e, 20, {}).failures, 3, "failure after a sending entry keeps counting");
+  assert.equal(sendingEntry({ status: "sending", at: 0 }, 1).resumed, true);
+});
+
+test("postOutcomeUnknown: watchdog / 5xx / threw are unknown; 4xx and pre-create failures are not", () => {
+  assert.equal(postOutcomeUnknown({ ok: true }), false);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "POST_HUNG" }), true);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "SCRIPT_FAIL" }), true);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "POST_FAIL", error: "message create threw: x" }), true);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "POST_FAIL", error: "message create HTTP 502: x" }), true);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "POST_FAIL", error: "message create HTTP 422: x" }), false);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "REST_FAIL", error: "post 500: oops" }), true);
+  assert.equal(postOutcomeUnknown({ ok: false, errorClass: "REST_FAIL", error: "post 400: bad" }), false);
+  for (const cls of ["AUTH", "NOT_FOUND", "INPUT", "NO_CSRF", "S3_SIG_FAIL", "S3_UPLOAD_FAIL", "NO_TAB", "NO_SESSION"]) {
+    assert.equal(postOutcomeUnknown({ ok: false, errorClass: cls, error: "x" }), false, cls);
+  }
+});

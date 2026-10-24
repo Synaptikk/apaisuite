@@ -136,6 +136,38 @@ service cloud.firestore {
       }
     }
 
+    // ── Shared per-slot post claims (shared/post_claims.js) ──────────────
+    // One doc per (store, kind, slot, channel) so two installs at a store
+    // cannot both post the same scheduled report. Created with an
+    // exists:false precondition (the atomic part lives in the client's
+    // commit, not here); rules only bound the shape. A "sent" doc can only
+    // be rewritten as "sent", so a late/stale client cannot reopen a
+    // delivered slot. Never deleted from the client.
+    function validClaim() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['owner', 'state', 'at', 'leaseUntil', 'messageId',
+                               'kind', 'store', 'slot', 'channel', 'error'])
+          && d.owner is string && d.owner.size() > 0 && d.owner.size() <= 64
+          && d.state in ['sending', 'sent', 'failed']
+          && d.at is int && d.leaseUntil is int
+          && (d.messageId == null || (d.messageId is string && d.messageId.size() <= 64))
+          && d.kind is string && d.kind.size() > 0 && d.kind.size() <= 100
+          && validStore(d.store)
+          && d.slot is string && d.slot.size() > 0 && d.slot.size() <= 40
+          && d.channel is string && d.channel.size() <= 120
+          && (!('error' in d) || (d.error is string && d.error.size() <= 200));
+    }
+    match /postClaims/{id} {
+      allow read:   if signedIn() && id.size() <= 400;
+      allow create: if signedIn() && id.size() <= 400 && validClaim();
+      allow update: if signedIn() && validClaim()
+                    && request.resource.data.store == resource.data.store
+                    && request.resource.data.kind  == resource.data.kind
+                    && request.resource.data.slot  == resource.data.slot
+                    && (resource.data.state != 'sent' || request.resource.data.state == 'sent');
+      allow delete: if false;
+    }
+
     // Anything not matched above is denied. Never reintroduce a
     // `match /{document=**}` catch-all here.
   }

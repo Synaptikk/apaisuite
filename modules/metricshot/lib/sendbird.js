@@ -66,7 +66,7 @@ const SBKEY_GLOBAL = "__APAISUITE_METRICSHOT_SBKEY";
  * Send a text-only message to a channel.
  * @returns {Promise<{ok:boolean, path:"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
  */
-export async function postTextToWorkvivo({ channelName, text, reuseOnly = false, mentionedUserIds = [] }) {
+export async function postTextToWorkvivo({ channelName, text, reuseOnly = false, mentionedUserIds = [], marker = null }) {
   if (!text || typeof text !== "string") return { ok: false, path: "none", errorClass: "INPUT", error: "missing text" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
 
@@ -74,7 +74,7 @@ export async function postTextToWorkvivo({ channelName, text, reuseOnly = false,
   if (!tabRes.ok) return { ok: false, path: "none", errorClass: tabRes.errorClass, error: tabRes.error, debug: tabRes.debug };
   const { tabId, openedFresh } = tabRes;
   try {
-    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "text", channelName, text, mentionedUserIds }]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "text", channelName, text, mentionedUserIds, marker: marker ? String(marker) : null }]);
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
@@ -83,9 +83,15 @@ export async function postTextToWorkvivo({ channelName, text, reuseOnly = false,
 
 /**
  * Post a PNG screenshot (base64) to a channel, with optional caption.
+ * `marker` (optional) is appended to the caption as a final `⟨apai:<marker>⟩`
+ * line so findPostedMarker can tell later whether this exact run already
+ * landed. The caption is the only reliable carrier: Workvivo's own
+ * /api/chat/message/files builds the Sendbird message server-side and we do
+ * not know whether it keeps an extra `data` field, so none is sent (an unknown
+ * field risking a 422 on every image post is not worth it).
  * @returns {Promise<{ok:boolean, path:"rest"|"none", channelUrl?:string, messageId?:string, error?:string, errorClass?:string}>}
  */
-export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileName, caption, onStep }) {
+export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileName, caption, onStep, marker = null }) {
   const step = (name, extra) => { try { onStep?.(name, extra); } catch { /* ignore */ } };
   if (!pngBase64) return { ok: false, path: "none", errorClass: "INPUT", error: "missing pngBase64" };
   if (!channelName) return { ok: false, path: "none", errorClass: "INPUT", error: "missing channelName" };
@@ -98,7 +104,7 @@ export async function postScreenshotToWorkvivo({ channelName, pngBase64, fileNam
 
   try {
     step("rest-post");
-    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "file", channelName, pngBase64, fileName, caption }]);
+    const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "file", channelName, pngBase64, fileName, caption: withMarkerTag(caption, marker) }]);
     step("rest-post-done", { ok: !!r?.ok, errorClass: r?.errorClass });
     return { ...(r || { ok: false, errorClass: "REST_FAIL", error: "no result" }), path: "rest" };
   } finally {
@@ -148,7 +154,8 @@ export async function resolveChannel(channelName) {
  * signed-in Workvivo tab open it returns errorClass NO_TAB_OPEN and the caller
  * skips that tick.
  * @returns {Promise<{ok:boolean, selfUserId?:string, channelUrl?:string,
- *   messages?: Array<{messageId:string, createdAt:number, userId:string, nickname:string, text:string}>,
+ *   messages?: Array<{messageId:string, createdAt:number, userId:string, nickname:string, text:string,
+ *                     data:string, customType:string}>,
  *   error?:string, errorClass?:string}>}
  */
 export async function readChannelMessages({ channelName, afterTs, limit = 50, reuseOnly = true }) {
@@ -159,6 +166,62 @@ export async function readChannelMessages({ channelName, afterTs, limit = 50, re
   try {
     const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "messages", channelName, afterTs: Number(afterTs) || Date.now(), limit }]);
     return r || { ok: false, errorClass: "REST_FAIL", error: "no result" };
+  } finally {
+    await _closeIfOwn(tabId, openedFresh);
+  }
+}
+
+/** The caption tag findPostedMarker looks for. Kept short: it is visible. */
+export function markerTag(marker) {
+  return `⟨apai:${marker}⟩`;
+}
+
+/** Caption with the marker tag as its own final line (no tag without a marker). */
+export function withMarkerTag(caption, marker) {
+  const base = caption ? String(caption) : "";
+  if (!marker) return base;
+  return base ? `${base}\n${markerTag(marker)}` : markerTag(marker);
+}
+
+/** Does one message (as readChannelMessages returns it) carry `marker`? */
+export function messageHasMarker(m, marker) {
+  if (!m || !marker) return false;
+  if (typeof m.text === "string" && m.text.includes(markerTag(marker))) return true;
+  if (m.data) {
+    try {
+      const d = typeof m.data === "string" ? JSON.parse(m.data) : m.data;
+      if (d && d.apai === marker) return true;
+    } catch { /* not ours */ }
+  }
+  return false;
+}
+
+/**
+ * Was a message carrying `marker` posted to `channelName` since `sinceTs`?
+ * The read-back half of MetricShot's send-then-record gap: called before a
+ * re-send when the previous attempt's outcome is unknown (service worker died
+ * mid-run, POST_HUNG watchdog, 5xx/threw). Pages forward up to 5 x 200
+ * messages in ONE tab session. reuseOnly:false opens a background Workvivo
+ * tab exactly like a post does.
+ * @returns {Promise<{ok:boolean, found:boolean, messageId?:string, error?:string, errorClass?:string}>}
+ */
+export async function findPostedMarker({ channelName, marker, sinceTs, reuseOnly = false }) {
+  if (!channelName || !marker) return { ok: false, found: false, errorClass: "INPUT", error: "missing channelName/marker" };
+  const tabRes = await _ensureWorkvivoTab({ reuseOnly });
+  if (!tabRes.ok) return { ok: false, found: false, errorClass: tabRes.errorClass, error: tabRes.error };
+  const { tabId, openedFresh } = tabRes;
+  try {
+    let afterTs = Math.max(0, (Number(sinceTs) || Date.now()) - 60_000);
+    for (let page = 0; page < 5; page++) {
+      const r = await _runInTab(tabId, IN_PAGE_SB, [{ action: "messages", channelName, afterTs, limit: 200 }]);
+      if (!r || !r.ok) return { ok: false, found: false, errorClass: r?.errorClass || "REST_FAIL", error: r?.error || "no result" };
+      const msgs = r.messages || [];
+      const hit = msgs.find((m) => messageHasMarker(m, marker));
+      if (hit) return { ok: true, found: true, messageId: hit.messageId };
+      if (msgs.length < 200) break;
+      afterTs = msgs[msgs.length - 1].createdAt;
+    }
+    return { ok: true, found: false };
   } finally {
     await _closeIfOwn(tabId, openedFresh);
   }
@@ -548,6 +611,10 @@ async function IN_PAGE_SB(arg) {
         userId: String((m.user && m.user.user_id) || ""),
         nickname: String((m.user && m.user.nickname) || ""),
         text: String(m.message || ""),
+        // Raw Sendbird fields, so a caller can find MetricShot's run marker
+        // in either form (MESG `data` JSON, or the caption tag in `text`).
+        data: typeof m.data === "string" ? m.data : "",
+        customType: String(m.custom_type || ""),
       }));
     return { ok: true, selfUserId: String(c.userId), channelUrl: channel.channel_url, messages };
   }
@@ -569,6 +636,9 @@ async function IN_PAGE_SB(arg) {
 
   if (arg.action === "text") {
     const msgBody = { message_type: "MESG", user_id: c.userId, message: String(arg.text) };
+    // Run marker for read-back (findPostedMarker). Sendbird keeps MESG `data`
+    // verbatim and returns it on every message read; it is not rendered.
+    if (arg.marker) msgBody.data = JSON.stringify({ apai: String(arg.marker) });
     const mentioned = Array.isArray(arg.mentionedUserIds) ? arg.mentionedUserIds.map(String).filter(Boolean) : [];
     if (mentioned.length) { msgBody.mention_type = "users"; msgBody.mentioned_user_ids = mentioned; }
     const r = await sbFetch(base + "/group_channels/" + encodeURIComponent(channel.channel_url) + "/messages", {

@@ -9,7 +9,7 @@ const src = fs.readFileSync("modules/metricshot/lib/sendbird.js", "utf8");
 const start = src.indexOf("const SBKEY_GLOBAL");
 let body = src.slice(start);
 body = body.replace(/^export\s+/gm, "");
-body += "\nglobalThis.__T = { IN_PAGE_SB, IN_PAGE_READ_CREDS, IN_PAGE_INTROSPECT };";
+body += "\nglobalThis.__T = { IN_PAGE_SB, IN_PAGE_READ_CREDS, IN_PAGE_INTROSPECT, messageHasMarker, withMarkerTag, markerTag };";
 
 eval(body);
 const T = globalThis.__T;
@@ -87,6 +87,12 @@ globalThis.fetch = async (url, opts = {}) => {
     channels.push(ch);
     return ok(ch);
   }
+  if (url.includes("/messages") && method === "GET") {
+    return ok({ messages: [
+      { message_id: 7001, created_at: Date.now(), message: "img\n⟨apai:m1:2026-10-24:10:00|1458⟩", custom_type: "GROUP_FILES", data: "", user: { user_id: "1", nickname: "A" } },
+      { message_id: 7002, created_at: Date.now(), message: "text", data: JSON.stringify({ apai: "m2" }), user: { user_id: "1", nickname: "A" } },
+    ] });
+  }
   if (url.includes("/messages") && method === "POST") {
     // Simulate the Session-key rotating out from under an in-flight post: the
     // SDK refreshes its key, so the sniffer global carries a newer one.
@@ -151,6 +157,21 @@ assert(!("Session-key" in sigCall.headers), "file post never sends a Sendbird Se
 const createBody = JSON.parse(createCall.body);
 assert(createBody.channel_url === "gc_self" && createBody.custom_type === "GROUP_FILES", "message-create targets the resolved channel as a GROUP_FILES message");
 assert(createBody.items.media[0].file_url === "https://cdn.example/uploads/1/2/fake.png", "message-create embeds the signed CDN url from the signature step");
+
+// Run markers: text posts carry MESG `data`; reads surface data + customType.
+reset();
+await T.IN_PAGE_SB({ action: "text", channelName: "1458 Leadership", text: "m", marker: "rk|1458" });
+const markedPost = calls.find((r) => r.url.includes("/messages") && r.method === "POST");
+assert(JSON.parse(JSON.parse(markedPost.body).data).apai === "rk|1458", "text post with marker sends data:{apai}");
+reset();
+await T.IN_PAGE_SB({ action: "text", channelName: "1458 Leadership", text: "m" });
+assert(!("data" in JSON.parse(calls.find((r) => r.method === "POST").body)), "text post without marker sends no data");
+reset();
+const rm = await T.IN_PAGE_SB({ action: "messages", channelName: "1458 Leadership", afterTs: 0, limit: 50 });
+assert(rm.ok && rm.messages[0].customType === "GROUP_FILES" && rm.messages[1].data.includes("m2"), "messages return data + customType");
+assert(T.messageHasMarker(rm.messages[0], "m1:2026-10-24:10:00|1458"), "caption tag marker is detected");
+assert(T.messageHasMarker(rm.messages[1], "m2") && !T.messageHasMarker(rm.messages[1], "m1"), "data marker is detected exactly");
+assert(T.withMarkerTag("cap", "x") === "cap\n⟨apai:x⟩" && T.withMarkerTag("cap", null) === "cap", "withMarkerTag appends one line only when marked");
 
 // A key that rotates mid-post must not lose the message: sbFetch picks up the
 // newer key from the sniffer and replays the request once.

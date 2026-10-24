@@ -29,10 +29,13 @@ import { QUESTIONS, FORM_URL, missingAnswers, LOCATIONS, PROCESSES, TOOLS, TYPES
 import { FILL_FORM } from "./lib/form_fill.js";
 import { PAGE_URL, RESPONSES_URL, SILENT_SIGNIN_URL, FORMS_LOGIN_COOKIE, readPageTokens, buildResponseBody, responseHeaders } from "./lib/form_api.js";
 import { parseObservation, mergeAiPick } from "./lib/parse.js";
-import { buildCatchUp, buildCatchUpMessage, buildLedger, isCheckedTitle, mergeTodayCounts } from "./lib/coach_check.js";
+import { buildCatchUp, buildCatchUpMessage, buildLedger, creditShiftDays, isCheckedTitle, mergeTodayCounts } from "./lib/coach_check.js";
 import { fetchSubmitters } from "../livedashboard/lib/sources/recognition.js";
 import { schedules, safetyObs } from "../digitalmetrics/lib/firestore.js";
-import { postTextToWorkvivo, listChannelMembers } from "../metricshot/lib/sendbird.js";
+import { postTextToWorkvivo, listChannelMembers, findPostedMarker } from "../metricshot/lib/sendbird.js";
+import { claimPostSlot, completePostSlot, failPostSlot } from "../../shared/post_claims.js";
+import { postCatchUpOnce, catchUpMarker, CLAIM_KIND as CATCHUP_CLAIM_KIND } from "./lib/catchup_post.js";
+import { casShareEntries } from "./lib/share_merge.js";
 import { readSettings as readCxSettings } from "../cx/lib/store.js";
 import { tokenStatus, DEFAULT_CLIENT_VERSION } from "../cx/lib/narrative.js";
 import { withKeepAwake } from "../../shared/sw_keepalive.js";
@@ -61,8 +64,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   storeNbr: "1458",
   role: "Coach",
   channel: "1458 management",
-  // Off until turned on in ONE browser: the suite is installed in both the
-  // normal and the debug Edge, and each install would post its own message.
+  // Off by default. Turning it on in more than one browser is now safe: alarm
+  // posts take a shared per-store/per-day claim (shared/post_claims.js, see
+  // lib/catchup_post.js), so only one browser at the store posts the catch-up.
   checkEnabled: false,
   // Morning, after Power BI's overnight refresh. A new key so the stored
   // `checkAt` (the old 16:45 "under 2 today" post) is ignored.
@@ -178,7 +182,7 @@ async function runCheck({ post, trigger }) {
     const members = mem.ok ? mem.members : [];
 
     const live = await liveToday(s.storeNbr, dateIso);
-    const today = mergeTodayCounts(live.entries, led.todayObservations);
+    const today = mergeTodayCounts(liveForToday(led, live.entries, dateIso), led.todayObservations);
     const result = buildCatchUp({ ledgerRows: led.rows, schedule, members, today });
     const message = buildCatchUpMessage(result.behind, { throughLabel: shortDay(throughIso), sinceLabel: monthDay(led.fromIso) });
 
@@ -209,9 +213,43 @@ async function runCheck({ post, trigger }) {
       }
     }
     if (post && message) {
-      const sent = await postTextToWorkvivo({ channelName: s.channel, text: message.text, mentionedUserIds: message.mentionedUserIds });
-      rec.posted = !!sent.ok;
-      rec.postError = sent.ok ? null : `${sent.errorClass || ""} ${sent.error || ""}`.trim();
+      // One catch-up per store per day, not per browser: alarm runs take the
+      // shared claim HERE, after the hold decision above (a held run must not
+      // consume the slot). See lib/catchup_post.js.
+      const marker = catchUpMarker(s.storeNbr, dateIso);
+      const r = await postCatchUpOnce({
+        manual: trigger === "manual-post",
+        claimSpec: { store: s.storeNbr, kind: CATCHUP_CLAIM_KIND, slot: dateIso, channel: s.channel },
+        channelName: s.channel, marker,
+        sinceTs: new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
+        send: () => postTextToWorkvivo({ channelName: s.channel, text: message.text, mentionedUserIds: message.mentionedUserIds, marker }),
+        deps: { claimPostSlot, completePostSlot, failPostSlot, findPostedMarker },
+      });
+      if (r.outcome === "skipped-claimed") {
+        // Another browser at the store has (or is) posting today's: stop here
+        // and stop retrying today.
+        rec.skipped = "another browser posted today's catch-up";
+        rec.claimState = r.state;
+        await chrome.storage.local.set({ [KEY.posted]: dateIso });
+        return saveCheck(rec);
+      }
+      if (r.outcome === "claim-failed") {
+        // FAIL CLOSED: the claim service is unreachable, so we cannot know
+        // whether another browser is posting. Do not post; re-check via the
+        // same one-shot retry alarm the Field_Dashboard hold uses, until
+        // HOLD_UNTIL. A late catch-up beats two of them.
+        rec.postError = `Shared post claim unavailable: ${r.error}`;
+        const retryAt = Date.now() + HOLD_RETRY_MIN * 60_000;
+        if (retryAt < nextAt(HOLD_UNTIL, new Date(new Date().setHours(0, 0, 0, 0)))) {
+          await chrome.alarms.create(ALARM_RETRY, { when: retryAt });
+          rec.postError += ` Re-checking at ${new Date(retryAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`;
+        }
+        return saveCheck(rec);
+      }
+      rec.posted = !!r.posted;
+      rec.recovered = r.outcome === "recovered" || undefined;
+      rec.unknownOutcome = r.unknownOutcome || undefined;
+      rec.postError = r.posted ? null : (r.error || r.outcome);
     } else if (post) {
       rec.posted = true;                 // nothing to say counts as done for the day
       rec.nothingToPost = true;
@@ -260,14 +298,13 @@ async function shareToday() {
   const me = await whoAmI();
   if (!me) return { ok: false, error: "Could not tell which Microsoft account submitted (Forms signed out)." };
   try {
-    const doc = (await safetyObs.get(s.storeNbr, today)) || { entries: [] };
-    const have = new Set((doc.entries || []).map((e) => String(e.id)));
-    const entries = [...(doc.entries || [])];
-    for (const h of pending) {
-      const id = String(h.at);
-      if (!have.has(id)) entries.push({ id, at: h.at, type: h.answers?.type || null, name: h.submitter || me });
-    }
-    const put = await safetyObs.put(s.storeNbr, today, { entries, store: s.storeNbr });
+    // Compare-and-set: two browsers sharing in the same minute used to lose
+    // one side's entries (whole-doc write, no precondition). lib/share_merge.js.
+    const put = await casShareEntries({
+      read: () => safetyObs.getWithMeta(s.storeNbr, today),
+      write: (doc, ifUpdateTime) => safetyObs.put(s.storeNbr, today, doc, { ifUpdateTime }),
+      pending, me, store: s.storeNbr,
+    });
     if (!put?.ok) return { ok: false, error: put?.error || "Firestore write failed" };
   } catch (e) {
     return { ok: false, error: String(e?.message || e) };
@@ -283,7 +320,7 @@ async function liveToday(storeNbr, dateIso) {
   await shareToday().catch(() => {});        // this browser's own first
   try {
     const doc = await safetyObs.get(storeNbr, dateIso);
-    return { entries: (doc?.entries || []).map((e) => ({ name: e.name, count: 1 })), error: null };
+    return { entries: (doc?.entries || []).map((e) => ({ name: e.name, count: 1, at: e.at ?? null })), error: null };
   } catch (e) {
     return { entries: [], error: String(e?.message || e) };
   }
@@ -336,23 +373,41 @@ async function leaderSchedules(storeNbr, dates) {
 async function ledgerThrough(s, throughIso, from) {
   const asked = /^\d{4}-\d{2}-\d{2}$/.test(from || "") ? from : monthStartIso(throughIso);
   const fromIso = asked > LEDGER_FLOOR ? asked : LEDGER_FLOOR;
-  const days = await leaderSchedules(s.storeNbr, daysBetween(fromIso, throughIso));
+  // Through today: overnight shifts are credited by the day they started
+  // (creditShiftDays), and today's schedule says whether one worked a day
+  // shift today instead.
+  const todayIso = localDay();
+  const shiftDays = await leaderSchedules(s.storeNbr, daysBetween(fromIso, todayIso > throughIso ? todayIso : throughIso));
+  const days = shiftDays.filter((d) => d.dateIso <= throughIso);
   if (!days.length) return { ok: false, error: `No schedules for store ${s.storeNbr} from ${fromIso} to ${throughIso}.` };
   // Through today: its rows are not charged in the ledger, but they are
   // today's progress and the proof Power BI has refreshed since yesterday.
-  const todayIso = localDay();
   const obs = await fetchSubmitters(s.storeNbr, fromIso, todayIso > throughIso ? todayIso : throughIso);
   if (!obs.ok) { console.warn("[safetyobs] observations read failed:", obs.error); return { ok: false, error: "Couldn't load observations. Try again." }; }
-  const past = obs.rows.filter((r) => r.dateIso <= throughIso);
-  const todayObservations = obs.rows.filter((r) => r.dateIso === todayIso && todayIso > throughIso);
+  // After-midnight rows of last night's overnight shifts move to yesterday.
+  const credited = creditShiftDays({ days: shiftDays, observations: obs.rows });
+  const past = credited.filter((r) => r.dateIso <= throughIso);
+  const todayObservations = credited.filter((r) => r.dateIso === todayIso && todayIso > throughIso);
   const led = buildLedger({ days, observations: past, todayIso: throughIso });
   return {
     ok: true, fromIso, toIso: throughIso, ...led,
     scheduledThrough: days.some((d) => d.dateIso === throughIso),
-    observationsThrough: past.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
+    shiftDays,
+    // Refresh proofs read the rows' own dates, before the overnight credit.
+    observationsThrough: obs.rows.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
     todayObservations: todayObservations.map(({ name, count }) => ({ name, count })),
-    observationsToday: todayObservations.reduce((n, r) => n + r.count, 0),
+    observationsToday: obs.rows.filter((r) => r.dateIso === todayIso && todayIso > throughIso).reduce((n, r) => n + r.count, 0),
   };
+}
+
+/**
+ * Today's suite submissions that count toward today: one made during last
+ * night's overnight shift (before its end + grace) belongs to yesterday,
+ * which the ledger reads from Field_Dashboard.
+ */
+function liveForToday(led, entries, todayIso) {
+  return creditShiftDays({ days: led.shiftDays || [], observations: entries.map((e) => ({ ...e, dateIso: todayIso })) })
+    .filter((e) => e.dateIso === todayIso);
 }
 
 async function runLedger({ from } = {}) {
@@ -366,9 +421,10 @@ async function runLedger({ from } = {}) {
     const todayIso = localDay();
     const sched = await schedules.get(s.storeNbr, todayIso).catch((e) => ({ error: String(e?.message || e) }));
     const live = await liveToday(s.storeNbr, todayIso);
-    const cu = buildCatchUp({ ledgerRows: led.rows, schedule: sched?.associates || [], today: mergeTodayCounts(live.entries, led.todayObservations) });
+    const cu = buildCatchUp({ ledgerRows: led.rows, schedule: sched?.associates || [], today: mergeTodayCounts(liveForToday(led, live.entries, todayIso), led.todayObservations) });
+    const { shiftDays, ...ledOut } = led;   // only needed for the overnight credit
     const rec = {
-      ...led, at: Date.now(), todayIso,
+      ...ledOut, at: Date.now(), todayIso,
       today: cu.rows.map(({ name, jobName, shiftStart, shiftEnd, doneToday, owe }) => ({ name, jobName, shiftStart, shiftEnd, doneToday, owe })),
       todayScheduleError: sched?.associates?.length ? null : (sched?.error || `no schedule for ${todayIso} in Digital Metrics`),
       liveTodayCount: live.entries.length, liveError: live.error,

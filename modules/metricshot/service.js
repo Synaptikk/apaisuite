@@ -19,7 +19,14 @@
 //
 //   chrome.storage.local
 //     metricshot.postedRuns    — { [runKey]: { status, at, path?, messageId?, error? } }
-//                                capped at 500 most-recent keys
+//                                capped at 500 most-recent keys. status is
+//                                "sending" (written BEFORE the send), "ok",
+//                                "failed", "skipped-claimed" (another install
+//                                at the store holds the shared claim),
+//                                "skipped-stale" or "skipped-store".
+//
+//   Shared across installs: postClaims/{id} in Firestore (shared/post_claims.js)
+//   — one poster per store/metric/slot/channel. Protocol: lib/post_guard.js.
 //     metricshot.lastStatus.<id>   — most recent run status per metric
 //     metricshot.lastSuccess.<id>  — most recent successful post per metric
 //     metricshot.lastPreview.<id>  — { pngBase64, at, width, height } (UI cache)
@@ -32,7 +39,10 @@ import { withKeepAwake } from "../../shared/sw_keepalive.js";
 import { ensureAlarm } from "../../shared/alarms.js";
 import { runDecision, failureEntry } from "./lib/retry_policy.js";
 import { postScreenshotToWorkvivo, postTextToWorkvivo, resolveChannel, introspectSdk,
-         readNetlogFromOpenTab, listWorkvivoChannels } from "./lib/sendbird.js";
+         readNetlogFromOpenTab, listWorkvivoChannels, findPostedMarker } from "./lib/sendbird.js";
+import { beginGuardedRun, readBack, guardedPost, finishGuardedRun,
+         isSelfChannel, slotOf, markerFor } from "./lib/post_guard.js";
+import { claimPostSlot, completePostSlot, failPostSlot, claimIdFor } from "../../shared/post_claims.js";
 import { validatePngBytes, base64ToBytes } from "./lib/validate.js";
 import { dumpExportRequests } from "./lib/sources/vizpick_scrape.js";
 import { exportVizPickSheets } from "./lib/sources/vizpick_export.js";
@@ -325,8 +335,24 @@ async function runOne(metric, opts) {
 async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay }) {
   const at = Date.now();
   const store = await getUserHomeStore().catch(() => null);
+  const prior = runKey ? (await loadPostedRuns())[runKey] : undefined;
+
+  // Store-specific seeds (data/defaults.js::REPORT_JOB_SEEDS) carry their
+  // store's channel and recipients. An install whose home store changed must
+  // not keep posting/emailing that store's leadership with its own data.
+  if (metric.seedStore && String(store ?? "").trim() !== String(metric.seedStore)) {
+    const status = {
+      ok: false, at, reason: "store-mismatch", runKey, store,
+      error: `this job is for store ${metric.seedStore}; your home store is ${store || "not set"}`,
+    };
+    log.emit("run-skipped", { id: metric.id, reason: "store-mismatch", runKey, seedStore: metric.seedStore, store });
+    await writeStatus(metric.id, status);
+    if (runKey && reason === "scheduled") await markPostedRun(runKey, { status: "skipped-store", at });
+    return status;
+  }
+
   if (JOB_KINDS.has(metric.kind)) {
-    return _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store });
+    return _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store, prior });
   }
   const cap = metric.capture || {};
 
@@ -347,6 +373,38 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
   }
 
   const retries = Math.max(0, cap.retries ?? 2);
+  const channelName = metric.destination?.channelName;
+  const marker = runKey ? markerFor(runKey, store) : null;
+  const slotTs = scheduledAt || at;
+
+  // Post-once guard (lib/post_guard.js): local "sending" first, then the
+  // shared claim, BEFORE the capture — an install that loses the claim never
+  // spins up a Tableau tab. The lease covers the whole retry loop.
+  let guard = { proceed: true, claimId: null, needReadBack: false };
+  if (runKey) {
+    const leaseMs = Math.min(30 * 60_000, Math.max(10 * 60_000,
+      (retries + 1) * ((cap.watchdogMs ?? 90_000) + 120_000) + 60_000));
+    const claimSpec = claimSpecFor(metric, runKey, store, { leaseMs });
+    guard = await beginGuardedRun({
+      runKey, prior, claimSpec, claimId: claimSpec ? claimIdFor(claimSpec) : null, now: at, deps: GUARD_DEPS,
+    });
+    if (!guard.proceed) return _guardStopped(metric, guard, { reason, runKey, prior, store, at });
+  }
+  // Unknown whether an earlier attempt landed (worker died mid-run, claim
+  // taken over, last failure ambiguous) — look before capturing again.
+  let unknownOutcome = !!guard.needReadBack;
+  if (guard.needReadBack && marker) {
+    const rb = await readBack({ channelName, marker, sinceTs: slotTs, deps: GUARD_DEPS });
+    log.emit("read-back", { id: metric.id, runKey, found: rb.found, error: rb.error ? safeShort(rb.error) : null });
+    if (rb.found) return _recordRecovered(metric, { reason, runKey, store, claimId: guard.claimId, messageId: rb.messageId });
+    if (rb.error) {
+      return _recordFailure(metric, {
+        reason, runKey, store, prior, claimId: guard.claimId, unknownOutcome: true,
+        lastFail: { stage: "readback", reason: rb.error }, attempts: 0,
+      });
+    }
+    unknownOutcome = false;
+  }
 
   let lastFail = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -433,18 +491,31 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
     const _postTimeout = new Promise((resolve) => {
       _pwd = setTimeout(() => resolve({ ok: false, __timedOut: true, errorClass: "POST_HUNG", error: `post hung > ${POST_WATCHDOG_MS / 1000}s` }), POST_WATCHDOG_MS);
     });
-    const post = await Promise.race([
-      postScreenshotToWorkvivo({
-        channelName: metric.destination?.channelName,
-        pngBase64:   captureRes.pngBase64,
-        fileName,
-        caption:     captionLines.join("\n"),
-        onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: `post:${name}`, ...(extra || {}) }),
-      }),
-      _postTimeout,
-    ]);
-    clearTimeout(_pwd);
-    log.emit("run-step", { id: metric.id, attempt, step: "post-done", ok: !!post.ok, path: post.path, errorClass: post.errorClass });
+    // guardedPost: a watchdog/5xx/threw result is read back for the run
+    // marker before it counts as a failure (the upload may have landed).
+    const post = await guardedPost({
+      channelName, marker, sinceTs: slotTs, deps: GUARD_DEPS,
+      send: async () => {
+        try {
+          return await Promise.race([
+            postScreenshotToWorkvivo({
+              channelName,
+              pngBase64:   captureRes.pngBase64,
+              fileName,
+              caption:     captionLines.join("\n"),
+              marker,
+              onStep: (name, extra) => log.emit("run-step", { id: metric.id, attempt, step: `post:${name}`, ...(extra || {}) }),
+            }),
+            _postTimeout,
+          ]);
+        } finally {
+          clearTimeout(_pwd);
+        }
+      },
+    });
+    unknownOutcome = !!post.unknownOutcome;
+    log.emit("run-step", { id: metric.id, attempt, step: "post-done", ok: !!post.ok, path: post.path, errorClass: post.errorClass,
+      recovered: post.recovered || undefined, readBack: post.readBack || undefined });
 
     if (!post.ok) {
       lastFail = { stage: "post", reason: post.error, class: post.errorClass, attempt };
@@ -460,8 +531,20 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
       if (post.errorClass === "AUTH") break;
       // NOT_FOUND won't self-heal within a tick either.
       if (post.errorClass === "NOT_FOUND") break;
+      // Outcome unknown and not (yet) visible on read-back: an upload may
+      // still be completing. Do NOT re-capture and re-post inside this run;
+      // the tick retries after backoff, and that retry reads back first.
+      if (post.unknownOutcome) break;
       continue;
     }
+
+    // Record the delivery BEFORE anything else (channel cache, follow-up):
+    // the shorter the gap between send and record, the smaller the window in
+    // which a worker death could make the next tick resend.
+    if (runKey) {
+      await markPostedRun(runKey, { status: "ok", at: Date.now(), path: post.path, messageId: post.messageId, recovered: post.recovered || undefined });
+    }
+    await finishGuardedRun({ claimId: guard.claimId, ok: true, messageId: post.messageId, deps: GUARD_DEPS });
 
     // Cache the resolved channelUrl back onto the metric config so the UI
     // can display it and future runs don't need to re-list.
@@ -503,13 +586,13 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
       const hhmm = `${String(parts.hh).padStart(2,"0")}:${String(parts.mm).padStart(2,"0")}`;
       const first = isFirstOfDay(metric, parts.dow, hhmm);
       if (!first) {
-        status.followUp = await _sendVizPickFollowUp(metric, status);
+        status.followUp = await _sendVizPickFollowUp(metric, status, marker);
       } else {
         status.followUp = { skipped: "first-of-day" };
       }
     } else if (isVizPickFollowUp && reason !== "scheduled") {
       // Manual run — send it so the operator can verify the follow-up text.
-      status.followUp = await _sendVizPickFollowUp(metric, status);
+      status.followUp = await _sendVizPickFollowUp(metric, status, marker);
     } else if (metric.id === "vizpick-score") {
       status.followUp = { skipped: "not-applicable" };
     }
@@ -518,7 +601,7 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
       writeStatus(metric.id, status),
       runKey ? markPostedRun(runKey, {
         status: "ok", at: status.at, path: post.path, messageId: post.messageId,
-        followUp: status.followUp || null,
+        followUp: status.followUp || null, recovered: post.recovered || undefined,
       }) : Promise.resolve(),
     ]);
     log.emit("post-ok", {
@@ -529,6 +612,83 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
     return status;
   }
 
+  return _recordFailure(metric, {
+    reason, runKey, store, claimId: guard.claimId, unknownOutcome, lastFail, attempts: retries + 1,
+  });
+}
+
+// ── Post-once guard plumbing (lib/post_guard.js, shared/post_claims.js) ──
+
+const GUARD_DEPS = {
+  markLocal: (runKey, entry) => markPostedRun(runKey, entry),
+  claimPostSlot, completePostSlot, failPostSlot, findPostedMarker,
+};
+
+/**
+ * The shared-claim slot for a run, or null when no claim is needed. A self-DM
+ * ("@me"/"@self"/"(me)") is a different channel for every user, so two
+ * installs can never duplicate into it — no claim, no Firestore round trip.
+ * A report job that also EMAILS a group still claims (two installs would
+ * both email), keyed on its channel name even when that is a self-DM.
+ */
+function claimSpecFor(metric, runKey, store, { leaseMs, emailToo = false } = {}) {
+  const channel = metric.destination?.channelName || "";
+  if ((!channel || isSelfChannel(channel)) && !emailToo) return null;
+  return {
+    store: String(store || "none"),
+    kind: `metricshot:${metric.id}`,
+    slot: slotOf(metric.id, runKey),
+    channel,
+    leaseMs,
+  };
+}
+
+/** beginGuardedRun said stop: another install has the slot, or the claim
+ *  service is unreachable (fail closed → normal failure backoff). */
+async function _guardStopped(metric, guard, { reason, runKey, prior, store, at }) {
+  if (guard.outcome === "skipped-claimed") {
+    const status = {
+      ok: false, at, reason: "skipped-claimed", runKey, store,
+      error: guard.state === "sent"
+        ? "already posted by another install at this store"
+        : "another install at this store is posting this slot",
+    };
+    log.emit("skipped-claimed", { id: metric.id, runKey, state: guard.state, ownerSuffix: guard.owner ? String(guard.owner).slice(-6) : null });
+    await writeStatus(metric.id, status);
+    return status;
+  }
+  return _recordFailure(metric, {
+    reason, runKey, store, claimId: null,
+    // A resumed run that could not even claim still does not know whether
+    // the earlier attempt landed — keep the read-back flag for the retry.
+    unknownOutcome: !!prior && (prior.status === "sending" || prior.unknownOutcome === true),
+    lastFail: { stage: "claim", reason: guard.error }, attempts: 0,
+  });
+}
+
+/** The run was found already in the channel (read-back): record it as posted. */
+async function _recordRecovered(metric, { reason, runKey, store, claimId, messageId }) {
+  const status = { ok: true, at: Date.now(), reason, runKey, store, messageId, recovered: true };
+  if (runKey) await markPostedRun(runKey, { status: "ok", at: status.at, messageId, recovered: true });
+  await finishGuardedRun({ claimId, ok: true, messageId, deps: GUARD_DEPS });
+  await writeStatus(metric.id, status);
+  log.emit("post-ok", { id: metric.id, runKey, messageId, recovered: true });
+  return status;
+}
+
+/**
+ * Record the failure. This used to be deliberately skipped so the next tick
+ * would retry — but the tick is every minute and nothing counted the
+ * retries, so a permanently-failing run re-ran until the staleness window
+ * finally closed it out: ~13 cycles x 3 attempts = ~39 captures over 65
+ * minutes, each holding a Tableau tab for the full 90s watchdog.
+ *
+ * Retrying is still right; retrying unboundedly at a fixed 1-minute poll is
+ * not. Persist a failure count and a nextRetryAt, and tick() honours both.
+ * `unknownOutcome` marks a failure that may have delivered anyway; the retry
+ * reads the channel back before sending, and the claim keeps its lease.
+ */
+async function _recordFailure(metric, { reason, runKey, store, claimId, unknownOutcome = false, lastFail, attempts }) {
   const status = {
     ok: false,
     at: Date.now(),
@@ -537,30 +697,27 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
     stage: lastFail?.stage,
     error: safeShort(lastFail?.reason),
     errorClass: lastFail?.class || null,
-    attempts: retries + 1,
+    attempts,
     store,
   };
   await writeStatus(metric.id, status);
-
-  // Record the failure. This used to be deliberately skipped so the next tick
-  // would retry — but the tick is every minute and nothing counted the
-  // retries, so a permanently-failing run re-ran until the staleness window
-  // finally closed it out: ~13 cycles x 3 attempts = ~39 captures over 65
-  // minutes, each holding a Tableau tab for the full 90s watchdog.
-  //
-  // Retrying is still right; retrying unboundedly at a fixed 1-minute poll is
-  // not. Persist a failure count and a nextRetryAt, and tick() honours both.
   if (runKey) {
-    const entry = failureEntry((await loadPostedRuns())[runKey], status.at, status);
+    const cur = (await loadPostedRuns())[runKey];
+    const entry = {
+      ...failureEntry(cur, status.at, status),
+      ...(unknownOutcome ? { unknownOutcome: true } : {}),
+      ...(cur?.parts ? { parts: cur.parts } : {}),
+    };
     await markPostedRun(runKey, entry);
     log.emit("run-failed", {
       id: metric.id, runKey,
       failures: entry.failures,
       gaveUp: entry.gaveUp,
       retryInMin: entry.gaveUp ? null : Math.round((entry.nextRetryAt - status.at) / 60_000),
-      stage: entry.stage, reason: entry.error,
+      stage: entry.stage, reason: entry.error, unknownOutcome: unknownOutcome || undefined,
     });
   }
+  await finishGuardedRun({ claimId, ok: false, error: status.error, unknownOutcome, deps: GUARD_DEPS });
   return status;
 }
 
@@ -571,12 +728,38 @@ async function _runOne(metric, { reason, runKey, scheduledAt, hhmm, reportDay })
  * the tick's retry policy re-runs a failure, and the parts already delivered
  * (stored on the postedRuns entry) are skipped so nobody gets the email twice.
  */
-async function _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store }) {
-  const prior = runKey ? (await loadPostedRuns())[runKey] : null;
-  log.emit("run-start", { id: metric.id, reason, runKey, kind: metric.kind, store });
+async function _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, reportDay, store, prior }) {
+  const at = Date.now();
+  if (prior === undefined && runKey) prior = (await loadPostedRuns())[runKey];
+
+  // Claim BEFORE building: the email part has no read-back, so the only way
+  // two installs do not both email the group is that only one gets this far.
+  let guard = { proceed: true, claimId: null, needReadBack: false };
+  if (runKey) {
+    // 30 min: a vizpick-email run can be a Today refresh + a 3-min build +
+    // a pull-yesterday retry + another build + Outlook + the Workvivo post.
+    // A lease that expires mid-run lets another install take over and post
+    // before this one's message is in the channel to be read back.
+    const claimSpec = claimSpecFor(metric, runKey, store, { leaseMs: 30 * 60_000, emailToo: !!metric.email?.to });
+    guard = await beginGuardedRun({
+      runKey, prior, claimSpec, claimId: claimSpec ? claimIdFor(claimSpec) : null, now: at, deps: GUARD_DEPS,
+    });
+    if (!guard.proceed) return _guardStopped(metric, guard, { reason, runKey, prior, store, at });
+  }
+
+  log.emit("run-start", { id: metric.id, reason, runKey, kind: metric.kind, store, readBack: guard.needReadBack || undefined });
   const res = await runReportMetric(metric, {
     scheduledAt, hhmm, store, reportDay,
     priorParts: prior?.parts,
+    marker: runKey ? markerFor(runKey, store) : null,
+    needReadBack: guard.needReadBack,
+    // Persist each delivered part the moment it lands (the entry is still
+    // "sending"), so a worker death after the email does not re-email.
+    onPart: async (parts) => {
+      if (!runKey) return;
+      const cur = (await loadPostedRuns())[runKey] || {};
+      await markPostedRun(runKey, { ...cur, parts });
+    },
     onStep: (name, extra) => log.emit("run-step", { id: metric.id, step: name, ...(extra || {}) }),
   });
   const status = {
@@ -584,17 +767,25 @@ async function _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, report
     kind: metric.kind, subject: res.subject || null, parts: res.parts,
     ...(res.ok ? {} : { stage: res.stage, error: safeShort(res.error), errorClass: res.errorClass || null }),
   };
-  await writeStatus(metric.id, status);
   if (runKey) {
     if (res.ok) {
-      await markPostedRun(runKey, { status: "ok", at: status.at, parts: res.parts });
-      log.emit("post-ok", { id: metric.id, runKey, kind: metric.kind });
+      await markPostedRun(runKey, { status: "ok", at: status.at, parts: res.parts, messageId: res.messageId || null });
+      log.emit("post-ok", { id: metric.id, runKey, kind: metric.kind, recovered: res.parts?.recovered || undefined });
     } else {
-      const entry = { ...failureEntry(prior, status.at, status), parts: res.parts };
+      const cur = (await loadPostedRuns())[runKey];
+      const entry = {
+        ...failureEntry(cur, status.at, status), parts: res.parts,
+        ...(res.unknownOutcome ? { unknownOutcome: true } : {}),
+      };
       await markPostedRun(runKey, entry);
-      log.emit("run-failed", { id: metric.id, runKey, failures: entry.failures, gaveUp: entry.gaveUp, stage: res.stage, reason: safeShort(res.error) });
+      log.emit("run-failed", { id: metric.id, runKey, failures: entry.failures, gaveUp: entry.gaveUp, stage: res.stage, reason: safeShort(res.error), unknownOutcome: res.unknownOutcome || undefined });
     }
   }
+  await finishGuardedRun({
+    claimId: guard.claimId, ok: res.ok, messageId: res.messageId, error: status.error,
+    unknownOutcome: !!res.unknownOutcome, deps: GUARD_DEPS,
+  });
+  await writeStatus(metric.id, status);
   return status;
 }
 
@@ -605,6 +796,17 @@ async function _runReportJob(metric, { reason, runKey, scheduledAt, hhmm, report
  */
 async function ensureReportJobs() {
   const store = String(await getUserHomeStore().catch(() => "") || "").trim();
+  // Backfill seedStore onto copies seeded before it existed (2026-10-24), so
+  // the store-switch guard in _runOne covers existing installs too.
+  {
+    const list = await loadMetrics();
+    let changed = false;
+    for (const seed of REPORT_JOB_SEEDS) {
+      const m = list.find((x) => x.id === seed.metric.id && x.kind === seed.metric.kind);
+      if (m && !m.seedStore) { m.seedStore = seed.store; changed = true; }
+    }
+    if (changed) await saveMetrics(list);
+  }
   for (const seed of REPORT_JOB_SEEDS) {
     if (seed.store !== store) continue;
     const marker = `${PFX}reportJobSeeded.${seed.metric.id}`;
@@ -626,7 +828,7 @@ async function ensureReportJobs() {
  * message, and post it to the same channel. Failures are surfaced in the run
  * status but never block the primary post.
  */
-async function _sendVizPickFollowUp(metric, priorStatus) {
+async function _sendVizPickFollowUp(metric, priorStatus, marker = null) {
   try {
     const scrape = await getFollowUpSheets();
     if (!scrape.ok) {
@@ -650,6 +852,7 @@ async function _sendVizPickFollowUp(metric, priorStatus) {
     const post = await postTextToWorkvivo({
       channelName: metric.destination?.channelName,
       text,
+      marker: marker ? `${marker}:followup` : null,
     });
     if (!post.ok) {
       log.emit("followup-post-failed", {
@@ -696,6 +899,7 @@ export const handlers = {
     if (prev && JOB_KINDS.has(prev.kind)) {
       incoming.kind = prev.kind;
       incoming.email = incoming.email ?? prev.email;
+      incoming.seedStore = incoming.seedStore ?? prev.seedStore;
       incoming.schedules = (incoming.schedules || []).map((sc) => {
         const was = prev.schedules?.find((p) => p.time === sc.time);
         return sc.reportDay || !was?.reportDay ? sc : { ...sc, reportDay: was.reportDay };
