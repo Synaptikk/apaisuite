@@ -7,6 +7,13 @@
     <div class="dd-toolbar">
       <span class="pill" data-status title="Live GIF data from the companion phone">Connecting…</span>
       <span class="dd-freshness" data-asof></span>
+      <select class="input dd-pause" data-pause title="Stop the phone's GIF passes for a while so someone can use it. It resumes by itself.">
+        <option value="">Pause phone…</option>
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="60">1 hour</option>
+      </select>
+      <button class="btn btn-sm btn-ghost" data-action="resume-phone" hidden>Resume phone</button>
       <button class="btn btn-sm btn-secondary" data-action="refresh">Refresh</button>
     </div>
   </header>
@@ -106,6 +113,14 @@
 
   <details class="dd-settings">
     <summary>Settings</summary>
+    <div class="dd-pair">
+      <div>
+        <span class="field-label">GIF Companion phone</span>
+        <p class="dd-footnote" data-pair-status>Checking…</p>
+      </div>
+      <button class="btn btn-sm btn-secondary" data-action="pair-phone">Connect phone</button>
+      <div class="dd-pair-code" data-pair-code hidden></div>
+    </div>
     <div class="dd-set-grid">
       <label class="field">
         <span class="field-label">Workvivo chat (leadership)</span>

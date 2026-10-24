@@ -344,3 +344,40 @@
 }
 
 .module-digitaldashboard .dd-breaklog-day { width: auto; }
+
+.module-digitaldashboard .dd-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  max-width: 720px;
+  padding: var(--sp-4) 0 var(--sp-3);
+  border-bottom: 1px solid var(--apai-border);
+}
+
+.module-digitaldashboard .dd-pair-code {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.module-digitaldashboard .dd-pair-code strong {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.08em;
+}
+
+.module-digitaldashboard .dd-pair-qr svg {
+  display: block;
+  width: 200px;
+  height: 200px;
+  border-radius: var(--rad-md, 6px);
+}
+
+.module-digitaldashboard .dd-pair-code p { margin: var(--sp-2) 0 0; }
+
+.module-digitaldashboard .dd-pause {
+  width: auto;
+  padding-block: 2px;
+  font-size: var(--fs-sm);
+}

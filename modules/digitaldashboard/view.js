@@ -11,6 +11,8 @@
 
 import { clockText, parseSlot } from "./lib/gif_metrics.js";
 import { staffingLine, paceLine, hourLabel } from "./lib/staffing.js";
+import { pairLink, qrSvg } from "./lib/pair_qr.js";
+import { phonePause } from "./lib/phone_control.js";
 
 const n = (x) => (x == null || Number.isNaN(x) ? "—" : Number(x).toLocaleString("en-US"));
 const pct = (x) => (x == null ? "—" : `${Number(x).toFixed(1)}%`);
@@ -56,13 +58,19 @@ export async function mount(host, container) {
     el.hidden = false; el.textContent = msg; el.className = `status-strip status-strip-${kind}`;
   }
 
+  const clockOf = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   function setStatus(h) {
     const el = $("[data-status]");
     let text = "Connecting…", cls = "pill-checking";
     if (h && !h.ok) { text = "Offline"; cls = "pill-fail"; }
-    else if (h?.source === "phone") {
+    let paused = null;
+    if (h?.source === "phone") {
       const p = h.phone || {};
-      if (p.status?.code === "NEEDS_SIGNIN") { text = "GIF needs sign-in"; cls = "pill-warn"; }
+      paused = phonePause(p.status);
+      const asked = p.control?.pauseUntil > Date.now() ? p.control.pauseUntil : 0;
+      if (paused) { text = `Paused till ${clockOf(paused.until)}`; cls = "pill-warn"; }
+      else if (asked) { text = "Pausing…"; cls = "pill-checking"; }
+      else if (p.status?.code === "NEEDS_SIGNIN") { text = "GIF needs sign-in"; cls = "pill-warn"; }
       else if (p.lastSeenSec == null || p.lastSeenSec > 180) { text = "Phone not reporting"; cls = "pill-fail"; }
       else if (p.status?.state === "error") { text = "Phone hit a snag"; cls = "pill-warn"; }
       else { text = "Live"; cls = "pill-ok"; }
@@ -71,7 +79,9 @@ export async function mount(host, container) {
     }
     el.className = `pill ${cls}`;
     el.textContent = text;
-    el.title = h?.phone?.status?.error || "Live GIF data from the companion phone";
+    el.title = paused ? `Phone paused (${paused.reason || "paused"}) — readings resume by ${clockOf(paused.until)}`
+      : h?.phone?.status?.error || "Live GIF data from the companion phone";
+    $('[data-action="resume-phone"]').hidden = !(paused || h?.phone?.control?.pauseUntil > Date.now());
   }
 
   function paintFreshness() {
@@ -465,6 +475,52 @@ export async function mount(host, container) {
     } catch (e) { $("[data-set-note]").textContent = "Save failed: " + e.message; }
   }
 
+  // ── phone pause ────────────────────────────────────────────────
+  async function pausePhone(minutes) {
+    const r = await ask("phone_pause", { minutes }).catch((e) => ({ ok: false, error: e.message }));
+    if (disposed) return;
+    if (r?.ok === false || r?.error) note(`Couldn't ${minutes ? "pause" : "resume"} the phone: ${r.error || "try again"}`, "error");
+    else note(minutes ? `Phone pauses within 15 s, until ${clockOf(r.control.pauseUntil)}.` : "Phone resumes within 15 s.");
+    pingHealth();
+  }
+
+  // ── phone pairing ──────────────────────────────────────────────
+  const when = (iso) => new Date(iso).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
+  async function loadPairStatus() {
+    const r = await ask("pair_status").catch((e) => ({ ok: false, error: e.message }));
+    if (disposed) return r;
+    $("[data-pair-status]").textContent = r?.ok === false ? `Couldn't check: ${r.error}`
+      : r?.phone ? `Paired ${when(r.phone.pairedAt)} (key ${r.phone.keyId}, store ${r.phone.store}).` : "Not paired yet.";
+    return r;
+  }
+  const pairPhone = () => withButton('[data-action="pair-phone"]', "Getting a code…", async () => {
+    const r = await ask("pair_phone").catch((e) => ({ ok: false, error: e.message }));
+    if (disposed) return;
+    const box = $("[data-pair-code]");
+    box.hidden = false;
+    if (r?.ok === false || !r?.code) { box.textContent = `Couldn't get a code: ${r?.error || "try again"}`; return; }
+    box.innerHTML = "";
+    const qr = document.createElement("div");
+    qr.className = "dd-pair-qr";
+    qr.innerHTML = qrSvg(pairLink(r.code));   // our own SVG string, no outside text in it
+    const code = document.createElement("strong");
+    code.textContent = r.code;
+    const how = document.createElement("p");
+    how.append(`In GIF Companion tap "Scan pairing QR" and point the camera here, or type `, code,
+      ` and tap "Pair with QRCallBox". Works once, until ${when(r.expiresAt)}.`);
+    box.append(qr, how);
+    // Watch for the claim for as long as the code lives.
+    const until = Date.parse(r.expiresAt);
+    const t = setInterval(async () => {
+      const s = await loadPairStatus();
+      if (disposed || Date.now() > until || (s?.phone && !s.pending)) {
+        clearInterval(t);
+        if (!disposed && s?.phone && !s.pending) box.textContent = "Phone paired ✓";
+      }
+    }, 5000);
+    timers.push(t);
+  });
+
   // ── wiring ─────────────────────────────────────────────────────
   $('[data-action="refresh"]').addEventListener("click", () => refresh());
   $('[data-action="check-breaks"]').addEventListener("click", checkBreaks);
@@ -483,11 +539,19 @@ export async function mount(host, container) {
     loadBreakLog();
   });
   $('[data-action="save-settings"]').addEventListener("click", saveSettings);
+  $('[data-action="pair-phone"]').addEventListener("click", pairPhone);
+  $("[data-pause]").addEventListener("change", (ev) => {
+    const min = Number(ev.target.value);
+    ev.target.value = "";
+    if (min) pausePhone(min);
+  });
+  $('[data-action="resume-phone"]').addEventListener("click", () => pausePhone(0));
 
   await loadCached();
   pingHealth();
   refresh({ quiet: true });
   loadBreakLog();
+  loadPairStatus();
   // Phone-fed summaries are cheap: refresh every minute, health + "x min ago" every 30 s.
   timers.push(setInterval(() => refresh({ quiet: true }), 60_000));
   timers.push(setInterval(() => loadBreakLog(), 60_000));   // the watch runs every 3 min

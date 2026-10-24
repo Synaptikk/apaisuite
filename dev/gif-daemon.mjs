@@ -40,6 +40,8 @@
 //                                     WRITE-ONLY (responses carry CORS *),
 //                                     memory only, today + yesterday.
 // GET /stop                           stop the emulator now
+// GET /phone/pause?min=30[&by=…]      pause the phone's GIF passes (min=0 resumes); handed
+//                                     to the phone as `control` in its next ingest reply
 //
 // SOURCE (GIF_SOURCE, default "phone"): since 2026-10-09 the readings come
 // from the GIF Companion app on a spare enrolled phone (APAISuite/gif-companion)
@@ -58,7 +60,7 @@
 import http from "node:http";
 import net from "node:net";
 import { spawn, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ensureHome, readOpdHourly, readNotActive, readAssociateDetail, readAssociateDetails, readAllAssociates, setProgressHook } from "./gif-reader.mjs";
 import { emptyRoster, mergeSnapshot, needsCheck, applyDetails, noteActivity, stopReadNames } from "../modules/digitaldashboard/lib/store_roster.js";
@@ -70,6 +72,7 @@ import {
 import { rollingWindow, HOUR_MS } from "../modules/digitaldashboard/lib/pick_history.js";
 import { mergeBreakLog, breakLogDay, breakLogDays } from "../modules/digitaldashboard/lib/break_log.js";
 import { createChat } from "./gif-chat.mjs";
+import { setPause, controlReply } from "../modules/digitaldashboard/lib/phone_control.js";
 
 // Outbound HTTPS (QRCallBox chat relay, Firestore) has to go through the corp
 // proxy, which re-signs TLS with an internal root CA. Node's fetch ignores
@@ -113,6 +116,34 @@ try { if (existsSync(STATE_FILE)) state = { ...state, ...JSON.parse(readFileSync
 // GTA punches from the extension (/punches): PII, so memory only — never gif-state.json.
 const punches = {};
 function save() { try { writeFileSync(STATE_FILE, JSON.stringify(state)); } catch (e) { log("state save failed:", e.message); } }
+
+// Per-day archive (gif-archive/<board day>.json): the walk cards, pick series and
+// leaderboard are one day deep in state and reset when the board day changes. The
+// Express pick-path study needs walk timing across days, so each day's copy is kept.
+// Written at most every 5 min, and once more for the old day just before it rolls.
+const ARCHIVE_DIR = join(SDK, "gif-archive");
+const ARCHIVE_EVERY_MS = 5 * 60 * 1000;
+let archivedAt = 0;
+function archiveDay(force = false) {
+  const day = state.walkLog?.day || state.history?.day;
+  if (!day || (!force && Date.now() - archivedAt < ARCHIVE_EVERY_MS)) return;
+  try {
+    mkdirSync(ARCHIVE_DIR, { recursive: true });
+    writeFileSync(join(ARCHIVE_DIR, `${day}.json`), JSON.stringify({
+      v: 1, day, savedAt: Date.now(),
+      walkLog: state.walkLog?.day === day ? state.walkLog : null,
+      history: state.history?.day === day ? state.history : null,
+      leaderboard: state.leaderboard?.day === day ? state.leaderboard : null,
+      completed: state.opd?.completed ?? null,
+    }));
+    archivedAt = Date.now();
+  } catch (e) { log("archive failed:", e.message); }
+}
+/** Call before folding a reading in: flushes the old day's archive when the board day changes. */
+function archiveBeforeRoll(now) {
+  const day = boardDay(new Date(now));
+  if ((state.walkLog?.day && state.walkLog.day !== day) || (state.history?.day && state.history.day !== day)) archiveDay(true);
+}
 
 // ── Emulator ─────────────────────────────────────────────────────
 function adb(args, timeout = 15000) {
@@ -266,9 +297,11 @@ async function cachedOrFresh({ at, value, maxAge, waitSec, kind, fn, cacheOnly }
 
 const readOpd = async () => {
   const opd = await R.readOpdHourly();
+  archiveBeforeRoll(Date.now());
   state.opd = opd; state.opdAt = Date.now();
   state.history = recordReading(state.history, opd, new Date());
   save();
+  archiveDay();
   return opd;
 };
 const getOpd = (maxAge, waitSec = 600, cacheOnly = false) =>
@@ -465,6 +498,7 @@ function ingest(msg) {
   if (data) {
     switch (msg.kind) {
       case "opd":
+        archiveBeforeRoll(now);
         state.opd = data; state.opdAt = now;
         state.history = recordReading(state.history, data, new Date(now));
         state.walkLog = noteWalks(state.walkLog, data.hours, now, boardDay(new Date(now)));   // walk types per picker (!performance)
@@ -486,6 +520,7 @@ function ingest(msg) {
         break;
     }
     save();
+    if (msg.kind === "opd" || msg.kind === "leaderboard") archiveDay();
     log(`phone: ${msg.kind}${reqId ? ` (${reqId})` : ""}`);
   }
   if (reqId) {
@@ -505,7 +540,7 @@ function ingest(msg) {
     r.sentAt = now;
     out.push({ id: r.id, kind: r.kind, names: r.names });
   }
-  return { ok: true, requests: out };
+  return { ok: true, requests: out, control: controlReply(state.phoneControl) };
 }
 
 function phoneHealth() {
@@ -513,6 +548,7 @@ function phoneHealth() {
     lastSeenAt: phone.lastSeenAt || null,
     lastSeenSec: phone.lastSeenAt ? Math.round((Date.now() - phone.lastSeenAt) / 1000) : null,
     appVersion: phone.appVersion, status: phone.status, reverse: reverseOk,
+    control: controlReply(state.phoneControl),
     pending: pending.map((p) => ({ id: p.id, kind: p.kind, names: p.names.length, sent: !!p.sentAt })),
     allAt: state.allAt || null,
   };
@@ -591,6 +627,7 @@ const server = http.createServer(async (req, res) => {
             "/store": "day roster: every active associate + picks (accumulated; ?pass=1 to advance, ?budget=N)",
             "/breaklog?day=YYYY-MM-DD": "the day's long-break log, one row per stretch (cache only; default today)",
             "/stop": "stop the emulator now",
+            "/phone/pause?min=30": "pause the phone's GIF passes for N min (0 resumes)",
           },
         });
       case "/health":
@@ -712,6 +749,13 @@ const server = http.createServer(async (req, res) => {
       }
       case "/stop":
         return send(res, 200, { stopped: stopEmulator("requested") });
+      case "/phone/pause": {
+        if (!PHONE) return send(res, 409, { error: "daemon is in emulator mode" });
+        state.phoneControl = setPause(state.phoneControl, q("min", "0"), q("by", "dashboard"));
+        save();
+        log(`phone: ${state.phoneControl.pauseUntil ? `pause until ${new Date(state.phoneControl.pauseUntil).toLocaleTimeString()}` : "resume"} (${state.phoneControl.by})`);
+        return send(res, 200, { ok: true, control: controlReply(state.phoneControl) });
+      }
       default:
         return send(res, 404, { error: "unknown path" });
     }

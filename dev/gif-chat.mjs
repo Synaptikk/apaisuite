@@ -94,9 +94,11 @@ async function getDoc(path) {
   return fromFields((await r.json()).fields);
 }
 
-// The board changes a few times a day; the break watch asks every minute.
+// The board changes through the day (absences, reassignments) and the browser
+// copies each save onto the grid within about a minute (digitalmetrics
+// onBoardCheckAlarm), so a command never trusts a copy older than that.
 let rosterCache = { at: 0, day: "", associates: [] };
-async function todaysRoster(maxAgeMs = 5 * 60_000) {
+async function todaysRoster(maxAgeMs = 60_000) {
   const day = isoDay(new Date());
   if (rosterCache.day === day && Date.now() - rosterCache.at < maxAgeMs) return rosterCache.associates;
   const doc = await decodeAssignments(await getDoc(`stores/${HOME_STORE}/dailyAssignments/${day}`)).catch(() => null);

@@ -41,6 +41,12 @@ import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePic
 import { parseCommand, formatPph, formatExpress, formatSummary, formatBreaks, formatStore, formatHelp, formatBreakLog } from "./lib/commands.js";
 import { readChannelMessages, postTextToWorkvivo } from "../metricshot/lib/sendbird.js";
 import { isTrueAbsence, parseIvrName } from "../closinglist/lib/parse.js";
+import { qrcallboxApiKey } from "../workvivo/service.js";
+import { MAX_PAUSE_MIN } from "./lib/phone_control.js";
+import { claimPostSlot, completePostSlot, failPostSlot } from "../../shared/post_claims.js";
+import { getUserHomeStore } from "../../shared/userStore.js";
+import { isSelfChannel } from "../metricshot/lib/post_guard.js";
+import { postOutcomeUnknown } from "../metricshot/lib/retry_policy.js";
 
 const K = {
   settings: "digitaldashboard.gif.settings",
@@ -335,10 +341,50 @@ async function postBreakAlerts(watch) {
   const due = over.filter((s) => !alerted[s.name] || now - alerted[s.name] > reAlertMin * 60_000);
   if (!due.length) return { posted: 0, heldBack: over.length };
 
-  const text = due.map(alertLine).join("\n");
+  // One alert per person per reAlertMin window across every browser at the
+  // store (the local `alerted` map only throttles THIS browser). Self-chats
+  // ("@me") are per user, so they keep the local throttle only.
+  const claimed = [];   // claimIds we hold for this batch
+  let send = due;
+  if (!isSelfChannel(channel)) {
+    const store = await claimStore();
+    const day = isoDay(new Date(now));
+    const bucket = Math.floor(now / (Math.max(1, reAlertMin) * 60_000));
+    send = [];
+    for (const s of due) {
+      // The slot is a hash, never the name: postClaims is plaintext Firestore.
+      const c = await claimPostSlot({ store, kind: "dd:breakalert", slot: `${day}:${await nameHash(s.name)}:${bucket}`, channel });
+      if (c.ok && (c.state === "held" || c.state === "sent")) { alerted[s.name] = now; continue; }   // another browser has it
+      if (c.ok) claimed.push(c.claimId);
+      // ok:false → FAIL OPEN (post as before): a missed alert about someone
+      // long off the floor is worse than a duplicate line in the chat.
+      send.push(s);
+    }
+    if (!send.length) { await lset(K.alerted, alerted); return { posted: 0, heldBack: over.length, claimedElsewhere: due.length }; }
+  }
+
+  const text = send.map(alertLine).join("\n");
   const res = await postTextToWorkvivo({ channelName: channel, text, reuseOnly: true });
-  if (res.ok) { for (const s of due) alerted[s.name] = now; await lset(K.alerted, alerted); }
-  return { posted: res.ok ? due.length : 0, result: res };
+  for (const id of claimed) {
+    if (res.ok) await completePostSlot(id, { messageId: res.messageId });
+    else await failPostSlot(id, { error: res.error, releaseLease: !postOutcomeUnknown(res) });
+  }
+  if (res.ok) for (const s of send) alerted[s.name] = now;
+  if (res.ok || send.length < due.length) await lset(K.alerted, alerted);
+  return { posted: res.ok ? send.length : 0, result: res };
+}
+
+// ── Shared post claims (shared/post_claims.js) ───────────────────
+// Two browsers with the listener / auto-alert on used to both answer every
+// !command and both post every break alert. Claims are per home store.
+async function claimStore() {
+  const s = await getUserHomeStore().catch(() => null);
+  return s ? String(s) : "unknown";
+}
+/** 12 hex chars of SHA-256 — a stable, non-reversible-at-a-glance slot key. */
+async function nameHash(name) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(name).trim().toUpperCase()));
+  return [...new Uint8Array(buf)].slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ── Workvivo !command listener ───────────────────────────────────
@@ -415,8 +461,22 @@ export async function pollListener() {
     // against your own self-channel ("@me") therefore works.
     const cmd = parseCommand(m.text);
     if (!cmd) continue;
+    // One reply per command across browsers: claim the command's message id
+    // before doing the (slow) work. Held/sent → another browser answers.
+    // ok:false (claim service unreachable) → FAIL OPEN and answer anyway: for
+    // an interactive command a missed reply is worse than a duplicate.
+    let claimId = null;
+    if (m.messageId != null) {
+      const c = await claimPostSlot({ store: await claimStore(), kind: "dd:reply", slot: String(m.messageId), channel });
+      if (c.ok && (c.state === "held" || c.state === "sent")) continue;
+      if (c.ok) claimId = c.claimId;
+    }
     const reply = await answerCommand(cmd).catch((e) => `Error: ${e.message}`);
     const res = await postTextToWorkvivo({ channelName: channel, text: reply, reuseOnly: true });
+    if (claimId) {
+      if (res.ok) await completePostSlot(claimId, { messageId: res.messageId });
+      else await failPostSlot(claimId, { error: res.error, releaseLease: !postOutcomeUnknown(res) });
+    }
     if (res.ok) answered++;
   }
   await lset(K.listen, { afterTs: lastTs });
@@ -478,6 +538,26 @@ export async function bootstrapIfNeeded() { await installAlarms().catch(() => {}
 
 // ── Message handlers (view ↔ SW) ─────────────────────────────────
 
+// ── Phone pairing ──────────────────────────────────────────────────────────
+// QRCallBox mints a one-time code against the Workvivo module's X-API-Key; the
+// user types it into GIF Companion, which trades it for the phone's own key
+// (QRCallBox functions/src/http/gif/pair.js). Pairing alone doesn't move the
+// phone off the PC daemon — its endpoint stays as set.
+const GIF_API = "https://qrcallbox.com/api/gif";
+
+async function gifCloud(path, { method = "GET", body } = {}) {
+  const key = await qrcallboxApiKey();
+  if (!key) return { ok: false, error: "No QRCallBox API key — set it in the Workvivo module first." };
+  const res = await fetch(GIF_API + path, {
+    method,
+    headers: { "X-API-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: out.error || `QRCallBox answered ${res.status}` };
+  return out;
+}
+
 export const handlers = {
   "get_settings":    () => getSettings(),
   "set_settings":    (m) => setSettings(m?.patch || {}),
@@ -493,4 +573,8 @@ export const handlers = {
   "health":          () => daemon("/health", {}, { timeoutMs: 8000 }).then((h) => ({ ok: true, ...h })).catch((e) => ({ ok: false, error: e.message, kind: e.kind })),
   "stop_emulator":   () => daemon("/stop", {}, { timeoutMs: 15000 }),
   "poll_listener":   () => pollListener(),
+  // Pause / resume the phone's GIF passes (min 0 resumes); the phone picks it up on its next check-in (~15 s).
+  "phone_pause":     (m) => daemon("/phone/pause", { min: Math.max(0, Math.min(MAX_PAUSE_MIN, Number(m?.minutes) || 0)), by: "dashboard" }, { timeoutMs: 8000 }),
+  "pair_phone":      () => gifCloud("/pair", { method: "POST", body: { store: HOME_STORE } }),
+  "pair_status":     () => gifCloud("/pair"),
 };

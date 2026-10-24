@@ -314,6 +314,11 @@ function showSignInNudge() {
 }
 
 /** Registered at SW top level by module.js. */
+/** The user's QRCallBox X-API-Key, for other modules' qrcallbox.com calls (digitaldashboard phone pairing). "" when unset. */
+export async function qrcallboxApiKey() {
+  return (await getConfig()).apiKey;
+}
+
 export function onNotificationClicked(notificationId) {
   if (notificationId !== NUDGE_NOTIFICATION_ID) return;
   try { chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError); } catch {}
