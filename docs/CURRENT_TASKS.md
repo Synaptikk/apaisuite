@@ -10,6 +10,29 @@ notes live in `QRCallBox/public/extension/releases.json`.
 
 ## In-flight
 
+### 000000000. Comp Shop Prep module (2026-10-23)
+
+**Asked:** produce on sale in the ALDI / Food City ads (±7 days) with photo,
+our item, our price, competitor price, sale dates and a scannable barcode;
+yellow when slightly cheaper there, red for a big gap. Ad-driven, not
+"what we scanned" (user's correction).
+
+**Built:** `modules/compshop/` — Flipp ads by zip (deal detail → per-unit
+price), each produce ad item matched to a walmart.com in-store search result
+(`pickCandidate`: rejects processed products, prefers same size / each),
+UPC read from the product page, user can re-pick the match (kept per ad item
+name). Claude Sonnet 5 via the AI gateway (`lib/ai_match.js`, Cx's token)
+picks the comparable item, judges pack size, and proposes a retry search when
+nothing fits; picks cached per row (`compshop.aiPicks`, PROMPT_VERSION). Power BI comp-shop scans are context only (competitor list, 1458 shelf
+price at last scan) and a Scan history tab. Verified in debug Edge harness.
+
+**Open:** (1) Normal Edge needs an extension reload (new hosts). (2) Our price
+is walmart.com's default store (100), not 1458: the store is held server-side
+(cookie / stores= didn't move it). WISMO is unreachable from this PC
+(ERR_TUNNEL_CONNECTION_FAILED); GSCOPE OMS order lines are the next candidate
+for 1458 prices. (3) PLU barcode scan into Comp Shop untested. (4) TPA
+Actioned is 0 on all 1,434 scans.
+
 ### 00000000. Safety Agent: accepted / declined / ignored per person (2026-10-19)
 
 **Asked:** per-associate breakdown of how they responded to SafeIQ alerts that
