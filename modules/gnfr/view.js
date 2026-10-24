@@ -411,7 +411,8 @@ export async function mount(host, container) {
       <button type="button" class="btn btn-sm btn-secondary" data-arr-jump="${esc(view.today)}">Today</button>
       <label class="gn-field" title="A truck can come a day before or after MyGNFR's expected date"><input type="checkbox" data-arr-spread${arrSpread ? " checked" : ""}> Include a day either side</label>
       <span class="gn-spacer"></span>
-      <button type="button" class="btn btn-sm btn-primary" data-arr-copy${groups.length ? "" : " disabled"}>Copy list</button>
+      <button type="button" class="btn btn-sm btn-secondary" data-arr-copy${groups.length ? "" : " disabled"}>Copy list</button>
+      <button type="button" class="btn btn-sm btn-primary" data-arr-email${groups.length ? "" : " disabled"} title="One line per person: who owns what came in. Opens an Outlook draft">Email list</button>
     </div>
     ${recent.size ? `<div class="gn-arr-recent"><small class="gn-muted">Recent delivery days:</small>${[...recent].sort((a, b) => b[0].localeCompare(a[0])).map(([d, c]) =>
       `<button type="button" class="gn-chip${d === day ? " is-active" : ""}" data-arr-jump="${esc(d)}">${esc(rel(d))} · ${c}</button>`).join("")}</div>` : ""}
@@ -432,16 +433,50 @@ export async function mount(host, container) {
         </tr>`).join("")}</tbody>
       </table></section>`).join("");
   }
-  async function copyArrivals() {
+  // One line per person, so the email reads at a glance:
+  //   These items were delivered today:
+  //   • Jane Doe: 2 × Bounty towels, 1 × Nitrile gloves
+  function arrivalsClip() {
     const { day, groups } = arrivals();
-    const title = `Supplies in ${fmtDay(day, { weekday: "long", month: "short", day: "numeric" })}${arrSpread ? " (± 1 day)" : ""}: please come get yours`;
-    const item = (l) => `${qtyText(l.qty, l.uom)} × ${l.desc}`;
-    const text = [title, "", ...groups.flatMap((g) => [`${g.p.name}${g.p.job ? ` (${g.p.job})` : ""}: ${plural(g.lines.length, "item")}`, ...g.lines.map((l) => `  - ${item(l)}`), ""])].join("\n");
-    const html = `<p><b>${esc(title)}</b></p>` + groups.map((g) => `<p><b>${esc(g.p.name)}</b>${g.p.job ? ` (${esc(g.p.job)})` : ""}: ${plural(g.lines.length, "item")}<br>${g.lines.map((l) => `&nbsp;&nbsp;• ${esc(item(l))}`).join("<br>")}</p>`).join("");
+    const x = daysBetween(day, view.today);
+    const when = x === 0 ? "today" : x === 1 ? "yesterday" : `on ${fmtDay(day, { weekday: "short", month: "short", day: "numeric" })}`;
+    const intro = `These items were delivered ${when}${arrSpread ? " (or a day either side)" : ""}:`;
+    // The same item on several lines/carts reads once, quantities summed.
+    const items = (g) => {
+      const m = new Map();
+      for (const l of g.lines) { const k = `${l.desc}|${l.uom}`; const e = m.get(k); if (e) e.qty += l.qty; else m.set(k, { desc: l.desc, uom: l.uom, qty: l.qty }); }
+      return [...m.values()].map((l) => `${qtyText(l.qty, l.uom)} × ${l.desc}`).join(", ");
+    };
+    const subject = `Supplies delivered ${when}`;
+    const text = [intro, ...groups.map((g) => `• ${g.p.name}: ${items(g)}`)].join("\n");
+    const html = `<p style="font-family:Segoe UI,Arial,sans-serif;font-size:13px">${esc(intro)}<br>${groups.map((g) => `• <b>${esc(g.p.name)}</b>: ${esc(items(g))}`).join("<br>")}</p>`;
+    return { subject, text, html, people: groups.length };
+  }
+  async function clipArrivals(c) {
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([c.html], { type: "text/html" }), "text/plain": new Blob([c.text], { type: "text/plain" }) })]);
+  }
+  async function copyArrivals() {
+    const c = arrivalsClip();
     try {
-      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
-      host.ui.toast(`Copied ${plural(groups.length, "person", "people")}. Paste into Teams or an email.`, { kind: "ok" });
+      await clipArrivals(c);
+      host.ui.toast(`Copied ${plural(c.people, "person", "people")}. Paste into Teams or an email.`, { kind: "ok" });
     } catch (e) { host.ui.toast(`Copy failed: ${e.message}`, { kind: "error" }); }
+  }
+  async function emailArrivals(btn) {
+    const c = arrivalsClip();
+    btn.disabled = true;
+    try {
+      await clipArrivals(c);   // also on the clipboard, in case the draft can't be filled
+      host.ui.toast("Opening an Outlook draft…", { kind: "info" });
+      const draft = await host.messaging.sendRaw("open_draft", { subject: c.subject, html: c.html }, { timeoutMs: 120_000 })
+        .catch((e) => ({ ok: false, error: String(e?.message || e) }));
+      host.ui.toast(draft?.ok
+        ? `Draft ready in Outlook (${plural(c.people, "person", "people")}): add recipients and send.`
+        : `Couldn't fill the draft (${draft?.error || "no answer"}). The list is copied: start a new email and press Ctrl+V.`,
+        { kind: draft?.ok ? "ok" : "error" });
+    } catch (e) {
+      host.ui.toast(`Copy failed: ${e.message}`, { kind: "error" });
+    } finally { btn.disabled = false; }
   }
 
   // ── Who orders ───────────────────────────────────────────────────────────
@@ -675,6 +710,7 @@ export async function mount(host, container) {
     const jump = t.closest("[data-arr-jump]");
     if (jump) { arrDay = jump.dataset.arrJump; renderArrivals(); decorateTables(els.pane); return; }
     if (t.closest("[data-arr-copy]")) { copyArrivals(); return; }
+    if (t.closest("[data-arr-email]")) { emailArrivals(t.closest("[data-arr-email]")); return; }
     const tsort = t.closest("[data-tsort]");
     if (tsort) {
       const table = tsort.closest("table[data-st]");
