@@ -335,6 +335,9 @@ escape_json() {
   printf '%s' "$s"
 }
 RELEASE_NOTES_ESC="$(escape_json "$RELEASE_NOTES")"
+# ...and for the sed replacement below: "&" means "the match" and "|" is the delimiter
+# (1.0.16 shipped "BoB {{RELEASE_NOTES}} Lisa").
+RELEASE_NOTES_ESC="$(printf '%s' "$RELEASE_NOTES_ESC" | sed -e 's/[\\&|]/\\&/g')"
 
 render() {
   local tpl="$1" out="$2"
