@@ -205,7 +205,7 @@ The `workvivo` module talks to a different repo's backend
 
 `modules/workvivo/lib/qrcallbox.js` (extension side) and
 `QRCallBox/functions/src/http/workvivo/token-heartbeat.js` (server side) MUST
-stay in sync. Branch for in-flight work in QRCallBox: `feat/workvivo-autonomy`.
+stay in sync. Branch for in-flight work in QRCallBox: `radio-gateway` (`main` kept level).
 
 Background reading: `QRCallBox/docs/setup/WORKVIVO_SETUP.md` (runbook,
 status vocabulary, deploy rules) and
