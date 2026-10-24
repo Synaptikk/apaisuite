@@ -35,13 +35,21 @@ export function isSignInError(e) {
  * opens on the file's metadata endpoint (JSON), NOT download.aspx, which
  * would drop the workbook into the user's Downloads.
  *
+ * `view: true` opens the workbook in Excel for the web instead (Doc.aspx,
+ * which views the file and never downloads it). On 2026-10-23 the metadata
+ * visit "succeeded" but download.aspx still bounced to sign-in, so the board
+ * sat unsynced from 9:48 AM; opening the workbook view fixed it at once. The
+ * caller tries the cheap visit first and this one second.
+ *
  * Resolves true once the tab is back on the site's host, false when the
  * sign-in needs a person (the tab stays on the login page) — the caller
  * then reports SIGN_IN as before. Always closes its tab.
  */
-export async function refreshSession({ site, uniqueId }, { timeoutMs = REFRESH_MS } = {}) {
+export async function refreshSession({ site, uniqueId }, { timeoutMs = REFRESH_MS, view = false } = {}) {
   const host = new URL(site).host;
-  const url = `${site}/_api/web/GetFileById('${uniqueId}')?$select=Name`;
+  const url = view
+    ? `${site}/_layouts/15/Doc.aspx?sourcedoc={${uniqueId}}&action=view`
+    : `${site}/_api/web/GetFileById('${uniqueId}')?$select=Name`;
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     const deadline = Date.now() + timeoutMs;
@@ -75,6 +83,20 @@ async function get(url, headers = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * When the workbook was last saved — one small metadata request, no download.
+ * The once-a-minute check compares this with the last copy applied, so a
+ * board edit (an absence, a reassignment) reaches the grid within a minute.
+ * @returns {Promise<string>} ISO time, e.g. "2026-10-23T15:55:13Z"
+ */
+export async function boardModifiedAt({ site, uniqueId }) {
+  const meta = await get(
+    `${site}/_api/web/GetFileById('${uniqueId}')?$select=TimeLastModified`,
+    { accept: "application/json;odata=nometadata" });
+  if (!/json/.test(meta.headers.get("content-type") || "")) throw new Error(SIGN_IN);
+  return (await meta.json()).TimeLastModified;
 }
 
 /**

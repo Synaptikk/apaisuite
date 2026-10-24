@@ -3,6 +3,7 @@ import { IS_SERVICE_WORKER } from "../../shared/alarms.js";
 import {
   handlers as serviceHandlers, onPullAlarm, installPullAlarm, resetStaleRun,
   BOARD_ALARM, onBoardAlarm, installBoardAlarm,
+  BOARD_CHECK_ALARM, onBoardCheckAlarm, installBoardCheckAlarm,
 } from "./service.js";
 
 // ── Automated-pull alarm ───────────────────────────────────────────────────
@@ -23,10 +24,14 @@ if (IS_SERVICE_WORKER) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "digitalmetrics.pull") onPullAlarm();
     if (alarm.name === BOARD_ALARM) onBoardAlarm();
+    if (alarm.name === BOARD_CHECK_ALARM) onBoardCheckAlarm();
   });
   // Daily Board sync (store 1458 only); does nothing until a link is saved.
   installBoardAlarm().catch((e) =>
     console.warn("[digitalmetrics] installBoardAlarm failed:", e?.message ?? e));
+  // ...plus a once-a-minute "was the workbook saved since?" check.
+  installBoardCheckAlarm().catch((e) =>
+    console.warn("[digitalmetrics] installBoardCheckAlarm failed:", e?.message ?? e));
   installPullAlarm().catch((e) =>
     console.warn("[digitalmetrics] installPullAlarm failed:", e?.message ?? e));
   // A boot means any pull the previous worker had in flight is dead; its

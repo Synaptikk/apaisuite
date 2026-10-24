@@ -22,7 +22,7 @@ import { getUserHomeStore, getUserHomeMarket } from "../../shared/userStore.js";
 import { getMarketRoster, listKnownMarkets } from "../../shared/marketRoster.js";
 import { ensureAlarm } from "../../shared/alarms.js";
 import { withTableauLock } from "../../shared/tableau_lock.js";
-import { fetchDailyBoard, isSignInError, refreshSession } from "./lib/sources/daily_board_source.js";
+import { fetchDailyBoard, isSignInError, refreshSession, boardModifiedAt } from "./lib/sources/daily_board_source.js";
 import { pullClockIns } from "./lib/sources/gta_timesheet.js";
 import { clockInCandidates } from "./lib/data/first_pick.js";
 import {
@@ -775,6 +775,45 @@ export async function onBoardAlarm() {
   await syncDailyBoard().catch(() => {});
 }
 
+// ── Once-a-minute board check ──────────────────────────────────────────────
+//
+// TLs edit the board through the day (absences, people moved off PICK), and
+// the chat commands read the grid, so a 30-minute sync left !performance and
+// !staffing up to half an hour behind (the user, 2026-10-23). Every minute
+// this asks SharePoint only when the workbook was last saved — one small
+// request — and runs the full sync when that is newer than the copy applied.
+// The 30-minute alarm stays as the fallback and the session renewer.
+export const BOARD_CHECK_ALARM = "digitalmetrics.boardCheck";
+const BOARD_SEEN_KEY = "digitalmetrics.boardSeenModifiedAt";   // workbook save time of the last good sync
+const BOARD_RETRY_MS = 5 * 60_000;                              // after a failed sync, try again at most this often
+
+export async function installBoardCheckAlarm() {
+  return ensureAlarm(BOARD_CHECK_ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+}
+
+export async function onBoardCheckAlarm() {
+  try {
+    if (boardRun) return;
+    if (String(await getUserHomeStore().catch(() => "") || "") !== BOARD_STORE) return;
+    const link = await localGet(BOARD_LINK_KEY, null);
+    if (!link?.site || !link?.uniqueId) return;
+    const state = await localGet(BOARD_STATE_KEY, null);
+    if (state?.error) {
+      // Last sync failed (usually sign-in): retry on a slower clock — the
+      // full sync is the one that renews the session.
+      if (Date.now() - Date.parse(state.at || 0) >= BOARD_RETRY_MS) await syncDailyBoard();
+      return;
+    }
+    const modifiedAt = await boardModifiedAt(link).catch(() => null);
+    if (!modifiedAt) return;
+    const seen = await localGet(BOARD_SEEN_KEY, null);
+    if (seen && Date.parse(modifiedAt) <= Date.parse(seen)) return;
+    await syncDailyBoard();
+  } catch (e) {
+    console.warn("[digitalmetrics] board check:", e?.message ?? e);
+  }
+}
+
 async function localGet(key, fallback) {
   const got = await chrome.storage.local.get(key);
   return got[key] ?? fallback;
@@ -810,7 +849,16 @@ async function runBoardSync() {
       if (!isSignInError(e)) throw e;
       result.sessionRefreshed = await refreshSession(link);
       if (!result.sessionRefreshed) throw e;
-      board = await fetchDailyBoard(link);
+      try {
+        board = await fetchDailyBoard(link);
+      } catch (e2) {
+        // The metadata visit is not always enough for download.aspx; opening
+        // the workbook view is (2026-10-23).
+        if (!isSignInError(e2)) throw e2;
+        result.sessionRefreshed = await refreshSession(link, { view: true });
+        if (!result.sessionRefreshed) throw e2;
+        board = await fetchDailyBoard(link);
+      }
     }
     result.file = { name: board.name, modifiedAt: board.modifiedAt };
 
@@ -858,7 +906,7 @@ async function runBoardSync() {
     for (const plan of planDates(sheets, today, (d) => snaps[d] || null, () => ambiguous)) {
       if (plan.skip) { result.dates.push({ date: plan.date, skipped: plan.skip }); continue; }
 
-      const doc = await assignments.get(BOARD_STORE, plan.date);
+      let { doc, updateTime } = await assignments.getWithMeta(BOARD_STORE, plan.date);
       if (doc?.finalized === true) {
         result.dates.push({ date: plan.date, skipped: "the day was finalized in the app" });
         continue;
@@ -872,17 +920,23 @@ async function runBoardSync() {
       // on past days, which together left suggestion-filled days as they were.
       const schedule = await scheduleFor(plan.date);
       const { matched, unmatched } = resolveBoardNames(plan.cells, schedule, { aliases, isDigital, roster, learned });
-      const merged = mergeBoard(doc, {
+      const mergeOpts = {
         cells: plan.cells, matched,
         previous: snaps[plan.date]?.cells || null,
         previousNames: snaps[plan.date]?.names || null,
         boardModifiedAt: board.modifiedAt,
         schedule,
         mirror: true,
-      });
+      };
+      let merged = mergeBoard(doc, mergeOpts);
+      let conflict = false;
 
-      if (!merged.unchanged) {
-        await assignments.put(BOARD_STORE, plan.date, {
+      // Compare-and-set against the doc the merge was built from, so a grid
+      // edit saved in another browser meanwhile is merged rather than erased:
+      // on a lost precondition, re-read and re-merge ONCE (same board-copy
+      // semantics), then give up for this sync and report it.
+      for (let attempt = 0; !merged.unchanged; attempt++) {
+        const w = await assignments.put(BOARD_STORE, plan.date, {
           associates:  merged.associates,
           date:        plan.date,
           day:         dayName(plan.date),
@@ -892,7 +946,16 @@ async function runBoardSync() {
           finalizedAt: null,
           source:      "board",
           boardAppliedAt: result.at,
-        });
+        }, { ifUpdateTime: updateTime ?? null });
+        if (!w?.conflict) break;
+        if (attempt >= 1) { conflict = true; break; }
+        ({ doc, updateTime } = await assignments.getWithMeta(BOARD_STORE, plan.date));
+        if (doc?.finalized === true) { conflict = true; break; }
+        merged = mergeBoard(doc, mergeOpts);
+      }
+      if (conflict) {
+        result.dates.push({ date: plan.date, skipped: "the day changed during the sync (or was finalized); retried once, will apply next sync" });
+        continue;
       }
       snaps[plan.date] = {
         fp: plan.fp, cells: plan.cells, appliedAt: result.at,
@@ -933,17 +996,24 @@ async function runBoardSync() {
       const names = Object.fromEntries(Object.keys(snap.cells).map((k) => [k, matched[k]?.name || k]));
       snap.guessed = Object.keys(snap.cells).filter((k) => String(matched[k]?.how || "").startsWith("hours"));
       if (Object.keys(names).every((k) => names[k] === snap.names[k])) continue;
-      const doc = await assignments.get(BOARD_STORE, date);
+      let { doc, updateTime } = await assignments.getWithMeta(BOARD_STORE, date);
       if (!doc || doc.finalized === true) continue;
-      const merged = mergeBoard(doc, {
-        cells: snap.cells, matched, previous: snap.cells, previousNames: snap.names, schedule, mirror: true,
-      });
-      if (!merged.unchanged) {
-        await assignments.put(BOARD_STORE, date, {
+      const renameOpts = { cells: snap.cells, matched, previous: snap.cells, previousNames: snap.names, schedule, mirror: true };
+      let merged = mergeBoard(doc, renameOpts);
+      // Same compare-and-set + one re-read as the plan writes above.
+      let lost = false;
+      for (let attempt = 0; !merged.unchanged; attempt++) {
+        const w = await assignments.put(BOARD_STORE, date, {
           ...doc, associates: merged.associates, updatedAt: new Date().toISOString(),
           source: "board", boardAppliedAt: result.at,
-        });
+        }, { ifUpdateTime: updateTime });
+        if (!w?.conflict) break;
+        if (attempt >= 1) { lost = true; break; }
+        ({ doc, updateTime } = await assignments.getWithMeta(BOARD_STORE, date));
+        if (!doc || doc.finalized === true) { lost = true; break; }
+        merged = mergeBoard(doc, renameOpts);
       }
+      if (lost) continue;   // snap.names left as-is, so the next sync retries the rename
       snap.names = names;
       result.renamed = [...(result.renamed || []), { date, moved: merged.renamedRows }];
     }
@@ -1004,6 +1074,7 @@ async function runBoardSync() {
     const cutoff = addDays(today, -SNAPSHOT_KEEP_DAYS);
     for (const d of Object.keys(snaps)) if (d < cutoff) delete snaps[d];
     await chrome.storage.local.set({ [BOARD_SNAP_KEY]: snaps });
+    if (result.file?.modifiedAt) await chrome.storage.local.set({ [BOARD_SEEN_KEY]: result.file.modifiedAt });
   } catch (e) {
     result.error = String(e?.message ?? e);
   } finally {
@@ -1053,9 +1124,24 @@ export const handlers = {
     store: await getUserHomeStore().catch(() => null),
   })),
 
-  "get_assignments":   withAliases((m)     => assignments.get(m.store, m.date)),
+  // `_updateTime` rides along on the returned doc (never written back: the
+  // view builds the doc it saves from scratch) so the grid's save can be a
+  // compare-and-set against the version it loaded.
+  "get_assignments":   withAliases(async (m) => {
+    const { doc, updateTime } = await assignments.getWithMeta(m.store, m.date);
+    return doc ? { ...doc, _updateTime: updateTime } : null;
+  }),
   "recent_assignments": withAliases((m)    => assignments.recent(m.store, m.limit ?? 30)),
-  "put_assignments":   withAliases((m)     => assignments.put(m.store, m.date, m.doc)),
+  // m.ifUpdateTime: the `_updateTime` the edited grid was loaded with (null =
+  // the day had no doc). Omitted → unconditional write, as before. A lost
+  // precondition means another browser (or the board sync) changed the day
+  // since this grid loaded; surface it instead of silently overwriting.
+  "put_assignments":   withAliases(async (m) => {
+    const r = await assignments.put(m.store, m.date, m.doc,
+      m.ifUpdateTime === undefined ? undefined : { ifUpdateTime: m.ifUpdateTime });
+    if (r?.conflict) return { ok: false, errorClass: "CONFLICT", error: "someone else changed this day — reload and reapply" };
+    return r;
+  }),
 
   "get_suggestions":   withAliases((m)     => suggestions.get(m.store, m.date)),
   "put_suggestions":   withAliases((m)     => suggestions.put(m.store, m.date, m.doc)),

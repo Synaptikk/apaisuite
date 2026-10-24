@@ -540,7 +540,13 @@ export async function mount(host, container) {
     // Suggestions are learned from saved grids (data/suggest.js) — nothing
     // writes the stored suggestions/{date} docs. History is cached per store.
     const [doc, schedule, history] = await Promise.all([
-      call("get_assignments", { store, date: state.assignmentDate }),
+      call("get_assignments", { store, date: state.assignmentDate }).then((d) => {
+        // Compare-and-set token for saveAssignments: the version this grid was
+        // loaded from. null = the day had no doc yet; undefined = unknown (the
+        // read failed) → an unconditional save, the old behaviour.
+        state.assignmentsUpdateTime = d ? (d._updateTime ?? undefined) : (lastCallError ? undefined : null);
+        return d;
+      }),
       call("get_schedule",    { store, date: state.assignmentDate }),
       state.suggestHistory?.store === store
         ? state.suggestHistory.docs
@@ -949,17 +955,24 @@ export async function mount(host, container) {
     saveTimer = setTimeout(saveAssignments, assignmentsPage.AUTOSAVE_DELAY_MS);
   }
 
+  // Saves run one at a time: each one's precondition is the updateTime the
+  // previous one returned, so two in flight would conflict with each other.
+  let saveInFlight = null;
   async function saveAssignments(extra = {}) {
     clearTimeout(saveTimer);
+    while (saveInFlight) await saveInFlight;
     const store = assignmentStore();
     if (!store || !state.assignmentDate) return;
 
     state.saveStatus = "saving…";
     renderPage();
 
-    const ok = await call("put_assignments", {
+    saveInFlight = call("put_assignments", {
       store,
       date:  state.assignmentDate,
+      // Only if nobody changed the day since this grid loaded (another
+      // browser, or the Daily Board sync); undefined → unconditional.
+      ifUpdateTime: state.assignmentsUpdateTime,
       doc: {
         associates:  state.assignments,
         date:        state.assignmentDate,
@@ -971,6 +984,13 @@ export async function mount(host, container) {
         ...extra,
       },
     });
+    const ok = await saveInFlight;
+    saveInFlight = null;
+    if (ok) state.assignmentsUpdateTime = ok.updateTime ?? undefined;
+    else if (/someone else changed this day/.test(String(lastCallError || ""))) {
+      // Not retried: reapplying blindly is exactly the overwrite this stops.
+      host.ui.toast("Someone else changed this day's grid — reload the day and reapply your edits.", { kind: "error" });
+    }
 
     // "save failed" on its own is a dead end — the reason is the whole point,
     // and it is the difference between a kill switch, an expired token and a
