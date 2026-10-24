@@ -1,0 +1,60 @@
+<div class="cs">
+  <header class="cs-header">
+    <div class="cs-title">
+      <h1>Comp Shop Prep</h1>
+      <p id="compshop-sub" class="cs-sub">Produce on sale in competitor ads this week, beside our item, price and barcode.</p>
+    </div>
+    <div class="cs-head-actions">
+      <button id="compshop-ai" class="btn btn-secondary btn-sm" type="button" hidden title="Lets Claude (Walmart AI gateway) pick the comparable item for each ad">Sign in to AI matching</button>
+      <button id="compshop-print" class="btn btn-secondary btn-sm" type="button">Print list</button>
+      <button id="compshop-refresh" class="btn btn-primary" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div id="compshop-msg" class="cs-status" role="status" hidden></div>
+
+  <div id="compshop-empty" class="cs-empty" hidden>
+    <h2>Nothing loaded yet</h2>
+    <p>Press <b>Refresh</b> to read this week's competitor ads and match them to our items (about a minute).</p>
+  </div>
+
+  <div id="compshop-body" hidden>
+    <section id="compshop-cards" class="cs-cards" aria-label="Summary"></section>
+
+    <div class="cs-controls">
+      <div class="cs-tabs" role="tablist">
+        <button class="cs-tab" data-tab="deals" role="tab" type="button">Ad deals</button>
+        <button class="cs-tab" data-tab="history" role="tab" type="button">Scan history</button>
+      </div>
+      <span class="cs-spacer"></span>
+      <label class="cs-field">Competitor <select id="compshop-comp" class="input"></select></label>
+      <label class="cs-field">Show
+        <select id="compshop-show" class="input">
+          <option value="cheaper">Cheaper there</option>
+          <option value="all">All items</option>
+        </select>
+      </label>
+      <label class="cs-field" id="compshop-days-wrap">Scanned in
+        <select id="compshop-days" class="input">
+          <option value="30">last 30 days</option>
+          <option value="60">last 60 days</option>
+          <option value="120">last 120 days</option>
+          <option value="365">last year</option>
+          <option value="0">all time</option>
+        </select>
+      </label>
+      <input id="compshop-q" class="input cs-search" type="search" placeholder="Find an item" aria-label="Find an item">
+    </div>
+
+    <div class="cs-legend">
+      <span class="cs-chip tier-red">Red</span> competitor is at least
+      <input id="compshop-red-pct" class="input cs-num" type="number" min="1" max="90" step="1" aria-label="Red percent">% or
+      $<input id="compshop-red-dollar" class="input cs-num" type="number" min="0.05" step="0.05" aria-label="Red dollars"> cheaper
+      <span class="cs-chip tier-yellow">Yellow</span> cheaper by less than that
+    </div>
+
+    <div id="compshop-pane"></div>
+  </div>
+
+  <div id="compshop-zoom" class="cs-zoom" hidden role="dialog" aria-modal="true" aria-label="Barcode"></div>
+</div>

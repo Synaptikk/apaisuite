@@ -57,6 +57,8 @@
     "https://outlook.office.com/*",
     "https://outlook.cloud.microsoft/*",
     "https://www.walmart.com/*",
+    "https://backflipp.wishabi.com/*",
+    "https://f.wishabi.net/*",
     "https://go-upc.com/*",
     "https://www.upcitemdb.com/*",
     "https://one.walmart.com/*",
@@ -107,6 +109,15 @@
     "https://mygnfr.walmart.com/*"
   ],
   "content_scripts": [
+    {
+      "matches": [
+        "https://camp.walmart.com/*"
+      ],
+      "js": [
+        "modules/safetyagent/content/camp_paint.js"
+      ],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "https://app.powerbi.com/*"

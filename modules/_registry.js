@@ -40,6 +40,7 @@ import accidents         from "./accidents/module.js";
 import punchlookup       from "./punchlookup/module.js";
 import cx                from "./cx/module.js";
 import gnfr              from "./gnfr/module.js";
+import compshop          from "./compshop/module.js";
 // import assocpurchases    from "./assocpurchases/module.js";
 
 // ── Registered modules ──────────────────────────────────────────
@@ -76,6 +77,7 @@ export default [
   closinglist,
   stockingplan,
   gnfr,              // Supply Orders — MyGNFR store carts: who ordered what, tracking, regulars not reordered
+  compshop,          // Comp Shop Prep — produce competitors sell for less: barcode, our price, their price, ad dates
   costinventory,     // Cost Inventory — monthly Fresh worksheet from ITR / OneWalmart / CV / GDP
   // assocpurchases,
 ];

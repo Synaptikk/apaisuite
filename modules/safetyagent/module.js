@@ -37,7 +37,8 @@ export default {
               "https://timesheet.cloud.wal-mart.com/*", "https://teams.wal-mart.com/*",
               "https://safeiqcv.stage.walmart.net/*", "https://safeiqcv.walmart.net/*"],
     },
-    contentScripts: [],
+    // Hold-and-drag painting for CAMP's own detection-tile editor.
+    contentScripts: [{ matches: ["https://camp.walmart.com/*"], js: ["modules/safetyagent/content/camp_paint.js"] }],
     // The SafePass token is a per-session UUID the SafeIQ page sends on every
     // /api call. Captured here, read in service.js via getCapturedHeader —
     // keep storageKey in sync with service.js::TOKEN_KEY.
