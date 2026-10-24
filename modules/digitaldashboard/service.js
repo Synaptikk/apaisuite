@@ -43,6 +43,7 @@ import { readChannelMessages, postTextToWorkvivo } from "../metricshot/lib/sendb
 import { isTrueAbsence, parseIvrName } from "../closinglist/lib/parse.js";
 import { qrcallboxApiKey } from "../workvivo/service.js";
 import { MAX_PAUSE_MIN } from "./lib/phone_control.js";
+import { hashMeals } from "./lib/meal_hash.js";
 import { claimPostSlot, completePostSlot, failPostSlot } from "../../shared/post_claims.js";
 import { getUserHomeStore } from "../../shared/userStore.js";
 import { isSelfChannel } from "../metricshot/lib/post_guard.js";
@@ -71,6 +72,7 @@ export const ALARM_NAMES = {
 
 export const DEFAULTS = {
   daemonUrl: "http://127.0.0.1:8770",
+  source: "pc",             // "pc" = the daemon above; "cloud" = qrcallbox.com/api/gif (PC retired)
   channel: "Daily Board",   // Workvivo chat for !commands and alerts
   listen: false,            // answer !commands in that chat
   autoSample: false,        // read GIF on a timer (keeps the emulator up during store hours)
@@ -103,8 +105,42 @@ function keepAlive() {
   return () => clearInterval(t);
 }
 
+// The cloud twin of each daemon route (QRCallBox functions/src/http/gif/api.js).
+// Cloud reads are cache-only, so maxAge/wait/pass/names are dropped: the
+// cloud runs the break watch and roster steps itself from the board. Routes
+// with no cloud twin answer as a no-op.
+const CLOUD_ROUTES = {
+  "/summary":     (p) => [`/summary?window=${encodeURIComponent(p.window ?? 60)}`],
+  "/breaks":      () => ["/breaks"],
+  "/breaklog":    (p) => [p.day ? `/breaklog?day=${encodeURIComponent(p.day)}` : "/breaklog"],
+  "/store":       () => ["/store"],
+  "/health":      () => [`/health?store=${HOME_STORE}`],
+  "/phone/pause": (p) => ["/pause", { method: "POST", body: { minutes: Number(p.min) || 0 } }],
+  "/punches":     () => null,   // pushMeals sends the hashed copy instead
+  "/stop":        () => null,
+};
+
+async function cloudDaemon(path, params, timeoutMs) {
+  const route = CLOUD_ROUTES[path]?.(params);
+  if (route === undefined) throw Object.assign(new Error(`no cloud route for ${path}`), { kind: "DAEMON" });
+  if (route === null) return { ok: true, skipped: "cloud" };
+  const stop = keepAlive();
+  try {
+    const r = await Promise.race([
+      gifCloud(...route),
+      new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error("Live pick data took too long — try again."), { kind: "TIMEOUT" })), timeoutMs)),
+    ]);
+    if (r?.ok === false) throw Object.assign(new Error(r.error || "Live pick data returned an error — try again."), { kind: "DAEMON" });
+    return path === "/health" ? { ...r, source: "phone" } : r;   // the view's status pill keys on source
+  } catch (e) {
+    if (e.kind) throw e;
+    throw Object.assign(new Error("Live pick data is offline."), { kind: "OFFLINE" });
+  } finally { stop(); }
+}
+
 async function daemon(path, params = {}, { timeoutMs = 120_000 } = {}) {
-  const { daemonUrl } = await getSettings();
+  const { daemonUrl, source } = await getSettings();
+  if (source === "cloud") return cloudDaemon(path, params, Math.min(timeoutMs, 30_000));
   const u = new URL(path, daemonUrl);
   for (const [k, v] of Object.entries(params)) if (v != null) u.searchParams.set(k, String(v));
   const ctl = new AbortController();
@@ -257,6 +293,21 @@ async function pushPunches(day, punches) {
   if (sig === pushedPunches || !Object.keys(set).length) return;
   await daemon("/punches", { day, set: JSON.stringify(set) }, { timeoutMs: 8000 })
     .then(() => { pushedPunches = sig; }, (e) => console.warn("[digitaldashboard] punches → daemon:", e?.message ?? e));
+  await pushMeals(day, punches);
+}
+
+// The cloud answerer (QRCallBox gif/meals.js) gets the same punches, but only
+// the meal minutes and keyed by an HMAC of the name (lib/meal_hash.js).
+let pushedMeals = "";
+async function pushMeals(day, punches) {
+  const set = {};
+  for (const [n, p] of Object.entries(punches)) if (p.clockIn != null) set[n] = p;
+  const sig = `${day}:${JSON.stringify(set)}`;
+  if (sig === pushedMeals || !Object.keys(set).length) return;
+  const k = await gifCloud("/meals/key");
+  if (!k?.key) return console.warn("[digitaldashboard] meals → cloud: no key:", k?.error);
+  const r = await gifCloud("/meals", { method: "POST", body: { store: HOME_STORE, day, meals: await hashMeals(k.key, set) } });
+  if (r?.ok) pushedMeals = sig; else console.warn("[digitaldashboard] meals → cloud:", r?.error);
 }
 
 /**
@@ -438,8 +489,14 @@ export async function pollListener() {
   // relay is back. Taking over in that window answered every command twice
   // (and re-answered the last 5 minutes) on 2026-10-09. Only a daemon that is
   // unreachable or has its chat switched off leaves the chat to this browser.
-  const chatState = String(h?.chat?.state ?? "off");
-  if (h && !/^off|stopped/.test(chatState)) return { skipped: `daemon owns the chat (${chatState})` };
+  // Cloud source: QRCallBox's gifChatAnswerer owns the chat once its mode is
+  // "cloud" (and chat-fallback covers it when that answerer is down).
+  if ((await getSettings()).source === "cloud") {
+    if (h?.chat?.mode === "cloud" || !h) return { skipped: `cloud owns the chat (${h?.chat?.mode ?? "unreachable"})` };
+  } else {
+    const chatState = String(h?.chat?.state ?? "off");
+    if (h && !/^off|stopped/.test(chatState)) return { skipped: `daemon owns the chat (${chatState})` };
+  }
 
   const st = await lget(K.listen, null);
   const afterTs = st?.afterTs ?? (Date.now() - LISTEN_FIRST_LOOKBACK_MS);
@@ -511,10 +568,13 @@ export async function pushAbsences() {
     const { first, last: lname } = parseIvrName(r.associate);
     if (first && lname) rows.push({ name: `${first} ${lname}`, type: r.absence_type });
   }
+  const payload = { day, fetchedAt: last.fetchedAt ?? null, rows };
+  const cloud = await gifCloud("/absences", { method: "POST", body: { store: HOME_STORE, ...payload } })
+    .catch((e) => ({ ok: false, error: e?.message }));
   const { daemonUrl } = await getSettings();
   const res = await fetch(new URL("/absences", daemonUrl), { method: "POST", headers: { "content-type": "text/plain" },
-    body: JSON.stringify({ day, fetchedAt: last.fetchedAt ?? null, rows }) });
-  return { pushed: rows.length, ok: res.ok };
+    body: JSON.stringify(payload) }).catch(() => null);
+  return { pushed: rows.length, ok: !!res?.ok, cloud: !!cloud?.ok };
 }
 
 export async function onAlarm(alarm) {

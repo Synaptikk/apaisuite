@@ -638,6 +638,7 @@ const server = http.createServer(async (req, res) => {
           phone: PHONE ? phoneHealth() : undefined,
           needsSignin: Date.now() < signinBlockedUntil ? signinBlockedUntil : null,
           chat: chat ? chat.status() : { state: "off" },
+          cloudTee: { ...tee },
           opdAt: state.opdAt || null, notActiveAt: state.notActiveAt || null, watchAt: state.watchAt || null,
         });
       case "/opd": {
@@ -745,7 +746,9 @@ const server = http.createServer(async (req, res) => {
       case "/api/gif/ingest": {
         if (req.method !== "POST") return send(res, 405, { error: "POST only" });
         if (!PHONE) return send(res, 409, { error: "daemon is in emulator mode" });
-        return send(res, 200, ingest(JSON.parse(await body(req))));
+        const msg = JSON.parse(await body(req));
+        teeToCloud(msg);
+        return send(res, 200, ingest(msg));
       }
       case "/stop":
         return send(res, 200, { stopped: stopEmulator("requested") });
@@ -764,6 +767,31 @@ const server = http.createServer(async (req, res) => {
     return send(res, 500, { error: e.message, path: u.pathname });
   }
 });
+
+// Cloud migration (2026-10-24): copy every phone upload to QRCallBox's
+// /api/gif/ingest so the cloud answerer can run in "dry" mode on the same
+// readings. The cloud's queued requests in its reply are ignored: the phone
+// takes requests from the daemon only, and the cloud still sees those reads
+// arrive. GIF_CLOUD_TEE=0 turns it off.
+const TEE_URL = "https://qrcallbox.com/api/gif/ingest";
+const TEE_KEY_FILE = join(SDK, ".qrcallbox-key");
+const tee = { on: process.env.GIF_CLOUD_TEE !== "0" && existsSync(TEE_KEY_FILE), sent: 0, failed: 0, lastOkAt: null, lastError: null };
+let teeWarnedAt = 0;
+function teeToCloud(msg) {
+  if (!tee.on) return;
+  const key = readFileSync(TEE_KEY_FILE, "utf8").trim();
+  fetch(TEE_URL, {
+    method: "POST", signal: AbortSignal.timeout(20_000),
+    headers: { "Content-Type": "application/json", "X-API-Key": key },
+    body: JSON.stringify({ store: HOME_STORE, ...msg }),
+  }).then(async (r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${(await r.text().catch(() => "")).slice(0, 120)}`);
+    tee.sent++; tee.lastOkAt = Date.now(); tee.lastError = null;
+  }).catch((e) => {
+    tee.failed++; tee.lastError = e.message;
+    if (Date.now() - teeWarnedAt > 10 * 60_000) { teeWarnedAt = Date.now(); log(`cloud tee: ${e.message}`); }
+  });
+}
 
 let chat = null;
 server.listen(PORT, "127.0.0.1", () => {

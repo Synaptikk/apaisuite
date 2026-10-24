@@ -138,6 +138,13 @@
         <span><input class="input dd-num" type="number" min="5" max="60" data-set="sampleMin"> min</span>
       </label>
       <label class="field">
+        <span class="field-label">Pick data from</span>
+        <select class="input" data-set="source">
+          <option value="pc">This PC (GIF daemon)</option>
+          <option value="cloud">qrcallbox.com</option>
+        </select>
+      </label>
+      <label class="field">
         <span class="field-label">GIF daemon URL</span>
         <input class="input" type="text" data-set="daemonUrl" spellcheck="false">
       </label>

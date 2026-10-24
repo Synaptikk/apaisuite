@@ -455,7 +455,7 @@ export async function mount(host, container) {
 
   // ── settings ───────────────────────────────────────────────────
   function fillSettings(s) {
-    for (const key of ["daemonUrl", "channel", "sampleMin", "reAlertMin"]) {
+    for (const key of ["source", "daemonUrl", "channel", "sampleMin", "reAlertMin"]) {
       const el = $(`[data-set="${key}"]`); if (el) el.value = s[key] ?? "";
     }
     for (const key of ["autoSample", "listen", "autoBreakAlert"]) {
@@ -465,7 +465,7 @@ export async function mount(host, container) {
   }
   async function saveSettings() {
     const patch = {};
-    for (const key of ["daemonUrl", "channel"]) patch[key] = $(`[data-set="${key}"]`).value.trim();
+    for (const key of ["source", "daemonUrl", "channel"]) patch[key] = $(`[data-set="${key}"]`).value.trim();
     for (const key of ["sampleMin", "reAlertMin"]) patch[key] = Number($(`[data-set="${key}"]`).value) || undefined;
     for (const key of ["autoSample", "listen", "autoBreakAlert"]) patch[key] = $(`[data-set="${key}"]`).checked;
     try {
