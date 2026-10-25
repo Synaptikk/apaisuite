@@ -797,6 +797,9 @@ let chat = null;
 server.listen(PORT, "127.0.0.1", () => {
   log(`gif-daemon on http://127.0.0.1:${PORT} (store ${HOME_STORE}, source ${SOURCE}${PHONE ? "" : `, idle stop ${IDLE_MIN || "off"} min`})`);
   // Workvivo !commands through QRCallBox's chat relay (dev/gif-chat.mjs);
-  // GIF_CHAT=0 turns it off.
-  if (process.env.GIF_CHAT !== "0") { chat = createChat({ port: PORT, log, punchesFor: (day) => punches[day] || {} }); chat.start(); }
+  // GIF_CHAT=0 turns it off. A .gif-chat-cloud marker in the SDK folder means
+  // qrcallbox.com answers: report "standby" (not "off") so a browser on the
+  // "This PC" source still stands down instead of answering a second time.
+  if (existsSync(join(SDK, ".gif-chat-cloud"))) { chat = { status: () => ({ state: "standby", owner: "qrcallbox.com" }) }; log("chat: standby (qrcallbox.com answers)"); }
+  else if (process.env.GIF_CHAT !== "0") { chat = createChat({ port: PORT, log, punchesFor: (day) => punches[day] || {} }); chat.start(); }
 });
