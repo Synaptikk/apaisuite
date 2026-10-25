@@ -72,7 +72,7 @@ export const ALARM_NAMES = {
 
 export const DEFAULTS = {
   daemonUrl: "http://127.0.0.1:8770",
-  source: "pc",             // "pc" = the daemon above; "cloud" = qrcallbox.com/api/gif (PC retired)
+  source: "cloud",          // "cloud" = qrcallbox.com/api/gif; "pc" = the daemon above (being retired)
   channel: "Daily Board",   // Workvivo chat for !commands and alerts
   listen: false,            // answer !commands in that chat
   autoSample: false,        // read GIF on a timer (keeps the emulator up during store hours)
