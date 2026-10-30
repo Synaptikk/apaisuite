@@ -189,3 +189,32 @@ test("overnight: a caught-up night coach is not called behind in the morning", (
   const behindRow = { ...cu.rows[0], behind: 3, owe: 5 };
   assert.match(buildCatchUpMessage([behindRow], { throughLabel: "Fri 10/23", sinceLabel: "10/1" }).text, /complete 5 tonight \(3 behind \+ tonight's 2\)/);
 });
+
+import { buildReportNote } from "../coach_check.js";
+import { dataThrough } from "../../../livedashboard/lib/sources/recognition.js";
+
+test("report note: data short of local midnight names the cutoff", () => {
+  // 10/25 post: newest response dated 10/24 UTC, so it came in before 8 PM EDT 10/24.
+  const dt = { utcIso: "2026-10-24", localIso: "2026-10-24", before: new Date(2026, 9, 24, 20, 0).getTime() };
+  const n = buildReportNote(dt, { todayIso: "2026-10-25", throughLabel: "Sat 10/24" });
+  assert.equal(n, "Field_Dashboard was last updated with observations up to Sat 10/24 8 PM. Anything logged after that isn't counted yet and will show up after its next refresh.");
+  const m = buildCatchUpMessage([{ name: "A B", behind: 2, owe: 4, doneToday: 0 }], { throughLabel: "Sat 10/24", sinceLabel: "10/1", reportNote: n });
+  assert.equal(m.text.split("\n")[1], n);
+});
+
+test("report note: a response dated today means yesterday is all in", () => {
+  const n = buildReportNote({ localIso: "2026-10-25", before: Date.now() }, { todayIso: "2026-10-25", throughLabel: "Sat 10/24" });
+  assert.match(n, /has all of Sat 10\/24's observations/);
+  assert.equal(buildReportNote(null, { todayIso: "2026-10-25", throughLabel: "x" }), null);
+});
+
+test("dataThrough: newest UTC date and its upper bound", () => {
+  const day = (iso) => Date.parse(iso + "T00:00:00Z");
+  const rows = [
+    { Date: day("2026-10-23"), First: 1000, Last: 1999 },
+    { Date: day("2026-10-24"), First: 2000, Last: 2990 },
+  ];
+  const dt = dataThrough(rows);
+  assert.equal(dt.utcIso, "2026-10-24");
+  assert.ok(dt.before <= Date.parse("2026-10-25T00:00:00Z"));
+});

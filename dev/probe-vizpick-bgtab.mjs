@@ -20,6 +20,7 @@
 // Read-only: loads a report and observes it.
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +31,7 @@ const REPORT_URL =
   "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPickDetails?:iid=1&:linktarget=_self";
 const TOOLBAR = '[data-tb-test-id="viz-viewer-toolbar-button-download"]';
 const WAIT_MS = 120_000;
-const OUT = resolve(HERE, "vizpick-bgtab-probe.json");
+const OUT = resolve(DATA_DIR, "vizpick-bgtab-probe.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { startedAt: new Date().toISOString(), waitMs: WAIT_MS, trials: {} };

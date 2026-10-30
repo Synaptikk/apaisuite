@@ -11,8 +11,8 @@ Companion files (same folder):
 
 - `CLEARSIGHT_INTAKE_FIELDS.md` — every page, field, option list and
   visibility rule, flattened from the template metadata.
-- `clearsight-intake-catalog.json` — the same, machine-readable (1,053 fields).
-- `clearsight-intake-lookups.json` — every option list (235 lookups, full).
+- `~/Desktop/data/apaisuite/clearsight-intake-catalog.json` — the same, machine-readable (1,053 fields).
+- `~/Desktop/data/apaisuite/clearsight-intake-lookups.json` — every option list (235 lookups, full).
 - `probe-cs-uat-*.mjs` — the CDP scripts used (debug Edge on :9222).
 
 ---
@@ -470,7 +470,7 @@ fine (nothing sensitive travels out) but scans are not.
 | Classify page | Windows built-in OCR (`Windows.Media.Ocr`, on-device) reads the printed title, corner code (`INCR`, `WITS`, `ECST`, `MEDA`) and revision date | `dev/win-ocr.ps1` + `dev/scan-classify.py`; high-confidence match on the test form. |
 | Locate answers | Printed labels give anchor boxes; crop right/below each | `scan-classify.py --crops`; `scan-lines.py` splits multi-line boxes. |
 | Packet checklist | Required / conditional / optional forms per path from the packet cover pages | `dev/packet-status.py CUST …` prints scanned vs missing. |
-| Read handwriting, on-device | Windows OCR: fails (name → "B adAock"). TrOCR (transformers.js, quantized, ~250 MB) is the local candidate, but its weights sit on a Hugging Face CDN that **McAfee Web Gateway blocks by category** — curl, Node and Edge all refused. Would have to be served from qrcallbox.com. | Not yet tested; runtime installed in `dev/`, config files in `dev/.models/`. |
+| Read handwriting, on-device | Windows OCR: fails (name → "B adAock"). TrOCR (transformers.js, quantized, ~250 MB) is the local candidate, but its weights sit on a Hugging Face CDN that **McAfee Web Gateway blocks by category** — curl, Node and Edge all refused. Would have to be served from qrcallbox.com. | Not yet tested; runtime installed in `dev/`, config files moved to `~/Desktop/data/apaisuite/trocr/.models/`, scripts to `~/Desktop/Misc/trocr-scripts/` (2026-10-30). |
 | **Read handwriting, Walmart gateway** | **`https://puppy-backend.walmart.com/anthropic`** (the internal AI gateway Code Puppy uses; `.walmart.com`, no proxy). Anthropic-compatible; models `claude-opus-5` and `claude-sonnet-5` (plus Gemini and GPT routes). Auth = the user's `puppy_token` JWT from `~/.code_puppy/puppy.cfg` sent as `X-Api-Key` (models.json holds a `$puppy_token` placeholder). **Claude Opus 5 transcribed all 16 crops of the test form exactly** (name, address, phone, narrative with the writer's spelling kept, blanks as null) in 10.6 s. | `dev/gateway-ocr-test.py` (run with the code-puppy venv python; uses the Walmart CA bundle). This is the sanctioned route; confirm with InfoSec that the gateway is approved for this data class, and note the token expires (2026-10-05 for the current one) so the module needs the same sign-in flow Code Puppy has. |
 
 ## 6d. Video (2026-09-16, research in progress)

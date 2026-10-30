@@ -692,20 +692,23 @@ export async function mount(host, container) {
     });
   }
 
+  const failedMsg = (failed) => `Polaris refused ${failed.length} associate(s); their changes are still in the queue — ${failed.map((f) => `${f.name}: ${f.error}`).join("; ")}`;
   async function save(list, { result, what, undoOf = null }) {
     const ok = await confirmSave(list, result, what); if (!ok) return false;
     setBusy(true, "Saving to the scheduler, then reading it back…");
     try {
       const r = await send("save", { changes: list, allowWarnings: ok.allowWarnings, undoOf }); if (!r.ok) throw new Error(r.error);
       if (!r.result.saved) throw new Error(`Not saved — ${r.result.why}`);
-      const bad = (r.result.saveStatus || []).filter((s) => s.status !== "SUCCESS");
+      const failed = r.result.failed || [];
+      const bad = (r.result.saveStatus || []).filter((s) => s.status !== "SUCCESS" && s.status !== "FAILED");
       const miss = r.entry.misses || [];
       if (bad.length || miss.length) console.warn("[scheduleright] save detail", { saveStatus: bad, misses: miss });
       host.ui.toast(`Saved ${r.result.applied.length} change(s)${bad.length || miss.length ? ` — ${bad.length + miss.length} need a look` : ""}.`, { kind: bad.length || miss.length ? "error" : "ok", durationMs: 8000 });
       history = [r.entry, ...history.filter((h) => h.id !== r.entry.id)];
       if (undoOf) { const src = history.find((h) => h.id === undoOf); if (src) src.undoneAt = r.entry.at; }
       renderHistory();
-      return true;
+      if (failed.length) status(failedMsg(failed), "error");
+      return r.result;
     } catch (e) { status(e.message, "error"); return false; }
     finally { if (alive) setBusy(false); }
   }
@@ -716,8 +719,10 @@ export async function mount(host, container) {
     if (!check || check.sig !== sig()) { const r = await validate(); if (!r || r.error) return; }
     if (!canSave()) { status("The scheduler flagged some changes — see the marked lines, fix or remove them, then Submit again.", "error"); return; }
     const list = queue.slice();
-    if (await save(list, { result: check.result, what: `${list.length} change(s) to store ${data.ctx.store}, WK ${data.ctx.wk}. An undo entry is kept under Saved changes.` })) {
-      setQueue([]); await load({ wk: data.ctx.wk, fresh: true });
+    const done = await save(list, { result: check.result, what: `${list.length} change(s) to store ${data.ctx.store}, WK ${data.ctx.wk}. An undo entry is kept under Saved changes.` });
+    if (done) {
+      setQueue((done.failedIdx || []).map((i) => list[i]).filter(Boolean)); await load({ wk: data.ctx.wk, fresh: true });
+      if (done.failed?.length) status(failedMsg(done.failed), "error"); // the reload cleared it
     }
   }
 

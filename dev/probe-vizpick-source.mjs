@@ -17,6 +17,7 @@
 //   node dev/probe-vizpick-source.mjs
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +26,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BROWSER_URL = process.env.EDGE_CDP_URL || "http://localhost:9222";
 const REPORT_URL =
   "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/VizPick?:iid=1&:linktarget=_self";
-const OUT = resolve(HERE, "vizpick-source-probe.json");
+const OUT = resolve(DATA_DIR, "vizpick-source-probe.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { startedAt: new Date().toISOString(), steps: {} };

@@ -7,7 +7,8 @@ export function isTodayRowComplete(row) {
     && ["casesSeenPct", "locationPct", "pickPct", "overstockPct", "vizpick"]
       .every((key) => Number.isFinite(row[key]))
     && Array.isArray(row.deptGroups) && row.deptGroups.length > 0
-    && row.locations != null && Array.isArray(row.locations.gaps);
+    && row.locations != null
+    && (Array.isArray(row.locations.gaps) || row.locations.picksUnavailable === true);
 }
 
 // Preserve successful sections only within the same source version. A failed

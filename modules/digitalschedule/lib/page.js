@@ -132,7 +132,9 @@ export async function wfmInPage(ARGS) {
   const dayIdx = (d) => { if (d == null) return -1; const s = String(d).toLowerCase(); const i = DATES.indexOf(s); return i >= 0 ? i : SHORT.indexOf(s.slice(0, 3)); };
   const toMin = (t) => { const m = String(t).match(/^(\d{1,2}):(\d\d)$/); return m ? +m[1] * 60 + +m[2] : NaN; };
   const shiftBlockIndex = (s, e) => blocks._o({ shiftStart: lux.fromISO(s), shiftEnd: lux.fromISO(e), shiftBlocks: state().scheduler.shiftBlocks.data });
-  const common = { offsiteTypeId: null, shiftUpdateReasonId: null, shiftModRequestId: null };
+  // editReasonCode flag: posted weeks need a reason per edit (GET /api/scheduleEditReasonCodes);
+  // the user's default is 3 "Unanticipated Customer Demand" (2026-10-28).
+  const common = { offsiteTypeId: null, shiftUpdateReasonId: ARGS.reasonId ?? 3, shiftModRequestId: null };
   const byWorker = new Map(), base = new Map(), skipped = [], applied = [];
   const push = (map, w, sh) => { if (!map.has(w.workerId)) map.set(w.workerId, { workerId: w.workerId, name: w.name, payType: w.payType, shifts: [] }); map.get(w.workerId).shifts.push(sh); };
   const noop = (e) => ({ isDeleted: false, shiftId: e.shift.shiftId, breaks: (e.shift.breaks || []).map((b) => ({ paidInd: b.paidInd, startDate: b.startDate, endDate: b.endDate })), jobId: e.shift.jobId, jobName: e.shift.jobName,
@@ -237,9 +239,34 @@ export async function wfmInPage(ARGS) {
   if (result.hard.length) return { ...result, saved: false, why: "the scheduler will refuse some changes" };
   if (result.newWarnings.length && !ARGS.allowWarnings) return { ...result, saved: false, why: "new warnings need your OK first" };
   if (skipped.length && !ARGS.allowSkips) return { ...result, saved: false, why: "some changes couldn't be built — fix or remove them first" };
-  const saved = await api.qG(lux.fromISO(DATES[0]).toISO(), lux.fromISO(DATES[6]).toISO(), c.locationId, c.locationName, payload);
+  const errText = (e) => { const st = e?.response?.status, body = e?.response?.data;
+    const msg = body && (body.message || body.errorMessage || body.error || body.errors?.[0]?.message || (typeof body === "string" ? body : JSON.stringify(body)));
+    return `${st ? `HTTP ${st}` : "failed"}${body?.schedulerErrorCode ? ` (${body.schedulerErrorCode})` : ""}${msg ? ": " + String(msg).slice(0, 200) : ""}`; };
+  // api.qG posts to /api/v2/…/editSchedule while the v2ModifySchedule flag is on.
+  // 2026-10-28 V2 answered EVERY save with 20012 (even the UI's own no-op re-save)
+  // while V1 /api/location/{name}/editSchedule took the same body; a 20012 has
+  // written nothing, so the batch goes again through V1.
+  const ax = req(72760).u;
+  let via = "v2", saved;
+  try {
+    try { saved = await api.qG(lux.fromISO(DATES[0]).toISO(), lux.fromISO(DATES[6]).toISO(), c.locationId, c.locationName, payload); }
+    catch (e) { if (e?.response?.data?.schedulerErrorCode !== 20012) throw e; via = "v1";
+      saved = (await ax.post(`/api/location/${c.locationName}/editSchedule`, { weekStartDate: DATES[0], weekEndDate: DATES[6], locationId: c.locationId, locationName: c.locationName, workers: payload })).data; }
+  } catch (e) { // a 5xx can still have written part of the batch; the caller must reload before trusting the grid
+    return { error: `Polaris refused the save (${errText(e)}). Some changes may have landed — press Reload and check the week before saving again.`, saveFailed: true }; }
+  // the answer is per associate: one can fail while the rest land
+  const statusRows = (Array.isArray(saved) ? saved : []).map((r) => { const st = String(r.scheduleApiResponse?.status ?? r.status ?? "").toUpperCase() || null;
+    const v = r.validationApiResponse, bad = st === "FAILED" || String(v?.status || "").toUpperCase() === "FAILED";
+    const why = bad ? [...Object.values(v?.errorMsgs || {}), ...(v?.violations || []).filter((x) => x.type === "HARD").map((x) => x.message)].filter(Boolean).join("; ") : "";
+    return { workerId: r.workerId, name: names[r.workerId], status: bad ? "FAILED" : st, ...(bad && { error: why || "refused" }) }; });
+  const failedIds = new Set(statusRows.filter((r) => r.status === "FAILED").map((r) => r.workerId));
+  result.failed = statusRows.filter((r) => r.status === "FAILED");
+  result.failedIdx = applied.filter((a) => failedIds.has(a.workerId)).map((a) => a.idx);
+  result.applied = applied.filter((a) => !failedIds.has(a.workerId));
+  if (!result.applied.length) return { error: `Polaris refused the save for everyone — ${result.failed.map((f) => `${f.name}: ${f.error}`).join("; ")}. Nothing was saved; press Reload and try again.`, saveFailed: true };
   result.saved = true;
-  result.saveStatus = (Array.isArray(saved) ? saved : []).map((r) => ({ workerId: r.workerId, name: names[r.workerId], status: r.scheduleApiResponse?.status ?? r.status ?? null }));
+  result.saveStatus = statusRows;
+  result.via = via;
   result.payload = payload;
   return result;
   };

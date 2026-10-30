@@ -21,6 +21,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,7 @@ const wsArg = process.argv.find((a) => a.startsWith("--worksheet="));
 const WORKSHEET = wsArg ? wsArg.split("=").slice(1).join("=") : null;
 
 const URL_ = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/AssociatePerformance?:iid=1&:linktarget=_self";
-const OUT = resolve(HERE, "tableau-jsapi-probe.json");
+const OUT = resolve(DATA_DIR, "tableau-jsapi-probe.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { url: URL_, startedAt: new Date().toISOString() };

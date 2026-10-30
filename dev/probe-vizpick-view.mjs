@@ -18,6 +18,7 @@
 // export. Never writes to Tableau.
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +31,7 @@ const sheetArg = process.argv.find((a) => a.startsWith("--sheet="));
 const FORCE_SHEET = sheetArg ? Number(sheetArg.split("=")[1]) : null;
 
 const REPORT_URL = `https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/VizPick/${VIEW}?:iid=1&:linktarget=_self`;
-const OUT = resolve(HERE, `vizpick-view-${VIEW}-probe.json`);
+const OUT = resolve(DATA_DIR, `vizpick-view-${VIEW}-probe.json`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { view: VIEW, url: REPORT_URL, startedAt: new Date().toISOString(), steps: {} };

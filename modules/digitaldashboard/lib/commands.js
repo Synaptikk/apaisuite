@@ -255,7 +255,26 @@ function staleWalk(mix, at) {
   return mix?.lastSeen && at && at - mix.lastSeen >= STALE_WALK_MIN * 60_000 ? ` (last one ${clockOf(mix.lastSeen)})` : "";
 }
 
+/**
+ * Stores without a planning board (user, 2026-10-25): no scheduled PICK hours means no "picks expected",
+ * so rank by what GIF already knows — each picker's pick rate today (leaderboard), lowest first, under target.
+ */
+export function formatPerformanceNoBoard(s, now = new Date()) {
+  const rows = (s?.leaderboard?.rows || []).filter((r) => Number.isFinite(r.rate));
+  const lines = [`Performance @ ${stamp(now)} - no planning board today, so this is GIF's pick rate today: pickers under ${PERF_PICK_RATE}/hr, lowest first`];
+  if (!rows.length) return `${lines[0]}\n- GIF's leaderboard hasn't been read yet today`;
+  const under = rows.filter((r) => r.rate < PERF_PICK_RATE).sort((a, b) => a.rate - b.rate);
+  if (!under.length) lines.push(`- everyone is at or above ${PERF_PICK_RATE}/hr`);
+  for (const r of under) {
+    const mix = s?.walkMix ? Object.entries(s.walkMix).find(([n]) => sameName(n, r.name))?.[1] : null;
+    lines.push(`- ${r.name}: ${Math.round(r.rate)}/hr` + (mix ? ` - ${mix.walks} walk${mix.walks === 1 ? "" : "s"}, ${n(mix.items)} items - walks seen: ${mixText(mix)}` : ""));
+  }
+  lines.push(`(${under.length} of ${rows.length} pickers under ${PERF_PICK_RATE}/hr. With a planning board this would also show picks behind for scheduled PICK hours.)`);
+  return lines.join("\n\n");
+}
+
 export function formatPerformance(s, board, now = new Date()) {
+  if (!(board || []).some((b) => b?.name && b.status !== "absent" && pickHours(b).length)) return formatPerformanceNoBoard(s, now);
   const rv = performanceReview(withLeaderboardRates(s?.rows, s?.leaderboard), board, { leaderboard: s?.leaderboard, absences: s?.absences, now });
   const lines = [`Performance @ ${stamp(now)} - pickers behind ${PERF_PICK_RATE}/hr for their scheduled PICK hours, most behind first`];
   if (!rv.considered && !rv.absent.length && !rv.calledOut.length) return `${lines[0]}\n- nobody on today's board with PICK hours`;

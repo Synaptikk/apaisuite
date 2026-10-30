@@ -6,7 +6,7 @@
 // dev/CLEARSIGHT_INTAKE_FINDINGS.md §1 and the write-capable client in
 // modules/incidentintake/lib/clearsight.js).
 //
-// Endpoints recorded live on prod 2026-09-22 (dev/.claim-probe/):
+// Endpoints recorded live on prod 2026-09-22 (~/Desktop/data/apaisuite/.claim-probe/):
 //   quick search  GET RMIS/STARS.Claim.mvc/metadata/StormsQuickSearchResult
 //                     ?pageNumber=0&quickSearchCriteria=<text>&SessionMode=ReadOnly
 //                 → { Rows: [{ Key: "<claimId>", ClaimNumber, CoverageCode, ... }] }

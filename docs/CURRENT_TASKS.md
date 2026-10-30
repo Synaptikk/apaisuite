@@ -10,6 +10,36 @@ notes live in `QRCallBox/public/extension/releases.json`.
 
 ## In-flight
 
+### 0000000000. GIF Phone Setup page (2026-10-30)
+
+**Asked:** one page for any user: plug the phone into a PC running the suite,
+and the extension sets it up to stay on and awake, installs GIF Companion and
+starts it. Guide covers only what a person must do.
+
+**Built:** `modules/gifphone/` — page guide (enrolled phone with GIF signed in,
+Wi-Fi, USB debugging, QRCallBox key) + one button. `lib/adb.js` = adb wire
+protocol over WebUSB (no adb.exe); `lib/adb_key.js` = browser RSA key, raw
+PKCS#1 signing of the AUTH token, adbkey.pub encoding (matches real adb's);
+`lib/setup.js` STEPS: check phone → find GIF → stay_on_while_plugged_in 15 +
+30-min timeout → install bundled APK to user 0 (skips same version; retries
+Play Protect / signature mismatch) → deviceidle whitelist + appops +
+notifications → accessibility service → QS pause tile → pair via
+`gifcompanion://pair?code=` (Digital Dashboard's pair_phone) → endpoint
+qrcallbox.com + enable + run → wait for the first reading (health).
+`gif-companion/build.sh` now copies the APK + version JSON into
+`modules/gifphone/vendor/`. Tests: `modules/gifphone/lib/tests` (7 pass).
+Verified on the live S24 (Android 17) over an adbd TCP forward with the
+PC's trusted key: steps phone…tile all OK, a 164 KB install streamed OK, phone
+resumed readings.
+
+**Open:** (1) The WebUSB picker + "Allow" prompt is not yet clicked through
+by a person. On this PC, adb.exe (kept alive by the old GIF daemon's
+keepReverse) holds the phone, so retire the daemon first. (2) Pair + start
+steps are untested live (would re-key the production phone). (3) Store is
+the Digital Dashboard's HOME_STORE (1458). (4) Needs a release (1.0.19) and
+an extension reload. The APK signing key `gif-companion/.keystore/` is
+gitignored; back it up, or later builds can't update installed phones.
+
 ### 000000000. Comp Shop Prep module (2026-10-23)
 
 **Asked:** produce on sale in the ALDI / Food City ads (±7 days) with photo,
@@ -887,8 +917,8 @@ the incident in Clearsight (Riskonnect) and attach the scans.
 
 **Where it stands:** discovery complete on the UAT site, nothing built.
 `dev/CLEARSIGHT_INTAKE_FINDINGS.md` has the whole picture; the field
-catalogue (`dev/CLEARSIGHT_INTAKE_FIELDS.md`, `dev/clearsight-intake-catalog.json`,
-`dev/clearsight-intake-lookups.json`) was pulled from the template metadata
+catalogue (`dev/CLEARSIGHT_INTAKE_FIELDS.md`, `~/Desktop/data/apaisuite/clearsight-intake-catalog.json`,
+`~/Desktop/data/apaisuite/clearsight-intake-lookups.json`) was pulled from the template metadata
 (`CsNoticeView` + `Lookup`), not scraped. Customer, associate and company
 property damage paths were walked live on UAT (notices 19060 submitted →
 incident 26005842; 19059 associate, past the WIN lookup; 19064 CPD, at its
@@ -933,7 +963,7 @@ per claim, and which Evidence Collection items are still missing.
   amount is a credit back** = charge reversed / dispute won; skip the
   ref-less totals row).
 - **Clearsight PROD is readable with plain GETs** — session cookie only, no
-  `custheader` (that is POST-only). Recorded in `dev/.claim-probe/` +
+  `custheader` (that is POST-only). Recorded in `~/Desktop/data/apaisuite/.claim-probe/` +
   `dev/probe-clearsight-claim.mjs`:
   - Quick search: `GET RMIS/STARS.Claim.mvc/metadata/StormsQuickSearchResult?pageNumber=0&quickSearchCriteria=<ref>&SessionMode=ReadOnly`
     → `Rows[0].Key` = ClaimID, `CoverageCode` (GL 20, WC 10, GK 22 — groupKeys

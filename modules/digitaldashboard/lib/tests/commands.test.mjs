@@ -150,3 +150,14 @@ test("!performance: board pickers behind 90/hr for their elapsed PICK hours, mos
 test("!pph with no reading from today says so instead of showing yesterday", () => {
   assert.equal(formatPph({ asOf: null, dayPicked: null, pph: null, completed: null }), "Store 1458 picks: no GIF reading yet today.");
 });
+
+test("formatPerformance without a planning board ranks GIF pick rates under 90/hr, lowest first", async () => {
+  const { formatPerformance } = await import("../commands.js");
+  const s = { leaderboard: { rows: [{ name: "Fast One", rate: 140 }, { name: "Slow One", rate: 61.5 }, { name: "Mid One", rate: 84 }] },
+    walkMix: { "Slow One": { walks: 4, items: 120, sections: { Ambient: 3, "Cold Chain": 1 } } } };
+  const out = formatPerformance(s, [], new Date(2026, 9, 25, 14, 0));
+  assert.match(out, /no planning board today/);
+  assert.ok(out.indexOf("Slow One") < out.indexOf("Mid One"));
+  assert.doesNotMatch(out, /Fast One/);
+  assert.match(out, /Slow One: 62\/hr - 4 walks, 120 items - walks seen: Ambient 3, Cold Chain 1/);
+});

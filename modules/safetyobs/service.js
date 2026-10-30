@@ -29,7 +29,7 @@ import { QUESTIONS, FORM_URL, missingAnswers, LOCATIONS, PROCESSES, TOOLS, TYPES
 import { FILL_FORM } from "./lib/form_fill.js";
 import { PAGE_URL, RESPONSES_URL, SILENT_SIGNIN_URL, FORMS_LOGIN_COOKIE, readPageTokens, buildResponseBody, responseHeaders } from "./lib/form_api.js";
 import { parseObservation, mergeAiPick } from "./lib/parse.js";
-import { buildCatchUp, buildCatchUpMessage, buildLedger, creditShiftDays, isCheckedTitle, mergeTodayCounts } from "./lib/coach_check.js";
+import { buildCatchUp, buildCatchUpMessage, buildLedger, buildReportNote, creditShiftDays, isCheckedTitle, mergeTodayCounts } from "./lib/coach_check.js";
 import { fetchSubmitters } from "../livedashboard/lib/sources/recognition.js";
 import { schedules, safetyObs } from "../digitalmetrics/lib/firestore.js";
 import { postTextToWorkvivo, listChannelMembers, findPostedMarker } from "../metricshot/lib/sendbird.js";
@@ -184,13 +184,15 @@ async function runCheck({ post, trigger }) {
     const live = await liveToday(s.storeNbr, dateIso);
     const today = mergeTodayCounts(liveForToday(led, live.entries, dateIso), led.todayObservations);
     const result = buildCatchUp({ ledgerRows: led.rows, schedule, members, today });
-    const message = buildCatchUpMessage(result.behind, { throughLabel: shortDay(throughIso), sinceLabel: monthDay(led.fromIso) });
+    const reportNote = buildReportNote(led.dataThrough, { todayIso: dateIso, throughLabel: shortDay(throughIso) });
+    const message = buildCatchUpMessage(result.behind, { throughLabel: shortDay(throughIso), sinceLabel: monthDay(led.fromIso), reportNote });
 
     const rec = {
       dateIso, throughIso, fromIso: led.fromIso, at: Date.now(), trigger, ok: true,
       checked: result.rows, behind: result.behind.map((c) => c.name), message: message?.text || null,
       observationsThrough: led.observationsThrough,
       observationsToday: led.observationsToday,
+      dataThrough: led.dataThrough, reportNote,
       liveToday: live.entries.length, liveError: live.error,
       membersError: mem.ok ? null : mem.error, posted: false,
     };
@@ -199,8 +201,12 @@ async function runCheck({ post, trigger }) {
     // would name coaches who already caught up: re-check later. Past
     // HOLD_UNTIL it posts anyway, unless yesterday (scheduled) still shows
     // none at all, a backlog a day stale. "Post now" always sends.
+    // The model's newest response (all stores) proves a refresh better than
+    // this store's own rows: a quiet morning at one store read as "not
+    // refreshed" (2026-10-25). The store's rows are the fallback.
     const yesterdayMissing = led.scheduledThrough && !led.observationsThrough;
-    if (post && trigger === "alarm" && (yesterdayMissing || !led.observationsToday)) {
+    const refreshedToday = led.dataThrough ? led.dataThrough.localIso >= dateIso : !!led.observationsToday;
+    if (post && trigger === "alarm" && (yesterdayMissing || !refreshedToday)) {
       const retryAt = Date.now() + HOLD_RETRY_MIN * 60_000;
       if (retryAt < nextAt(HOLD_UNTIL, new Date(new Date().setHours(0, 0, 0, 0)))) {
         await chrome.alarms.create(ALARM_RETRY, { when: retryAt });
@@ -393,6 +399,7 @@ async function ledgerThrough(s, throughIso, from) {
     ok: true, fromIso, toIso: throughIso, ...led,
     scheduledThrough: days.some((d) => d.dateIso === throughIso),
     shiftDays,
+    dataThrough: obs.dataThrough || null,
     // Refresh proofs read the rows' own dates, before the overnight credit.
     observationsThrough: obs.rows.filter((r) => r.dateIso === throughIso).reduce((n, r) => n + r.count, 0),
     todayObservations: todayObservations.map(({ name, count }) => ({ name, count })),

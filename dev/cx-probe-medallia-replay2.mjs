@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import fs from "node:fs";
 const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null });
 let pages = await browser.pages();
@@ -76,5 +77,5 @@ for (const t of TESTS) {
   if (res.cursor) console.log("  cursor:", JSON.stringify(res.cursor));
   out[t.name] = res;
 }
-fs.writeFileSync(process.env.OUT || "cx-replay2.json", JSON.stringify(out, null, 1));
+fs.writeFileSync(process.env.OUT || DATA_DIR + "/cx-replay2.json", JSON.stringify(out, null, 1));
 await browser.disconnect();

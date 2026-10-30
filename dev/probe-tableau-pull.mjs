@@ -19,6 +19,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,7 @@ const DATE_COUNT = Number(arg("dates", "3"));
 const WORKSHEET = arg("worksheet", "Associate By Day");
 
 const URL_ = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/AssociatePerformance?:iid=1&:linktarget=_self";
-const OUT = resolve(HERE, "tableau-pull-probe.json");
+const OUT = resolve(DATA_DIR, "tableau-pull-probe.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { url: URL_, store: STORE, week: WEEK, worksheet: WORKSHEET, startedAt: new Date().toISOString(), steps: {} };

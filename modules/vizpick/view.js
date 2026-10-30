@@ -1552,6 +1552,9 @@ export async function mount(host, container) {
     if (r.locationsWithheld) {
       return `<p class="vizpick-dept-none">Associate list unavailable. Refresh to retry.</p>`;
     }
+    if (r.locations?.picksUnavailable) {
+      return `<p class="vizpick-dept-none">Tableau no longer reports picks per location, so picks left by associate are unavailable.</p>`;
+    }
     if (!Array.isArray(gaps)) {
       return `<p class="vizpick-dept-none">No location detail captured for this store.</p>`;
     }

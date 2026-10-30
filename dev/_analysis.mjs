@@ -1,6 +1,7 @@
 // dev/_analysis.mjs — scratch. (1) ThirdPartyAgentTheft events at 1458 by reporter,
 // (2) evidenceLockerView samples for the new livedashboard auror source.
 import fs from "node:fs";
+import { DATA_DIR } from "./_datadir.mjs";
 import { targets, connect, sleep } from "./_cdp.mjs";
 
 const SITE_TRAIT = "SITE: WALMART 1458 - 3040 BATTLEFIELD PKWY, FORT OGLETHORPE, GA";
@@ -82,6 +83,6 @@ for (const r3 of (recent.searchResults ?? []).slice(0, 4)) {
   lockerSamples.push({ id, type: r3.eventType, locker: p?.evidenceLockerView ?? null });
 }
 
-fs.writeFileSync(new URL("./_analysis-out.json", import.meta.url), JSON.stringify({ totalThirdParty: all.length, events, lockerSamples }, null, 1));
-console.error("wrote dev/_analysis-out.json");
+fs.writeFileSync(DATA_DIR + "/_analysis-out.json", JSON.stringify({ totalThirdParty: all.length, events, lockerSamples }, null, 1));
+console.error("wrote " + DATA_DIR + "/_analysis-out.json");
 c.close();

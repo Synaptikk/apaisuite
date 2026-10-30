@@ -1,0 +1,71 @@
+<div class="gp">
+  <header class="gp-header">
+    <h1>GIF Phone Setup</h1>
+    <p class="gp-lede">Turns a spare work phone into the reader that feeds the Digital Dashboard. You do the four things on the left; the button does the rest.</p>
+  </header>
+
+  <div class="status-strip" data-note hidden></div>
+
+  <div class="gp-cols">
+    <section class="gp-panel gp-guide">
+      <h2>What you do</h2>
+
+      <h3>Once per phone, before you start</h3>
+      <ol class="gp-todo">
+        <li>
+          <strong>GIF works on the phone.</strong> The phone is enrolled (Hub app says Compliant), GIF is installed in the work profile, and you've signed in to GIF once.
+          <span class="gp-check" data-check="gif"></span>
+        </li>
+        <li>
+          <strong>The phone is on Wi-Fi</strong> and stays on it. Readings go straight from the phone to qrcallbox.com.
+        </li>
+        <li>
+          <strong>Turn on USB debugging.</strong>
+          Settings → About phone → Software information → tap <em>Build number</em> 7 times (enter the phone PIN if asked).
+          Back out to Settings → Developer options → turn on <em>USB debugging</em>.
+        </li>
+        <li>
+          <strong>Your QRCallBox key is in the suite.</strong> Open the Workvivo module once and save your key if it asks.
+          <span class="gp-check" data-check="key">Checking…</span>
+        </li>
+      </ol>
+
+      <h3>Then</h3>
+      <ol class="gp-todo" start="5">
+        <li>Plug the phone into this PC with a cable that carries data (not a charge-only cable). Unlock it.</li>
+        <li>Press <strong>Set up phone</strong>, pick the phone in the list the browser shows, and press <em>Connect</em>.</li>
+        <li>On the phone, tick <em>Always allow from this computer</em> and tap <em>Allow</em>.</li>
+        <li>Wait for every step to go green (about 2 minutes). Leave the phone plugged in, face up. If GIF asks you to sign in, sign in. That's it.</li>
+      </ol>
+
+      <details class="gp-help">
+        <summary>If it gets stuck</summary>
+        <ul>
+          <li><strong>The phone isn't in the browser's list:</strong> USB debugging is off, or the cable only charges. On the phone pull down the notification shade, tap the USB notice and pick <em>File transfer</em>; try another cable.</li>
+          <li><strong>"Another program on this PC is using the phone":</strong> close Android Studio or any adb window, unplug and replug, press Set up again.</li>
+          <li><strong>The phone never asked to Allow:</strong> unplug, replug, and unlock the phone. In Developer options, <em>Revoke USB debugging authorisations</em> then try again.</li>
+          <li><strong>Install blocked:</strong> if the phone shows "Install anyway", tap it and press Set up again. A "work policy" error needs IT.</li>
+          <li><strong>No first reading:</strong> look at the phone. A GIF sign-in, a "session expired" box or a Hub certificate message needs a person. Fix it and the readings start on their own.</li>
+          <li>Every step is safe to repeat, so pressing <strong>Set up phone</strong> again is always fine.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="gp-panel gp-run">
+      <div class="gp-run-head">
+        <h2>What setup does</h2>
+        <button class="btn btn-primary" data-action="setup">Set up phone</button>
+      </div>
+      <p class="gp-device" data-device>No phone connected.</p>
+      <ol class="gp-steps" data-steps></ol>
+      <div class="gp-progress" data-progress hidden><span></span></div>
+      <details class="gp-log-wrap">
+        <summary>Details</summary>
+        <pre class="gp-log" data-log></pre>
+      </details>
+      <div class="gp-after" data-after hidden>
+        <p><strong>Done.</strong> Keep the phone plugged in (this PC or any charger) and on Wi-Fi. The Digital Dashboard's status pill shows it reporting. To use the phone for something else, swipe down and tap the <em>GIF Companion</em> pause tile.</p>
+      </div>
+    </section>
+  </div>
+</div>

@@ -26,6 +26,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,7 @@ const REPORT_URL = `https://stores.tableau.wal-mart.com/#/site/${SITE}/views/${W
 // carry live report contents (associate names among them). A name like
 // "tableau-probe-<workbook>.json" puts the prefix in the wrong place and the
 // file lands untracked-but-committable in a public repo.
-const OUT = resolve(HERE, `tableau-${WORKBOOK}-${VIEW}-probe.json`);
+const OUT = resolve(DATA_DIR, `tableau-${WORKBOOK}-${VIEW}-probe.json`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = {

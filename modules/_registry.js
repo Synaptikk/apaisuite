@@ -34,6 +34,7 @@ import market120         from "./market120/module.js";
 import metricshot        from "./metricshot/module.js";
 import vizpick           from "./vizpick/module.js";
 import digitaldashboard  from "./digitaldashboard/module.js";
+import gifphone          from "./gifphone/module.js";
 import digitalmetrics    from "./digitalmetrics/module.js";
 import digitalschedule   from "./digitalschedule/module.js";
 import costinventory     from "./costinventory/module.js";
@@ -56,6 +57,7 @@ export default [
   metricshot,        // Scheduled screenshots → Workvivo
   vizpick,           // VizPick Market Rollup — every store in a market at once
   digitaldashboard,  // Digital Dashboard — GIF store metrics (repurposed from digitalrollup)
+  gifphone,          // GIF Phone Setup — WebUSB adb: keep awake, install GIF Companion, pair, start
   digitalmetrics,    // Digital Metrics — analytics, schedule import, task grid
   digitalschedule,   // ScheduleRight — WFM coverage (any team / role / job) vs guidance, validated shift edits, fit-to-guidance, undo
   cx,                // Cx — store NPS + Medallia comment themes, what's going right/wrong

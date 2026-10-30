@@ -24,6 +24,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +40,7 @@ const STORE = arg("store", "1458");
 const DONOR = arg("donor", join(homedir(), "Downloads", "DMtool", "popup.js"));
 
 const URL_ = "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/scheduler";
-const OUT  = resolve(HERE, "wfm-schedule-probe.json");
+const OUT  = resolve(DATA_DIR, "wfm-schedule-probe.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 if (!existsSync(DONOR)) {

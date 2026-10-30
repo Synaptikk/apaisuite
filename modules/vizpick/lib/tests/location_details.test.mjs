@@ -263,3 +263,20 @@ test("asking for scans does not change gaps or the department rollup", () => {
   assert.deepEqual(wide.gaps, plain.gaps);
   assert.deepEqual(wide.byLocGroup, plain.byLocGroup);
 });
+
+test("2026-10-30 layout without per-bin pick columns keeps scans, nulls picks", () => {
+  const T = "\t";
+  const text = [
+    ["Location", "Seen Today", "Pallets", "Max. last_seen_timestamp", "Max. user_id", "Total Picked"].join(T),
+    ["002/004", "Yes", "1/1", "10/30/2026 6:02:33 AM", "j0p19v4", "0"].join(T),
+    ["039/001", "Yes", "0/0", "10/30/2026 7:01:15 AM", "l0s0oey", "0"].join(T),
+    ["039/002", "No", "0/0", "10/29/2026 7:01:15 AM", "l0s0oey", "0"].join(T),
+  ].join("\r\n");
+  const r = parseLocationDetails(text, { allScans: true });
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.picksUnavailable, true);
+  assert.equal(r.gaps, null);
+  assert.equal(r.bins, null);
+  assert.equal(r.scans.length, 3);
+  assert.equal(r.byLocGroup["39"].locsSeen, 1);
+});

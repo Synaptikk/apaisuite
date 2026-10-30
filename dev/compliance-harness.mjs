@@ -3,8 +3,9 @@
 // Enviance portal tab: chrome.tabs/scripting are stubbed so executeScript evaluates the
 // page function in that tab over CDP; chrome.storage.local is a JSON file in dev/.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { DATA_DIR } from "./_datadir.mjs";
 const [handler, msgJson = "{}", out] = process.argv.slice(2);
-const STORE = new URL("./.compliance-harness-storage.json", import.meta.url);
+const STORE = DATA_DIR + "/.compliance-harness-storage.json";
 const mem = existsSync(STORE) ? JSON.parse(readFileSync(STORE, "utf8")) : { "compliance.settings.v1": { facility: "1458" } };
 const list = await (await fetch("http://127.0.0.1:9222/json/list")).json();
 const target = list.find((x) => x.type === "page" && x.url.startsWith("https://go.enviance.com/CustomApp/"));

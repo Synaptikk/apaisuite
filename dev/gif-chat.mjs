@@ -25,6 +25,7 @@ import { HOME_STORE, BREAK_LIMIT_MIN, pickersNow, normName, sameName, boardDay }
 import { withMeals, watchWithMeals } from "../modules/digitaldashboard/lib/break_log.js";
 import { rosterRows, rosterTotals } from "../modules/digitaldashboard/lib/store_roster.js";
 import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePickers, outputPickers } from "../modules/digitaldashboard/lib/staffing.js";
+import { forecast, forecastText } from "../modules/digitaldashboard/lib/capacity_sim.js";
 import { decodeAssignments, decodeClassifications } from "../modules/digitalmetrics/lib/codec.js";
 import { BACKEND } from "../modules/digitalmetrics/lib/config.js";
 import { isoDay } from "../modules/digitalmetrics/lib/pull_schedule.js";
@@ -130,7 +131,15 @@ export function createChat({ port, log, punchesFor = () => ({}) }) {
   let lastWatch = null;
 
   async function checkBreaks() {
-    const scheduled = pickersNow(await todaysRoster(), new Date());
+    const board = await todaysRoster();
+    let scheduled = pickersNow(board, new Date());
+    // No planning board today (stores that don't use it, user 2026-10-25): watch the digital associates GIF
+    // has on its roster instead of the board's PICK list.
+    if (!scheduled.length && !board.some((r) => Object.values(r?.slots || {}).some((c) => String(c ?? "").trim().toUpperCase() === "PICK"))) {
+      const classify = await classifier();
+      const gifRoster = (await local("/store", {}, 15_000).catch(() => ({}))).roster?.associates || {};
+      scheduled = Object.keys(gifRoster).filter((n) => DIGITAL_CLASSES.has(classify(n)));
+    }
     if (!scheduled.length) return (lastWatch = { checkedAt: new Date().toISOString(), scheduledCount: 0, suspects: [], note: "no one on the grid to pick this hour" });
     // maxAge under the 3-min cadence so each background run really recomputes;
     // the daemon reuses the phone's latest Not active list and cached last-seens.
@@ -211,7 +220,21 @@ export function createChat({ port, log, punchesFor = () => ({}) }) {
         expressPerHour: s.express?.avgItemsPerHour, now: now() });
       // live pace per open due hour first (due 30 min before the slot), then the board check
       const pace = slotPace({ open: s.open, rate: s.pph?.perHour, perPicker: plan?.perPicker, now: now() });
-      if (cmd === "staffing") return staffingText(plan, now(), pace, roster);   // one line per due time, live pace folded in, then the board's pickers for every hour
+      if (cmd === "staffing") {
+        // the forecast (capacity_sim.js): walks in progress, pick windows, breaks/lunch, per-picker rates;
+        // no-board stores get the live-pickers version. Falls back to the one-hour estimate on any error.
+        try {
+          const st = await local("/store", { cached: 1 }, 15_000).catch(() => ({}));
+          const mix = Object.values(st.walkMix || {}).reduce((a, x) => [a[0] + (x.items || 0), a[1] + (x.walks || 0)], [0, 0]);
+          const fc = forecast({ open: s.open, upcoming: s.upcoming, roster, leaderboard: st.leaderboard?.rows, storeRate: s.storeKpis?.avgPickRate,
+            watch: lastWatch || s.watch, expressPerHour: s.express?.avgItemsPerHour, avgWalkItems: mix[1] >= 20 ? mix[0] / mix[1] : undefined,
+            activeNow: active?.active ?? s.storeKpis?.picking, now: now() });
+          return forecastText(fc, { readAt: readAt(), picking: s.storeKpis?.picking, storeRate: s.storeKpis?.avgPickRate, roster });
+        } catch (e) {
+          log("chat: staffing forecast failed, using the hourly estimate:", e.message);
+          return staffingText(plan, now(), pace, roster);
+        }
+      }
       return [formatSummary(s, lastWatch, readAt()), pace[0] ? paceLine(pace[0]) : null, staffingLine(plan)].filter(Boolean).join("\n");
     }
     return formatPph(s, readAt());
@@ -280,6 +303,7 @@ export function createChat({ port, log, punchesFor = () => ({}) }) {
     }
   }
   return {
+    answer,   // the reply for one command, without posting it (tests / dry runs)
     start: () => {
       if (!existsSync(KEY_FILE)) { for (const c of CHANNELS) status[c] = "off (no key file)"; log(`chat: listener off — no ${KEY_FILE}`); return; }
       for (const c of CHANNELS) loop(c).catch((e) => { status[c] = "stopped"; log(`chat: "${c}" loop died:`, e.message); });

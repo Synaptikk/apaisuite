@@ -35,7 +35,7 @@ const DEFAULT_PARAMS = {
 };
 
 // Per-category filter combinations. Derived from utils.dept.sbuIdDepts in
-// dev/hoops-perstore-probe.json:
+// ~/Desktop/data/apaisuite/hoops-perstore-probe.json:
 //   sbu=1 → Food (Service Deli, Bakery, Meat, Produce, etc. — incl. all
 //           Fresh subdepts)
 //   sbu=3 → General Merchandise (Toys, Sporting Goods, Electronics, etc.)

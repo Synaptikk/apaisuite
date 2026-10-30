@@ -3,10 +3,11 @@
 // full details for review (was it really third-party shopper/delivery theft?).
 // Raw CDP (single target) — puppeteer attach hangs on frozen tabs.
 import fs from "node:fs";
+import { DATA_DIR } from "./_datadir.mjs";
 
 const SITE_TRAIT = "SITE: WALMART 1458 - 3040 BATTLEFIELD PKWY, FORT OGLETHORPE, GA";
 const BASE = "https://app.us.auror.co/api/spa";
-const OUT = new URL("./_omni-audit-out.json", import.meta.url);
+const OUT = DATA_DIR + "/_omni-audit-out.json";
 
 const list = async () => (await fetch("http://127.0.0.1:9222/json/list")).json();
 

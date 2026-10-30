@@ -1,0 +1,176 @@
+/* modules/gifphone/styles.css
+   Scoped under .module-gifphone. Colours and type from styles/tokens.css;
+   buttons and status strips are the shared components. */
+
+.module-gifphone .gp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-10);
+}
+
+.module-gifphone .gp-header h1 {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  color: var(--apai-heading);
+}
+
+.module-gifphone .gp-lede {
+  margin: var(--sp-2) 0 0;
+  color: var(--apai-muted);
+  max-width: 70ch;
+}
+
+.module-gifphone .gp-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .module-gifphone .gp-cols { grid-template-columns: 1fr; }
+}
+
+.module-gifphone .gp-panel {
+  background: var(--apai-bg-elev);
+  border: 1px solid var(--apai-border);
+  border-radius: 10px;
+  padding: var(--sp-5);
+}
+
+.module-gifphone .gp-panel h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-lg);
+  color: var(--apai-heading);
+}
+
+.module-gifphone .gp-panel h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-md);
+  color: var(--apai-ink-soft);
+}
+
+.module-gifphone .gp-todo {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  line-height: 1.5;
+}
+
+.module-gifphone .gp-check {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--apai-muted);
+}
+.module-gifphone .gp-check[data-ok="1"] { color: var(--apai-success); }
+.module-gifphone .gp-check[data-ok="0"] { color: var(--apai-error); }
+
+.module-gifphone .gp-help {
+  margin-top: var(--sp-4);
+  border-top: 1px solid var(--apai-border-soft);
+  padding-top: var(--sp-3);
+}
+.module-gifphone .gp-help summary,
+.module-gifphone .gp-log-wrap summary {
+  cursor: pointer;
+  color: var(--apai-link);
+}
+.module-gifphone .gp-help ul {
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  line-height: 1.5;
+}
+
+.module-gifphone .gp-run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.module-gifphone .gp-run-head h2 { margin: 0; }
+
+.module-gifphone .gp-device {
+  margin: var(--sp-2) 0 var(--sp-3);
+  color: var(--apai-muted);
+  font-size: var(--fs-sm);
+}
+
+.module-gifphone .gp-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.module-gifphone .gp-step {
+  display: grid;
+  grid-template-columns: 1.6em 1fr;
+  column-gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 8px;
+  background: var(--apai-bg-soft);
+}
+.module-gifphone .gp-step::before {
+  grid-row: span 2;
+  font-weight: var(--fw-semi);
+  text-align: center;
+  color: var(--apai-muted);
+  content: "○";
+}
+.module-gifphone .gp-step[data-state="run"]::before  { content: "…"; color: var(--apai-info); }
+.module-gifphone .gp-step[data-state="ok"]::before   { content: "✓"; color: var(--apai-success); }
+.module-gifphone .gp-step[data-state="warn"]::before { content: "!"; color: var(--apai-warn); }
+.module-gifphone .gp-step[data-state="fail"]::before { content: "✗"; color: var(--apai-error); }
+.module-gifphone .gp-step[data-state="run"]  { background: var(--apai-info-bg); }
+.module-gifphone .gp-step[data-state="warn"] { background: var(--apai-warn-bg); }
+.module-gifphone .gp-step[data-state="fail"] { background: var(--apai-error-bg); }
+
+.module-gifphone .gp-step-title { color: var(--apai-ink); }
+.module-gifphone .gp-step-detail {
+  font-size: var(--fs-sm);
+  color: var(--apai-ink-soft);
+}
+.module-gifphone .gp-step-detail:empty { display: none; }
+
+.module-gifphone .gp-progress {
+  margin-top: var(--sp-3);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--apai-bg-soft);
+  overflow: hidden;
+}
+.module-gifphone .gp-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--apai-blue);
+  transition: width 0.2s;
+}
+
+.module-gifphone .gp-log-wrap { margin-top: var(--sp-4); }
+.module-gifphone .gp-log {
+  max-height: 16rem;
+  overflow: auto;
+  font-size: var(--fs-xs);
+  background: var(--apai-bg-soft);
+  padding: var(--sp-3);
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+
+.module-gifphone .gp-after {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: 8px;
+  background: var(--apai-success-bg);
+  line-height: 1.5;
+}
+.module-gifphone .gp-after p { margin: 0; }

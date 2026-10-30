@@ -323,7 +323,7 @@ export function mergeTodayCounts(...lists) {
  * @param {string} o.sinceLabel     ledger start, e.g. "8/22"
  * @returns {{text:string, mentionedUserIds:string[]}|null}
  */
-export function buildCatchUpMessage(behind, { throughLabel, sinceLabel, minPerDay = MIN_PER_DAY } = {}) {
+export function buildCatchUpMessage(behind, { throughLabel, sinceLabel, reportNote = null, minPerDay = MIN_PER_DAY } = {}) {
   if (!behind.length) return null;
   const lines = behind.map((c) => {
     const who = c.member ? `@[${c.member.nickname}](person:${c.member.userId})` : c.name;
@@ -334,10 +334,32 @@ export function buildCatchUpMessage(behind, { throughLabel, sinceLabel, minPerDa
   return {
     text: [
       `Safety observations: ${minPerDay} per scheduled day since ${sinceLabel}, counted through ${throughLabel}.`,
+      ...(reportNote ? [reportNote] : []),
       `To catch up:`,
       ...lines,
       `Everyone else on today: your usual ${minPerDay}.`,
     ].join("\n"),
     mentionedUserIds: behind.filter((c) => c.member).map((c) => c.member.userId),
   };
+}
+
+/**
+ * The post's line on how far Field_Dashboard reaches (the user, 2026-10-25:
+ * the 10/25 post went out at 11:33 with nothing past 8 PM 10/24, and two
+ * observations from that evening read as not done).
+ * @param {{localIso:string, before:number}|null} dataThrough   recognition.js::dataThrough
+ * @param {string} todayIso                     a response dated today means yesterday is all in
+ * @param {string} throughLabel                 e.g. "Sat 10/24"
+ */
+export function buildReportNote(dataThrough, { todayIso, throughLabel }) {
+  if (!dataThrough?.before) return null;
+  if (dataThrough.localIso >= todayIso) {
+    return `Field_Dashboard has all of ${throughLabel}'s observations; anything logged today shows up after its next refresh.`;
+  }
+  const t = new Date(dataThrough.before);
+  const day = t.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" }).replace(",", "");
+  const time = t.getHours() === 0 && t.getMinutes() === 0
+    ? "midnight"
+    : t.toLocaleTimeString("en-US", { hour: "numeric", ...(t.getMinutes() ? { minute: "2-digit" } : {}) });
+  return `Field_Dashboard was last updated with observations up to ${day} ${time}. Anything logged after that isn't counted yet and will show up after its next refresh.`;
 }

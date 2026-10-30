@@ -12,12 +12,12 @@
   "dispatcher_global_search": {
     "purpose": "The Global Search affordance on the Dispatcher Trip Dashboard.",
     "icon_trigger": {
-      "primary": "[title=\"Global Search\"]",
-      "fallback": [],
+      "primary": "[aria-label=\"Global Search\"]",
+      "fallback": ["[title=\"Global Search\"]"],
       "confidence": "LIKELY",
-      "drift_risk": "MEDIUM — title attribute is locale-dependent and may change with i18n.",
+      "drift_risk": "MEDIUM — Dispatcher moved this from title to aria-label by 2026-10-24; both are locale-dependent.",
       "owner_file": "extension/background.js:146",
-      "last_verified": "pre-2026-05-22"
+      "last_verified": "2026-10-24"
     },
     "search_input": {
       "_strategy": "First try the 'only visible input' heuristic; if multiple, fall back to TextField-module class-substring match.",

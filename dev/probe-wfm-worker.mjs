@@ -18,6 +18,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROWSER_URL = process.env.EDGE_CDP_URL || "http://localhost:9222";
 const URL_ = "https://workforce-planning-portal.us-walmart.prod.polaris.walmart.com/scheduler";
-const OUT = resolve(HERE, "wfm-worker-probe.json");
+const OUT = resolve(DATA_DIR, "wfm-worker-probe.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null })

@@ -38,6 +38,7 @@ import { openOutlookDraft } from "../../shared/outlook_send.js";
 import { PICK_DAYS_KEY, upsertDay } from "./lib/pick_days.js";
 import { rosterRows, rosterTotals } from "./lib/store_roster.js";
 import { staffingPlan, staffingLine, staffingText, slotPace, paceLine, activePickers, outputPickers } from "./lib/staffing.js";
+import { forecast, forecastText } from "./lib/capacity_sim.js";
 import { parseCommand, formatPph, formatExpress, formatSummary, formatBreaks, formatStore, formatHelp, formatBreakLog } from "./lib/commands.js";
 import { readChannelMessages, postTextToWorkvivo } from "../metricshot/lib/sendbird.js";
 import { isTrueAbsence, parseIvrName } from "../closinglist/lib/parse.js";
@@ -464,7 +465,22 @@ async function answerCommand(cmd) {
   const s = await refreshSummary({ maxAge: 120, wait: 90 }).catch((e) => ({ error: e.message }));
   if (s.error) return `Couldn't read GIF: ${s.error}`;
   if (cmd === "express") return formatExpress(s, new Date());
-  if (cmd === "staffing") return staffingText(s.staffing, new Date(), s.pace);
+  if (cmd === "staffing") {
+    // forecast (capacity_sim.js); falls back to the one-hour estimate on any error
+    try {
+      const roster = await todaysRoster();
+      const st = await daemon("/store", { cached: 1 }, { timeoutMs: 15_000 }).catch(() => ({}));
+      const mix = Object.values(st.walkMix || {}).reduce((a, x) => [a[0] + (x.items || 0), a[1] + (x.walks || 0)], [0, 0]);
+      const active = activePickers({ picking: s.storeKpis?.picking, watch: s.watch, now: new Date() });
+      const fc = forecast({ open: s.open, upcoming: s.upcoming, roster, leaderboard: st.leaderboard?.rows, storeRate: s.storeKpis?.avgPickRate,
+        watch: s.watch, expressPerHour: s.express?.avgItemsPerHour, avgWalkItems: mix[1] >= 20 ? mix[0] / mix[1] : undefined,
+        activeNow: active?.active ?? s.storeKpis?.picking, now: new Date() });
+      return forecastText(fc, { readAt: s.asOf ? new Date(s.asOf) : null, picking: s.storeKpis?.picking, storeRate: s.storeKpis?.avgPickRate, roster });
+    } catch (e) {
+      console.warn("[digitaldashboard] staffing forecast:", e?.message ?? e);
+      return staffingText(s.staffing, new Date(), s.pace);
+    }
+  }
   if (cmd === "summary") {
     const w = await cachedWatch();
     return [formatSummary(s, w, new Date()), s.pace?.[0] ? paceLine(s.pace[0]) : null, staffingLine(s.staffing)].filter(Boolean).join("\n");

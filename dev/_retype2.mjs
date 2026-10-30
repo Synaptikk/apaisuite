@@ -2,7 +2,7 @@
 // Usage: node dev/_retype2.mjs <tabId>
 import { connect, sleep } from "./_cdp.mjs";
 
-// eventId → expected original local date (from dev/_omni-compact.json)
+// eventId → expected original local date (from DATA_DIR/_omni-compact.json, ~/Desktop/data/apaisuite)
 const EVENTS = {
   "1841233":  "2022-12-19",
   "2523578":  "2023-04-23",

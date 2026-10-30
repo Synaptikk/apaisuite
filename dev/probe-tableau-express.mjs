@@ -11,6 +11,7 @@
 // of every worksheet. Output lands in a *-probe.json (gitignored).
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +24,7 @@ const QS = process.argv[2] || "STORE=1458";
 const VIEW = process.env.VIEW || "MetricOverviewandHourly";
 const URL_ = `https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/${VIEW}` +
   `?:iid=1&:linktarget=_self&${QS}`;
-const OUT = resolve(HERE, `tableau-${VIEW}-probe.json`);
+const OUT = resolve(DATA_DIR, `tableau-${VIEW}-probe.json`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null, protocolTimeout: 300_000 });

@@ -720,7 +720,7 @@ export const handlers = {
         tab.id,
         async (orderId) => {
           const sleep = ms => new Promise(r => setTimeout(r, ms));
-          const icon = document.querySelector('[title="Global Search"]');
+          const icon = document.querySelector('[aria-label="Global Search"], [title="Global Search"]');
           if (!icon) return { ok: false, skipped: true };
 
           icon.click();
@@ -835,7 +835,7 @@ export const handlers = {
 
           let icon = null;
           for (let i = 0; i < 30 && !icon; i++) {
-            icon = document.querySelector('[title="Global Search"]');
+            icon = document.querySelector('[aria-label="Global Search"], [title="Global Search"]');
             if (!icon) await sleep(500);
           }
           if (!icon) {

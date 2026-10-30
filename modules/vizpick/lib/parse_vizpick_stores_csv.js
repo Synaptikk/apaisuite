@@ -335,13 +335,19 @@ export function parseDeptBreakout(text) {
     clearanceCases:  col("Clearance Cases"),
     deletedCases:    col("Modular Deleted Cases"),
   };
-  if (idx.dept < 0 || idx.suggested < 0 || idx.casesExpected < 0) {
+  // On 2026-10-30 Tableau dropped all three pick columns from this sheet
+  // (and from the new "(Current Day Phone)" twin). Store-level Pick % still
+  // arrives through the donut-health sheet, which overrides `total` below, so
+  // picks are now optional: a sheet without them parses with null picks
+  // rather than failing every store. Requiring them failed the whole Today
+  // crawl with NO_CAPTURE, the same way the 2026-08-22 rename did.
+  const hasPicks = idx.suggested >= 0;
+  if (idx.dept < 0 || idx.casesExpected < 0) {
     // Name what is MISSING, not just what arrived. The old message dumped the
     // whole header row and left the reader to spot the difference — which is
     // precisely the step that made a column rename look like a broken capture.
     const missing = [
       idx.dept < 0 && "Dept",
-      idx.suggested < 0 && "Suggested Picks Seen / Suggested Picks",
       idx.casesExpected < 0 && "Cases Expected",
     ].filter(Boolean);
     return { ok: false, reason: `missing column(s) [${missing.join("; ")}]; got: ${headers.join(", ")}` };
@@ -356,9 +362,9 @@ export function parseDeptBreakout(text) {
     if (!dept) continue;
     if (dept.toLowerCase() === "total") {
       total = {
-        suggestedPicks:          num(c[idx.suggested]),
-        suggestedPicksCompleted: num(c[idx.completed]),
-        pickPct:                 pct(c[idx.pickPct]),
+        suggestedPicks:          hasPicks ? num(c[idx.suggested]) : null,
+        suggestedPicksCompleted: hasPicks ? num(c[idx.completed]) : null,
+        pickPct:                 idx.pickPct >= 0 ? pct(c[idx.pickPct]) : null,
         totalPicked:             num(c[idx.totalPicked]),
         casesSeen:               num(c[idx.casesSeen]),
         casesExpected:           num(c[idx.casesExpected]),
@@ -369,16 +375,16 @@ export function parseDeptBreakout(text) {
       };
     } else {
       deptCount++;
-      const suggestedPicks = num(c[idx.suggested]);
+      const suggestedPicks = hasPicks ? num(c[idx.suggested]) : null;
       const casesExpected  = num(c[idx.casesExpected]);
       // Nothing suggested AND nothing expected means the department simply is
       // not in play today. Its percentages are 0-of-0 artefacts, not results.
-      if (suggestedPicks <= 0 && casesExpected <= 0) continue;
+      if (!(suggestedPicks > 0) && casesExpected <= 0) continue;
       depts.push({
         dept,
         suggestedPicks,
-        suggestedPicksCompleted: num(c[idx.completed]),
-        pickPct:                 pct(c[idx.pickPct]),
+        suggestedPicksCompleted: hasPicks ? num(c[idx.completed]) : null,
+        pickPct:                 idx.pickPct >= 0 ? pct(c[idx.pickPct]) : null,
         casesSeen:               num(c[idx.casesSeen]),
         casesExpected,
         casesSeenPct:            pct(c[idx.casesSeenPct]),
@@ -710,9 +716,13 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   if (iLoc < 0) {
     return { ok: false, reason: `no column holds "<group>/<bin>" location codes; got: ${headers.join(", ")}` };
   }
-  if (iDone < 0 || iSug < 0 || iWin < 0 || iTs < 0) {
-    return { ok: false, reason: "location detail missing required pick counts, associate, or scan timestamp columns" };
+  if (iWin < 0 || iTs < 0) {
+    return { ok: false, reason: "location detail missing required associate or scan timestamp columns" };
   }
+  // Tableau dropped "Suggested Picks Seen/Done" from this sheet on 2026-10-30.
+  // Scans and location groups still parse; per-bin picks (gaps, bins) come
+  // back null with picksUnavailable set, so nothing reads "no picks left".
+  const hasPicks = iDone >= 0 && iSug >= 0;
 
   // NOT a department. Corrected 2026-08-22 on the analyst's call: the leading
   // segment of a location code is a BIN GROUP — the bins beginning 002 are
@@ -770,7 +780,7 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
     // keeps one of these per Tableau update so the day's progression — picks
     // appearing after the 9am baseline, who scanned what and when — can be
     // replayed. `gaps` cannot do that: a bin leaves it the moment it completes.
-    if (allScans) bins.push({
+    if (allScans && hasPicks) bins.push({
       location: loc, seen: sug, done,
       win: iWin >= 0 ? String(c[iWin] ?? "").trim() || null : null,
       lastSeenAt: ts,
@@ -801,6 +811,9 @@ export function parseLocationDetails(text, { allScans = false } = {}) {
   }
 
   if (!Object.keys(byLocGroup).length) return { ok: false, reason: "no parseable location rows" };
+  if (!hasPicks) {
+    return { ok: true, byLocGroup, gaps: null, scans: allScans ? scans : null, bins: null, locationCount: rows.length, picksUnavailable: true };
+  }
   return { ok: true, byLocGroup, gaps, scans: allScans ? scans : null, bins: allScans ? bins : null, locationCount: rows.length };
 }
 

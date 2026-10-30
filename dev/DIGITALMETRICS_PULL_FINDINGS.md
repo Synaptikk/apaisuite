@@ -289,7 +289,7 @@ per run and the columns show "—"; nothing else breaks.
 
 ## Privacy note
 
-`dev/wfm-schedule-probe.json` (the donor-replay dump) contains real names with
+`~/Desktop/data/apaisuite/wfm-schedule-probe.json` (the donor-replay dump; probe dumps now land outside the repo via `dev/_datadir.mjs`) contains real names with
 **`birthDate` and `hireDate`** — more sensitive than anything this module is
 designed to hold. It is gitignored via `*-probe.json`; delete it when done.
 `wfm-worker-probe.json` and `wfm-fiber-probe.json` are structure-only by

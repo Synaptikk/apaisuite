@@ -12,12 +12,13 @@
 // profile's frozen tabs — see memory: vizpick-tab-leak).
 
 import fs from "node:fs";
+import { DATA_DIR } from "./_datadir.mjs";
 
 const TARGET = process.argv[2];
 const CLAIM_ID = process.argv[3] || "10208885";
 const BASE = "https://www.riskonnectclearsight.com/Walmart";
 const DASH = `${BASE}/app/Clearsight/#/dashboards/stars.claim/${CLAIM_ID}`;
-const OUT = "dev/.claim-probe/";
+const OUT = DATA_DIR + "/.claim-probe/";
 fs.mkdirSync(OUT, { recursive: true });
 
 const ws = new WebSocket(`ws://127.0.0.1:9222/devtools/page/${TARGET}`);

@@ -2,6 +2,7 @@
 // Fetches the live CAS file (or uses a path argument) and runs both parsers
 // plus the summary composer on a canned digest. Run: node dev/accidents-check.mjs
 import fs from "node:fs";
+import { DATA_DIR } from "./_datadir.mjs";
 import { parseAccidentHtml } from "../modules/livedashboard/lib/sources/accident.js";
 import { parsePnl, rollupPnl } from "../modules/accidents/lib/cas.js";
 import { composeSummary } from "../modules/accidents/lib/summary.js";
@@ -31,7 +32,7 @@ check("rollup credit math", credit && credit.credited > 0 && credit.total === cr
   credit ? `${credit.ref}: charged ${credit.charged} credited ${credit.credited} net ${credit.total}` : "no credit ref");
 
 // summary composer on the probe's real claim FormData when present
-const probePath = new URL("./.claim-probe/resp-009.json", import.meta.url);
+const probePath = DATA_DIR + "/.claim-probe/resp-009.json";
 if (fs.existsSync(probePath)) {
   const d = JSON.parse(fs.readFileSync(probePath, "utf-8"));
   const digest = claimDigest(d);
@@ -44,7 +45,7 @@ if (fs.existsSync(probePath)) {
   check("summary mentions statement", s.includes("Customer statement (Ronald Nash)"));
   console.log("\n--- sample summary ---\n" + s + "\n----------------------");
 } else {
-  console.log("(skip digest checks — dev/.claim-probe/resp-009.json not present)");
+  console.log("(skip digest checks — .claim-probe/resp-009.json not in DATA_DIR)");
 }
 
 

@@ -1,5 +1,6 @@
 // Discover the Hoops ops-portal tRPC calls behind the NPS mega-card.
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import fs from "node:fs";
 
 const URL = "https://hoops.wal-mart.com/ops-portal/metrics/overview?bu=1458&buType=6&timeType=202";
@@ -26,8 +27,8 @@ for (const c of calls) {
   console.log(`${String(c.status).padEnd(4)} ${String(c.len).padEnd(8)} ${hasNps ? "[NPS] " : "      "}${short}`);
 }
 
-fs.writeFileSync(process.env.OUT || "cx-hoops-probe.json", JSON.stringify(calls, null, 1));
-console.log("\nwrote", process.env.OUT || "cx-hoops-probe.json");
+fs.writeFileSync(process.env.OUT || DATA_DIR + "/cx-hoops-probe.json", JSON.stringify(calls, null, 1));
+console.log("\nwrote", process.env.OUT || DATA_DIR + "/cx-hoops-probe.json");
 
 // Page text for the NPS card
 const text = await page.evaluate(() => document.body.innerText.slice(0, 6000));

@@ -1899,7 +1899,7 @@ ${itemsHtml}
         : `<span class="muted tiny">no data yet</span>`;
       const isOmsEntry = w.driverName === "Looked up via OMS";
       return `<tr${isOmsEntry ? ' class="sf-wl-oms-row"' : ""}>
-        <td><button class="sf-wl-name-btn" data-driver="${escapeHtml(w.driverName)}" data-store="${escapeHtml(w.store)}" title="Open recent trips at store ${escapeHtml(w.store)}">${escapeHtml(isOmsEntry ? "Driver unknown" : w.driverName)}</button>${isOmsEntry ? ' <span class="sf-wl-oms-warn" title="Driver unknown, so this entry isn't being checked. Remove it and watch the driver from a store search.">⚠ inactive</span>' : ""}</td>
+        <td><button class="sf-wl-name-btn" data-driver="${escapeHtml(w.driverName)}" data-store="${escapeHtml(w.store)}" title="Open recent trips at store ${escapeHtml(w.store)}">${escapeHtml(isOmsEntry ? "Driver unknown" : w.driverName)}</button>${isOmsEntry ? ' <span class="sf-wl-oms-warn" title="Driver unknown, so this entry is not being checked. Remove it and watch the driver from a store search.">⚠ inactive</span>' : ""}</td>
         <td class="mono">${escapeHtml(w.store)}</td>
         <td>${status}</td>
         <td class="muted tiny">${escapeHtml(seen)}</td>

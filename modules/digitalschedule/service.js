@@ -97,7 +97,7 @@ async function inPage(args) {
       ]);
       const v = res?.result;
       if (!v) throw new Error("No answer from the scheduler page.");
-      if (v.error) throw new Error(v.error + (v.available ? ` (weeks in the picker: ${v.available.map((a) => a.replace(/^Week /, "").split(",")[0]).join(", ")})` : ""));
+      if (v.error) throw Object.assign(new Error(v.error + (v.available ? ` (weeks in the picker: ${v.available.map((a) => a.replace(/^Week /, "").split(",")[0]).join(", ")})` : "")), { saveFailed: !!v.saveFailed });
       return v;
     } finally { clearTimeout(timer); }
   });
@@ -173,7 +173,11 @@ export const handlers = {
       if (msg.undoOf) { const src = hist.find((h) => h.id === msg.undoOf); if (src) src.undoneAt = entry.at; }
       await chrome.storage.local.set({ [HISTORY_KEY]: hist });
       return { ok: true, result, entry };
-    } catch (e) { return fail(e); }
+    } catch (e) {
+      // the save may have partly landed; force a reload before the next fit/check
+      if (e?.saveFailed) await chrome.storage.local.set({ [STALE_KEY]: Date.now() });
+      return fail(e);
+    }
   },
 
   async chat(msg) {

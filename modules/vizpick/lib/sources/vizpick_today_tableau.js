@@ -137,9 +137,10 @@ const GROUP_SHEET  = { match: "department groups donuts health", fallbackIndex: 
 const LOC_SHEET    = { match: "download location details", fallbackIndex: 4 };
 const UPDATE_SHEET = { match: "last update",                                fallbackIndex: 6 };
 
-// Header unique to the department-breakout export; "Suggested Picks" does not
-// appear in the Summary-by-Store crosstab, so it cannot cross-match.
-const DEPT_CSV_NEEDLE = "Suggested Picks";
+// Header unique to the department-breakout export; it does not appear in the
+// Summary-by-Store crosstab, so it cannot cross-match. Was "Suggested Picks"
+// until Tableau dropped the pick columns from this sheet on 2026-10-30.
+const DEPT_CSV_NEEDLE = "Modular Deleted Cases";
 // Unique to the donut-health sheet.
 const DONUT_CSV_NEEDLE = "New VizPick";
 // Unique to the department-groups sheet. "New VizPick" also appears there, so
@@ -858,7 +859,7 @@ async function captureStore(tabId, store, failures, replay, isHomeStore = false,
         // sheet to get it is the duplicate pull this replaces.
         const L = parseLocationDetails(loc.text, { allScans: isHomeStore });
         watchSourceSchema("vizpick.locationDetails", loc.text, L.ok);
-        if (L.ok) locations = { byLocGroup: L.byLocGroup, gaps: L.gaps, scans: L.scans, bins: L.bins, locationCount: L.locationCount };
+        if (L.ok) locations = { byLocGroup: L.byLocGroup, gaps: L.gaps, scans: L.scans, bins: L.bins, locationCount: L.locationCount, ...(L.picksUnavailable ? { picksUnavailable: true } : {}) };
         else failures.push({ store, reason: `locations parse: ${L.reason}`, soft: true });
       }
     } catch (e) {

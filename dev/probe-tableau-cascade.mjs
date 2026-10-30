@@ -21,6 +21,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,7 @@ const DATE_COUNT = Number(arg("dates", "2"));
 const LIST_ONLY = process.argv.includes("--list");
 
 const URL_ = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/AssociatePerformance?:iid=1&:linktarget=_self";
-const OUT = resolve(HERE, "tableau-cascade-probe.json");
+const OUT = resolve(DATA_DIR, "tableau-cascade-probe.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { store: STORE, startedAt: new Date().toISOString(), steps: {} };
 const save = () => writeFileSync(OUT, JSON.stringify(out, null, 2));

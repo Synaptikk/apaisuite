@@ -93,7 +93,8 @@ export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
     if (!res.ok) return res;
     const startsRes = await runQuery(tabId, transport, buildDayStartQuery({ modelId: transport.modelId, dateIso: shiftIso(fromIso, -1) }), "Day start");
     if (!startsRes.ok) return startsRes;
-    const dayStarts = readDayStarts(decodeRows(startsRes.json));
+    const startRows = decodeRows(startsRes.json);
+    const dayStarts = readDayStarts(startRows);
     const rows = decodeRows(res.json)
       .map((r) => ({ ...r, dateIso: localDayOf(epochToIsoDate(r.Date), Number(r.Id), dayStarts) }))
       .filter((r) => r.dateIso && r.dateIso >= fromIso && r.dateIso <= toIso)
@@ -101,7 +102,7 @@ export async function fetchSubmitters(storeNbr, fromIso, toIso = fromIso) {
         dateIso: r.dateIso, name: String(r.Name ?? "").trim(), email: String(r.Email ?? "").trim(),
         type: String(r.Type ?? ""), count: Math.max(1, Math.round(Number(r.Count) || 1)),
       }));
-    return { ok: true, fromIso, toIso, store: padStore(storeNbr), rows, capturedAt: new Date().toISOString() };
+    return { ok: true, fromIso, toIso, store: padStore(storeNbr), rows, dataThrough: dataThrough(startRows, dayStarts), capturedAt: new Date().toISOString() };
   });
 }
 
@@ -287,6 +288,7 @@ export function buildDayStartQuery({ modelId, dateIso }) {
     select: [
       ["Date", column("c", "GREGORIAN_DATE")],
       ["First", aggregate("h", "Id", AGG.MIN)],
+      ["Last", aggregate("h", "Id", AGG.MAX)],
     ],
     where: [whereDateRange(column("c", "GREGORIAN_DATE"), dateIso)],
   });
@@ -300,6 +302,32 @@ export function readDayStarts(rows) {
     if (d && id > 0) out[d] = id;
   }
   return out;
+}
+
+/**
+ * How far the model's data reaches (all stores), from buildDayStartQuery rows.
+ * The report's "Data updated" banner is a date only, and an update on 10/25
+ * still held nothing past 8 PM EDT on 10/24 (2026-10-25), so this reads the
+ * newest response instead. No row has a time of day, so `before` is an upper
+ * bound: the newest response came in before then.
+ * @returns {{utcIso:string, localIso:string, before:number}|null}
+ *   utcIso: newest GREGORIAN_DATE; localIso: the PC-local day of the newest
+ *   response; before: epoch ms the data ends by (at most now)
+ */
+export function dataThrough(rows, dayStarts = readDayStarts(rows)) {
+  let utcIso = null, lastId = 0;
+  for (const r of rows || []) {
+    const d = epochToIsoDate(r.Date), id = Number(r.Last);
+    if (d && id > 0 && (!utcIso || d > utcIso)) { utcIso = d; lastId = id; }
+  }
+  if (!utcIso) return null;
+  const localIso = localDayOf(utcIso, lastId, dayStarts);
+  // Newest response still on the previous local day: it ends by local midnight.
+  // Otherwise by the end of its UTC date.
+  const end = localIso < utcIso
+    ? new Date(utcIso + "T00:00:00").getTime()
+    : Date.parse(utcIso + "T00:00:00Z") + 86_400_000;
+  return { utcIso, localIso, before: Math.min(end, Date.now()) };
 }
 
 // Share of a UTC day's responses (all stores) that arrive per hour in the

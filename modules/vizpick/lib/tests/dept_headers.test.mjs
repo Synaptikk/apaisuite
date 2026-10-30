@@ -75,15 +75,36 @@ test("both spellings agree on the shape they produce", () => {
   assert.deepEqual(a, b);
 });
 
+test("2026-10-30 layout with no pick columns parses, picks null", () => {
+  // Tableau dropped Suggested Picks Seen / Done / Pick % from the sheet;
+  // store Pick % now comes only from the donut-health sheet.
+  const text = [
+    row("Dept", "Total Picked", "Cases Seen  ", "Cases Expected  ", "Cases Seen %",
+        "Overstock Exceptions", "Clearance Cases", "Modular Deleted Cases"),
+    row("Total", "114", "315", "18,683", "2%", "37", "2", "0"),
+    row("1", "0", "1", "263", "0%", "1", "0", "0"),
+    row("5", "0", "0", "0", "0%", "0", "0", "0"),
+  ].join("\r\n");
+  const r = parseDeptBreakout(text);
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.total.pickPct, null);
+  assert.equal(r.total.suggestedPicks, null);
+  assert.equal(r.total.casesExpected, 18683);
+  assert.equal(r.total.totalPicked, 114);
+  assert.equal(r.depts.length, 1);
+  assert.equal(r.depts[0].pickPct, null);
+  assert.equal(r.deptCount, 2);
+});
+
 test("a genuinely missing column names itself rather than dumping the header row", () => {
   const bad = [
-    row("Dept", "Pick %", "Cases Expected"),
+    row("Dept", "Pick %", "Cases Seen"),
     row("Total", "50%", "10"),
   ].join("\r\n");
   const r = parseDeptBreakout(bad);
   assert.equal(r.ok, false);
   assert.match(r.reason, /missing column\(s\)/);
-  assert.match(r.reason, /Suggested Picks Seen/);
+  assert.match(r.reason, /Cases Expected/);
   // The header row is still included — knowing what DID arrive is how the
   // rename was eventually spotted.
   assert.match(r.reason, /got: Dept/);

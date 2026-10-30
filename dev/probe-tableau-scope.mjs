@@ -23,6 +23,7 @@
 // Requires Edge on a CDP port: ./dev/launch-edge-debug.sh
 
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +38,7 @@ const STORE = arg("store", "1458");
 const WEEK  = arg("week", "202630");
 
 const BASE = "https://stores.tableau.wal-mart.com/#/site/OnlineGrocery/views/StoreFulfillmentScorecard/AssociatePerformance";
-const OUT  = resolve(HERE, "tableau-scope-probe.json");
+const OUT  = resolve(DATA_DIR, "tableau-scope-probe.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = { store: STORE, week: WEEK, startedAt: new Date().toISOString(), attempts: {} };
 const save = () => writeFileSync(OUT, JSON.stringify(out, null, 2));

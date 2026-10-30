@@ -10,7 +10,7 @@
 //     statements, attachment count — composed into one plain-text summary
 //     per claim.
 // Discovery record: dev/CLEARSIGHT_INTAKE_FINDINGS.md (intake) and the
-// claim-read endpoints in dev/.claim-probe/ (2026-09-22).
+// claim-read endpoints in ~/Desktop/data/apaisuite/.claim-probe/ (2026-09-22).
 
 import { handlers } from "./service.js";
 

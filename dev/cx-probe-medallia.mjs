@@ -1,5 +1,6 @@
 // Discover how Medallia serves the customer-comment feed.
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import fs from "node:fs";
 
 const URL = process.env.MURL || "https://walmart.medallia.com/sso/walmart/applications/ex_WEB-5/pages/4899?roleId=251254&fi.segment-ranker=e_walmart_voc_store_num_unit&fi.benchmark=100000105&fi.timeperiod=100000380";
@@ -36,8 +37,8 @@ for (const c of calls) {
     console.log(`${String(c.status).padEnd(4)} ${String(c.len).padEnd(8)} ${(c.ct||"").split(";")[0].padEnd(20)} ${c.url.slice(0,170)}`);
   }
 }
-fs.writeFileSync(process.env.OUT || "cx-medallia-probe.json", JSON.stringify(calls, null, 1));
-console.log("\nwrote", process.env.OUT || "cx-medallia-probe.json");
+fs.writeFileSync(process.env.OUT || DATA_DIR + "/cx-medallia-probe.json", JSON.stringify(calls, null, 1));
+console.log("\nwrote", process.env.OUT || DATA_DIR + "/cx-medallia-probe.json");
 const text = await page.evaluate(() => document.body.innerText.slice(0, 5000));
 console.log("\n=== PAGE TEXT ===\n" + text);
 await page.close(); await browser.disconnect();

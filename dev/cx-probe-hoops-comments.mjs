@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer-core";
+import { DATA_DIR } from "./_datadir.mjs";
 import fs from "node:fs";
 const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null });
 const page = await browser.newPage();
@@ -28,6 +29,6 @@ for (const [k, v] of Object.entries(res)) {
   console.log("  columns:", j.meta.columns.join(", "));
   console.log("  tripType:", JSON.stringify(trips));
   console.log("  rating:", JSON.stringify(ratings));
-  fs.writeFileSync(`cx-hoops-comments-${k}.json`, JSON.stringify(j, null, 1));
+  fs.writeFileSync(`${DATA_DIR}/cx-hoops-comments-${k}.json`, JSON.stringify(j, null, 1));
 }
 await page.close(); await browser.disconnect();
