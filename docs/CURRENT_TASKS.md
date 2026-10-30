@@ -4,11 +4,44 @@ Active work only. Nothing finished, nothing speculative. When work lands,
 remove the entry — don't leave it as a "shipped" trophy. Long-form release
 notes live in `QRCallBox/public/extension/releases.json`.
 
-**Last reviewed:** 2026-09-17.
+**Last reviewed:** 2026-10-30.
 
 ---
 
 ## In-flight
+
+### 00000000000. Handover: the user's Walmart account ends 2026-10-30
+
+**State:** QRCallBox/Firebase admin and GitHub are on the user's Gmail and
+survive. Everything on the ses008s account stops: this PC, its tasks, Edge
+sessions, Workvivo/Outlook/Code Puppy tokens. Christian Young (omni coach,
+uid BAHaY9ge…) posts scans to Workvivo in the interim; the new AP coach
+(~2026-11-06) takes over everything else.
+
+**Done 2026-10-30:** 1.0.18 released (QRCallBox module; Workvivo panel signs
+in to QRCallBox and mints its own key). Other sessions' uncommitted work
+committed (b6e565c) except `dev/investigator-report*` (names investigators;
+public repo — kept local, in the SharePoint backup). GIF daemon retired:
+watchdog task disabled, Startup `gif-daemon.cmd` renamed
+`.retired-2026-10-30`, node + adb stopped (phone already posts to
+qrcallbox.com; rollback = re-enable both, restart). GIF Companion keystore +
+`build.sh` (holds its password) confirmed in the SharePoint backup.
+
+**Open:**
+- Christian connects (Workvivo notifications panel on 1.0.18); confirm his
+  `workvivo_config` reads `ready` on 1458 Customer Calls.
+- Then take the user's config out of rotation so scans stop posting under
+  their name (token outlives the account, see the Workvivo entry): delete
+  `workvivo_config/Zp2HKoHQVlR7eNA6hhDPjkIJApB2` (never write `active`),
+  and revoke the user's four Workvivo API keys.
+- New AP coach: QRCallBox account (admin approves in the QRCallBox panel →
+  Team), Workvivo connection, then MetricShot jobs, closing-list/VizPick
+  emails, Safety Obs nudge, Daily Board link — all per browser, all off
+  until then.
+- GIF Companion phone is signed in to Walmart as the user: the GIF feed stops
+  with the account until someone signs in on it.
+- SharePoint "Shane Smith Files" has unique permissions: grant the new coach
+  access before the account ends, or only site owners can open the backup.
 
 ### 0000000000. GIF Phone Setup page (2026-10-30)
 
@@ -676,18 +709,15 @@ inside the April `s` build stays deployed but inert. Runbook:
 `QRCallBox/docs/architecture/WORKVIVO_CUTOVER.md`.
 
 **Open:**
-- Reload the extension on the analyst PC and run through the three panel
-  steps (save key, Refresh now, channel).
-- Watch store 1458 for the first server-posted scan: the scan doc gains
-  `workvivoPostedAt`; Admin → Workvivo shows `lastServerPostAt`.
 - Delete the legacy Workvivo functions (`workvivoConnect`,
   `connectWithToken`, `workvivoConfig`, `workvivoDisconnect`,
   `workvivoCheckCompletion`, `testReauthEmail`, `checkWorkvivoTokens`,
   `pollWorkvivoReply`) after ~2 weeks of clean server posts, by name only.
 - Enrol stores 1215, 5151, 669, 695 (two people each) using the runbook.
-- Record the observed Sendbird token lifetime from `tokenFirstSeenAt` /
-  `lastProvenTokenAgeMs` / `tokenDiedAtAgeMs` on `workvivo_config`.
-- Release the suite (`RELEASING.md`) so other stores get module 0.3.0.
+- Sendbird token lifetime, read 2026-10-30: 1458's token first seen
+  2026-09-17 was still proven at 1,024 h (~42 days) with no `tokenDiedAt`
+  on any config. It is long-lived; whether deactivating the Walmart account
+  revokes it is unknown.
 
 ### 1. AurorBuddy backend migration (shanesmith → suite)
 
@@ -2435,62 +2465,6 @@ installed with `ensureAlarm()` from `module.js` top level behind the
 3. Watch the first few alarm ticks. Per §7 these handlers are the
    least-exercised code in the suite, and this one has never run in the wild.
 4. Consider the Region tab (`/api/region`) — same renderer, one endpoint.
-
-### 11. Suite telemetry backend — landed 2026-08-29
-
-**What was wrong:** every suite-wide telemetry write had been returning
-**403 PERMISSION_DENIED** since the collections were created. Both writers
-(`shared/usage_metrics.js` → `suite_usage_events`, `shared/schema_watch_report.js`
-→ `suite_schema_drift`) borrowed the write primitive from
-`modules/aurorbuddy/lib/firestore.js`, which is pinned to the **`aurorbuddy`**
-project — while the rules governing those collections live in
-`backend/firestore.suite.rules`, which `firebase.json` deploys to **`apaisuite`**.
-Rules in one project, client in another. A half-landed migration: the rules
-moved, the client never did.
-
-**Why it stayed invisible for so long.** Both writers queue on failure and
-retry on an alarm, which is correct behaviour for a network outage and
-indistinguishable from one here. The only outward sign was the same 403
-repeating in the console at every boot — which reads as one flaky write, not as
-"this subsystem has never once succeeded". **A bounded retry queue in front of a
-permanent error looks exactly like a temporary error.** Worth remembering for
-the other queues in the suite.
-
-**What landed:** `shared/suiteBackend.js` — the suite's own anonymous-auth
-client against `apaisuite`'s `(default)` database, with a refresh-token path so
-an install keeps one Firebase user instead of minting a fresh anonymous account
-on every cold worker start. Both writers import it; `commitCreateWithServerTimestamp`
-is no longer exported from aurorbuddy's client. That also removes the layering
-inversion where `shared/` reached into `modules/aurorbuddy/` — suite telemetry
-no longer depends on one module's Firestore client being loaded and healthy.
-15 tests across `shared/tests/suiteBackend.test.mjs` and
-`shared/tests/schema_drift_flush.test.mjs`.
-
-**Two bugs the 403s were masking**, both of which would have shipped the moment
-writes started landing:
-
-- **Schema-drift rows were double-encoded.** `flushSchemaDrift` passed
-  `toFirestoreFields(row)` into a primitive that encodes internally, wrapping
-  every value into a nested `mapValue`. Firestore accepts that and stores
-  structurally wrong data rather than rejecting it.
-- **The first duplicate drift would have wedged the queue forever.** The doc id
-  is a deterministic source+fingerprint *by design*, so N installs reporting one
-  drift converge on a single row — but the write is create-only, so the second
-  install gets `ALREADY_EXISTS`. The drain loop stops at the first error, so
-  that row would fail identically on every future flush and block every new
-  drift queued behind it. `ALREADY_EXISTS` now counts as drained; a genuine
-  failure still stops the drain.
-
-**Not done — this needs a deploy before it works:**
-
-```bash
-firebase deploy --only firestore --project apaisuite
-```
-
-and **Anonymous auth must be enabled** on `apaisuite` (Authentication →
-Sign-in method) — a console step the CLI cannot perform. `suiteBackend.js`
-names that condition in its sign-in error rather than surfacing a bare 400.
-Until both are done the writes keep queueing, exactly as before.
 
 ---
 
