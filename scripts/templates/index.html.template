@@ -155,10 +155,26 @@
         return handle;
       }
 
+      // True when the folder already holds exactly these bytes. Reading is cheap;
+      // each write costs a swap file + a virus scan, so an update into the same
+      // folder only writes the files that changed.
+      async function sameAsExisting(dir, name, data) {
+        var existing;
+        try { existing = await (await dir.getFileHandle(name)).getFile(); }
+        catch (e) { return false; }   // not there yet
+        var want = new Uint8Array(await new Response(data).arrayBuffer());
+        if (existing.size !== want.length) return false;
+        var have = new Uint8Array(await existing.arrayBuffer());
+        for (var i = 0; i < want.length; i++) if (have[i] !== want[i]) return false;
+        return true;
+      }
+
+      // Resolves "same" when the file was already current, "written" otherwise.
       async function writeBytes(dirHandle, relPath, data) {
         var slash = relPath.lastIndexOf("/");
         var dir = slash < 0 ? dirHandle : await ensureDir(dirHandle, relPath.slice(0, slash));
         var name = slash < 0 ? relPath : relPath.slice(slash + 1);
+        if (await sameAsExisting(dir, name, data)) return "same";
         var fh;
         try {
           fh = await dir.getFileHandle(name, { create: true });
@@ -173,6 +189,7 @@
         var w = await fh.createWritable();
         await w.write(data);
         await w.close();
+        return "written";
       }
 
       // ---- In-browser ZIP reader: one request, native inflate, no library ----
@@ -214,7 +231,7 @@
         prog.className = "show";
         dirCache = new Map();
         suffixed = [];
-        var done = 0, total = 0;
+        var done = 0, total = 0, written = 0;
 
         // Guard every file op so one stuck File System Access write can't wedge
         // the whole run (that is what stalled it near the end at high concurrency).
@@ -230,7 +247,7 @@
           for (var attempt = 1; ; attempt++) {
             try {
               var data = await withTimeout(t.load(), 30000, t.rel + " (load)");
-              await withTimeout(writeBytes(dirHandle, t.rel, data), 30000, t.rel + " (write)");
+              if (await withTimeout(writeBytes(dirHandle, t.rel, data), 30000, t.rel + " (write)") === "written") written++;
               return;
             } catch (err) {
               if (attempt >= 3) throw new Error(t.rel + " — " + err.message);
@@ -257,7 +274,7 @@
               await processTask(t);
               done++;
               bar.style.width = Math.round((done / total) * 100) + "%";
-              setStatus("Writing " + done + " / " + total + " \u2014 " + t.rel);
+              setStatus("Checking " + done + " / " + total + " (" + written + " updated) \u2014 " + t.rel);
             }
           }
           var pool = [];
@@ -291,7 +308,8 @@
           await runPool(tasks);
           bar.style.width = "100%";
           var extra = suffixed.length ? " (" + suffixed.length + " native-host files saved with a .bin suffix \u2014 the browser blocks writing .dll/.exe/.ps1/.cmd; not needed to load the extension)" : "";
-          setStatus("Done \u2014 " + total + " files written" + extra + ". Load this folder via Load unpacked.", "ok");
+          var same = total - written;
+          setStatus("Done \u2014 " + written + " files written" + (same ? ", " + same + " already up to date" : "") + extra + ". Load this folder via Load unpacked (or press Reload on the extension if it is already loaded from here).", "ok");
         } catch (e) {
           setStatus("Failed: " + (e && e.message ? e.message : e), "err");
           btn.disabled = false;

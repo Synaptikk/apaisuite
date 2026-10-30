@@ -190,6 +190,10 @@ rm -rf "$STAGED_EXT/scripts" \
 # (this is what blew up v0.7.1 to 10 MB — dev/node_modules survived because
 # only the top-level rm pattern was applied).
 find "$STAGED_EXT" -type d -name node_modules -prune -exec rm -rf {} +
+# Unit tests never run in the browser; each one is another file the folder
+# installer has to write (2026-10-30).
+find "$STAGED_EXT/modules" "$STAGED_EXT/shared" -type d -name tests -prune -exec rm -rf {} +
+find "$STAGED_EXT/modules" "$STAGED_EXT/shared" -type f \( -name '*.test.mjs' -o -name '*.test.js' \) -delete
 
 # The very same trap caught .playwright-mcp, and it shipped for months. The rm
 # above only matches the tree ROOT, and the comment about `cp -r *` skipping
