@@ -287,3 +287,68 @@ export async function postSetChannel({ endpointUrl, apiKey, channelUrl }) {
     clearTimeout(timer);
   }
 }
+
+// QRCallBox (qrwebaccdb) public web API key. Not a secret — it ships in the
+// qrcallbox.com bundle (QRCallBox/src/firebaseClient.js) and only identifies
+// the project to Firebase Auth. Must change if that key is ever rotated.
+const QRCALLBOX_WEB_API_KEY = "AIzaSyCbpXuSt3UHAWtAfiKbVx621vwpL5cKnkA";
+const SIGN_IN_URL =
+  `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${QRCALLBOX_WEB_API_KEY}`;
+
+/**
+ * Sign in to QRCallBox with the user's email + password and mint a Workvivo
+ * API key, so the panel can do in one step what used to need the
+ * qrcallbox.com Settings page. Same server path that page uses:
+ * POST /api/workvivo/generate-api-key with a Firebase ID token
+ * (QRCallBox: functions/src/http/workvivo/generate-api-key.js).
+ *
+ * The password and ID token are used for these two requests only and never
+ * stored; the caller keeps the returned apiKey (shown once by the server).
+ *
+ * @returns {Promise<{ok:boolean, status:number, body:object|string, apiKey?:string,
+ *                    errorClass?: "LOGIN"|"LOCKED"|"AUTH"|"SERVER"|"NETWORK"|"TIMEOUT"}>}
+ */
+export async function generateApiKey({ endpointUrl, email, password, label }) {
+  if (!endpointUrl) return { ok: false, status: 0, body: "missing endpoint URL", errorClass: "AUTH" };
+  if (!email || !password) return { ok: false, status: 0, body: "missing email or password", errorClass: "LOGIN" };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const signIn = await fetch(SIGN_IN_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+    const signBody = await signIn.json().catch(() => ({}));
+    if (!signIn.ok || !signBody.idToken) {
+      // Firebase answers 400 with error.message such as INVALID_LOGIN_CREDENTIALS,
+      // EMAIL_NOT_FOUND, INVALID_PASSWORD, USER_DISABLED, TOO_MANY_ATTEMPTS_TRY_LATER.
+      const code = String(signBody?.error?.message ?? signIn.status);
+      const errorClass = /TOO_MANY_ATTEMPTS|USER_DISABLED/.test(code) ? "LOCKED"
+        : signIn.status === 400 ? "LOGIN" : "SERVER";
+      return { ok: false, status: signIn.status, body: code, errorClass };
+    }
+
+    const resp = await fetch(deriveSiblingUrl(endpointUrl, "generate-api-key"), {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${signBody.idToken}` },
+      body: JSON.stringify({ label }),
+    });
+    const text = await resp.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+    if (resp.ok && body?.apiKey) return { ok: true, status: resp.status, body, apiKey: body.apiKey };
+    if (resp.status === 401) return { ok: false, status: 401, body, errorClass: "AUTH" };
+    return { ok: false, status: resp.status, body, errorClass: "SERVER" };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      return { ok: false, status: 0, body: `timeout after ${DEFAULT_TIMEOUT_MS}ms`, errorClass: "TIMEOUT" };
+    }
+    return { ok: false, status: 0, body: String(err?.message ?? err), errorClass: "NETWORK" };
+  } finally {
+    clearTimeout(timer);
+  }
+}

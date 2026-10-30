@@ -325,6 +325,38 @@ export async function mount(host, container) {
     }
   }
 
+  function createKeyMessage(errorClass) {
+    switch (errorClass) {
+      case "LOGIN":   return "Email or password is wrong.";
+      case "LOCKED":  return "QRCallBox has paused sign-ins for this account. Wait a few minutes, or ask an admin.";
+      case "AUTH":    return "QRCallBox didn't accept the sign-in. Try again.";
+      case "TIMEOUT": return "No answer in time. Try again.";
+      case "NETWORK": return "Couldn't reach QRCallBox. Check your connection and try again.";
+      default:        return "Something went wrong. Try again.";
+    }
+  }
+
+  $("wv-createKey").addEventListener("click", async () => {
+    const email = $("wv-email").value.trim();
+    const password = $("wv-password").value;
+    if (!email || !password) { flash("wv-createMsg", "Enter your email and password first."); return; }
+    $("wv-createKey").disabled = true;
+    flash("wv-createMsg", "Signing in…", true);
+    try {
+      const resp = await host.messaging.sendRaw("create-api-key", { email, password });
+      const r = resp.data ?? resp;
+      if (r?.ok === false) { flash("wv-createMsg", r.error || createKeyMessage(r.errorClass), true); return; }
+      $("wv-password").value = "";
+      flash("wv-createMsg", "Connected. Now sign in to Workvivo and press Refresh now.", true);
+    } catch (e) {
+      flash("wv-createMsg", `Failed: ${e?.message ?? e}`, true);
+    } finally {
+      $("wv-password").value = "";
+      $("wv-createKey").disabled = false;
+      await reload();
+    }
+  });
+
   $("wv-saveConfig").addEventListener("click", async () => {
     const apiKey = $("wv-apiKey").value.trim();
     if (!apiKey) { flash("wv-saveMsg", "Paste the API key first."); return; }

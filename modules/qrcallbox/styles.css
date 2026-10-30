@@ -1,0 +1,113 @@
+/* modules/qrcallbox/styles.css
+ * Scoped to .module-qrcallbox by the shell's container wrapper.
+ * Suite tokens from styles/tokens.css. */
+
+.module-qrcallbox .qc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.module-qrcallbox .qc-header h1 { margin: 0 0 0.25rem 0; }
+
+.module-qrcallbox .qc-account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.module-qrcallbox .qc-store-pick { display: inline-flex; align-items: center; gap: 0.35rem; }
+.module-qrcallbox .qc-store-pick .input { width: 5.5rem; }
+
+.module-qrcallbox .qc-section-title { margin: 0 0 0.5rem 0; font-size: 1rem; }
+
+.module-qrcallbox .qc-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+.module-qrcallbox .qc-form .input { min-width: 12rem; }
+.module-qrcallbox .qc-signin { max-width: 40rem; }
+
+.module-qrcallbox .qc-tabs { margin: 0.75rem 0; }
+.module-qrcallbox .qc-tabs .is-active {
+  background: var(--apai-blue);
+  color: #fff;
+}
+
+.module-qrcallbox .qc-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.module-qrcallbox .card + .card,
+.module-qrcallbox .qc-two { margin-top: 1rem; }
+
+.module-qrcallbox .qc-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.module-qrcallbox .qc-kpis .card + .card { margin-top: 0; }
+.module-qrcallbox .qc-kpi-value {
+  font-size: var(--fs-2xl, 1.75rem);
+  font-weight: 700;
+  color: var(--apai-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-qrcallbox .qc-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
+}
+.module-qrcallbox .qc-two .card + .card { margin-top: 0; }
+
+.module-qrcallbox .num { text-align: right; font-variant-numeric: tabular-nums; }
+.module-qrcallbox .qc-table td { white-space: nowrap; }
+.module-qrcallbox .qc-table td:nth-child(2) { white-space: normal; }
+
+/* Weekday × hour heatmap */
+.module-qrcallbox .qc-heat {
+  display: grid;
+  grid-template-columns: 2.5rem repeat(24, minmax(1.1rem, 1fr));
+  gap: 2px;
+  font-size: 0.7rem;
+  overflow-x: auto;
+}
+.module-qrcallbox .qc-heat-h { color: var(--apai-muted); text-align: left; }
+.module-qrcallbox .qc-heat-d { color: var(--apai-muted); align-self: center; }
+.module-qrcallbox .qc-heat-c {
+  height: 1.5rem;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  background: var(--apai-bg-soft);
+  color: var(--apai-ink);
+}
+.module-qrcallbox .qc-l1 { background: color-mix(in srgb, var(--apai-blue) 20%, var(--apai-bg-soft)); }
+.module-qrcallbox .qc-l2 { background: color-mix(in srgb, var(--apai-blue) 45%, var(--apai-bg-soft)); }
+.module-qrcallbox .qc-l3 { background: color-mix(in srgb, var(--apai-blue) 70%, var(--apai-bg-soft)); color: #fff; }
+.module-qrcallbox .qc-l4 { background: var(--apai-blue); color: #fff; }
+
+/* Poster preview */
+.module-qrcallbox .qc-poster {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.module-qrcallbox .qc-poster-qr { width: 12rem; background: #fff; padding: 0.25rem; border-radius: 6px; }
+.module-qrcallbox .qc-poster-area { font-size: 1.15rem; font-weight: 700; }
+.module-qrcallbox .qc-mono { font-family: var(--font-mono); word-break: break-all; }

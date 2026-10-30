@@ -1,0 +1,145 @@
+<header class="qc-header">
+  <div>
+    <h1>QRCallBox</h1>
+    <p class="muted">Customer help scans for your store, without opening qrcallbox.com.</p>
+  </div>
+  <div id="qc-account" class="qc-account" hidden>
+    <span id="qc-who" class="muted tiny"></span>
+    <label id="qc-storePick" class="qc-store-pick tiny" hidden>
+      Store <input id="qc-store" class="input" inputmode="numeric" maxlength="6">
+    </label>
+    <button id="qc-signOut" class="btn btn-secondary btn-sm">Sign out</button>
+  </div>
+</header>
+
+<!-- ── Sign in ─────────────────────────────────────────────────────────── -->
+<section id="qc-signin" class="card qc-signin" hidden>
+  <h2 class="qc-section-title">Sign in to QRCallBox</h2>
+  <p class="muted tiny">
+    Use your qrcallbox.com email and password. The password is not kept; this browser stays signed in until you sign out.
+  </p>
+  <form id="qc-signinForm" class="qc-form">
+    <input id="qc-email" class="input" type="email" autocomplete="username" placeholder="email" required>
+    <input id="qc-password" class="input" type="password" autocomplete="current-password" placeholder="password" required>
+    <button id="qc-signinBtn" class="btn btn-primary btn-sm btn-pill" type="submit">Sign in</button>
+    <span id="qc-signinMsg" class="muted tiny"></span>
+  </form>
+  <p class="muted tiny">
+    No account yet? <a href="#" data-site="/">Register on qrcallbox.com</a> with your store number, then ask a QRCallBox admin to approve it.
+  </p>
+</section>
+
+<div id="qc-main" hidden>
+  <div id="qc-banner" class="status-strip status-strip-warn" hidden></div>
+
+  <nav class="btn-group qc-tabs" role="tablist">
+    <button class="btn btn-sm btn-group-item" data-tab="scans">Scans</button>
+    <button class="btn btn-sm btn-group-item" data-tab="insights">Insights</button>
+    <button class="btn btn-sm btn-group-item" data-tab="team">Team</button>
+    <button class="btn btn-sm btn-group-item" data-tab="posters">Posters</button>
+    <button class="btn btn-sm btn-group-item" data-tab="workvivo">Workvivo</button>
+  </nav>
+
+  <div class="qc-range">
+    <span class="muted tiny">Period</span>
+    <select id="qc-days" class="input">
+      <option value="1">Last 24 hours</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <button id="qc-reload" class="btn btn-secondary btn-sm">Refresh</button>
+    <span id="qc-loadMsg" class="muted tiny"></span>
+  </div>
+
+  <!-- Scans -->
+  <section data-pane="scans" class="qc-pane">
+    <div id="qc-kpis" class="qc-kpis"></div>
+    <div class="card">
+      <table class="data-table data-table-compact qc-table">
+        <thead><tr><th>When</th><th>Area</th><th>Radio</th><th>Workvivo</th><th>Answered by</th><th>In</th></tr></thead>
+        <tbody id="qc-scanRows"></tbody>
+      </table>
+      <p id="qc-scanEmpty" class="state-empty muted" hidden>No scans in this period.</p>
+    </div>
+  </section>
+
+  <!-- Insights -->
+  <section data-pane="insights" class="qc-pane" hidden>
+    <div class="card">
+      <h2 class="qc-section-title">Busiest hours</h2>
+      <p class="muted tiny">Scans by weekday and hour, darker is busier.</p>
+      <div id="qc-heat" class="qc-heat"></div>
+    </div>
+    <div class="qc-two">
+      <div class="card">
+        <h2 class="qc-section-title">By area</h2>
+        <table class="data-table data-table-compact">
+          <thead><tr><th>Area</th><th class="num">Scans</th><th class="num">Answered</th><th>Last scan</th></tr></thead>
+          <tbody id="qc-areaRows"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2 class="qc-section-title">Who answered</h2>
+        <p class="muted tiny">Only replies recorded through Workvivo or the app; radio answers aren't logged.</p>
+        <table class="data-table data-table-compact">
+          <thead><tr><th>Name</th><th class="num">Answered</th><th class="num">Typical time</th></tr></thead>
+          <tbody id="qc-respRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Team -->
+  <section data-pane="team" class="qc-pane" hidden>
+    <div class="card">
+      <h2 class="qc-section-title">Signed up at <span id="qc-teamStore"></span></h2>
+      <p id="qc-teamHint" class="muted tiny"></p>
+      <table class="data-table data-table-compact">
+        <thead><tr><th>Name</th><th>Job</th><th>Status</th><th>Last seen</th><th id="qc-teamActHead"></th></tr></thead>
+        <tbody id="qc-teamRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Posters -->
+  <section data-pane="posters" class="qc-pane" hidden>
+    <div class="card">
+      <h2 class="qc-section-title">Make a QR poster</h2>
+      <p class="muted tiny">Each poster gets its own code. Scans of it alert your store for that area.</p>
+      <div class="qc-form">
+        <select id="qc-area" class="input"></select>
+        <input id="qc-areaDesc" class="input" maxlength="100" placeholder="label on the poster (optional), e.g. Electronics A-14">
+        <button id="qc-mint" class="btn btn-primary btn-sm btn-pill">Make poster</button>
+        <span id="qc-mintMsg" class="muted tiny"></span>
+      </div>
+      <div id="qc-poster" class="qc-poster" hidden>
+        <div id="qc-posterQr" class="qc-poster-qr"></div>
+        <div>
+          <div id="qc-posterArea" class="qc-poster-area"></div>
+          <div id="qc-posterUrl" class="muted tiny qc-mono"></div>
+          <div class="qc-form">
+            <button id="qc-print" class="btn btn-primary btn-sm">Print</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Workvivo -->
+  <section data-pane="workvivo" class="qc-pane" hidden>
+    <div class="card">
+      <h2 class="qc-section-title">Your Workvivo posting</h2>
+      <div id="qc-wvMine" class="muted"></div>
+      <p class="muted tiny">Set it up or fix it in the <a href="#/workvivo">Workvivo notifications</a> panel.</p>
+    </div>
+    <div id="qc-wvAdmin" class="card" hidden>
+      <h2 class="qc-section-title">Everyone posting for <span id="qc-wvStore"></span></h2>
+      <p class="muted tiny">QRCallBox posts each scan with the freshest working connection, up to three tried.</p>
+      <table class="data-table data-table-compact">
+        <thead><tr><th>Person</th><th>Status</th><th>Channel</th><th>Last post</th></tr></thead>
+        <tbody id="qc-wvRows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>

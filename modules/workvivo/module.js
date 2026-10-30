@@ -34,7 +34,7 @@ export default {
   manifest: {
     id:          "workvivo",
     group:       "integrations",
-    name:        "QRCallBox",
+    name:        "Workvivo notifications",
     description: "Keeps QRCallBox scan alerts flowing into your store's Workvivo chat by couriering your Workvivo chat token to qrcallbox.com every hour, opening Workvivo in the background when it has to.",
     version:     "0.3.0",
     status:      "beta",

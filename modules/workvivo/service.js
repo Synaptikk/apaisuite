@@ -39,7 +39,7 @@
 import { ensureAlarm } from "../../shared/alarms.js";
 import { withSessionTabs } from "../../shared/tabSessions.js";
 import { readLiveTokenFromTab, hasWorkvivoTab, openWorkvivoTab, waitForLiveToken } from "./lib/extract.js";
-import { postHeartbeat, fetchConnectionInfo, postServerTest, postSetChannel } from "./lib/qrcallbox.js";
+import { postHeartbeat, fetchConnectionInfo, postServerTest, postSetChannel, generateApiKey } from "./lib/qrcallbox.js";
 
 const MODULE_ID            = "workvivo";
 export const ALARM_NAME    = "workvivo.heartbeat";
@@ -431,6 +431,21 @@ export const handlers = {
     }
     await setConfig({ endpointUrl, apiKey });
     return { ok: true };
+  },
+
+  // Step 1 without leaving the extension: sign in to QRCallBox, mint a key,
+  // keep only the key. The password is never written anywhere.
+  async "create-api-key"(msg) {
+    const email    = String(msg?.email ?? "").trim();
+    const password = String(msg?.password ?? "");
+    if (!email || !password) return { ok: false, errorClass: "LOGIN", error: "Enter your QRCallBox email and password." };
+    const { endpointUrl } = await getConfig();
+    const installationId = await getInstallationId();
+    const label = `APAISuite extension${installationId ? ` · ${String(installationId).slice(0, 8)}` : ""}`;
+    const r = await generateApiKey({ endpointUrl, email, password, label });
+    if (!r.ok) return { ok: false, errorClass: r.errorClass, status: r.status };
+    await setConfig({ endpointUrl: "", apiKey: r.apiKey });
+    return { ok: true, apiKeyMasked: maskKey(r.apiKey) };
   },
 
   async "refresh-now"() {

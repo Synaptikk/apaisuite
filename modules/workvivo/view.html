@@ -52,13 +52,23 @@
     <li id="wv-step1" class="wv-step">
       <div class="wv-step-head">
         <span class="wv-step-num">1</span>
-        <strong>Paste your QRCallBox API key</strong>
+        <strong>Sign in to QRCallBox</strong>
         <span id="wv-step1State" class="wv-step-state muted tiny"></span>
       </div>
       <p class="muted tiny">
-        Generate it at
-        <a href="https://qrcallbox.com" target="_blank" rel="noreferrer">qrcallbox.com</a>
-        → Settings → Integrations → Workvivo notifications. It is shown once; paste it here.
+        Use your qrcallbox.com email and password. This creates your API key and saves it in
+        this browser; the password is not kept.
+      </p>
+      <div class="wv-action-row">
+        <input id="wv-email" class="input wv-key-input" type="email" spellcheck="false"
+               autocomplete="username" placeholder="email">
+        <input id="wv-password" class="input wv-key-input" type="password"
+               autocomplete="current-password" placeholder="password">
+        <button id="wv-createKey" class="btn btn-primary btn-sm btn-pill">Sign in and connect</button>
+        <span id="wv-createMsg" class="muted tiny"></span>
+      </div>
+      <p class="muted tiny">
+        Already have a key from qrcallbox.com → Settings → Integrations? Paste it instead.
       </p>
       <div class="wv-action-row">
         <input id="wv-apiKey" class="input wv-key-input" type="password" spellcheck="false"

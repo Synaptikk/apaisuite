@@ -27,6 +27,7 @@ import sparkrisk         from "./sparkrisk/module.js";
 import claimsdisposition from "./claimsdisposition/module.js";
 import digitallocks      from "./digitallocks/module.js";
 import workvivo          from "./workvivo/module.js";
+import qrcallbox         from "./qrcallbox/module.js";
 import livedashboard     from "./livedashboard/module.js";
 import orcmonitor        from "./orcmonitor/module.js";
 import market120         from "./market120/module.js";
@@ -73,6 +74,7 @@ export default [
   punchlookup,       // Punch Lookup — one associate's GTA punches for a range, print/email/CSV
   claimsdisposition,
   digitallocks,
+  qrcallbox,         // QRCallBox — the store side of qrcallbox.com: scans, insights, team, posters, approvals
   workvivo,
   closinglist,
   stockingplan,
