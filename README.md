@@ -4,7 +4,7 @@ Unified MV3 browser-extension suite that consolidates several internal
 Walmart AP fraud-investigation tools behind one shell. One toolbar icon,
 one design language, one set of platform helpers; each tool is a module.
 
-**Status:** Shipping. Currently v0.8.2 with six live modules + one WIP-disabled.
+**Status:** Shipping. Currently v1.0.20 with 30 registered modules (+ 2 hidden/unregistered).
 Distributed as a sideload package via [qrcallbox.com/extension/](https://qrcallbox.com/extension/).
 
 > **AI assistants:** start at [`docs/AI_CONTEXT_BRIEF.md`](docs/AI_CONTEXT_BRIEF.md)
@@ -17,14 +17,38 @@ Distributed as a sideload package via [qrcallbox.com/extension/](https://qrcallb
 
 | Module | Status | Slug | What it does |
 |---|---|---|---|
-| ClosingList | live | `closinglist` | Closing-shift email draft from CaseVisibility schedule + IVR call-offs |
+| Live Dashboard | beta | `livedashboard` | Daily AP operational dashboard on the home screen: callouts, compliance, accident evidence, CVP, Auror evidence exceptions (home-header, not in the sidebar) |
+| Market 120 Clearance & ISA | alpha | `market120` | Executive overview combining Tableau Clearance/Deleted with Power BI ISA activity, per family, with alerts |
+| Metric Shots | beta | `metricshot` | Scheduled store metric cards rendered locally from VizPick data and posted to Workvivo channels |
+| VizPick Market Rollup | alpha | `vizpick` | Every store's VizPick backroom health for a market, pulled from Tableau |
+| Digital Dashboard | alpha | `digitaldashboard` | GIF store metrics (picks/hr, express/hr, Pick Hours history, break watch) via the local GIF daemon |
+| GIF Phone Setup | beta | `gifphone` | WebUSB adb: sets up a spare phone as the GIF Companion reader (keep awake, install, pair, start) |
+| Digital Metrics | beta | `digitalmetrics` | Digital fulfilment analytics, schedule import, daily task assignments |
+| ScheduleRight | alpha | `digitalschedule` | WFM coverage (any team/role/job) vs guidance, validated shift edits, fit-to-guidance, undo |
+| Cx | alpha | `cx` | Store NPS and customer-service sub-scores from the Hoops scorecard against a year of Medallia comments by theme and sentiment; market scoreboard; PDF export |
 | AurorBuddy | live | `aurorbuddy` | Auror suspect × APPRISS/Secure cross-reference + CCTV evidence download |
+| Register L/S Triage | alpha | `registerls` | WorkView queue × Power BI grid × Cash Research × EJ: flips and bouncebacks out, video-worthy shortages up |
+| Door Catches | alpha | `doorcatch` | Door-host scans of items not on the receipt; review and export |
+| BoB and Lisa | alpha | `boblisa` | Missed-item finder: a second small purchase on the same card minutes later; documents misses by cashier |
+| Safety Agent Dashboard | alpha | `safetyagent` | SafeIQ camera hazard alerts by camera, disposition tag, associate and hour |
+| Safety Observations | alpha | `safetyobs` | Log observations in plain words, daily coach nudge, who's behind |
+| Compliance Tasks | alpha | `compliance` | Enviance facility compliance tasks: calendar, paper copy, one-click submit |
+| ORC Corridor Monitor | live | `orcmonitor` | Tracks ORC groups along the interstate network, likely next stores, market PDF brief |
 | SparkFraud | live | `sparkfraud` | Register-event → Spark/Express/GMD delivery-driver trip correlation |
-| ClaimsDisposition | live | `claimsdisposition` | 30-day Looker Studio pull per store; per-user outlier analysis; BigQuery historical roll-ups |
-| DigitalLocks | live (V1) | `digitallocks` | Daily AP review of digital-lock unlock events; risk-scored, in-browser only |
-| Workvivo (keep-alive) | beta | `workvivo` | Couriers your Workvivo/Sendbird access token to QRCallBox hourly so QR-scan notifications keep working without SAML/MFA replay |
-| Cx | alpha | `cx` | Store NPS and the customer-service sub-scores from the Hoops scorecard, against a year of the store's own Medallia comments broken down by theme and sentiment — what is going wrong, what is going right, and what changed. Also a market scoreboard (every store's NPS and sub-scores, ranked against the market) and a PDF export |
-| ClaimsBuddy | WIP, disabled | `claimsbuddy` | Clearsight claims helper. Disabled in `modules/_registry.js` pending QA. |
+| SparkRisk | live | `sparkrisk` | Pre-checkout timing review queue for recorded Spark Shop & Deliver trips |
+| Accident Details | alpha | `accidents` | Open claims, missing evidence and P&L charges (CAS × Clearsight) |
+| Punch Lookup | alpha | `punchlookup` | One associate's GTA punches for a range (print/email/CSV); shared wage & hour cases |
+| ClaimsDisposition | beta | `claimsdisposition` | Looker Studio disposal/donation trends per store; outlier analysis; BigQuery roll-ups |
+| DigitalLocks | beta | `digitallocks` | Daily AP review of digital-lock unlock events; risk-scored, in-browser only |
+| QRCallBox | beta | `qrcallbox` | The store side of qrcallbox.com: scans, insights, team, posters, admin approvals |
+| Workvivo (keep-alive) | beta | `workvivo` | Couriers your Workvivo chat token to QRCallBox hourly so scan notifications keep working |
+| ClosingList | live | `closinglist` | Closing-shift email draft from CaseVisibility schedule + IVR call-offs |
+| StockingPlan | live | `stockingplan` | Overnight stocking plan from CaseVisibility freight vs Stock 2 / Overnight hours; drafts the four-block email |
+| Supply Orders | alpha | `gnfr` | MyGNFR store carts: who ordered what, tracking, late/awaiting approval, regulars not reordered |
+| Comp Shop Prep | alpha | `compshop` | Produce competitors sell for less: barcode, our price, their price, ad dates |
+| Cost Inventory | alpha | `costinventory` | Monthly Fresh cost inventory worksheet from ITR / OneWalmart / CV / GDP |
+
+Not shipping: `sparkscango` (Spark & Scan&Go audits, hidden until its data sources work) and `assocpurchases` (Associate Purchases, beta, unregistered). Both folders exist under `modules/`; enable them in `modules/_registry.js`.
 
 Order in the sidebar is set by the array in [`modules/_registry.js`](modules/_registry.js).
 
@@ -33,7 +57,7 @@ Order in the sidebar is set by the array in [`modules/_registry.js`](modules/_re
 ## Releasing
 
 ```bash
-# from unified-extension-suite/
+# from the repo root
 ./scripts/release.sh patch         # or: minor / major / 0.4.2
 
 # from QRCallBox/
@@ -87,14 +111,11 @@ filters double-fire, APPRISS session contention can break the suite).
 
 ## Source preservation
 
-The original donor extensions live at their original paths and are **never
-modified**. They serve as rollback-safe references during the verification
-window. If a donor needs a fix, port it into the suite — never edit the
-donor folder.
-
-- `<user-home>\Desktop\ClosingList\extension\`
-- `<user-home>\Documents\puppy_workspace\aurorbuddy\extension\`
-- `<user-home>\Desktop\SparkFraud\extension\`
+ClosingList, AurorBuddy and SparkFraud were imported from standalone donor
+extensions. Those originals are kept outside this repo as rollback-safe
+references and are **never modified**. If a donor needs a fix, port it into
+the suite — never edit the donor folder. (Original locations are recorded
+in [`docs/SOURCE_MAPPING.md`](docs/SOURCE_MAPPING.md).)
 
 ---
 
@@ -117,20 +138,21 @@ Background reading lives in `QRCallBox/Workvivo/WORKVIVO.md`.
 ## Repo layout
 
 ```
-APAISuite/
-├── CLAUDE.md                        # project rules (load-bearing for AI assistants)
-├── claims_disposition_reference.md  # upstream Looker reference for claimsdisposition
-└── unified-extension-suite/         # the actual MV3 extension
-    ├── manifest.json
-    ├── app.html / app.js            # shell
-    ├── background/service_worker.js # single SW
-    ├── shared/                      # platform: host, storage, messaging, auth, http, ui, logging, updater, push
-    ├── modules/
-    │   ├── _registry.js             # source of truth for which modules ship
-    │   └── <slug>/                  # one folder per module — see docs/MODULE_CONTRACT.md
-    ├── styles/                      # tokens + base + layout + components
-    ├── assets/                      # icons + logos
-    ├── scripts/                     # release.sh, notify-released.sh, render-icons.mjs
-    ├── dev/                         # one-off endpoint probes (read the *_FINDINGS.md, not the .mjs)
-    └── docs/                        # see docs/DOC_STATUS.md
+apaisuite/
+├── manifest.json
+├── app.html / app.js / theme_boot.js  # shell
+├── background/service_worker.js       # single SW
+├── shared/                            # platform: host, storage, messaging, auth, http, ui, logging, updater, push
+├── modules/
+│   ├── _registry.js                   # source of truth for which modules ship
+│   └── <slug>/                        # one folder per module — see docs/MODULE_CONTRACT.md
+├── styles/                            # tokens + base + layout + components
+├── assets/                            # icons + logos
+├── data/                              # bundled reference data
+├── backend/ firebase.json             # Firebase backend + config
+├── scripts/                           # release.sh, notify-released.sh, pack-cws.sh, render-icons.mjs
+├── tools/                             # developer tooling
+├── dev/                               # one-off endpoint probes (read the *_FINDINGS.md, not the .mjs)
+├── docs/                              # see docs/DOC_STATUS.md
+└── CHANGELOG.md
 ```

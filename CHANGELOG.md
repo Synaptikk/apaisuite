@@ -5,6 +5,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.20] – 2026-10-30
+- Folder installer skips unchanged files.
+
+## [1.0.19] – 2026-10-30
+- **New module:** GIF Phone Setup (`gifphone`) — WebUSB adb setup of a spare phone as the GIF Companion reader.
+
+## [1.0.18] – 2026-10-30
+- **New module:** QRCallBox (`qrcallbox`) with in-panel API-key sign-in; the Workvivo panel now signs in to QRCallBox.
+- Digital Dashboard reads GIF data from qrcallbox.com by default (GIF cloud cut-over steps 3–4: daemon tees phone uploads to the cloud, chat standby).
+
+## [1.0.17] – 2026-10-24
+- **New module:** Comp Shop Prep (`compshop`); CAMP drag-to-paint tile editor content script.
+- Shared post claims: one poster per report slot across every user at the store.
+- Supply Orders: email today's arrivals, one line per person.
+- Digital Metrics: once-a-minute board-saved check, compare-and-set assignment writes.
+- Digital Dashboard: GIF cloud pieces (hashed meals, phone pairing QR, phone control).
+
+## [1.0.16] – 2026-10-23
+- Store-wide sharing for BoB and Lisa and Register L/S; GIF walk counts.
+- ScheduleRight: no HARD errors reach the queue.
+
+## [1.0.15] – 2026-10-19
+- Door Catches: finds the user's name automatically; "Check who I am".
+
+## [1.0.14] – 2026-10-19
+- Door Catches live refresh across AP computers; Safety Agent response breakdown; Claims CVP categories.
+
+## [1.0.13] – 2026-10-16
+- Digital Dashboard staffing/break/walk logs; GIF phone daemon.
+
+## [1.0.12] – 2026-10-08
+- **New module:** Safety Observations (`safetyobs`).
+- Punch Lookup shared cases and AP team sharing.
+
+## [1.0.11] – 2026-10-08
+- **New modules:** Door Catches (`doorcatch`), Digital Dashboard (`digitaldashboard`); module groups in the sidebar.
+
+## [1.0.10] – 2026-10-01
+- Safety Agent on-the-clock attribution; accumulated module work.
+
+## [1.0.9] – 2026-09-25
+- **New modules:** Cx (`cx`), Cost Inventory (`costinventory`), Accident Details (`accidents`).
+- Module updates: SparkRisk scoring, StockingPlan helpers, Register L/S matching, VizPick day-details archive and case report PDF, BoB and Lisa review queue, Digital Metrics board sync.
+
+> Entries 1.0.9–1.0.20 were reconstructed from commit messages after the fact; they are summaries, not full release notes.
+
+---
+
 ## [1.0.7] – 2026-09-15
 
 Covers everything since the 1.0.5 / 1.0.6 releases on 2026-09-14, including

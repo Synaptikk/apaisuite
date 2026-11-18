@@ -8,7 +8,7 @@ clients actually works.
 After one-time setup (below), every release is two manual steps:
 
 ```bash
-# from unified-extension-suite/
+# from the repo root
 ./scripts/release.sh patch    # bumps version, zips source, stages to QRCallBox
 
 # from QRCallBox/
@@ -54,7 +54,7 @@ The release script uses Node + the bundled `adm-zip` package (in `scripts/`).
 Install the tooling deps once:
 
 ```bash
-cd unified-extension-suite/scripts
+cd scripts
 npm install
 cd ..
 ```
@@ -114,7 +114,7 @@ page will be a dead link until you set it.
 ## Normal release flow
 
 ```bash
-cd unified-extension-suite
+# from the repo root
 
 # 1. Bump version, zip source, render version.json + landing page,
 #    stage everything into ../QRCallBox/public/extension/
